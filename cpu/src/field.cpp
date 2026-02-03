@@ -199,13 +199,21 @@ inline FieldElement field_from_uint320(Uint320 value) {
 
 template <std::size_t N>
 inline void add_into(std::array<std::uint64_t, N>& arr, std::size_t index, std::uint64_t value) {
+    fprintf(stderr, "[DEBUG] add_into: entry - N=%zu index=%zu value=%016lx\n", N, index, value);
+    if (index >= N) {
+        fprintf(stderr, "[DEBUG] add_into: ERROR - index >= N!\n");
+        return;
+    }
     unsigned char carry = 0;
+    fprintf(stderr, "[DEBUG] add_into: before add64 arr[%zu]=%016lx\n", index, arr[index]);
     arr[index] = add64(arr[index], value, carry);
+    fprintf(stderr, "[DEBUG] add_into: after add64 arr[%zu]=%016lx carry=%u\n", index, arr[index], carry);
     ++index;
     while (carry != 0 && index < N) {
         arr[index] = add64(arr[index], 0ULL, carry);
         ++index;
     }
+    fprintf(stderr, "[DEBUG] add_into: done\n");
 }
 
 inline bool ge(const limbs4& a, const limbs4& b) {
@@ -272,11 +280,17 @@ limbs4 add_impl(const limbs4& a, const limbs4& b) {
 }
 
 inline void mul_add_to(wide8& acc, std::size_t index, std::uint64_t a, std::uint64_t b) {
+    fprintf(stderr, "[DEBUG] mul_add_to: entry - index=%zu a=%016lx b=%016lx\n", index, a, b);
     std::uint64_t lo = 0;
     std::uint64_t hi = 0;
+    fprintf(stderr, "[DEBUG] mul_add_to: calling mul64\n");
     mul64(a, b, lo, hi);
+    fprintf(stderr, "[DEBUG] mul_add_to: mul64 done - lo=%016lx hi=%016lx\n", lo, hi);
+    fprintf(stderr, "[DEBUG] mul_add_to: calling add_into for lo\n");
     add_into(acc, index, lo);
+    fprintf(stderr, "[DEBUG] mul_add_to: calling add_into for hi\n");
     add_into(acc, index + 1, hi);
+    fprintf(stderr, "[DEBUG] mul_add_to: done\n");
 }
 
 wide8 mul_wide(const limbs4& a, const limbs4& b) {
@@ -310,8 +324,11 @@ limbs4 reduce(const wide8& t) {
     // For each t[4+i], we add:
     //   - t[4+i] * 977 to position i
     //   - t[4+i] * 2^32 to position i (which is t[4+i] << 32)
+    fprintf(stderr, "[DEBUG] reduce: starting high limb loop\n");
     for (std::size_t i = 0; i < 4; ++i) {
+        fprintf(stderr, "[DEBUG] reduce: loop iteration i=%zu\n", i);
         std::uint64_t hi_limb = t[4 + i];
+        fprintf(stderr, "[DEBUG] reduce: hi_limb=%016lx\n", hi_limb);
         if (hi_limb == 0) continue;
         
         // Add hi_limb * 977 starting at position i
