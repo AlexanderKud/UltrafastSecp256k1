@@ -47,9 +47,12 @@ inline std::uint64_t add64(std::uint64_t a, std::uint64_t b, unsigned char& carr
 }
 
 inline std::uint64_t sub64(std::uint64_t a, std::uint64_t b, unsigned char& borrow) {
-    unsigned __int128 diff = static_cast<unsigned __int128>(a) - b - borrow;
-    borrow = static_cast<unsigned char>((diff >> 127) & 1);
-    return static_cast<std::uint64_t>(diff);
+    uint64_t temp = a - borrow;
+    unsigned char borrow1 = (a < borrow);
+    uint64_t result = temp - b;
+    unsigned char borrow2 = (temp < b);
+    borrow = borrow1 | borrow2;
+    return result;
 }
 
 #endif

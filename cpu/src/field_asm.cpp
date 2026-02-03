@@ -4,7 +4,10 @@
 #include <secp256k1/field_asm.hpp>
 #include <secp256k1/field.hpp>
 #include <cstring>
+
+#if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
+#endif
 
 #if defined(_MSC_VER)
     #include <intrin.h>
@@ -680,7 +683,7 @@ FieldElement field_mul_bmi2(const FieldElement& a, const FieldElement& b) {
     #endif
     
     // Fallback: BMI2 intrinsics (17ns on Clang 18, 32ns on GCC)
-    #if defined(SECP256K1_HAS_ASM)
+    #if defined(SECP256K1_HAS_ASM) && (defined(__x86_64__) || defined(_M_X64))
         // Use full assembly multiplication + reduction (fastest)
         field_mul_full_asm(a_limbs, b_limbs, result);
     #else
@@ -700,7 +703,7 @@ FieldElement field_square_bmi2(const FieldElement& a) {
     std::memcpy(a_limbs, &a, sizeof(a_limbs));
 
     // Prefer using ASM mul for square as well (a*a)
-    #if defined(SECP256K1_HAS_ASM)
+    #if defined(SECP256K1_HAS_ASM) && (defined(__x86_64__) || defined(_M_X64))
         // Use optimized fused squaring + reduction
         field_sqr_full_asm(a_limbs, result);
         
@@ -764,7 +767,7 @@ FieldElement field_add_bmi2(const FieldElement& a, const FieldElement& b) {
     std::memcpy(a_limbs, &a, sizeof(a_limbs));
     std::memcpy(b_limbs, &b, sizeof(b_limbs));
 
-    #if defined(SECP256K1_HAS_ASM)
+    #if defined(SECP256K1_HAS_ASM) && (defined(__x86_64__) || defined(_M_X64))
         add_4_asm(a_limbs, b_limbs, result);
     #else
         // Addition is already quite fast, but can optimize with ADCX
@@ -794,7 +797,7 @@ FieldElement field_sub_bmi2(const FieldElement& a, const FieldElement& b) {
     std::memcpy(a_limbs, &a, sizeof(a_limbs));
     std::memcpy(b_limbs, &b, sizeof(b_limbs));
 
-    #if defined(SECP256K1_HAS_ASM)
+    #if defined(SECP256K1_HAS_ASM) && (defined(__x86_64__) || defined(_M_X64))
         sub_4_asm(a_limbs, b_limbs, result);
     #else
         return a - b;

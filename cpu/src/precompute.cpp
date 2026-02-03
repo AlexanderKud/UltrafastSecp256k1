@@ -71,12 +71,21 @@
 #endif
 
 // RDTSC benchmark macro (inline, no external header needed)
-#if defined(__GNUC__) || defined(__clang__)
-static inline uint64_t RDTSC() {
-    uint32_t lo, hi;
-    __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)hi << 32) | lo;
-}
+#if defined(__x86_64__) || defined(_M_X64)
+    #if defined(__GNUC__) || defined(__clang__)
+    static inline uint64_t RDTSC() {
+        uint32_t lo, hi;
+        __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
+        return ((uint64_t)hi << 32) | lo;
+    }
+    #endif
+#else
+    // RISC-V and other platforms: return 0 (timing disabled)
+    static inline uint64_t RDTSC() {
+        return 0;
+    }
+#endif
+
 // GCC/Clang intrinsics wrappers (not needed for MSVC/ClangCL)
 #ifndef _MSC_VER
 static inline uint64_t _umul128(uint64_t a, uint64_t b, uint64_t* hi) {
@@ -89,8 +98,8 @@ static inline unsigned char _BitScanReverse64(unsigned long* index, uint64_t mas
     *index = 63 - __builtin_clzll(mask);
     return 1;
 }
-#endif
-#elif defined(_MSC_VER)
+#else
+// MSVC
 #include <intrin.h>
 #define RDTSC() __rdtsc()
 #endif

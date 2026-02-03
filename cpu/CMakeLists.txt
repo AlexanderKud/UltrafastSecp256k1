@@ -167,10 +167,18 @@ endif()
 # Platform: Windows (MinGW/LLVM-MinGW), Linux, macOS
 # Note: MSVC support removed - use Clang-cl if needed on Windows
 
+# Platform-specific architecture flags
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+    set(ARCH_FLAGS "-march=rv64gc")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
+    set(ARCH_FLAGS "-march=armv8-a+crypto")
+else()
+    set(ARCH_FLAGS "-march=native")
+endif()
+
 target_compile_options(${SECP256K1_LIB_NAME} PRIVATE 
     -O3                      # Maximum optimization
-    -march=native            # Use all CPU features (AVX2, BMI2, ADX, etc.)
-    -mtune=native            # Optimize for this specific CPU
+    ${ARCH_FLAGS}            # Platform-specific architecture
     # REMOVED: -ffast-math, -ffinite-math-only, -fno-signed-zeros (break point arithmetic!)
     -fno-math-errno          # Don't set errno for math functions
     -fno-trapping-math       # No FP exceptions
@@ -197,26 +205,28 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     )
 endif()
 
-# Special flags for field_asm.cpp (maximize BMI2/MULX utilization)
-set_source_files_properties(src/field_asm.cpp PROPERTIES 
-    COMPILE_FLAGS "-O3 -march=native -mbmi2 -madx -mpopcnt -funroll-loops -ftree-vectorize -fno-exceptions -fno-rtti"
-)
+# Special flags for field_asm.cpp (maximize BMI2/MULX utilization on x86)
+if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+    set_source_files_properties(src/field_asm.cpp PROPERTIES 
+        COMPILE_FLAGS "-O3 ${ARCH_FLAGS} -mbmi2 -madx -mpopcnt -funroll-loops -ftree-vectorize -fno-exceptions -fno-rtti"
+    )
+endif()
 
 # Aggressive optimization for critical hotspot files
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set_source_files_properties(src/field.cpp PROPERTIES 
-        COMPILE_FLAGS "-O3 -march=native -funroll-loops -ftree-vectorize -fipa-pta -fpredictive-commoning"
+        COMPILE_FLAGS "-O3 ${ARCH_FLAGS} -funroll-loops -ftree-vectorize -fipa-pta -fpredictive-commoning"
     )
     set_source_files_properties(src/point.cpp PROPERTIES 
-        COMPILE_FLAGS "-O3 -march=native -funroll-loops -ftree-vectorize -fipa-pta -fpredictive-commoning"
+        COMPILE_FLAGS "-O3 ${ARCH_FLAGS} -funroll-loops -ftree-vectorize -fipa-pta -fpredictive-commoning"
     )
 else()
     # Clang/other compilers (no GCC-specific flags)
     set_source_files_properties(src/field.cpp PROPERTIES 
-        COMPILE_FLAGS "-O3 -march=native -funroll-loops -ftree-vectorize"
+        COMPILE_FLAGS "-O3 ${ARCH_FLAGS} -funroll-loops -ftree-vectorize"
     )
     set_source_files_properties(src/point.cpp PROPERTIES 
-        COMPILE_FLAGS "-O3 -march=native -funroll-loops -ftree-vectorize"
+        COMPILE_FLAGS "-O3 ${ARCH_FLAGS} -funroll-loops -ftree-vectorize"
     )
 endif()
 

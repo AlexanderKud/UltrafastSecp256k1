@@ -7,7 +7,9 @@
 
 
 #include "field.hpp"
+#if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>  // BMI2 intrinsics
+#endif
 
 namespace secp256k1::fast {
 
@@ -97,21 +99,27 @@ inline void mulx64(uint64_t a, uint64_t b, uint64_t& lo, uint64_t& hi) {
 }
 
 // Add with carry using ADCX (carry flag chain)
+// x86-only: BMI2/ADX intrinsic
+#if defined(__x86_64__) || defined(_M_X64)
 inline uint8_t adcx64(uint64_t a, uint64_t b, uint8_t carry, uint64_t& result) {
     #if defined(_MSC_VER)
         // MSVC intrinsic
         return _addcarry_u64(carry, a, b, reinterpret_cast<unsigned long long*>(&result));
-    #elif defined(__GNUC__) || defined(__clang__)
-        // GCC/Clang intrinsic
-        // _addcarry_u64 is available in x86intrin.h/immintrin.h
-        return _addcarry_u64(carry, a, b, (unsigned long long*)&result);
     #else
-        // Fallback
-        __uint128_t sum = static_cast<__uint128_t>(a) + b + carry;
-        result = static_cast<uint64_t>(sum);
-        return static_cast<uint8_t>(sum >> 64);
+        // GCC/Clang intrinsic (_addcarry_u64 in x86intrin.h/immintrin.h)
+        return _addcarry_u64(carry, a, b, (unsigned long long*)&result);
     #endif
 }
+#else
+// Portable fallback for non-x86 (RISC-V, ARM, etc.)
+inline uint8_t adcx64(uint64_t a, uint64_t b, uint8_t carry, uint64_t& result) {
+    unsigned __int128 sum = static_cast<unsigned __int128>(a) + 
+                            static_cast<unsigned __int128>(b) + 
+                            static_cast<unsigned __int128>(carry);
+    result = static_cast<uint64_t>(sum);
+    return static_cast<uint8_t>(sum >> 64);
+}
+#endif
 
 // Add with overflow using ADOX (overflow flag chain, independent of ADCX!)
 inline uint8_t adox64(uint64_t a, uint64_t b, uint8_t overflow, uint64_t& result) {

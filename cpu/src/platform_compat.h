@@ -46,23 +46,41 @@ inline uint32_t GetLastError() { return 0; }
 #endif // !_WIN32
 
 // Cross-platform intrinsics compatibility
-#if defined(__GNUC__) && !defined(_MSC_VER)
-// GCC/Clang intrinsics expect unsigned long long*, but we use uint64_t*
-// Define wrapper macros to avoid explicit casts everywhere
-
-#include <x86intrin.h>
-
-// Map uint64_t* to unsigned long long* for ADX intrinsics
-#define COMPAT_ADDCARRY_U64(carry, a, b, out) \
-    _addcarry_u64(carry, a, b, reinterpret_cast<unsigned long long*>(out))
-
-#define COMPAT_SUBBORROW_U64(borrow, a, b, out) \
-    _subborrow_u64(borrow, a, b, reinterpret_cast<unsigned long long*>(out))
-
+#if defined(__x86_64__) || defined(_M_X64)
+    // x86-64: Use BMI2 intrinsics
+    #if defined(__GNUC__) && !defined(_MSC_VER)
+        #include <x86intrin.h>
+        #define COMPAT_ADDCARRY_U64(carry, a, b, out) \
+            _addcarry_u64(carry, a, b, reinterpret_cast<unsigned long long*>(out))
+        #define COMPAT_SUBBORROW_U64(borrow, a, b, out) \
+            _subborrow_u64(borrow, a, b, reinterpret_cast<unsigned long long*>(out))
+    #else
+        // MSVC
+        #define COMPAT_ADDCARRY_U64(carry, a, b, out) _addcarry_u64(carry, a, b, out)
+        #define COMPAT_SUBBORROW_U64(borrow, a, b, out) _subborrow_u64(borrow, a, b, out)
+    #endif
 #else
-// MSVC - use intrinsics directly
-#define COMPAT_ADDCARRY_U64(carry, a, b, out) _addcarry_u64(carry, a, b, out)
-#define COMPAT_SUBBORROW_U64(borrow, a, b, out) _subborrow_u64(borrow, a, b, out)
+    // RISC-V, ARM, etc: Portable implementation matching field.cpp/scalar.cpp logic
+    inline unsigned char compat_addcarry_u64_impl(unsigned char carry, uint64_t a, uint64_t b, uint64_t* out) {
+        uint64_t sum = a + b;
+        unsigned char carry1 = (sum < a);
+        uint64_t result = sum + carry;
+        unsigned char carry2 = (result < sum);
+        *out = result;
+        return carry1 | carry2;
+    }
+    
+    inline unsigned char compat_subborrow_u64_impl(unsigned char borrow, uint64_t a, uint64_t b, uint64_t* out) {
+        uint64_t temp = a - borrow;
+        unsigned char borrow1 = (a < borrow);
+        uint64_t result = temp - b;
+        unsigned char borrow2 = (temp < b);
+        *out = result;
+        return borrow1 | borrow2;
+    }
+    
+    #define COMPAT_ADDCARRY_U64(carry, a, b, out) compat_addcarry_u64_impl(carry, a, b, out)
+    #define COMPAT_SUBBORROW_U64(borrow, a, b, out) compat_subborrow_u64_impl(borrow, a, b, out)
 #endif
 
 #endif // SECP256K1_PLATFORM_COMPAT_H

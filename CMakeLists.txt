@@ -52,10 +52,17 @@ message(STATUS "secp256k1-fast: Detected platform: ${SECP256K1_PLATFORM}")
 
 # Compiler-specific flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Platform-specific -march flag
+    if(SECP256K1_PLATFORM STREQUAL "riscv64")
+        set(MARCH_FLAG "-march=rv64gc_zba_zbb")
+    else()
+        set(MARCH_FLAG "-march=native")
+    endif()
+    
     add_compile_options(
         -Wall -Wextra -Wpedantic
         -Wno-unused-parameter
-        -march=native
+        ${MARCH_FLAG}
         $<$<CONFIG:Release>:-O3>
         $<$<CONFIG:Release>:-DNDEBUG>
     )
