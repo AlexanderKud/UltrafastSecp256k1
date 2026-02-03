@@ -280,12 +280,17 @@ inline void mul_add_to(wide8& acc, std::size_t index, std::uint64_t a, std::uint
 }
 
 wide8 mul_wide(const limbs4& a, const limbs4& b) {
+    fprintf(stderr, "[DEBUG] mul_wide: a=[%016lx,%016lx,%016lx,%016lx] b=[%016lx,%016lx,%016lx,%016lx]\n",
+        a[0], a[1], a[2], a[3], b[0], b[1], b[2], b[3]);
     wide8 prod{};
     for (std::size_t i = 0; i < 4; ++i) {
         for (std::size_t j = 0; j < 4; ++j) {
+            fprintf(stderr, "[DEBUG] mul_wide: i=%zu j=%zu a[i]=%016lx b[j]=%016lx\n", i, j, a[i], b[j]);
             mul_add_to(prod, i + j, a[i], b[j]);
+            fprintf(stderr, "[DEBUG] mul_wide: after mul_add_to i+j=%zu\n", i + j);
         }
     }
+    fprintf(stderr, "[DEBUG] mul_wide: done\n");
     return prod;
 }
 
@@ -296,8 +301,10 @@ wide8 mul_wide(const limbs4& a, const limbs4& b) {
 // We have: t ≡ t_low + t_high * (2^32 + 977) (mod p)
 // One-pass reduction algorithm
 limbs4 reduce(const wide8& t) {
+    fprintf(stderr, "[DEBUG] reduce: entry\n");
     // Step 1: Start with low 256 bits
     std::array<std::uint64_t, 5> result{t[0], t[1], t[2], t[3], 0ULL};
+    fprintf(stderr, "[DEBUG] reduce: initialized result\n");
     
     // Step 2: Process each high limb: add high[i] * (2^32 + 977) to appropriate position
     // For each t[4+i], we add:
