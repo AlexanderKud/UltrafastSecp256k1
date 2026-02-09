@@ -47,18 +47,22 @@
     .globl field_mul_asm_riscv64
     .type field_mul_asm_riscv64, @function
 field_mul_asm_riscv64:
-    # RISC-V ABI: Save callee-saved registers used in this function (keep stack layout stable)
-    # Stack layout: [s0-s7,s11: 72 bytes] [scratch: 64 bytes] = 176 bytes (aligned to 16)
-    addi    sp, sp, -176
-    sd      s0, 8(sp)
-    sd      s1, 16(sp)
-    sd      s2, 24(sp)
-    sd      s3, 32(sp)
-    sd      s4, 40(sp)
-    sd      s5, 48(sp)
-    sd      s6, 56(sp)
-    sd      s7, 64(sp)
-    sd      s11, 96(sp)
+    # RISC-V ABI: Save callee-saved registers used in this function
+    # Used registers: s0-s11 (12 registers)
+    # Stack layout: [s0-s11: 12*8 = 96 bytes] + padding = 112 bytes (aligned)
+    addi    sp, sp, -112
+    sd      s0, 0(sp)
+    sd      s1, 8(sp)
+    sd      s2, 16(sp)
+    sd      s3, 24(sp)
+    sd      s4, 32(sp)
+    sd      s5, 40(sp)
+    sd      s6, 48(sp)
+    sd      s7, 56(sp)
+    sd      s8, 64(sp)
+    sd      s9, 72(sp)
+    sd      s10, 80(sp)
+    sd      s11, 88(sp)
 
     # Save result pointer in s11 (callee-saved)
     mv      s11, a0
@@ -77,122 +81,229 @@ field_mul_asm_riscv64:
 
     # -------------------------------------------------------------------------
     # Comba Multiplication (512-bit result in t0-t6, s8)
-    # r0..r6 -> t0..t6
-    # r7 -> s8
-    # carry -> s9
-    # scratch -> a1..a7
+    # Uses 3-register accumulator to prevent overflow:
+    #   Current limb: t{i}
+    #   Carry 1:      s9
+    #   Carry 2:      s10
     # -------------------------------------------------------------------------
 
     # Column 0: r0 = a0*b0
     mul     t0, s0, s4
     mulhu   s9, s0, s4
+    li      s10, 0
 
     # Column 1: r1 = a0*b1 + a1*b0 + c
+    mv      t1, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # Term 0: a0*b1
     mul     a1, s0, s5
     mulhu   a2, s0, s5
-    add     t1, a1, s9
-    sltu    a3, t1, s9
-    add     s9, a2, a3
+    add     t1, t1, a1
+    sltu    a3, t1, a1
+    add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
+    # Term 1: a1*b0
     mul     a1, s1, s4
     mulhu   a2, s1, s4
     add     t1, t1, a1
     sltu    a3, t1, a1
-    add     s9, s9, a3
     add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
     # Column 2: r2 = a0*b2 + a1*b1 + a2*b0 + c
+    mv      t2, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # Term 0: a0*b2
     mul     a1, s0, s6
     mulhu   a2, s0, s6
-    add     t2, a1, s9
-    sltu    a3, t2, s9
-    add     s9, a2, a3
+    add     t2, t2, a1
+    sltu    a3, t2, a1
+    add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
+    # Term 1: a1*b1
     mul     a1, s1, s5
     mulhu   a2, s1, s5
     add     t2, t2, a1
     sltu    a3, t2, a1
-    add     s9, s9, a3
     add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
+    # Term 2: a2*b0
     mul     a1, s2, s4
     mulhu   a2, s2, s4
     add     t2, t2, a1
     sltu    a3, t2, a1
-    add     s9, s9, a3
     add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
     # Column 3: r3 = a0*b3 + a1*b2 + a2*b1 + a3*b0 + c
+    mv      t3, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # Term 0: a0*b3
     mul     a1, s0, s7
     mulhu   a2, s0, s7
-    add     t3, a1, s9
-    sltu    a3, t3, s9
-    add     s9, a2, a3
+    add     t3, t3, a1
+    sltu    a3, t3, a1
+    add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
+    # Term 1: a1*b2
     mul     a1, s1, s6
     mulhu   a2, s1, s6
     add     t3, t3, a1
     sltu    a3, t3, a1
-    add     s9, s9, a3
     add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
+    # Term 2: a2*b1
     mul     a1, s2, s5
     mulhu   a2, s2, s5
     add     t3, t3, a1
     sltu    a3, t3, a1
-    add     s9, s9, a3
     add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
+    # Term 3: a3*b0
     mul     a1, s3, s4
     mulhu   a2, s3, s4
     add     t3, t3, a1
     sltu    a3, t3, a1
-    add     s9, s9, a3
     add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
     # Column 4: r4 = a1*b3 + a2*b2 + a3*b1 + c
+    mv      t4, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # Term 0: a1*b3
     mul     a1, s1, s7
     mulhu   a2, s1, s7
-    add     t4, a1, s9
-    sltu    a3, t4, s9
-    add     s9, a2, a3
+    add     t4, t4, a1
+    sltu    a3, t4, a1
+    add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
+    # Term 1: a2*b2
     mul     a1, s2, s6
     mulhu   a2, s2, s6
     add     t4, t4, a1
     sltu    a3, t4, a1
-    add     s9, s9, a3
     add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
+    # Term 2: a3*b1
     mul     a1, s3, s5
     mulhu   a2, s3, s5
     add     t4, t4, a1
     sltu    a3, t4, a1
-    add     s9, s9, a3
     add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
     # Column 5: r5 = a2*b3 + a3*b2 + c
+    mv      t5, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # Term 0: a2*b3
     mul     a1, s2, s7
     mulhu   a2, s2, s7
-    add     t5, a1, s9
-    sltu    a3, t5, s9
-    add     s9, a2, a3
+    add     t5, t5, a1
+    sltu    a3, t5, a1
+    add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
+    # Term 1: a3*b2
     mul     a1, s3, s6
     mulhu   a2, s3, s6
     add     t5, t5, a1
     sltu    a3, t5, a1
-    add     s9, s9, a3
     add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
     # Column 6: r6 = a3*b3 + c
+    mv      t6, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # Term 0: a3*b3
     mul     a1, s3, s7
     mulhu   a2, s3, s7
-    add     t6, a1, s9
-    sltu    a3, t6, s9
-    add     s9, a2, a3
+    add     t6, t6, a1
+    sltu    a3, t6, a1
+    add     s9, s9, a2
+    sltu    a4, s9, a2
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
 
     # Column 7: r7 = carry
+    # s10 should be 0 because result fits in 512 bits
     mv      s8, s9
 
     # -------------------------------------------------------------------------
@@ -444,9 +555,9 @@ field_mul_asm_riscv64:
     ld      s9, 72(sp)
     ld      s10, 80(sp)
     ld      s11, 88(sp)
-    ld      ra, 96(sp)
-    addi    sp, sp, 144
+    addi    sp, sp, 112
     ret
+    .size field_mul_asm_riscv64, .-field_mul_asm_riscv64
 .Lfield_mul_asm_riscv64_end:
 
 /*
@@ -752,6 +863,7 @@ field_add_asm_riscv64:
     sd      t3, 24(a0)
     
     ret
+    .size field_add_asm_riscv64, .-field_add_asm_riscv64
 .Lfield_add_asm_riscv64_end:
 
 

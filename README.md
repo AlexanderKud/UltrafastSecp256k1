@@ -469,11 +469,7 @@ We offer flexible licensing options for commercial applications.
 - Issues: [GitHub Issues](https://github.com/shrec/Secp256K1fast/issues)
 - Discussions: [GitHub Discussions](https://github.com/shrec/Secp256K1fast/discussions)
 
-## 🌟 Related Projects
 
-- [Bitcoin Core libsecp256k1](https://github.com/bitcoin-core/secp256k1)
-- [OpenSSL](https://www.openssl.org/)
-- [GMP](https://gmplib.org/)
 
 ---
 
