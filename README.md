@@ -5,7 +5,7 @@ Ultra high-performance secp256k1 elliptic curve cryptography library with multi-
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![CUDA](https://img.shields.io/badge/CUDA-12.0+-green.svg)](https://developer.nvidia.com/cuda-toolkit)
-[![GitHub](https://img.shields.io/badge/GitHub-shrec%2FUltrafastSecp256k1-blue)](https://github.com/shrec/UltrafastSecp256k1)
+[![GitHub](https://img.shields.io/badge/GitHub-shrec%2FSecp256K1fast-blue)](https://github.com/shrec/Secp256K1fast)
 
 ## 🚀 Features
 
@@ -319,19 +319,56 @@ void benchmark_field_multiply() {
 
 ## 📊 Performance
 
-### x86-64 (AMD Zen 5, 5.7 GHz)
+Benchmarks below are from `bench_comprehensive_riscv` (Release builds).
+RISC-V results were collected on **Milk-V Mars** (RV64 + RVV).
 
-| Operation | Portable C++ | BMI2 Intrinsics | Assembly |
-|-----------|--------------|-----------------|----------|
-| Field Mul | 25 ns | 12 ns | 8 ns |
-| Point Mul | 45 µs | 22 µs | 15 µs |
+### x86_64 / Windows (Clang 21.1.0, Release)
 
-### RISC-V (StarFive JH7110, 1.5 GHz)
+| Operation | Time |
+|-----------|------:|
+| Field Mul | 32 ns |
+| Field Square | 28 ns |
+| Field Add | 11 ns |
+| Field Sub | 12 ns |
+| Field Inverse | 5 us |
+| Point Add | 644 ns |
+| Point Double | 313 ns |
+| Point Scalar Mul | 111 us |
+| Generator Mul | 7 us |
+| Batch Inverse (n=100) | 145 ns |
+| Batch Inverse (n=1000) | 98 ns |
 
-| Operation | Portable C++ | Assembly | With RVV |
-|-----------|--------------|----------|----------|
-| Field Mul | 180 ns | 75 ns | 22 ns |
-| Point Mul | 420 µs | 165 µs | 55 µs |
+### x86_64 / Linux (Clang 19.1.7, Release)
+
+| Operation | Time |
+|-----------|------:|
+| Field Mul | 33 ns |
+| Field Square | 31 ns |
+| Field Add | 11 ns |
+| Field Sub | 13 ns |
+| Field Inverse | 4 us |
+| Point Add | 466 ns |
+| Point Double | 280 ns |
+| Point Scalar Mul | 101 us |
+| Generator Mul | 6 us |
+| Batch Inverse (n=100) | 141 ns |
+| Batch Inverse (n=1000) | 81 ns |
+
+### RISC-V 64-bit / Linux (Milk-V Mars, RVV, Clang 19.1.7, Release)
+
+| Operation | Time |
+|-----------|------:|
+| Field Mul | 195 ns |
+| Field Square | 178 ns |
+| Field Add | 36 ns |
+| Field Sub | 33 ns |
+| Field Inverse | 19 us |
+| Point Add | 3 us |
+| Point Double | 1 us |
+| Point Scalar Mul | 656 us |
+| Generator Mul | 43 us |
+| Batch Inverse (n=100) | 960 ns |
+| Batch Inverse (n=1000) | 595 ns |
 
 ### CUDA (RTX 4090)
 
@@ -388,7 +425,7 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 ### Development Setup
 
 ```bash
-git clone https://github.com/shrec/UltrafastSecp256k1.git
+git clone https://github.com/shrec/Secp256K1fast.git
 cd UltrafastSecp256k1
 cmake -S . -B build-dev -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-dev -j
@@ -398,7 +435,27 @@ cmake --build build-dev -j
 
 This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
-See [LICENSE](LICENSE) for details.
+### Open Source License
+
+The library is free to use under AGPL-3.0 for open source projects. This means:
+- ✅ You can use, modify, and distribute the code
+- ✅ You must disclose your source code
+- ✅ You must license your project under AGPL-3.0 or compatible license
+- ✅ You must provide network access to your source code if you run it as a service
+
+See [LICENSE](LICENSE) for full details.
+
+### Commercial License
+
+**For commercial/proprietary use without AGPL-3.0 obligations:**
+
+If you want to use this library in a proprietary/closed-source product or service without disclosing your source code, please contact us for a commercial license.
+
+📧 **Contact for commercial licensing:**
+- Email: [payysoon@gmail.com](mailto:payysoon@gmail.com)
+- GitHub: https://github.com/shrec/Secp256K1fast
+
+We offer flexible licensing options for commercial applications.
 
 ## 🙏 Acknowledgments
 
@@ -409,8 +466,8 @@ See [LICENSE](LICENSE) for details.
 
 ## 📧 Contact
 
-- Issues: [GitHub Issues](https://github.com/shrec/UltrafastSecp256k1/issues)
-- Discussions: [GitHub Discussions](https://github.com/shrec/UltrafastSecp256k1/discussions)
+- Issues: [GitHub Issues](https://github.com/shrec/Secp256K1fast/issues)
+- Discussions: [GitHub Discussions](https://github.com/shrec/Secp256K1fast/discussions)
 
 ## 🌟 Related Projects
 
