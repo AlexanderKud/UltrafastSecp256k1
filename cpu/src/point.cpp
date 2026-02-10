@@ -708,17 +708,16 @@ Point Point::scalar_mul(const Scalar& scalar) const {
         return scalar_mul_generator(scalar);
     }
     
-    // Phase 6.1: GLV integration failed - sign handling too complex
-    // Keeping simple wNAF w=4 for stability
-    // GLV + Shamir available via scalar_mul_precomputed_wnaf() for advanced use
-    constexpr unsigned window_width = 4;
+    // wNAF with w=5: better balance of precomputation vs operations
+    // w=5 means 16 precomputed points, ~51 additions for 256-bit scalar
+    constexpr unsigned window_width = 5;
     // No-alloc wNAF: write into stack buffer
     std::array<int32_t, 260> wnaf_buf{};
     std::size_t wnaf_len = 0;
     compute_wnaf_into(scalar, window_width, wnaf_buf.data(), wnaf_buf.size(), wnaf_len);
     
-    // Precompute odd multiples: [1P, 3P, 5P, ..., 15P]
-    constexpr int table_size = (1 << (window_width - 1)); // 2^3 = 8
+    // Precompute odd multiples: [1P, 3P, 5P, ..., 31P]
+    constexpr int table_size = (1 << (window_width - 1)); // 2^4 = 16
     std::array<Point, table_size> precomp;
     
     precomp[0] = *this;  // 1P
@@ -738,11 +737,11 @@ Point Point::scalar_mul(const Scalar& scalar) const {
         
         int32_t digit = wnaf_buf[static_cast<std::size_t>(i)];
         if (digit > 0) {
-            // Positive odd digit: 1, 3, 5, ..., 15
+            // Positive odd digit: 1, 3, 5, ..., 31
             int idx = (digit - 1) / 2;
             result.add_inplace(precomp[idx]);  // Add in-place!
         } else if (digit < 0) {
-            // Negative odd digit: -1, -3, -5, ..., -15
+            // Negative odd digit: -1, -3, -5, ..., -31
             int idx = (-digit - 1) / 2;
             // Original faster path: temp copy + negate (O(1)) then mixed addition (7M)
             Point neg_point = precomp[idx];

@@ -656,15 +656,469 @@ field_negate_asm_riscv64:
  *
  * Square a field element: r = a² (mod p)
  *
- * NOTE: Using tail call to mul for now. Dedicated optimized squaring
- * needs debugging (carry propagation issues with doubling).
+ * Optimized using symmetry: a² = sum(ai²) + 2*sum(ai*aj for i<j)
+ *
+ * Products needed:
+ *   Diagonal (4): a0², a1², a2², a3²
+ *   Off-diagonal (6): a0*a1, a0*a2, a0*a3, a1*a2, a1*a3, a2*a3
+ *   Total: 10 multiplications (vs 16 in generic mul)
+ *
+ * Column breakdown:
+ *   c0 = a0²
+ *   c1 = 2*(a0*a1)
+ *   c2 = 2*(a0*a2) + a1²
+ *   c3 = 2*(a0*a3 + a1*a2)
+ *   c4 = 2*(a1*a3) + a2²
+ *   c5 = 2*(a2*a3)
+ *   c6 = a3²
  */
     .align 3
     .globl field_square_asm_riscv64
     .type field_square_asm_riscv64, @function
 field_square_asm_riscv64:
-    mv      a2, a1
-    tail    field_mul_asm_riscv64
+    addi    sp, sp, -112
+    sd      s0, 0(sp)
+    sd      s1, 8(sp)
+    sd      s2, 16(sp)
+    sd      s3, 24(sp)
+    sd      s4, 32(sp)
+    sd      s5, 40(sp)
+    sd      s6, 48(sp)
+    sd      s7, 56(sp)
+    sd      s8, 64(sp)
+    sd      s9, 72(sp)
+    sd      s10, 80(sp)
+    sd      s11, 88(sp)
+
+    mv      s11, a0         # result pointer
+
+    # Load a[0..3]
+    ld      s0, 0(a1)       # a0
+    ld      s1, 8(a1)       # a1
+    ld      s2, 16(a1)      # a2
+    ld      s3, 24(a1)      # a3
+
+    # ===== Column 0: c0 = a0² =====
+    mul     t0, s0, s0      # lo
+    mulhu   s9, s0, s0      # hi -> carry
+    li      s10, 0
+
+    # ===== Column 1: c1 = 2*(a0*a1) =====
+    # First compute a0*a1
+    mul     s4, s0, s1      # lo
+    mulhu   s5, s0, s1      # hi
+
+    # Add a0*a1 twice (same as 2*(a0*a1) but avoids shift overflow issues)
+    mv      t1, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # First addition of a0*a1
+    add     t1, t1, s4
+    sltu    a3, t1, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # Second addition of a0*a1
+    add     t1, t1, s4
+    sltu    a3, t1, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # ===== Column 2: c2 = 2*(a0*a2) + a1² =====
+    mv      t2, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # a0*a2
+    mul     s4, s0, s2
+    mulhu   s5, s0, s2
+
+    # Add a0*a2 twice
+    add     t2, t2, s4
+    sltu    a3, t2, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    add     t2, t2, s4
+    sltu    a3, t2, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # Add a1²
+    mul     s4, s1, s1
+    mulhu   s5, s1, s1
+    add     t2, t2, s4
+    sltu    a3, t2, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # ===== Column 3: c3 = 2*(a0*a3 + a1*a2) =====
+    mv      t3, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # a0*a3 (add twice)
+    mul     s4, s0, s3
+    mulhu   s5, s0, s3
+
+    add     t3, t3, s4
+    sltu    a3, t3, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    add     t3, t3, s4
+    sltu    a3, t3, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # a1*a2 (add twice)
+    mul     s4, s1, s2
+    mulhu   s5, s1, s2
+
+    add     t3, t3, s4
+    sltu    a3, t3, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    add     t3, t3, s4
+    sltu    a3, t3, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # ===== Column 4: c4 = 2*(a1*a3) + a2² =====
+    mv      t4, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # a1*a3 (add twice)
+    mul     s4, s1, s3
+    mulhu   s5, s1, s3
+
+    add     t4, t4, s4
+    sltu    a3, t4, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    add     t4, t4, s4
+    sltu    a3, t4, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # Add a2²
+    mul     s4, s2, s2
+    mulhu   s5, s2, s2
+    add     t4, t4, s4
+    sltu    a3, t4, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # ===== Column 5: c5 = 2*(a2*a3) =====
+    mv      t5, s9
+    mv      s9, s10
+    li      s10, 0
+
+    # a2*a3 (add twice)
+    mul     s4, s2, s3
+    mulhu   s5, s2, s3
+
+    add     t5, t5, s4
+    sltu    a3, t5, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    add     t5, t5, s4
+    sltu    a3, t5, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # ===== Column 6: c6 = a3² =====
+    mv      t6, s9
+    mv      s9, s10
+    li      s10, 0
+
+    mul     s4, s3, s3
+    mulhu   s5, s3, s3
+    add     t6, t6, s4
+    sltu    a3, t6, s4
+    add     s9, s9, s5
+    sltu    a4, s9, s5
+    add     s9, s9, a3
+    sltu    a5, s9, a3
+    add     s10, s10, a4
+    add     s10, s10, a5
+
+    # Column 7 (carry)
+    mv      s8, s9
+
+    # ===== Fast reduction =====
+    li      s10, 977
+    li      s9, 0
+
+    # Process t4 (c4)
+    mul     a1, t4, s10
+    mulhu   a2, t4, s10
+    add     t0, t0, a1
+    sltu    a3, t0, a1
+    add     t1, t1, a3
+    sltu    a4, t1, a3
+    add     t1, t1, a2
+    sltu    a3, t1, a2
+    add     t2, t2, a4
+    sltu    a4, t2, a4
+    add     t2, t2, a3
+    sltu    a3, t2, a3
+    add     t3, t3, a4
+    sltu    a4, t3, a4
+    add     t3, t3, a3
+    sltu    a3, t3, a3
+    add     s9, s9, a4
+    add     s9, s9, a3
+
+    slli    a1, t4, 32
+    srli    a2, t4, 32
+    add     t0, t0, a1
+    sltu    a3, t0, a1
+    add     t1, t1, a2
+    sltu    a4, t1, a2
+    add     t1, t1, a3
+    sltu    a3, t1, a3
+    add     t2, t2, a4
+    sltu    a4, t2, a4
+    add     t2, t2, a3
+    sltu    a3, t2, a3
+    add     t3, t3, a4
+    sltu    a4, t3, a4
+    add     t3, t3, a3
+    sltu    a3, t3, a3
+    add     s9, s9, a4
+    add     s9, s9, a3
+
+    # Process t5 (c5)
+    mul     a1, t5, s10
+    mulhu   a2, t5, s10
+    add     t1, t1, a1
+    sltu    a3, t1, a1
+    add     t2, t2, a3
+    sltu    a4, t2, a3
+    add     t2, t2, a2
+    sltu    a3, t2, a2
+    add     t3, t3, a4
+    sltu    a4, t3, a4
+    add     t3, t3, a3
+    sltu    a3, t3, a3
+    add     s9, s9, a4
+    add     s9, s9, a3
+
+    slli    a1, t5, 32
+    srli    a2, t5, 32
+    add     t1, t1, a1
+    sltu    a3, t1, a1
+    add     t2, t2, a2
+    sltu    a4, t2, a2
+    add     t2, t2, a3
+    sltu    a3, t2, a3
+    add     t3, t3, a4
+    sltu    a4, t3, a4
+    add     t3, t3, a3
+    sltu    a3, t3, a3
+    add     s9, s9, a4
+    add     s9, s9, a3
+
+    # Process t6 (c6)
+    mul     a1, t6, s10
+    mulhu   a2, t6, s10
+    add     t2, t2, a1
+    sltu    a3, t2, a1
+    add     t3, t3, a3
+    sltu    a4, t3, a3
+    add     t3, t3, a2
+    sltu    a3, t3, a2
+    add     s9, s9, a4
+    add     s9, s9, a3
+
+    slli    a1, t6, 32
+    srli    a2, t6, 32
+    add     t2, t2, a1
+    sltu    a3, t2, a1
+    add     t3, t3, a2
+    sltu    a4, t3, a2
+    add     t3, t3, a3
+    sltu    a3, t3, a3
+    add     s9, s9, a4
+    add     s9, s9, a3
+
+    # Process s8 (c7)
+    mul     a1, s8, s10
+    mulhu   a2, s8, s10
+    add     t3, t3, a1
+    sltu    a3, t3, a1
+    add     s9, s9, a2
+    add     s9, s9, a3
+
+    slli    a1, s8, 32
+    srli    a2, s8, 32
+    add     t3, t3, a1
+    sltu    a3, t3, a1
+    add     s9, s9, a2
+    add     s9, s9, a3
+
+    # Final reduction loop
+.Lsq_reduce_loop:
+    beqz    s9, .Lsq_final_reduce
+
+    mv      t4, s9
+    li      s9, 0
+
+    mul     a1, t4, s10
+    mulhu   a2, t4, s10
+    add     t0, t0, a1
+    sltu    a3, t0, a1
+    add     t1, t1, a3
+    sltu    a4, t1, a3
+    add     t1, t1, a2
+    sltu    a3, t1, a2
+    add     t2, t2, a4
+    sltu    a4, t2, a4
+    add     t2, t2, a3
+    sltu    a3, t2, a3
+    add     t3, t3, a4
+    sltu    a4, t3, a4
+    add     t3, t3, a3
+    sltu    a3, t3, a3
+    add     s9, s9, a4
+    add     s9, s9, a3
+
+    slli    a1, t4, 32
+    srli    a2, t4, 32
+    add     t0, t0, a1
+    sltu    a3, t0, a1
+    add     t1, t1, a2
+    sltu    a4, t1, a2
+    add     t1, t1, a3
+    sltu    a3, t1, a3
+    add     t2, t2, a4
+    sltu    a4, t2, a4
+    add     t2, t2, a3
+    sltu    a3, t2, a3
+    add     t3, t3, a4
+    sltu    a4, t3, a4
+    add     t3, t3, a3
+    sltu    a3, t3, a3
+    add     s9, s9, a4
+    add     s9, s9, a3
+
+    j       .Lsq_reduce_loop
+
+.Lsq_final_reduce:
+    # Branchless final reduction
+    li      a1, 0x3D1
+    li      a2, 1
+    slli    a2, a2, 32
+    or      a1, a1, a2
+
+    add     a2, t0, a1
+    sltu    a3, a2, t0
+    add     a4, t1, a3
+    sltu    a3, a4, t1
+    add     a5, t2, a3
+    sltu    a3, a5, t2
+    add     a6, t3, a3
+    sltu    a7, a6, t3
+
+    neg     a7, a7
+
+    xor     s0, t0, a2
+    and     s0, s0, a7
+    xor     t0, t0, s0
+
+    xor     s0, t1, a4
+    and     s0, s0, a7
+    xor     t1, t1, s0
+
+    xor     s0, t2, a5
+    and     s0, s0, a7
+    xor     t2, t2, s0
+
+    xor     s0, t3, a6
+    and     s0, s0, a7
+    xor     t3, t3, s0
+
+    sd      t0, 0(s11)
+    sd      t1, 8(s11)
+    sd      t2, 16(s11)
+    sd      t3, 24(s11)
+
+    ld      s0, 0(sp)
+    ld      s1, 8(sp)
+    ld      s2, 16(sp)
+    ld      s3, 24(sp)
+    ld      s4, 32(sp)
+    ld      s5, 40(sp)
+    ld      s6, 48(sp)
+    ld      s7, 56(sp)
+    ld      s8, 64(sp)
+    ld      s9, 72(sp)
+    ld      s10, 80(sp)
+    ld      s11, 88(sp)
+    addi    sp, sp, 112
+    ret
     .size field_square_asm_riscv64, .-field_square_asm_riscv64
 
 /*
