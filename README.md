@@ -372,12 +372,14 @@ RISC-V results were collected on **Milk-V Mars** (RV64 + RVV).
 
 *See [RISCV_OPTIMIZATIONS.md](RISCV_OPTIMIZATIONS.md) for optimization details.*
 
-### CUDA (RTX 4090)
+### CUDA (NVIDIA RTX 5060 Ti)
 
-| Batch Size | Time | Throughput |
-|------------|------|------------|
-| 1,000 | 0.8 ms | 1.25M ops/s |
-| 1,000,000 | 125 ms | 8M ops/s |
+| Operation | Throughput |
+|-----------|------------|
+| Scalar Mul (G×k batch) | ~1.86M ops/s |
+| Field Multiplication | ~4.1 Gops/s |
+
+*Note: CUDA performance depends heavily on batch size and GPU occupancy. Results from batch processing millions of operations.*
 
 ## 🏗️ Architecture
 
