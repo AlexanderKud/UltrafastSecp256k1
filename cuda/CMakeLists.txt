@@ -42,3 +42,16 @@ add_executable(secp256k1_cuda_test
     src/test_suite.cu
 )
 target_link_libraries(secp256k1_cuda_test PRIVATE secp256k1_cuda_lib)
+
+# Benchmark executable
+add_executable(secp256k1_cuda_bench
+    src/bench_cuda.cu
+)
+target_link_libraries(secp256k1_cuda_bench PRIVATE secp256k1_cuda_lib)
+target_compile_options(secp256k1_cuda_bench PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
+    $<$<COMPILE_LANGUAGE:CUDA>:-O3>
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CUDA>:-Xptxas=-O3>
+)
+

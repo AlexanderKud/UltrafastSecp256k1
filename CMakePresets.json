@@ -1,0 +1,107 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "cpu-release",
+            "displayName": "CPU Release",
+            "description": "CPU-only optimized build",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "SECP256K1_BUILD_CPU": "ON",
+                "SECP256K1_BUILD_CUDA": "OFF",
+                "SECP256K1_BUILD_TESTS": "ON",
+                "SECP256K1_BUILD_BENCH": "ON"
+            }
+        },
+        {
+            "name": "cpu-debug",
+            "displayName": "CPU Debug",
+            "description": "CPU-only debug build",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "SECP256K1_BUILD_CPU": "ON",
+                "SECP256K1_BUILD_CUDA": "OFF",
+                "SECP256K1_BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "cuda-release",
+            "displayName": "CUDA Release",
+            "description": "CPU + CUDA GPU optimized build",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "SECP256K1_BUILD_CPU": "ON",
+                "SECP256K1_BUILD_CUDA": "ON",
+                "SECP256K1_BUILD_TESTS": "ON",
+                "SECP256K1_BUILD_BENCH": "ON",
+                "CMAKE_CUDA_ARCHITECTURES": "89"
+            }
+        },
+        {
+            "name": "cuda-debug",
+            "displayName": "CUDA Debug",
+            "description": "CPU + CUDA GPU debug build",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "SECP256K1_BUILD_CPU": "ON",
+                "SECP256K1_BUILD_CUDA": "ON",
+                "SECP256K1_BUILD_TESTS": "ON",
+                "CMAKE_CUDA_ARCHITECTURES": "89"
+            }
+        },
+        {
+            "name": "cuda-release-5060ti",
+            "displayName": "CUDA Release (RTX 5060 Ti)",
+            "description": "Optimized for RTX 5060 Ti (SM 8.9)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "SECP256K1_BUILD_CPU": "ON",
+                "SECP256K1_BUILD_CUDA": "ON",
+                "SECP256K1_BUILD_TESTS": "ON",
+                "SECP256K1_BUILD_BENCH": "ON",
+                "CMAKE_CUDA_ARCHITECTURES": "89"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "cpu-release",
+            "configurePreset": "cpu-release"
+        },
+        {
+            "name": "cpu-debug",
+            "configurePreset": "cpu-debug"
+        },
+        {
+            "name": "cuda-release",
+            "configurePreset": "cuda-release"
+        },
+        {
+            "name": "cuda-debug",
+            "configurePreset": "cuda-debug"
+        },
+        {
+            "name": "cuda-release-5060ti",
+            "configurePreset": "cuda-release-5060ti"
+        }
+    ]
+}
+
