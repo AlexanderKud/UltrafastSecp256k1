@@ -10,9 +10,31 @@
             "name": "base",
             "hidden": true,
             "binaryDir": "${sourceDir}/build/${presetName}",
+            "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             }
+        },
+        {
+            "name": "base-linux",
+            "hidden": true,
+            "inherits": "base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "base-windows",
+            "hidden": true,
+            "inherits": "base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "generator": "Ninja"
         },
         {
             "name": "cpu-release",
@@ -41,8 +63,8 @@
         },
         {
             "name": "cuda-release",
-            "displayName": "CUDA Release",
-            "description": "CPU + CUDA GPU optimized build",
+            "displayName": "CUDA Release (Linux)",
+            "description": "CPU + CUDA GPU optimized build for Linux",
             "inherits": "base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
@@ -55,8 +77,8 @@
         },
         {
             "name": "cuda-debug",
-            "displayName": "CUDA Debug",
-            "description": "CPU + CUDA GPU debug build",
+            "displayName": "CUDA Debug (Linux)",
+            "description": "CPU + CUDA GPU debug build for Linux",
             "inherits": "base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
@@ -68,7 +90,7 @@
         },
         {
             "name": "cuda-release-5060ti",
-            "displayName": "CUDA Release (RTX 5060 Ti)",
+            "displayName": "CUDA Release RTX 5060 Ti",
             "description": "Optimized for RTX 5060 Ti (SM 8.9)",
             "inherits": "base",
             "cacheVariables": {
