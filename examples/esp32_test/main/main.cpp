@@ -1,14 +1,18 @@
 /**
- * UltrafastSecp256k1 - ESP32 Test
+ * UltrafastSecp256k1 - ESP32-S3 Test
  *
- * Portable field arithmetic test for ESP32/ESP32-C3
+ * Portable field arithmetic test for ESP32-S3 (Xtensa LX7)
  * Tests basic secp256k1 operations on embedded hardware.
+ *
+ * Supported: ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP32-C6
+ * Recommended: ESP32-S3 (fastest Xtensa, dual-core 240MHz)
  */
 
 #include <stdio.h>
 #include <string.h>
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_chip_info.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -205,6 +209,19 @@ static void benchmark_field_add(int iterations) {
 // Main Application
 // ============================================================================
 
+static const char* get_chip_model_name(esp_chip_model_t model) {
+    switch (model) {
+        case CHIP_ESP32:   return "ESP32";
+        case CHIP_ESP32S2: return "ESP32-S2";
+        case CHIP_ESP32S3: return "ESP32-S3";
+        case CHIP_ESP32C3: return "ESP32-C3";
+        case CHIP_ESP32C2: return "ESP32-C2";
+        case CHIP_ESP32C6: return "ESP32-C6";
+        case CHIP_ESP32H2: return "ESP32-H2";
+        default:           return "Unknown";
+    }
+}
+
 extern "C" void app_main() {
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════════════════════╗");
@@ -213,7 +230,17 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "");
 
     // Print chip info
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+
     ESP_LOGI(TAG, "Chip Info:");
+    ESP_LOGI(TAG, "  Model:    %s", get_chip_model_name(chip_info.model));
+    ESP_LOGI(TAG, "  Cores:    %d", chip_info.cores);
+    ESP_LOGI(TAG, "  Revision: %d.%d", chip_info.revision / 100, chip_info.revision % 100);
+    ESP_LOGI(TAG, "  Features: %s%s%s",
+             (chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi " : "",
+             (chip_info.features & CHIP_FEATURE_BLE) ? "BLE " : "",
+             (chip_info.features & CHIP_FEATURE_BT) ? "BT " : "");
     ESP_LOGI(TAG, "  Free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
 
     ESP_LOGI(TAG, "");
@@ -233,10 +260,10 @@ extern "C" void app_main() {
     benchmark_field_add(iterations);
 
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "=== Comparison ===");
-    ESP_LOGI(TAG, "  x86-64:   Field Mul ~33 ns");
-    ESP_LOGI(TAG, "  RISC-V64: Field Mul ~198 ns");
-    ESP_LOGI(TAG, "  ESP32:    Field Mul ~???? ns (see above)");
+    ESP_LOGI(TAG, "=== Platform Comparison ===");
+    ESP_LOGI(TAG, "  x86-64 (i5):     Field Mul ~33 ns");
+    ESP_LOGI(TAG, "  RISC-V 64:       Field Mul ~198 ns");
+    ESP_LOGI(TAG, "  %s:    Field Mul - see above", get_chip_model_name(chip_info.model));
 
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════════════════════╗");

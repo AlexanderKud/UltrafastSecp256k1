@@ -5,7 +5,17 @@ This example tests portable secp256k1 field arithmetic on ESP32.
 ## Requirements
 
 - ESP-IDF v5.4+ installed
-- ESP32 or ESP32-C3/C6 board
+- ESP32-S3 board (recommended) or ESP32/ESP32-C3/C6
+
+## Supported Boards
+
+| Chip | Architecture | Clock | Cores | Status |
+|------|--------------|-------|-------|--------|
+| **ESP32-S3** | Xtensa LX7 | 240 MHz | 2 | ✅ Recommended |
+| ESP32 | Xtensa LX6 | 240 MHz | 2 | ✅ Supported |
+| ESP32-S2 | Xtensa LX7 | 240 MHz | 1 | ✅ Supported |
+| ESP32-C3 | RISC-V | 160 MHz | 1 | ✅ Supported |
+| ESP32-C6 | RISC-V | 160 MHz | 1 | ✅ Supported |
 
 ## Build & Flash
 
@@ -13,7 +23,7 @@ This example tests portable secp256k1 field arithmetic on ESP32.
 
 1. Open this folder in CLion
 2. Configure ESP-IDF path in Settings
-3. Select target (esp32 / esp32c3 / esp32s3)
+3. Select target: **esp32s3** (or your chip)
 4. Build and Flash
 
 ### Option 2: Command Line
@@ -25,6 +35,9 @@ C:\Espressif\frameworks\esp-idf-v5.5.1\export.bat
 
 # Linux/Mac:
 . ~/esp/esp-idf/export.sh
+
+# Set target to ESP32-S3
+idf.py set-target esp32s3
 
 # Build
 idf.py build
@@ -49,9 +62,16 @@ I (xxx) secp256k1: Field Sqr: XXXX ns/op (10000 iterations)
 I (xxx) secp256k1: Field Add: XXX ns/op (10000 iterations)
 ```
 
+## ESP32-S3 Specific Features
+
+- **Dual-core** Xtensa LX7 @ 240 MHz
+- **Vector instructions** for DSP (potential optimization)
+- **8MB PSRAM** on most boards
+- **USB OTG** for easy flashing
+
 ## Notes
 
 - This uses portable C++ code (no assembly)
-- ESP32 is 32-bit, much slower than x86-64/RISC-V64
-- For best embedded performance, use ESP32-C3/C6 (RISC-V)
+- ESP32-S3 is ~30% faster than ESP32 for integer math
+- Future: May add Xtensa-optimized assembly
 
