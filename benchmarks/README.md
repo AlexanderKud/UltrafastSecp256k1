@@ -118,10 +118,22 @@ See individual platform directories for detailed results:
 - [x86-64 Windows](cpu/x86-64/windows/)
 - [x86-64 Linux](cpu/x86-64/linux/)
 - [**RISC-V Linux (Milk-V Mars)** ✓](cpu/riscv64/linux/) - **Updated 2026-02-08**
+- [**ESP32-S3 Embedded** ✓](cpu/esp32/embedded/) - **Updated 2026-02-13**
 - [ARM64 Linux](cpu/arm64/linux/)
 - [CUDA RTX 4090](gpu/cuda/rtx-40xx/)
 
 ## 🏆 Platform Performance Comparison
+
+### ESP32-S3 (Xtensa LX7 @ 240 MHz)
+**Configuration:** Portable C++ (no assembly, no __int128)  
+**Date:** 2026-02-13 | **Tests:** 28/28 ✓
+
+| Operation | Performance |
+|-----------|-------------|
+| Field Multiply | 7,458 ns |
+| Field Square | 7,592 ns |
+| Field Add | 636 ns |
+| Scalar × G | 2,483 μs |
 
 ### RISC-V (Milk-V Mars - StarFive JH7110 @ 1.5 GHz)
 **Configuration:** Assembly + RVV + Fast Modular Reduction  
@@ -146,14 +158,24 @@ See individual platform directories for detailed results:
 
 ### Performance Insights
 
-- **RISC-V vs x86-64:** ~8-10x difference, primarily due to:
+- **ESP32-S3 vs x86-64:** ~230× difference in field multiply, primarily due to:
+  - Clock speed (240 MHz vs 3.5+ GHz)
+  - 32-bit portable arithmetic vs 64-bit with BMI2/ADX
+  - No assembly optimizations on Xtensa (yet)
+  
+- **ESP32-S3 Achievement:** Library runs correctly on resource-constrained MCU!
+  - All 28 tests pass
+  - Suitable for IoT authentication, hardware wallets
+  - ~2.5ms per signature verification
+
+- **RISC-V vs x86-64:** ~8-10× difference, primarily due to:
   - Clock speed (1.5 GHz vs 3.5+ GHz)
   - ISA maturity and compiler optimizations
   - Memory subsystem performance
   
 - **RISC-V Achievement:** Production-ready performance for embedded/IoT cryptographic applications
 
-- **Assembly Impact:** 2-3x speedup vs portable C++ on both platforms
+- **Assembly Impact:** 2-3× speedup vs portable C++ on x86-64 and RISC-V platforms
 
 **Contribute your results to expand this comparison!**
 

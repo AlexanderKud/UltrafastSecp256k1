@@ -12,6 +12,7 @@ Ultra high-performance secp256k1 elliptic curve cryptography library with multi-
 
 - **Multi-Platform Architecture**
   - CPU: Optimized for x86-64 (BMI2/ADX) and RISC-V (RV64GC)
+  - Embedded: ESP32-S3 support (Xtensa LX7, portable C++)
   - GPU: CUDA acceleration for batch operations
   - Future: OpenCL support planned
 
@@ -436,6 +437,17 @@ RISC-V results were collected on **Milk-V Mars** (RV64 + RVV).
 | Batch Inverse (n=1000) | 615 ns |
 
 *See [RISCV_OPTIMIZATIONS.md](RISCV_OPTIMIZATIONS.md) for optimization details.*
+
+### ESP32-S3 / Embedded (Xtensa LX7, ESP-IDF v5.5.1, -O3)
+
+| Operation | Time |
+|-----------|------:|
+| Field Mul | 7,458 ns |
+| Field Square | 7,592 ns |
+| Field Add | 636 ns |
+| Scalar × G (Generator Mul) | 2,483 μs |
+
+*Note: ESP32-S3 uses portable C++ (no `__int128`, no assembly). Running at 240 MHz. All 28 library tests pass. See [benchmarks/cpu/esp32/](benchmarks/cpu/esp32/embedded/) for details.*
 
 ### CUDA (NVIDIA RTX 5060 Ti)
 
