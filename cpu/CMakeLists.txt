@@ -10,6 +10,10 @@ set(SECP256K1_SOURCES
     src/glv.cpp        # GLV endomorphism optimization
     src/selftest.cpp   # Self-test with known arithmetic vectors
     src/sorted_ecc_db.cpp  # SortedEccDB - native x86/x64 database
+    # Constant-Time (CT) layer — always compiled, no flags
+    src/ct_field.cpp   # CT field arithmetic (side-channel resistant)
+    src/ct_scalar.cpp  # CT scalar arithmetic
+    src/ct_point.cpp   # CT point ops (complete addition, CT scalar_mul)
 )
 
 # Optional inline assembly (Tier 3: Maximum performance, x64/RISC-V)
@@ -409,4 +413,13 @@ if(BUILD_TESTING)
     add_executable(test_arithmetic_correctness tests/test_arithmetic_correctness.cpp)
     target_link_libraries(test_arithmetic_correctness PRIVATE ${SECP256K1_LIB_NAME})
     add_test(NAME test_arithmetic_correctness COMMAND test_arithmetic_correctness)
+
+    # Test: Constant-Time (CT) layer correctness
+    add_executable(test_ct tests/test_ct.cpp)
+    target_link_libraries(test_ct PRIVATE ${SECP256K1_LIB_NAME})
+    # CT scalar_mul uses large stack (precomputed table + complete addition locals)
+    if(MSVC OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND WIN32))
+        target_link_options(test_ct PRIVATE "LINKER:/STACK:8388608")
+    endif()
+    add_test(NAME test_ct COMMAND test_ct)
 endif()
