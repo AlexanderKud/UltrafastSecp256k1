@@ -17,8 +17,27 @@ Welcome to the **UltrafastSecp256k1** wiki - an ultra high-performance secp256k1
 
 - **Multi-Platform**: x86-64, RISC-V, CUDA GPU
 - **High Performance**: 3-5× faster than standard libraries
+- **Constant-Time (CT) Layer**: Side-channel resistant operations (`secp256k1::ct::`)
 - **Production Ready**: Comprehensive test suite
 - **Easy Integration**: CMake, pkg-config support
+
+## 🔒 Dual API: Fast + Constant-Time
+
+The library provides **two namespaces** — always compiled, no flags needed:
+
+| Namespace | Purpose | Use When |
+|-----------|---------|----------|
+| `secp256k1::fast::` | Maximum throughput | Public data, batch processing |
+| `secp256k1::ct::` | Side-channel resistance | Secret keys, signing, ECDH |
+
+Both share the same data types (`FieldElement`, `Scalar`, `Point`) and are freely mixable:
+
+```cpp
+PT pub_point = PT::generator().scalar_mul(pub_k);  // fast:: for public data
+PT result = secp256k1::ct::scalar_mul(pub_point, secret_k);  // ct:: for secret
+```
+
+See [[API Reference]] for the full CT API and [[Examples]] for usage patterns.
 
 ## 📊 Performance at a Glance
 
