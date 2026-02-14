@@ -25,7 +25,7 @@ benchmarks/
 │   │   ├── rtx-30xx/    # RTX 3090, 3080, etc.
 │   │   ├── rtx-20xx/    # RTX 2080 Ti, etc.
 │   │   └── datacenter/  # A100, H100, V100
-│   └── opencl/          # Future: AMD, Intel, etc.
+│   └── opencl/          # NVIDIA, AMD, Intel, etc.
 └── comparison/          # Cross-platform comparisons
 ```
 

@@ -117,7 +117,7 @@ cmake --build build -j
 |--------|---------|-------------|
 | `SECP256K1_USE_ASM` | ON | Enable assembly optimizations (x64/RISC-V) |
 | `SECP256K1_BUILD_CUDA` | OFF | Build CUDA GPU support |
-| `SECP256K1_BUILD_OPENCL` | OFF | Build OpenCL support (future) |
+| `SECP256K1_BUILD_OPENCL` | OFF | Build OpenCL GPU support |
 | `SECP256K1_BUILD_TESTS` | ON | Build test suite |
 | `SECP256K1_BUILD_BENCH` | ON | Build benchmarks |
 | `SECP256K1_RISCV_FAST_REDUCTION` | ON | Fast modular reduction (RISC-V) |
@@ -513,7 +513,11 @@ secp256k1-fast/
 │   ├── include/        # CUDA headers
 │   ├── src/           # CUDA kernels
 │   └── tests/         # CUDA tests
-└── opencl/            # OpenCL support (future)
+└── opencl/            # OpenCL GPU acceleration
+    ├── kernels/       # OpenCL kernel sources (.cl)
+    ├── include/       # OpenCL headers
+    ├── src/           # Host-side OpenCL code
+    └── tests/         # OpenCL tests
 ```
 
 ## 🔬 Research Statement
