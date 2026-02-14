@@ -431,89 +431,121 @@ limbs4 reduce(const wide8& t) {
 // ============================================================================
 #if defined(SECP256K1_PLATFORM_ESP32) || defined(__XTENSA__)
 
-// Comba product-scanning: 8×8 → 16 words (256×256 → 512 bit)
-// 3-word accumulator (c0,c1,c2) = 96 bits. Max column sum = 8×(2^32-1)^2 ≈ 2^67
+// ============================================================================
+// Fully unrolled Comba multiplication and squaring for ESP32 / Xtensa
+// All straight-line code: no loops, no branches, optimal register scheduling.
+// ============================================================================
+
+// Accumulate product a[i]*b[j] into 96-bit accumulator (c0,c1,c2)
+#define MULACC(i, j) do {                                        \
+    std::uint64_t _p = (std::uint64_t)a[i] * b[j];              \
+    std::uint64_t _s = (std::uint64_t)c0 + (std::uint32_t)_p;   \
+    c0 = (std::uint32_t)_s;                                      \
+    _s = (std::uint64_t)c1 + (std::uint32_t)(_p >> 32) + (_s >> 32); \
+    c1 = (std::uint32_t)_s;                                      \
+    c2 += (std::uint32_t)(_s >> 32);                             \
+} while (0)
+// Store column and shift accumulator
+#define COL_END(k) do { r[k] = c0; c0 = c1; c1 = c2; c2 = 0; } while (0)
+
+// Fully unrolled 8×8 → 16 Comba multiplication (64 products, 0 branches)
 static void esp32_mul_comba(const std::uint32_t a[8], const std::uint32_t b[8],
                             std::uint32_t r[16]) {
     std::uint32_t c0 = 0, c1 = 0, c2 = 0;
-
-    for (int k = 0; k < 15; k++) {
-        const int lo = (k < 8) ? 0 : (k - 7);
-        const int hi = (k < 8) ? k : 7;
-
-        for (int i = lo; i <= hi; i++) {
-            std::uint64_t p = (std::uint64_t)a[i] * b[k - i];
-            std::uint32_t plo = (std::uint32_t)p;
-            std::uint32_t phi = (std::uint32_t)(p >> 32);
-            std::uint64_t s = (std::uint64_t)c0 + plo;
-            c0 = (std::uint32_t)s;
-            s = (std::uint64_t)c1 + phi + (s >> 32);
-            c1 = (std::uint32_t)s;
-            c2 += (std::uint32_t)(s >> 32);
-        }
-
-        r[k] = c0;
-        c0 = c1;
-        c1 = c2;
-        c2 = 0;
-    }
-    r[15] = c0;
+    /* k=0  */ MULACC(0,0);
+    COL_END(0);
+    /* k=1  */ MULACC(0,1); MULACC(1,0);
+    COL_END(1);
+    /* k=2  */ MULACC(0,2); MULACC(1,1); MULACC(2,0);
+    COL_END(2);
+    /* k=3  */ MULACC(0,3); MULACC(1,2); MULACC(2,1); MULACC(3,0);
+    COL_END(3);
+    /* k=4  */ MULACC(0,4); MULACC(1,3); MULACC(2,2); MULACC(3,1); MULACC(4,0);
+    COL_END(4);
+    /* k=5  */ MULACC(0,5); MULACC(1,4); MULACC(2,3); MULACC(3,2); MULACC(4,1); MULACC(5,0);
+    COL_END(5);
+    /* k=6  */ MULACC(0,6); MULACC(1,5); MULACC(2,4); MULACC(3,3); MULACC(4,2); MULACC(5,1); MULACC(6,0);
+    COL_END(6);
+    /* k=7  */ MULACC(0,7); MULACC(1,6); MULACC(2,5); MULACC(3,4); MULACC(4,3); MULACC(5,2); MULACC(6,1); MULACC(7,0);
+    COL_END(7);
+    /* k=8  */ MULACC(1,7); MULACC(2,6); MULACC(3,5); MULACC(4,4); MULACC(5,3); MULACC(6,2); MULACC(7,1);
+    COL_END(8);
+    /* k=9  */ MULACC(2,7); MULACC(3,6); MULACC(4,5); MULACC(5,4); MULACC(6,3); MULACC(7,2);
+    COL_END(9);
+    /* k=10 */ MULACC(3,7); MULACC(4,6); MULACC(5,5); MULACC(6,4); MULACC(7,3);
+    COL_END(10);
+    /* k=11 */ MULACC(4,7); MULACC(5,6); MULACC(6,5); MULACC(7,4);
+    COL_END(11);
+    /* k=12 */ MULACC(5,7); MULACC(6,6); MULACC(7,5);
+    COL_END(12);
+    /* k=13 */ MULACC(6,7); MULACC(7,6);
+    COL_END(13);
+    /* k=14 */ MULACC(7,7);
+    r[14] = c0; r[15] = c1;
 }
+#undef MULACC
+#undef COL_END
 
-// Comba squaring: exploits a[i]*a[j] == a[j]*a[i] symmetry
-// Only 36 multiplications vs 64 for general multiplication (44% savings)
+// Cross-product: accumulate a[i]*a[j] TWICE (for i≠j symmetry in squaring)
+#define SQRMAC2(i, j) do {                                       \
+    std::uint64_t _p = (std::uint64_t)a[i] * a[j];              \
+    std::uint32_t _pl = (std::uint32_t)_p;                       \
+    std::uint32_t _ph = (std::uint32_t)(_p >> 32);               \
+    std::uint64_t _s = (std::uint64_t)c0 + _pl; c0 = (std::uint32_t)_s;  \
+    _s = (std::uint64_t)c1 + _ph + (_s >> 32); c1 = (std::uint32_t)_s;   \
+    c2 += (std::uint32_t)(_s >> 32);                             \
+    _s = (std::uint64_t)c0 + _pl; c0 = (std::uint32_t)_s;       \
+    _s = (std::uint64_t)c1 + _ph + (_s >> 32); c1 = (std::uint32_t)_s;   \
+    c2 += (std::uint32_t)(_s >> 32);                             \
+} while (0)
+// Diagonal: accumulate a[i]² once
+#define SQRMAC1(i) do {                                          \
+    std::uint64_t _p = (std::uint64_t)a[i] * a[i];              \
+    std::uint64_t _s = (std::uint64_t)c0 + (std::uint32_t)_p;   \
+    c0 = (std::uint32_t)_s;                                      \
+    _s = (std::uint64_t)c1 + (std::uint32_t)(_p >> 32) + (_s >> 32); \
+    c1 = (std::uint32_t)_s;                                      \
+    c2 += (std::uint32_t)(_s >> 32);                             \
+} while (0)
+#define SQR_COL_END(k) do { r[k] = c0; c0 = c1; c1 = c2; c2 = 0; } while (0)
+
+// Fully unrolled 8-word squaring (36 muls vs 64 for general, 0 branches)
 static void esp32_sqr_comba(const std::uint32_t a[8], std::uint32_t r[16]) {
     std::uint32_t c0 = 0, c1 = 0, c2 = 0;
-
-    for (int k = 0; k < 15; k++) {
-        const int lo = (k < 8) ? 0 : (k - 7);
-        const int hi = (k < 8) ? k : 7;
-
-        // Cross products: pairs (i, k-i) where i < k-i, doubled
-        for (int i = lo; i <= hi; i++) {
-            int j = k - i;
-            if (i >= j) break;
-
-            std::uint64_t p = (std::uint64_t)a[i] * a[j];
-            std::uint32_t plo = (std::uint32_t)p;
-            std::uint32_t phi = (std::uint32_t)(p >> 32);
-
-            // Add 2*p (double contribution)
-            std::uint64_t s = (std::uint64_t)c0 + plo;
-            c0 = (std::uint32_t)s;
-            s = (std::uint64_t)c1 + phi + (s >> 32);
-            c1 = (std::uint32_t)s;
-            c2 += (std::uint32_t)(s >> 32);
-
-            s = (std::uint64_t)c0 + plo;
-            c0 = (std::uint32_t)s;
-            s = (std::uint64_t)c1 + phi + (s >> 32);
-            c1 = (std::uint32_t)s;
-            c2 += (std::uint32_t)(s >> 32);
-        }
-
-        // Diagonal term: a[k/2]^2 when k is even
-        if ((k & 1) == 0) {
-            int mid = k / 2;
-            if (mid >= lo && mid <= hi) {
-                std::uint64_t p = (std::uint64_t)a[mid] * a[mid];
-                std::uint32_t plo = (std::uint32_t)p;
-                std::uint32_t phi = (std::uint32_t)(p >> 32);
-                std::uint64_t s = (std::uint64_t)c0 + plo;
-                c0 = (std::uint32_t)s;
-                s = (std::uint64_t)c1 + phi + (s >> 32);
-                c1 = (std::uint32_t)s;
-                c2 += (std::uint32_t)(s >> 32);
-            }
-        }
-
-        r[k] = c0;
-        c0 = c1;
-        c1 = c2;
-        c2 = 0;
-    }
-    r[15] = c0;
+    /* k=0  */ SQRMAC1(0);
+    SQR_COL_END(0);
+    /* k=1  */ SQRMAC2(0,1);
+    SQR_COL_END(1);
+    /* k=2  */ SQRMAC2(0,2); SQRMAC1(1);
+    SQR_COL_END(2);
+    /* k=3  */ SQRMAC2(0,3); SQRMAC2(1,2);
+    SQR_COL_END(3);
+    /* k=4  */ SQRMAC2(0,4); SQRMAC2(1,3); SQRMAC1(2);
+    SQR_COL_END(4);
+    /* k=5  */ SQRMAC2(0,5); SQRMAC2(1,4); SQRMAC2(2,3);
+    SQR_COL_END(5);
+    /* k=6  */ SQRMAC2(0,6); SQRMAC2(1,5); SQRMAC2(2,4); SQRMAC1(3);
+    SQR_COL_END(6);
+    /* k=7  */ SQRMAC2(0,7); SQRMAC2(1,6); SQRMAC2(2,5); SQRMAC2(3,4);
+    SQR_COL_END(7);
+    /* k=8  */ SQRMAC2(1,7); SQRMAC2(2,6); SQRMAC2(3,5); SQRMAC1(4);
+    SQR_COL_END(8);
+    /* k=9  */ SQRMAC2(2,7); SQRMAC2(3,6); SQRMAC2(4,5);
+    SQR_COL_END(9);
+    /* k=10 */ SQRMAC2(3,7); SQRMAC2(4,6); SQRMAC1(5);
+    SQR_COL_END(10);
+    /* k=11 */ SQRMAC2(4,7); SQRMAC2(5,6);
+    SQR_COL_END(11);
+    /* k=12 */ SQRMAC2(5,7); SQRMAC1(6);
+    SQR_COL_END(12);
+    /* k=13 */ SQRMAC2(6,7);
+    SQR_COL_END(13);
+    /* k=14 */ SQRMAC1(7);
+    r[14] = c0; r[15] = c1;
 }
+#undef SQRMAC2
+#undef SQRMAC1
+#undef SQR_COL_END
 
 // secp256k1 modular reduction: 512-bit (16 × 32-bit) → 256-bit (4 × 64-bit)
 // p = 2^256 - C where C = 2^32 + 977
@@ -647,10 +679,8 @@ limbs4 square_impl(const limbs4& a) {
     );
     return result.limbs();
 #elif defined(SECP256K1_PLATFORM_ESP32) || defined(__XTENSA__)
-    // ESP32 / Xtensa: Optimized 32-bit Comba squaring
-    // Note: reuse general Comba mul(a,a) — dedicated sqr loop generates worse
-    // code on Xtensa due to conditional branches in cross/diagonal handling
-    return esp32_mul_mod(a, a);
+    // ESP32 / Xtensa: Fully unrolled Comba squaring (36 muls vs 64, branch-free)
+    return esp32_sqr_mod(a);
 #elif defined(SECP256K1_NO_ASM)
     // Generic no-asm fallback
     return reduce(mul_wide(a, a));

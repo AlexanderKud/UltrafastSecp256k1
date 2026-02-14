@@ -180,21 +180,11 @@ Point apply_endomorphism(const Point& P) {
         return P;
     }
     
-    // φ(x, y) = (β·x, y)
-    // β is a cube root of unity mod p
-    
-    // Create β as FieldElement
-    auto beta_bytes = glv_constants::BETA;
-    FieldElement beta = FieldElement::from_bytes(beta_bytes);
-    
-    // Multiply x by β (using * operator which calls mul())
-    FieldElement new_x = P.x_raw() * beta;
-    
-    // y and z stay the same
-    FieldElement new_y = P.y_raw();
-    FieldElement new_z = P.z_raw();
-    
-    return Point::from_jacobian_coords(new_x, new_y, new_z, false);
+    // φ(x, y) = (β·x, y) — β is a cube root of unity mod p
+    // β cached as static to avoid per-call from_bytes overhead
+    static const FieldElement beta = FieldElement::from_bytes(glv_constants::BETA);
+
+    return Point::from_jacobian_coords(P.x_raw() * beta, P.y_raw(), P.z_raw(), false);
 }
 
 bool verify_endomorphism(const Point& P) {
