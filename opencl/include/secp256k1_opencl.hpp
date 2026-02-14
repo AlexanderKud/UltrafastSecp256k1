@@ -15,6 +15,7 @@
 #include <array>
 #include <optional>
 #include <functional>
+#include "secp256k1/types.hpp"
 
 namespace secp256k1 {
 namespace opencl {
@@ -96,6 +97,36 @@ struct alignas(128) JacobianPoint {
     std::uint32_t infinity;  // 1 if point at infinity, 0 otherwise
     std::uint32_t padding[3]; // Alignment padding
 };
+
+// =============================================================================
+// Cross-backend Layout Compatibility (shared types contract)
+// =============================================================================
+static_assert(sizeof(FieldElement) == sizeof(::secp256k1::FieldElementData),
+              "OpenCL FieldElement must match shared data layout size");
+static_assert(sizeof(Scalar) == sizeof(::secp256k1::ScalarData),
+              "OpenCL Scalar must match shared data layout size");
+static_assert(sizeof(MidFieldElement) == sizeof(::secp256k1::MidFieldElementData),
+              "OpenCL MidFieldElement must match shared data layout size");
+
+// Zero-cost conversion to/from shared types (reinterpret_cast-safe)
+inline const ::secp256k1::FieldElementData* to_data(const FieldElement* fe) noexcept {
+    return reinterpret_cast<const ::secp256k1::FieldElementData*>(fe);
+}
+inline ::secp256k1::FieldElementData* to_data(FieldElement* fe) noexcept {
+    return reinterpret_cast<::secp256k1::FieldElementData*>(fe);
+}
+inline const FieldElement* from_data(const ::secp256k1::FieldElementData* d) noexcept {
+    return reinterpret_cast<const FieldElement*>(d);
+}
+inline FieldElement* from_data(::secp256k1::FieldElementData* d) noexcept {
+    return reinterpret_cast<FieldElement*>(d);
+}
+inline const ::secp256k1::ScalarData* to_data(const Scalar* sc) noexcept {
+    return reinterpret_cast<const ::secp256k1::ScalarData*>(sc);
+}
+inline ::secp256k1::ScalarData* to_data(Scalar* sc) noexcept {
+    return reinterpret_cast<::secp256k1::ScalarData*>(sc);
+}
 
 // =============================================================================
 // Device Information

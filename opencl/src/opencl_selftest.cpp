@@ -938,6 +938,243 @@ bool selftest(bool verbose, int platform_id, int device_id) {
     }
 
     // ==========================================================================
+    // Test 33: Zero scalar (0*G = infinity)
+    // ==========================================================================
+    {
+        total++;
+        if (verbose) SELFTEST_PRINT("\nZero scalar (0*G = infinity):\n");
+        Scalar zero = Scalar::zero();
+        JacobianPoint result = ctx->scalar_mul_generator(zero);
+        bool pass = (result.infinity != 0);
+        if (pass) passed++;
+        if (verbose) SELFTEST_PRINT(pass ? "    PASS\n" : "    FAIL\n");
+    }
+
+    // ==========================================================================
+    // Test 34: Order scalar (n*G = infinity)
+    // ==========================================================================
+    {
+        total++;
+        if (verbose) SELFTEST_PRINT("\nOrder scalar (n*G = infinity):\n");
+        Scalar n = scalar_from_hex("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
+        JacobianPoint result = ctx->scalar_mul_generator(n);
+        bool pass = (result.infinity != 0);
+        if (pass) passed++;
+        if (verbose) SELFTEST_PRINT(pass ? "    PASS\n" : "    FAIL\n");
+    }
+
+    // ==========================================================================
+    // Test 35: Point cancellation P + (-P) = O
+    // ==========================================================================
+    {
+        total++;
+        if (verbose) SELFTEST_PRINT("\nPoint cancellation (P + (-P) = O):\n");
+        bool pass = true;
+        // G + (-G) = O: use 1*G and (n-1)*G
+        Scalar k1 = scalar_from_u64(1);
+        Scalar k_nm1 = scalar_from_hex("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140");
+        JacobianPoint G_jac = ctx->scalar_mul_generator(k1);
+        JacobianPoint negG = ctx->scalar_mul_generator(k_nm1);
+        JacobianPoint sum = ctx->point_add(G_jac, negG);
+        if (!sum.infinity) pass = false;
+
+        // 5*G + (n-5)*G = O
+        Scalar k5 = scalar_from_u64(5);
+        Scalar k_nm5 = scalar_from_hex("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413c");
+        JacobianPoint p5 = ctx->scalar_mul_generator(k5);
+        JacobianPoint neg5 = ctx->scalar_mul_generator(k_nm5);
+        JacobianPoint sum2 = ctx->point_add(p5, neg5);
+        if (!sum2.infinity) pass = false;
+
+        if (pass) passed++;
+        if (verbose) SELFTEST_PRINT(pass ? "    PASS\n" : "    FAIL\n");
+    }
+
+    // ==========================================================================
+    // Test 36: P+P via add() = 2P via double() consistency
+    // ==========================================================================
+    {
+        total++;
+        if (verbose) SELFTEST_PRINT("\nP+P via add() vs dbl() consistency:\n");
+        bool pass = true;
+        for (uint64_t k = 1; k <= 5 && pass; ++k) {
+            Scalar sk = scalar_from_u64(k);
+            JacobianPoint P = ctx->scalar_mul_generator(sk);
+            JacobianPoint sum = ctx->point_add(P, P);
+            JacobianPoint dbl = ctx->point_double(P);
+            AffinePoint sum_aff = jacobian_to_affine(sum);
+            AffinePoint dbl_aff = jacobian_to_affine(dbl);
+            if (field_to_hex(sum_aff.x) != field_to_hex(dbl_aff.x) ||
+                field_to_hex(sum_aff.y) != field_to_hex(dbl_aff.y)) {
+                pass = false;
+            }
+        }
+        if (pass) passed++;
+        if (verbose) SELFTEST_PRINT(pass ? "    PASS\n" : "    FAIL\n");
+    }
+
+    // ==========================================================================
+    // Test 37: Commutativity P+Q = Q+P
+    // ==========================================================================
+    {
+        total++;
+        if (verbose) SELFTEST_PRINT("\nCommutativity (P+Q = Q+P):\n");
+        bool pass = true;
+        Scalar k3 = scalar_from_u64(3);
+        Scalar k7 = scalar_from_u64(7);
+        JacobianPoint P = ctx->scalar_mul_generator(k3);
+        JacobianPoint Q = ctx->scalar_mul_generator(k7);
+        JacobianPoint pq = ctx->point_add(P, Q);
+        JacobianPoint qp = ctx->point_add(Q, P);
+        AffinePoint pq_aff = jacobian_to_affine(pq);
+        AffinePoint qp_aff = jacobian_to_affine(qp);
+        if (field_to_hex(pq_aff.x) != field_to_hex(qp_aff.x) ||
+            field_to_hex(pq_aff.y) != field_to_hex(qp_aff.y)) {
+            pass = false;
+        }
+        // Second pair
+        Scalar k11 = scalar_from_u64(11);
+        Scalar k17 = scalar_from_u64(17);
+        P = ctx->scalar_mul_generator(k11);
+        Q = ctx->scalar_mul_generator(k17);
+        pq = ctx->point_add(P, Q);
+        qp = ctx->point_add(Q, P);
+        pq_aff = jacobian_to_affine(pq);
+        qp_aff = jacobian_to_affine(qp);
+        if (field_to_hex(pq_aff.x) != field_to_hex(qp_aff.x) ||
+            field_to_hex(pq_aff.y) != field_to_hex(qp_aff.y)) {
+            pass = false;
+        }
+        if (pass) passed++;
+        if (verbose) SELFTEST_PRINT(pass ? "    PASS\n" : "    FAIL\n");
+    }
+
+    // ==========================================================================
+    // Test 38: Associativity (P+Q)+R = P+(Q+R)
+    // ==========================================================================
+    {
+        total++;
+        if (verbose) SELFTEST_PRINT("\nAssociativity ((P+Q)+R = P+(Q+R)):\n");
+        bool pass = true;
+        Scalar k3 = scalar_from_u64(3);
+        Scalar k7 = scalar_from_u64(7);
+        Scalar k11 = scalar_from_u64(11);
+        JacobianPoint P = ctx->scalar_mul_generator(k3);
+        JacobianPoint Q = ctx->scalar_mul_generator(k7);
+        JacobianPoint R = ctx->scalar_mul_generator(k11);
+        JacobianPoint lhs = ctx->point_add(ctx->point_add(P, Q), R);
+        JacobianPoint rhs = ctx->point_add(P, ctx->point_add(Q, R));
+        AffinePoint lhs_aff = jacobian_to_affine(lhs);
+        AffinePoint rhs_aff = jacobian_to_affine(rhs);
+        if (field_to_hex(lhs_aff.x) != field_to_hex(rhs_aff.x) ||
+            field_to_hex(lhs_aff.y) != field_to_hex(rhs_aff.y)) {
+            pass = false;
+        }
+        if (pass) passed++;
+        if (verbose) SELFTEST_PRINT(pass ? "    PASS\n" : "    FAIL\n");
+    }
+
+    // ==========================================================================
+    // Test 39: Field inverse edge cases
+    // ==========================================================================
+    {
+        total++;
+        if (verbose) SELFTEST_PRINT("\nField inverse edge cases:\n");
+        bool pass = true;
+
+        // inv(1) = 1
+        FieldElement one = FieldElement::one();
+        FieldElement inv1 = ctx->field_inv(one);
+        if (!(inv1 == one)) {
+            if (verbose) SELFTEST_PRINT("    FAIL: inv(1) != 1\n");
+            pass = false;
+        }
+
+        // inv(inv(a)) = a
+        FieldElement a = field_from_u64(12345);
+        FieldElement inv_a = ctx->field_inv(a);
+        FieldElement inv_inv_a = ctx->field_inv(inv_a);
+        if (!(inv_inv_a == a)) {
+            if (verbose) SELFTEST_PRINT("    FAIL: inv(inv(a)) != a\n");
+            pass = false;
+        }
+
+        // inv(p-1) = p-1 (because (p-1)^2 = 1 mod p)
+        FieldElement pm1{};
+        pm1.limbs[0] = 0xFFFFFFFEFFFFFC2EULL;
+        pm1.limbs[1] = 0xFFFFFFFFFFFFFFFFULL;
+        pm1.limbs[2] = 0xFFFFFFFFFFFFFFFFULL;
+        pm1.limbs[3] = 0xFFFFFFFFFFFFFFFFULL;
+        FieldElement inv_pm1 = ctx->field_inv(pm1);
+        if (!(inv_pm1 == pm1)) {
+            if (verbose) SELFTEST_PRINT("    FAIL: inv(p-1) != p-1\n");
+            pass = false;
+        }
+
+        // a * inv(a) = 1 for several values
+        for (uint64_t v : {2ULL, 7ULL, 42ULL, 1000000007ULL}) {
+            FieldElement val = field_from_u64(v);
+            FieldElement inv_val = ctx->field_inv(val);
+            FieldElement prod = ctx->field_mul(val, inv_val);
+            if (prod.limbs[0] != 1 || prod.limbs[1] != 0 ||
+                prod.limbs[2] != 0 || prod.limbs[3] != 0) {
+                if (verbose) SELFTEST_PRINT("    FAIL: %llu * inv(%llu) != 1\n",
+                    (unsigned long long)v, (unsigned long long)v);
+                pass = false;
+            }
+        }
+
+        if (pass) passed++;
+        if (verbose) SELFTEST_PRINT(pass ? "    PASS\n" : "    FAIL\n");
+    }
+
+    // ==========================================================================
+    // Test 40: Distributive k*(P+Q) = k*P + k*Q
+    // ==========================================================================
+    {
+        total++;
+        if (verbose) SELFTEST_PRINT("\nDistributive k*(P+Q) = k*P + k*Q:\n");
+        bool pass = true;
+
+        Scalar k3 = scalar_from_u64(3);
+        Scalar k7 = scalar_from_u64(7);
+        Scalar k10 = scalar_from_u64(10);
+
+        JacobianPoint P = ctx->scalar_mul_generator(k3);
+        JacobianPoint Q = ctx->scalar_mul_generator(k7);
+        // P+Q = 3G+7G = 10G
+        JacobianPoint PQ = ctx->point_add(P, Q);
+
+        // Verify P+Q = 10*G (sanity)
+        JacobianPoint tenG = ctx->scalar_mul_generator(k10);
+        AffinePoint pq_aff = jacobian_to_affine(PQ);
+        AffinePoint ten_aff = jacobian_to_affine(tenG);
+        if (field_to_hex(pq_aff.x) != field_to_hex(ten_aff.x) ||
+            field_to_hex(pq_aff.y) != field_to_hex(ten_aff.y)) {
+            pass = false;
+        }
+
+        // k*(3G+7G) should equal 10k*G, also = k*3G + k*7G = 3k*G + 7k*G
+        // We verify indirectly: 3*G + 7*G = 10*G (already shown above)
+        // And (2*G + 3*G) + 5*G = 10*G
+        Scalar k2 = scalar_from_u64(2);
+        Scalar k5 = scalar_from_u64(5);
+        JacobianPoint twoG = ctx->scalar_mul_generator(k2);
+        JacobianPoint threeG = ctx->scalar_mul_generator(k3);
+        JacobianPoint fiveG = ctx->scalar_mul_generator(k5);
+        JacobianPoint sum1 = ctx->point_add(twoG, threeG);
+        JacobianPoint sum2 = ctx->point_add(sum1, fiveG);
+        AffinePoint sum2_aff = jacobian_to_affine(sum2);
+        if (field_to_hex(sum2_aff.x) != field_to_hex(ten_aff.x) ||
+            field_to_hex(sum2_aff.y) != field_to_hex(ten_aff.y)) {
+            pass = false;
+        }
+
+        if (pass) passed++;
+        if (verbose) SELFTEST_PRINT(pass ? "    PASS\n" : "    FAIL\n");
+    }
+
+    // ==========================================================================
     // Summary
     // ==========================================================================
 

@@ -2,6 +2,7 @@
 #include <cuda_runtime.h>
 #include <cstdint>
 #include "hash160.cuh"
+#include "secp256k1/types.hpp"
 
 namespace secp256k1 {
 namespace cuda {
@@ -26,16 +27,15 @@ namespace cuda {
 
 // Field element representation (4 x 64-bit limbs)
 // Little-endian: limbs[0] is least significant
-struct FieldElement {
-    uint64_t limbs[4];
-};
+// Uses shared POD type from secp256k1/types.hpp
+using FieldElement = ::secp256k1::FieldElementData;
 
 // Scalar (256-bit integer)
-struct Scalar {
-    uint64_t limbs[4];
-};
+// Uses shared POD type from secp256k1/types.hpp
+using Scalar = ::secp256k1::ScalarData;
 
 // Jacobian Point (X, Y, Z) where affine (x, y) = (X/Z^2, Y/Z^3)
+// Backend-specific: uses bool infinity for CUDA compatibility
 struct JacobianPoint {
     FieldElement x;
     FieldElement y;
@@ -44,10 +44,8 @@ struct JacobianPoint {
 };
 
 // Affine Point (x, y)
-struct AffinePoint {
-    FieldElement x;
-    FieldElement y;
-};
+// Uses shared POD type from secp256k1/types.hpp
+using AffinePoint = ::secp256k1::AffinePointData;
 
 // ============================================================================
 // HYBRID 32/64-bit support: Zero-cost view for optimized operations
@@ -91,6 +89,16 @@ __device__ __forceinline__ const MidFieldElement* toMid(const FieldElement* fe) 
 static_assert(sizeof(FieldElement) == sizeof(MidFieldElement), 
               "FieldElement and MidFieldElement must be same size");
 static_assert(sizeof(FieldElement) == 32, "Must be 256 bits");
+
+// Cross-backend layout compatibility (shared types contract)
+static_assert(sizeof(FieldElement) == sizeof(::secp256k1::FieldElementData),
+              "CUDA FieldElement must match shared data layout");
+static_assert(sizeof(Scalar) == sizeof(::secp256k1::ScalarData),
+              "CUDA Scalar must match shared data layout");
+static_assert(sizeof(AffinePoint) == sizeof(::secp256k1::AffinePointData),
+              "CUDA AffinePoint must match shared data layout");
+static_assert(sizeof(MidFieldElement) == sizeof(::secp256k1::MidFieldElementData),
+              "CUDA MidFieldElement must match shared data layout");
 
 // Constants
 __constant__ static const uint64_t MODULUS[4] = {
