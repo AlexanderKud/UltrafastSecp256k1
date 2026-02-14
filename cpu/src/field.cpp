@@ -258,15 +258,12 @@ inline void add_into(std::array<std::uint64_t, N>& arr, std::size_t index, std::
 }
 
 inline bool ge(const limbs4& a, const limbs4& b) {
-    for (std::size_t i = 4; i-- > 0;) {
-        if (a[i] > b[i]) {
-            return true;
-        }
-        if (a[i] < b[i]) {
-            return false;
-        }
+    // Branchless: compute a - b, check if borrow == 0 means a >= b
+    unsigned char borrow = 0;
+    for (std::size_t i = 0; i < 4; ++i) {
+        sub64(a[i], b[i], borrow);
     }
-    return true;
+    return borrow == 0;
 }
 
 void sub_in_place(limbs4& a, const limbs4& b) {
@@ -418,46 +415,47 @@ limbs4 add_impl(const limbs4& a, const limbs4& b) {
 }
 
 #else
-// Generic add/sub using 64-bit limbs (x86, ESP32/Xtensa)
+// Generic branchless add/sub using 64-bit limbs (x86, RISC-V, ESP32/Xtensa)
 limbs4 sub_impl(const limbs4& a, const limbs4& b) {
+    // Compute a - b
     limbs4 out{};
     unsigned char borrow = 0;
     for (std::size_t i = 0; i < 4; ++i) {
         out[i] = sub64(a[i], b[i], borrow);
     }
-    if (borrow != 0) {
-        unsigned char adjust_borrow = 0;
-        out[0] = sub64(out[0], MOD_ADJUST, adjust_borrow);
-        for (std::size_t i = 1; i < 4; ++i) {
-            out[i] = sub64(out[i], 0ULL, adjust_borrow);
-        }
-    }
-    if (ge(out, PRIME)) {
-        sub_in_place(out, PRIME);
-    }
+    // Branchless: if borrow, add PRIME (mask selects PRIME or 0)
+    const auto mask = -static_cast<std::uint64_t>(borrow);
+    unsigned char carry = 0;
+    out[0] = add64(out[0], PRIME[0] & mask, carry);
+    out[1] = add64(out[1], PRIME[1] & mask, carry);
+    out[2] = add64(out[2], PRIME[2] & mask, carry);
+    out[3] = add64(out[3], PRIME[3] & mask, carry);
     return out;
 }
 
 limbs4 add_impl(const limbs4& a, const limbs4& b) {
+    // Compute a + b
     limbs4 out{};
     unsigned char carry = 0;
     for (std::size_t i = 0; i < 4; ++i) {
         out[i] = add64(a[i], b[i], carry);
     }
-
-    unsigned char extra = carry;
-    while (extra != 0) {
-        carry = 0;
-        out[0] = add64(out[0], MOD_ADJUST, carry);
-        out[1] = add64(out[1], 0ULL, carry);
-        out[2] = add64(out[2], 0ULL, carry);
-        out[3] = add64(out[3], 0ULL, carry);
-        extra = carry;
-    }
-
-    while (ge(out, PRIME)) {
-        sub_in_place(out, PRIME);
-    }
+    // Try subtracting PRIME
+    limbs4 reduced{};
+    unsigned char borrow = 0;
+    reduced[0] = sub64(out[0], PRIME[0], borrow);
+    reduced[1] = sub64(out[1], PRIME[1], borrow);
+    reduced[2] = sub64(out[2], PRIME[2], borrow);
+    reduced[3] = sub64(out[3], PRIME[3], borrow);
+    // Branchless select: use reduced if carry from add OR no borrow from sub
+    // carry=1 means sum >= 2^256 → definitely >= p
+    // borrow=0 means (sum - p) didn't underflow → sum >= p
+    const auto use_reduced = static_cast<std::uint64_t>(carry | (1U - borrow));
+    const auto mask = -use_reduced;
+    out[0] ^= (out[0] ^ reduced[0]) & mask;
+    out[1] ^= (out[1] ^ reduced[1]) & mask;
+    out[2] ^= (out[2] ^ reduced[2]) & mask;
+    out[3] ^= (out[3] ^ reduced[3]) & mask;
     return out;
 }
 #endif // SECP256K1_PLATFORM_STM32 && __arm__
@@ -983,15 +981,20 @@ static limbs4 esp32_sqr_mod(const limbs4& a) {
 
 #endif // SECP256K1_PLATFORM_ESP32 || __XTENSA__ || SECP256K1_PLATFORM_STM32
 
+#ifdef SECP256K1_HAS_RISCV_ASM
+extern "C" {
+    void field_mul_asm_riscv64(uint64_t* r, const uint64_t* a, const uint64_t* b);
+    void field_square_asm_riscv64(uint64_t* r, const uint64_t* a);
+}
+#endif
+
 SECP256K1_HOT_FUNCTION
 limbs4 mul_impl(const limbs4& a, const limbs4& b) {
 #ifdef SECP256K1_HAS_RISCV_ASM
-    // RISC-V: Use assembly optimizations (2-3x faster)
-    FieldElement result = field_mul_riscv(
-        FieldElement::from_limbs(a), 
-        FieldElement::from_limbs(b)
-    );
-    return result.limbs();
+    // RISC-V: Direct assembly call (zero-copy, no wrapper overhead)
+    limbs4 out;
+    field_mul_asm_riscv64(out.data(), a.data(), b.data());
+    return out;
 #elif defined(SECP256K1_PLATFORM_ESP32) || defined(__XTENSA__) || defined(SECP256K1_PLATFORM_STM32)
     // ESP32 / Xtensa / STM32: Optimized 32-bit Comba multiplication
     return esp32_mul_mod(a, b);
@@ -1017,11 +1020,10 @@ limbs4 mul_impl(const limbs4& a, const limbs4& b) {
 SECP256K1_HOT_FUNCTION
 limbs4 square_impl(const limbs4& a) {
 #ifdef SECP256K1_HAS_RISCV_ASM
-    // RISC-V: Use assembly optimizations (2-3x faster)
-    FieldElement result = field_square_riscv(
-        FieldElement::from_limbs(a)
-    );
-    return result.limbs();
+    // RISC-V: Direct assembly call (zero-copy, no wrapper overhead)
+    limbs4 out;
+    field_square_asm_riscv64(out.data(), a.data());
+    return out;
 #elif defined(SECP256K1_PLATFORM_ESP32) || defined(__XTENSA__) || defined(SECP256K1_PLATFORM_STM32)
     // ESP32 / Xtensa / STM32: Fully unrolled Comba squaring (36 muls vs 64, branch-free)
     return esp32_sqr_mod(a);
@@ -1042,9 +1044,19 @@ limbs4 square_impl(const limbs4& a) {
 }
 
 void normalize(limbs4& value) {
-    while (ge(value, PRIME)) {
-        value = sub_impl(value, PRIME);
-    }
+    // Branchless single-pass: subtract PRIME if value >= PRIME
+    unsigned char borrow = 0;
+    limbs4 reduced;
+    reduced[0] = sub64(value[0], PRIME[0], borrow);
+    reduced[1] = sub64(value[1], PRIME[1], borrow);
+    reduced[2] = sub64(value[2], PRIME[2], borrow);
+    reduced[3] = sub64(value[3], PRIME[3], borrow);
+    // borrow == 0 means value >= PRIME → use reduced
+    const auto mask = -static_cast<std::uint64_t>(1U - borrow);
+    value[0] ^= (value[0] ^ reduced[0]) & mask;
+    value[1] ^= (value[1] ^ reduced[1]) & mask;
+    value[2] ^= (value[2] ^ reduced[2]) & mask;
+    value[3] ^= (value[3] ^ reduced[3]) & mask;
 }
 
 constexpr std::array<std::uint8_t, 32> kPrimeMinusTwo{
