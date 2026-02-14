@@ -7,14 +7,17 @@ Ultra high-performance secp256k1 elliptic curve cryptography library with multi-
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![CUDA](https://img.shields.io/badge/CUDA-12.0+-green.svg)](https://developer.nvidia.com/cuda-toolkit)
+[![OpenCL](https://img.shields.io/badge/OpenCL-3.0-green.svg)](https://www.khronos.org/opencl/)
+[![RISC-V](https://img.shields.io/badge/RISC--V-RV64GC-orange.svg)](https://riscv.org/)
+[![ESP32-S3](https://img.shields.io/badge/ESP32--S3-Xtensa%20LX7-orange.svg)](https://www.espressif.com/en/products/socs/esp32-s3)
 
 ## 🚀 Features
 
 - **Multi-Platform Architecture**
   - CPU: Optimized for x86-64 (BMI2/ADX) and RISC-V (RV64GC)
   - Embedded: ESP32-S3 support (Xtensa LX7, portable C++)
-  - GPU: CUDA acceleration for batch operations
-  - Future: OpenCL support planned
+  - GPU/CUDA: Batch operations with 2.06M kG/s throughput
+  - GPU/OpenCL: PTX inline asm, 3.39M kG/s (beats CUDA 1.64×)
 
 - **Performance**
   - x86-64: 3-5× speedup with BMI2/ADX assembly
@@ -449,47 +452,46 @@ RISC-V results were collected on **Milk-V Mars** (RV64 + RVV).
 
 *Note: ESP32-S3 uses portable C++ (no `__int128`, no assembly). Running at 240 MHz. All 28 library tests pass. See [benchmarks/cpu/esp32/](benchmarks/cpu/esp32/embedded/) for details.*
 
-### CUDA (NVIDIA RTX 5060 Ti)
+### CUDA (NVIDIA RTX 5060 Ti) — Kernel-Only
 
 | Operation | Time/Op | Throughput |
 |-----------|---------|------------|
-| Field Mul | 0.2 ns | 4,117 M/s |
-| Field Add | 0.2 ns | 4,133 M/s |
-| Field Inverse | 12.1 ns | 82.7 M/s |
-| Point Add | 2.1 ns | 475.7 M/s |
-| Point Double | 1.6 ns | 642.3 M/s |
-| Scalar Mul (P×k) | 624.9 ns | 1.60 M/s |
-| Generator Mul (G×k) | 591.5 ns | 1.69 M/s |
+| Field Mul | 0.2 ns | 4,140 M/s |
+| Field Add | 0.2 ns | 4,130 M/s |
+| Field Inv | 12.1 ns | 82.66 M/s |
+| Point Add | 2.1 ns | 478.8 M/s |
+| Point Double | 1.6 ns | 643.3 M/s |
+| Scalar Mul (P×k) | 384.6 ns | 2.60 M/s |
+| Generator Mul (G×k) | 485.1 ns | 2.06 M/s |
 
-*CUDA 12.0, sm_89, batch=1M, RTX 5060 Ti (36 SMs, 2602 MHz)*
+*CUDA 12.0, sm_86;sm_89, batch=1M, RTX 5060 Ti (36 SMs, 2602 MHz)*
 
-### OpenCL (NVIDIA RTX 5060 Ti)
+### OpenCL (NVIDIA RTX 5060 Ti) — Kernel-Only
 
 | Operation | Time/Op | Throughput |
 |-----------|---------|------------|
-| Field Mul | 60.8 μs | — |
-| Field Add | 59.9 μs | — |
-| Field Sqr | 52.7 μs | — |
-| Field Inv | 246.5 μs | — |
-| Point Add | 65.8 μs | — |
-| Point Double | 53.1 μs | — |
-| Scalar Mul | 123.3 μs | — |
-| Batch Scalar Mul (16K) | — | 21.1 M/s |
-| Batch Field Inv (4K) | — | 10.0 M/s |
+| Field Mul | 0.2 ns | 4,137 M/s |
+| Field Add | 0.2 ns | 4,124 M/s |
+| Field Sqr | 0.2 ns | 5,985 M/s |
+| Field Inv | 14.3 ns | 69.97 M/s |
+| Point Add | 1.6 ns | 630.6 M/s |
+| Point Double | 0.9 ns | 1,139 M/s |
+| kG (Generator Mul) | 295.1 ns | 3.39 M/s |
 
-*OpenCL 3.0 CUDA, Driver 580.126.09, same hardware*
+*OpenCL 3.0 CUDA, Driver 580.126.09, PTX inline asm, batch=256K–1M*
 
-### CUDA vs OpenCL — RTX 5060 Ti Comparison
+### CUDA vs OpenCL — Kernel-Only Comparison (RTX 5060 Ti)
 
-| Operation | CUDA | OpenCL | CUDA Speedup |
-|-----------|------|--------|:------------:|
-| Field Mul | 0.2 ns | 60,802 ns | ~304,000× |
-| Point Add | 2.1 ns | 65,812 ns | ~31,000× |
-| Point Double | 1.6 ns | 53,061 ns | ~33,000× |
-| Scalar Mul | 624.9 ns | 123,300 ns | ~197× |
-| Batch (16K) throughput | — | 21.1 M/s | — |
+| Operation | CUDA | OpenCL | Faster |
+|-----------|------|--------|--------|
+| Field Mul | 0.2 ns | 0.2 ns | Tie |
+| Field Add | 0.2 ns | 0.2 ns | Tie |
+| Field Inv | 12.1 ns | 14.3 ns | CUDA 1.18× |
+| Point Double | 1.6 ns | 0.9 ns | **OpenCL 1.78×** |
+| Point Add | 2.1 ns | 1.6 ns | **OpenCL 1.31×** |
+| kG (Generator Mul) | 485.1 ns | 295.1 ns | **OpenCL 1.64×** |
 
-> **Note:** OpenCL single-operation times include kernel launch overhead (~50 μs). Batch results are more representative. CUDA benchmark amortizes launch cost across 1M elements, making per-element time realistic for production workloads.
+> **Note:** Both measurements are kernel-only (no buffer allocation/copy overhead). OpenCL uses PTX inline assembly for NVIDIA GPUs, achieving parity or better on most operations.
 
 *Benchmarks: 2026-02-14, Linux x86_64, NVIDIA Driver 580.126.09*
 
