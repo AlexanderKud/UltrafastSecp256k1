@@ -214,27 +214,96 @@ inline void field_sub_impl(FieldElement* r, const FieldElement* a, const FieldEl
 // =============================================================================
 
 inline void field_mul_impl(FieldElement* r, const FieldElement* a, const FieldElement* b) {
-    ulong product[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    // Fully unrolled 4x4 schoolbook multiplication
+    ulong a0 = a->limbs[0], a1 = a->limbs[1], a2 = a->limbs[2], a3 = a->limbs[3];
+    ulong b0 = b->limbs[0], b1 = b->limbs[1], b2 = b->limbs[2], b3 = b->limbs[3];
+    ulong product[8];
+    ulong carry;
 
-    // Schoolbook multiplication with 64-bit limbs
-    // product = a * b (512-bit result)
-    for (int i = 0; i < 4; i++) {
-        ulong carry = 0;
-        for (int j = 0; j < 4; j++) {
-            ulong2 mul = mul64_full(a->limbs[i], b->limbs[j]);
+    // Row 0: a0 * b[0..3]
+    ulong2 m;
+    m = mul64_full(a0, b0);
+    product[0] = m.x; carry = m.y;
 
-            // Add to product[i+j] with carry
-            ulong sum = product[i + j] + mul.x;
-            ulong c1 = (sum < product[i + j]) ? 1UL : 0UL;
-            sum += carry;
-            ulong c2 = (sum < carry) ? 1UL : 0UL;
-            product[i + j] = sum;
-            carry = mul.y + c1 + c2;
-        }
-        product[i + 4] += carry;
-    }
+    m = mul64_full(a0, b1);
+    product[1] = m.x + carry;
+    carry = m.y + (product[1] < m.x ? 1UL : 0UL);
 
-    // Reduce 512-bit product to 256-bit result mod p
+    m = mul64_full(a0, b2);
+    product[2] = m.x + carry;
+    carry = m.y + (product[2] < m.x ? 1UL : 0UL);
+
+    m = mul64_full(a0, b3);
+    product[3] = m.x + carry;
+    carry = m.y + (product[3] < m.x ? 1UL : 0UL);
+    product[4] = carry;
+
+    // Row 1: a1 * b[0..3]
+    m = mul64_full(a1, b0);
+    ulong t = product[1] + m.x;
+    carry = m.y + (t < product[1] ? 1UL : 0UL);
+    product[1] = t;
+
+    m = mul64_full(a1, b1);
+    t = product[2] + m.x + carry;
+    carry = m.y + (t < product[2] ? 1UL : 0UL) + (t < carry ? 1UL : 0UL);
+    product[2] = t;
+
+    m = mul64_full(a1, b2);
+    t = product[3] + m.x + carry;
+    carry = m.y + (t < product[3] ? 1UL : 0UL) + (t < carry ? 1UL : 0UL);
+    product[3] = t;
+
+    m = mul64_full(a1, b3);
+    t = product[4] + m.x + carry;
+    carry = m.y + (t < product[4] ? 1UL : 0UL) + (t < carry ? 1UL : 0UL);
+    product[4] = t;
+    product[5] = carry;
+
+    // Row 2: a2 * b[0..3]
+    m = mul64_full(a2, b0);
+    t = product[2] + m.x;
+    carry = m.y + (t < product[2] ? 1UL : 0UL);
+    product[2] = t;
+
+    m = mul64_full(a2, b1);
+    t = product[3] + m.x + carry;
+    carry = m.y + (t < product[3] ? 1UL : 0UL) + (t < carry ? 1UL : 0UL);
+    product[3] = t;
+
+    m = mul64_full(a2, b2);
+    t = product[4] + m.x + carry;
+    carry = m.y + (t < product[4] ? 1UL : 0UL) + (t < carry ? 1UL : 0UL);
+    product[4] = t;
+
+    m = mul64_full(a2, b3);
+    t = product[5] + m.x + carry;
+    carry = m.y + (t < product[5] ? 1UL : 0UL) + (t < carry ? 1UL : 0UL);
+    product[5] = t;
+    product[6] = carry;
+
+    // Row 3: a3 * b[0..3]
+    m = mul64_full(a3, b0);
+    t = product[3] + m.x;
+    carry = m.y + (t < product[3] ? 1UL : 0UL);
+    product[3] = t;
+
+    m = mul64_full(a3, b1);
+    t = product[4] + m.x + carry;
+    carry = m.y + (t < product[4] ? 1UL : 0UL) + (t < carry ? 1UL : 0UL);
+    product[4] = t;
+
+    m = mul64_full(a3, b2);
+    t = product[5] + m.x + carry;
+    carry = m.y + (t < product[5] ? 1UL : 0UL) + (t < carry ? 1UL : 0UL);
+    product[5] = t;
+
+    m = mul64_full(a3, b3);
+    t = product[6] + m.x + carry;
+    carry = m.y + (t < product[6] ? 1UL : 0UL) + (t < carry ? 1UL : 0UL);
+    product[6] = t;
+    product[7] = carry;
+
     field_reduce(r, product);
 }
 
@@ -243,51 +312,111 @@ inline void field_mul_impl(FieldElement* r, const FieldElement* a, const FieldEl
 // Optimized: only need upper triangle of multiplication
 // =============================================================================
 
+// Forward declaration for field_sqr_n_impl
+inline void field_sqr_impl(FieldElement* r, const FieldElement* a);
+
+// Repeated squaring helper: r = r^(2^n) — in-place
+inline void field_sqr_n_impl(FieldElement* r, int n) {
+    for (int i = 0; i < n; i++) {
+        FieldElement tmp = *r;
+        field_sqr_impl(r, &tmp);
+    }
+}
+
 inline void field_sqr_impl(FieldElement* r, const FieldElement* a) {
-    ulong product[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    // Fully unrolled squaring: exploits a[i]*a[j] == a[j]*a[i]
+    ulong a0 = a->limbs[0], a1 = a->limbs[1], a2 = a->limbs[2], a3 = a->limbs[3];
+    ulong product[8];
+    ulong carry;
+    ulong2 m;
+    ulong t, c1, c2, c3;
 
-    // Compute off-diagonal terms (doubled)
-    for (int i = 0; i < 4; i++) {
-        ulong carry = 0;
-        for (int j = i + 1; j < 4; j++) {
-            ulong2 mul = mul64_full(a->limbs[i], a->limbs[j]);
+    // -- Off-diagonal products (each appears twice) --
+    m = mul64_full(a0, a1);
+    ulong od01_lo = m.x, od01_hi = m.y;
+    m = mul64_full(a0, a2);
+    ulong od02_lo = m.x, od02_hi = m.y;
+    m = mul64_full(a0, a3);
+    ulong od03_lo = m.x, od03_hi = m.y;
+    m = mul64_full(a1, a2);
+    ulong od12_lo = m.x, od12_hi = m.y;
+    m = mul64_full(a1, a3);
+    ulong od13_lo = m.x, od13_hi = m.y;
+    m = mul64_full(a2, a3);
+    ulong od23_lo = m.x, od23_hi = m.y;
 
-            // Double the product (will be done after accumulation)
-            ulong sum = product[i + j] + mul.x;
-            ulong c1 = (sum < product[i + j]) ? 1UL : 0UL;
-            sum += carry;
-            ulong c2 = (sum < carry) ? 1UL : 0UL;
-            product[i + j] = sum;
-            carry = mul.y + c1 + c2;
-        }
-        product[i + 4] += carry;
-    }
+    // Accumulate off-diagonal into product[1..6]
+    product[1] = od01_lo;
 
-    // Double the off-diagonal terms
-    ulong carry = 0;
-    for (int i = 0; i < 8; i++) {
-        ulong doubled = (product[i] << 1) | carry;
-        carry = product[i] >> 63;
-        product[i] = doubled;
-    }
+    product[2] = od02_lo + od01_hi;
+    carry = (product[2] < od02_lo) ? 1UL : 0UL;
 
-    // Add diagonal terms (a[i]²)
-    carry = 0;
-    for (int i = 0; i < 4; i++) {
-        ulong2 sq = mul64_full(a->limbs[i], a->limbs[i]);
+    t = od03_lo + od02_hi;
+    c1 = (t < od03_lo) ? 1UL : 0UL;
+    t += od12_lo;
+    c2 = (t < od12_lo) ? 1UL : 0UL;
+    t += carry;
+    c3 = (t < carry) ? 1UL : 0UL;
+    product[3] = t;
+    carry = c1 + c2 + c3;
 
-        ulong sum = product[2*i] + sq.x;
-        ulong c1 = (sum < product[2*i]) ? 1UL : 0UL;
-        sum += carry;
-        ulong c2 = (sum < carry) ? 1UL : 0UL;
-        product[2*i] = sum;
+    t = od03_hi + od12_hi;
+    c1 = (t < od03_hi) ? 1UL : 0UL;
+    t += od13_lo;
+    c2 = (t < od13_lo) ? 1UL : 0UL;
+    t += carry;
+    c3 = (t < carry) ? 1UL : 0UL;
+    product[4] = t;
+    carry = c1 + c2 + c3;
 
-        sum = product[2*i + 1] + sq.y + c1 + c2;
-        carry = (sum < product[2*i + 1]) ? 1UL : 0UL;
-        product[2*i + 1] = sum;
-    }
+    t = od13_hi + od23_lo;
+    c1 = (t < od13_hi) ? 1UL : 0UL;
+    t += carry;
+    c2 = (t < carry) ? 1UL : 0UL;
+    product[5] = t;
+    carry = c1 + c2;
 
-    // Reduce
+    product[6] = od23_hi + carry;
+
+    // Double off-diagonal terms
+    product[7] = product[6] >> 63;
+    product[6] = (product[6] << 1) | (product[5] >> 63);
+    product[5] = (product[5] << 1) | (product[4] >> 63);
+    product[4] = (product[4] << 1) | (product[3] >> 63);
+    product[3] = (product[3] << 1) | (product[2] >> 63);
+    product[2] = (product[2] << 1) | (product[1] >> 63);
+    product[1] = (product[1] << 1);
+    product[0] = 0;
+
+    // Add diagonal terms (a[i]^2)
+    m = mul64_full(a0, a0);
+    product[0] = m.x;
+    t = product[1] + m.y;
+    carry = (t < product[1]) ? 1UL : 0UL;
+    product[1] = t;
+
+    m = mul64_full(a1, a1);
+    t = product[2] + m.x + carry;
+    carry = (t < product[2]) ? 1UL : 0UL;
+    product[2] = t;
+    t = product[3] + m.y + carry;
+    carry = (t < product[3]) ? 1UL : 0UL;
+    product[3] = t;
+
+    m = mul64_full(a2, a2);
+    t = product[4] + m.x + carry;
+    carry = (t < product[4]) ? 1UL : 0UL;
+    product[4] = t;
+    t = product[5] + m.y + carry;
+    carry = (t < product[5]) ? 1UL : 0UL;
+    product[5] = t;
+
+    m = mul64_full(a3, a3);
+    t = product[6] + m.x + carry;
+    carry = (t < product[6]) ? 1UL : 0UL;
+    product[6] = t;
+    product[7] += m.y + carry;
+
     field_reduce(r, product);
 }
 
@@ -315,44 +444,110 @@ inline void field_neg_impl(FieldElement* r, const FieldElement* a) {
 
 // =============================================================================
 // Field Inversion: r = a^(-1) mod p
-// Using Fermat's little theorem: a^(-1) = a^(p-2) mod p
+// Using Fermat's little theorem with optimized addition chain
+// Matches CUDA's field_inv_fermat_chain for minimal mul+sqr count
+// p-2 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2D
 // =============================================================================
 
 inline void field_inv_impl(FieldElement* r, const FieldElement* a) {
-    // Compute a^(p-2) using square-and-multiply
-    // p-2 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2D
+    FieldElement x2, x3, x6, x12, x24, x48, x96, x192, x7, x31, x223;
+    FieldElement x5, x11, x22;
+    FieldElement t;
 
-    FieldElement base = *a;
-    FieldElement result;
-    result.limbs[0] = 1; result.limbs[1] = 0;
-    result.limbs[2] = 0; result.limbs[3] = 0;
+    // 1. x2 = a^2 * a  (2 consecutive ones)
+    field_sqr_impl(&x2, a);
+    field_mul_impl(&x2, &x2, a);
 
-    // Binary exponentiation
-    // p-2 in binary has a specific pattern we can optimize
+    // 2. x3 = x2^2 * a  (3 consecutive ones)
+    field_sqr_impl(&x3, &x2);
+    field_mul_impl(&x3, &x3, a);
 
-    // First, handle the lower bits (least significant 32 bits of p-2)
-    // 0xFFFFFC2D = 0b11111111111111111111110000101101
+    // 3. x6 = x3^(2^3) * x3  (6 consecutive ones)
+    field_sqr_impl(&x6, &x3);
+    field_sqr_n_impl(&x6, 2);
+    field_mul_impl(&x6, &x6, &x3);
 
-    // Process bit by bit for the full 256-bit exponent
-    // This is a reference implementation; production would use addition chains
+    // 4. x12 = x6^(2^6) * x6  (12 consecutive ones)
+    t = x6;
+    field_sqr_n_impl(&t, 6);
+    field_mul_impl(&x12, &t, &x6);
 
-    const ulong exp[4] = {
-        0xFFFFFFFEFFFFFC2DULL,  // p-2 limb 0
-        0xFFFFFFFFFFFFFFFFULL,  // p-2 limb 1
-        0xFFFFFFFFFFFFFFFFULL,  // p-2 limb 2
-        0xFFFFFFFFFFFFFFFFULL   // p-2 limb 3
-    };
+    // 5. x24 = x12^(2^12) * x12  (24 consecutive ones)
+    t = x12;
+    field_sqr_n_impl(&t, 12);
+    field_mul_impl(&x24, &t, &x12);
 
-    for (int limb = 0; limb < 4; limb++) {
-        for (int bit = 0; bit < 64; bit++) {
-            if ((exp[limb] >> bit) & 1) {
-                field_mul_impl(&result, &result, &base);
-            }
-            field_sqr_impl(&base, &base);
-        }
-    }
+    // 6. x48 = x24^(2^24) * x24  (48 consecutive ones)
+    t = x24;
+    field_sqr_n_impl(&t, 24);
+    field_mul_impl(&x48, &t, &x24);
 
-    *r = result;
+    // 7. x96 = x48^(2^48) * x48  (96 consecutive ones)
+    t = x48;
+    field_sqr_n_impl(&t, 48);
+    field_mul_impl(&x96, &t, &x48);
+
+    // 8. x192 = x96^(2^96) * x96  (192 consecutive ones)
+    t = x96;
+    field_sqr_n_impl(&t, 96);
+    field_mul_impl(&x192, &t, &x96);
+
+    // 9. x7 = x6^2 * a  (7 consecutive ones)
+    field_sqr_impl(&x7, &x6);
+    field_mul_impl(&x7, &x7, a);
+
+    // 10. x31 = x24^(2^7) * x7  (31 consecutive ones)
+    t = x24;
+    field_sqr_n_impl(&t, 7);
+    field_mul_impl(&x31, &t, &x7);
+
+    // 11. x223 = x192^(2^31) * x31  (223 consecutive ones)
+    t = x192;
+    field_sqr_n_impl(&t, 31);
+    field_mul_impl(&x223, &t, &x31);
+
+    // 12. x5 = x3^(2^2) * x2  (5 consecutive ones)
+    t = x3;
+    field_sqr_n_impl(&t, 2);
+    field_mul_impl(&x5, &t, &x2);
+
+    // 13. x11 = x6^(2^5) * x5  (11 consecutive ones)
+    t = x6;
+    field_sqr_n_impl(&t, 5);
+    field_mul_impl(&x11, &t, &x5);
+
+    // 14. x22 = x11^(2^11) * x11  (22 consecutive ones)
+    t = x11;
+    field_sqr_n_impl(&t, 11);
+    field_mul_impl(&x22, &t, &x11);
+
+    // 15. t = x223^2  (bit 32 is 0)
+    field_sqr_impl(&t, &x223);
+
+    // 16. t = t^(2^22) * x22  (append 22 ones)
+    field_sqr_n_impl(&t, 22);
+    field_mul_impl(&t, &t, &x22);
+
+    // 17. t = t^(2^4)  (bits 9,8,7,6 are 0)
+    field_sqr_n_impl(&t, 4);
+
+    // 18. Process remaining 6 bits: 101101
+    // bit 5: 1
+    field_sqr_impl(&t, &t);
+    field_mul_impl(&t, &t, a);
+    // bit 4: 0
+    field_sqr_impl(&t, &t);
+    // bit 3: 1
+    field_sqr_impl(&t, &t);
+    field_mul_impl(&t, &t, a);
+    // bit 2: 1
+    field_sqr_impl(&t, &t);
+    field_mul_impl(&t, &t, a);
+    // bit 1: 0
+    field_sqr_impl(&t, &t);
+    // bit 0: 1
+    field_sqr_impl(&t, &t);
+    field_mul_impl(r, &t, a);
 }
 
 // =============================================================================

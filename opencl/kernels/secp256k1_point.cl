@@ -316,53 +316,149 @@ inline void point_add_mixed_impl(JacobianPoint* r, const JacobianPoint* p, const
 }
 
 // =============================================================================
+// Scalar Utilities for wNAF
+// =============================================================================
+
+inline int scalar_is_zero(const Scalar* k) {
+    return (k->limbs[0] | k->limbs[1] | k->limbs[2] | k->limbs[3]) == 0;
+}
+
+inline int scalar_bit(const Scalar* k, int pos) {
+    int limb = pos / 64;
+    int bit = pos % 64;
+    return (int)((k->limbs[limb] >> bit) & 1UL);
+}
+
+inline void scalar_sub_u64(Scalar* a, ulong val, Scalar* r) {
+    *r = *a;
+    ulong old = r->limbs[0];
+    r->limbs[0] -= val;
+    if (r->limbs[0] > old) { // borrow
+        for (int i = 1; i < 4; i++) {
+            r->limbs[i] -= 1;
+            if (r->limbs[i] != ~0UL) break; // no further borrow
+        }
+    }
+}
+
+inline void scalar_add_u64(Scalar* a, ulong val, Scalar* r) {
+    *r = *a;
+    ulong old = r->limbs[0];
+    r->limbs[0] += val;
+    if (r->limbs[0] < old) { // carry
+        for (int i = 1; i < 4; i++) {
+            r->limbs[i] += 1;
+            if (r->limbs[i] != 0) break; // no further carry
+        }
+    }
+}
+
+// Convert scalar to wNAF representation (window width 5)
+// Returns length of wNAF representation
+inline int scalar_to_wnaf(const Scalar* k, int wnaf[260]) {
+    Scalar temp = *k;
+    int len = 0;
+    const int window_size = 32;   // 2^5
+    const int window_mask = 31;   // 2^5 - 1
+    const int window_half = 16;   // 2^(5-1)
+    
+    int digit;
+    ulong limb;
+
+    while (!scalar_is_zero(&temp) && len < 260) {
+        if (scalar_bit(&temp, 0) == 1) { // temp is odd
+            digit = (int)(temp.limbs[0] & window_mask);
+            
+            if (digit >= window_half) {
+                digit -= window_size;
+                scalar_add_u64(&temp, (ulong)(-digit), &temp);
+            } else {
+                scalar_sub_u64(&temp, (ulong)digit, &temp);
+            }
+            
+            wnaf[len] = digit;
+        } else {
+            wnaf[len] = 0;
+        }
+        
+        // Right shift by 1
+        limb = temp.limbs[3];
+        temp.limbs[3] = (limb >> 1);
+        ulong carry = limb & 1;
+        
+        limb = temp.limbs[2];
+        temp.limbs[2] = (limb >> 1) | (carry << 63);
+        carry = limb & 1;
+        
+        limb = temp.limbs[1];
+        temp.limbs[1] = (limb >> 1) | (carry << 63);
+        carry = limb & 1;
+        
+        limb = temp.limbs[0];
+        temp.limbs[0] = (limb >> 1) | (carry << 63);
+        
+        len++;
+    }
+    
+    return len;
+}
+
+// Negate Y coordinate of Jacobian point
+inline void point_negate_y(JacobianPoint* p) {
+    FieldElement zero;
+    zero.limbs[0] = 0; zero.limbs[1] = 0;
+    zero.limbs[2] = 0; zero.limbs[3] = 0;
+    field_neg_impl(&p->y, &p->y);
+}
+
+// =============================================================================
 // Scalar Multiplication: R = k * P
-// Double-and-add algorithm (left-to-right)
+// wNAF (window width 5) — matches CUDA's scalar_mul
 // =============================================================================
 
 inline void scalar_mul_impl(JacobianPoint* r, const Scalar* k, const AffinePoint* p) {
     // Check for zero scalar
-    if ((k->limbs[0] | k->limbs[1] | k->limbs[2] | k->limbs[3]) == 0) {
+    if (scalar_is_zero(k)) {
         point_set_infinity(r);
         return;
     }
 
-    JacobianPoint R;
-    point_set_infinity(&R);
+    // Convert scalar to wNAF representation
+    int wnaf[260];
+    int wnaf_len = scalar_to_wnaf(k, wnaf);
 
-    JacobianPoint P;
-    point_from_affine(&P, p);
-
-    // Find highest set bit
-    int start_limb = 3;
-    int start_bit = 63;
-
-    while (start_limb >= 0) {
-        if (k->limbs[start_limb] != 0) {
-            // Find highest bit in this limb
-            ulong v = k->limbs[start_limb];
-            start_bit = 63;
-            while (start_bit >= 0 && !((v >> start_bit) & 1)) {
-                start_bit--;
-            }
-            break;
-        }
-        start_limb--;
+    // Precompute table: [P, 3P, 5P, ..., 15P] (8 entries)
+    JacobianPoint table[8];
+    JacobianPoint double_p;
+    
+    point_from_affine(&table[0], p);
+    point_double_impl(&double_p, &table[0]);
+    
+    for (int i = 1; i < 8; i++) {
+        point_add_impl(&table[i], &table[i-1], &double_p);
     }
 
-    // Double-and-add from highest to lowest bit
-    for (int limb = start_limb; limb >= 0; limb--) {
-        int end_bit = (limb == start_limb) ? start_bit : 63;
-        for (int bit = end_bit; bit >= 0; bit--) {
-            point_double_impl(&R, &R);
+    // Initialize result as infinity
+    point_set_infinity(r);
 
-            if ((k->limbs[limb] >> bit) & 1) {
-                point_add_mixed_impl(&R, &R, p);
-            }
+    int digit;
+    int idx;
+
+    // Process wNAF from MSB to LSB
+    for (int i = wnaf_len - 1; i >= 0; --i) {
+        point_double_impl(r, r);
+        
+        digit = wnaf[i];
+        if (digit > 0) {
+            idx = (digit - 1) / 2;
+            point_add_impl(r, r, &table[idx]);
+        } else if (digit < 0) {
+            idx = (-digit - 1) / 2;
+            JacobianPoint neg_point = table[idx];
+            point_negate_y(&neg_point);
+            point_add_impl(r, r, &neg_point);
         }
     }
-
-    *r = R;
 }
 
 // =============================================================================

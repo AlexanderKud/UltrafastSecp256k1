@@ -165,6 +165,16 @@ public:
     // Batch Operations (High Performance)
     // ==========================================================================
 
+    // Batch field operations: result[i] = a[i] op b[i]
+    void batch_field_add(const FieldElement* a, const FieldElement* b, FieldElement* results, std::size_t count);
+    void batch_field_sub(const FieldElement* a, const FieldElement* b, FieldElement* results, std::size_t count);
+    void batch_field_mul(const FieldElement* a, const FieldElement* b, FieldElement* results, std::size_t count);
+    void batch_field_sqr(const FieldElement* inputs, FieldElement* results, std::size_t count);
+
+    // Batch point operations
+    void batch_point_double(const JacobianPoint* inputs, JacobianPoint* results, std::size_t count);
+    void batch_point_add(const JacobianPoint* p, const JacobianPoint* q, JacobianPoint* results, std::size_t count);
+
     // Batch scalar multiplication: result[i] = scalars[i] * G
     void batch_scalar_mul_generator(
         const Scalar* scalars,

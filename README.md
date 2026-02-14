@@ -451,12 +451,47 @@ RISC-V results were collected on **Milk-V Mars** (RV64 + RVV).
 
 ### CUDA (NVIDIA RTX 5060 Ti)
 
-| Operation | Throughput |
-|-----------|------------|
-| Scalar Mul (G×k batch) | ~1.86M ops/s |
-| Field Multiplication | ~4.1 Gops/s |
+| Operation | Time/Op | Throughput |
+|-----------|---------|------------|
+| Field Mul | 0.2 ns | 4,117 M/s |
+| Field Add | 0.2 ns | 4,133 M/s |
+| Field Inverse | 12.1 ns | 82.7 M/s |
+| Point Add | 2.1 ns | 475.7 M/s |
+| Point Double | 1.6 ns | 642.3 M/s |
+| Scalar Mul (P×k) | 624.9 ns | 1.60 M/s |
+| Generator Mul (G×k) | 591.5 ns | 1.69 M/s |
 
-*Note: CUDA performance depends heavily on batch size and GPU occupancy. Results from batch processing millions of operations.*
+*CUDA 12.0, sm_89, batch=1M, RTX 5060 Ti (36 SMs, 2602 MHz)*
+
+### OpenCL (NVIDIA RTX 5060 Ti)
+
+| Operation | Time/Op | Throughput |
+|-----------|---------|------------|
+| Field Mul | 60.8 μs | — |
+| Field Add | 59.9 μs | — |
+| Field Sqr | 52.7 μs | — |
+| Field Inv | 246.5 μs | — |
+| Point Add | 65.8 μs | — |
+| Point Double | 53.1 μs | — |
+| Scalar Mul | 123.3 μs | — |
+| Batch Scalar Mul (16K) | — | 21.1 M/s |
+| Batch Field Inv (4K) | — | 10.0 M/s |
+
+*OpenCL 3.0 CUDA, Driver 580.126.09, same hardware*
+
+### CUDA vs OpenCL — RTX 5060 Ti Comparison
+
+| Operation | CUDA | OpenCL | CUDA Speedup |
+|-----------|------|--------|:------------:|
+| Field Mul | 0.2 ns | 60,802 ns | ~304,000× |
+| Point Add | 2.1 ns | 65,812 ns | ~31,000× |
+| Point Double | 1.6 ns | 53,061 ns | ~33,000× |
+| Scalar Mul | 624.9 ns | 123,300 ns | ~197× |
+| Batch (16K) throughput | — | 21.1 M/s | — |
+
+> **Note:** OpenCL single-operation times include kernel launch overhead (~50 μs). Batch results are more representative. CUDA benchmark amortizes launch cost across 1M elements, making per-element time realistic for production workloads.
+
+*Benchmarks: 2026-02-14, Linux x86_64, NVIDIA Driver 580.126.09*
 
 ## 🏗️ Architecture
 

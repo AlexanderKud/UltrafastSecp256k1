@@ -1035,6 +1035,148 @@ JacobianPoint Context::scalar_mul_generator(const Scalar& k) {
 // Batch Operations
 // =============================================================================
 
+// Helper: compute work sizes for batch dispatch
+static void compute_work_sizes(std::size_t count, std::size_t max_wg, std::size_t& local, std::size_t& global) {
+    local = std::min(static_cast<std::size_t>(256), max_wg);
+    global = ((count + local - 1) / local) * local;
+}
+
+void Context::batch_field_add(const FieldElement* a, const FieldElement* b,
+                               FieldElement* results, std::size_t count) {
+    if (count == 0) return;
+    cl_int err;
+    cl_mem buf_a = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(FieldElement), (void*)a, &err);
+    cl_mem buf_b = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(FieldElement), (void*)b, &err);
+    cl_mem buf_r = clCreateBuffer(impl_->context, CL_MEM_WRITE_ONLY,
+                                   count * sizeof(FieldElement), nullptr, &err);
+    cl_uint cnt = static_cast<cl_uint>(count);
+    clSetKernelArg(impl_->kernel_field_add, 0, sizeof(cl_mem), &buf_a);
+    clSetKernelArg(impl_->kernel_field_add, 1, sizeof(cl_mem), &buf_b);
+    clSetKernelArg(impl_->kernel_field_add, 2, sizeof(cl_mem), &buf_r);
+    clSetKernelArg(impl_->kernel_field_add, 3, sizeof(cl_uint), &cnt);
+    std::size_t local_size, global_size;
+    compute_work_sizes(count, impl_->device_info.max_work_group_size, local_size, global_size);
+    clEnqueueNDRangeKernel(impl_->queue, impl_->kernel_field_add, 1, nullptr,
+                           &global_size, &local_size, 0, nullptr, nullptr);
+    clEnqueueReadBuffer(impl_->queue, buf_r, CL_TRUE, 0,
+                        count * sizeof(FieldElement), results, 0, nullptr, nullptr);
+    clReleaseMemObject(buf_a); clReleaseMemObject(buf_b); clReleaseMemObject(buf_r);
+}
+
+void Context::batch_field_sub(const FieldElement* a, const FieldElement* b,
+                               FieldElement* results, std::size_t count) {
+    if (count == 0) return;
+    cl_int err;
+    cl_mem buf_a = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(FieldElement), (void*)a, &err);
+    cl_mem buf_b = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(FieldElement), (void*)b, &err);
+    cl_mem buf_r = clCreateBuffer(impl_->context, CL_MEM_WRITE_ONLY,
+                                   count * sizeof(FieldElement), nullptr, &err);
+    cl_uint cnt = static_cast<cl_uint>(count);
+    clSetKernelArg(impl_->kernel_field_sub, 0, sizeof(cl_mem), &buf_a);
+    clSetKernelArg(impl_->kernel_field_sub, 1, sizeof(cl_mem), &buf_b);
+    clSetKernelArg(impl_->kernel_field_sub, 2, sizeof(cl_mem), &buf_r);
+    clSetKernelArg(impl_->kernel_field_sub, 3, sizeof(cl_uint), &cnt);
+    std::size_t local_size, global_size;
+    compute_work_sizes(count, impl_->device_info.max_work_group_size, local_size, global_size);
+    clEnqueueNDRangeKernel(impl_->queue, impl_->kernel_field_sub, 1, nullptr,
+                           &global_size, &local_size, 0, nullptr, nullptr);
+    clEnqueueReadBuffer(impl_->queue, buf_r, CL_TRUE, 0,
+                        count * sizeof(FieldElement), results, 0, nullptr, nullptr);
+    clReleaseMemObject(buf_a); clReleaseMemObject(buf_b); clReleaseMemObject(buf_r);
+}
+
+void Context::batch_field_mul(const FieldElement* a, const FieldElement* b,
+                               FieldElement* results, std::size_t count) {
+    if (count == 0) return;
+    cl_int err;
+    cl_mem buf_a = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(FieldElement), (void*)a, &err);
+    cl_mem buf_b = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(FieldElement), (void*)b, &err);
+    cl_mem buf_r = clCreateBuffer(impl_->context, CL_MEM_WRITE_ONLY,
+                                   count * sizeof(FieldElement), nullptr, &err);
+    cl_uint cnt = static_cast<cl_uint>(count);
+    clSetKernelArg(impl_->kernel_field_mul, 0, sizeof(cl_mem), &buf_a);
+    clSetKernelArg(impl_->kernel_field_mul, 1, sizeof(cl_mem), &buf_b);
+    clSetKernelArg(impl_->kernel_field_mul, 2, sizeof(cl_mem), &buf_r);
+    clSetKernelArg(impl_->kernel_field_mul, 3, sizeof(cl_uint), &cnt);
+    std::size_t local_size, global_size;
+    compute_work_sizes(count, impl_->device_info.max_work_group_size, local_size, global_size);
+    clEnqueueNDRangeKernel(impl_->queue, impl_->kernel_field_mul, 1, nullptr,
+                           &global_size, &local_size, 0, nullptr, nullptr);
+    clEnqueueReadBuffer(impl_->queue, buf_r, CL_TRUE, 0,
+                        count * sizeof(FieldElement), results, 0, nullptr, nullptr);
+    clReleaseMemObject(buf_a); clReleaseMemObject(buf_b); clReleaseMemObject(buf_r);
+}
+
+void Context::batch_field_sqr(const FieldElement* inputs, FieldElement* results, std::size_t count) {
+    if (count == 0) return;
+    cl_int err;
+    cl_mem buf_a = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(FieldElement), (void*)inputs, &err);
+    cl_mem buf_r = clCreateBuffer(impl_->context, CL_MEM_WRITE_ONLY,
+                                   count * sizeof(FieldElement), nullptr, &err);
+    cl_uint cnt = static_cast<cl_uint>(count);
+    clSetKernelArg(impl_->kernel_field_sqr, 0, sizeof(cl_mem), &buf_a);
+    clSetKernelArg(impl_->kernel_field_sqr, 1, sizeof(cl_mem), &buf_r);
+    clSetKernelArg(impl_->kernel_field_sqr, 2, sizeof(cl_uint), &cnt);
+    std::size_t local_size, global_size;
+    compute_work_sizes(count, impl_->device_info.max_work_group_size, local_size, global_size);
+    clEnqueueNDRangeKernel(impl_->queue, impl_->kernel_field_sqr, 1, nullptr,
+                           &global_size, &local_size, 0, nullptr, nullptr);
+    clEnqueueReadBuffer(impl_->queue, buf_r, CL_TRUE, 0,
+                        count * sizeof(FieldElement), results, 0, nullptr, nullptr);
+    clReleaseMemObject(buf_a); clReleaseMemObject(buf_r);
+}
+
+void Context::batch_point_double(const JacobianPoint* inputs, JacobianPoint* results, std::size_t count) {
+    if (count == 0) return;
+    cl_int err;
+    cl_mem buf_a = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(JacobianPoint), (void*)inputs, &err);
+    cl_mem buf_r = clCreateBuffer(impl_->context, CL_MEM_WRITE_ONLY,
+                                   count * sizeof(JacobianPoint), nullptr, &err);
+    cl_uint cnt = static_cast<cl_uint>(count);
+    clSetKernelArg(impl_->kernel_point_double, 0, sizeof(cl_mem), &buf_a);
+    clSetKernelArg(impl_->kernel_point_double, 1, sizeof(cl_mem), &buf_r);
+    clSetKernelArg(impl_->kernel_point_double, 2, sizeof(cl_uint), &cnt);
+    std::size_t local_size, global_size;
+    compute_work_sizes(count, impl_->device_info.max_work_group_size, local_size, global_size);
+    clEnqueueNDRangeKernel(impl_->queue, impl_->kernel_point_double, 1, nullptr,
+                           &global_size, &local_size, 0, nullptr, nullptr);
+    clEnqueueReadBuffer(impl_->queue, buf_r, CL_TRUE, 0,
+                        count * sizeof(JacobianPoint), results, 0, nullptr, nullptr);
+    clReleaseMemObject(buf_a); clReleaseMemObject(buf_r);
+}
+
+void Context::batch_point_add(const JacobianPoint* p, const JacobianPoint* q,
+                               JacobianPoint* results, std::size_t count) {
+    if (count == 0) return;
+    cl_int err;
+    cl_mem buf_p = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(JacobianPoint), (void*)p, &err);
+    cl_mem buf_q = clCreateBuffer(impl_->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   count * sizeof(JacobianPoint), (void*)q, &err);
+    cl_mem buf_r = clCreateBuffer(impl_->context, CL_MEM_WRITE_ONLY,
+                                   count * sizeof(JacobianPoint), nullptr, &err);
+    cl_uint cnt = static_cast<cl_uint>(count);
+    clSetKernelArg(impl_->kernel_point_add, 0, sizeof(cl_mem), &buf_p);
+    clSetKernelArg(impl_->kernel_point_add, 1, sizeof(cl_mem), &buf_q);
+    clSetKernelArg(impl_->kernel_point_add, 2, sizeof(cl_mem), &buf_r);
+    clSetKernelArg(impl_->kernel_point_add, 3, sizeof(cl_uint), &cnt);
+    std::size_t local_size, global_size;
+    compute_work_sizes(count, impl_->device_info.max_work_group_size, local_size, global_size);
+    clEnqueueNDRangeKernel(impl_->queue, impl_->kernel_point_add, 1, nullptr,
+                           &global_size, &local_size, 0, nullptr, nullptr);
+    clEnqueueReadBuffer(impl_->queue, buf_r, CL_TRUE, 0,
+                        count * sizeof(JacobianPoint), results, 0, nullptr, nullptr);
+    clReleaseMemObject(buf_p); clReleaseMemObject(buf_q); clReleaseMemObject(buf_r);
+}
+
 void Context::batch_scalar_mul_generator(const Scalar* scalars, JacobianPoint* results, std::size_t count) {
     if (count == 0) return;
 
