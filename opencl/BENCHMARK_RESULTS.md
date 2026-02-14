@@ -1,89 +1,92 @@
 # UltrafastSecp256k1 OpenCL Benchmark Results
 
 **Date:** 2026-02-14  
-**OS:** Windows 10 (x86_64)  
-**Build:** MSVC 19.44, Release, C++20  
-**OpenCL SDK:** NVIDIA CUDA Toolkit 12.8  
+**OS:** Linux (x86_64)  
+**Build:** Clang 19.1.7, Release, C++20, -O3  
+**OpenCL:** 3.0 CUDA, Driver 580.126.09  
+**PTX:** Inline assembly enabled (`__NV_CL_C_VERSION`)
 
 ---
 
-## Devices
+## Device
 
-| Property        | Intel UHD Graphics 750         | NVIDIA GeForce GT 730         |
-|-----------------|-------------------------------|-------------------------------|
-| Vendor          | Intel(R) Corporation          | NVIDIA Corporation            |
-| OpenCL Version  | OpenCL 3.0 NEO                | OpenCL 1.2 CUDA               |
-| Driver          | 32.0.101.7084                 | 456.71                        |
-| Global Memory   | 37,937 MB                     | 2,048 MB                      |
-| Local Memory    | 64 KB                         | 48 KB                         |
-| Compute Units   | 32                            | 2                             |
-| Max Clock       | 1,300 MHz                     | 901 MHz                       |
-
----
-
-## Field Arithmetic (ns/op, lower is better)
-
-| Operation   | Intel UHD 750 | NVIDIA GT 730 | Intel Speedup |
-|-------------|--------------|---------------|---------------|
-| Field Add   | 189,023      | 829,316       | 4.39x         |
-| Field Sub   | 218,417      | 721,139       | 3.30x         |
-| Field Mul   | 195,478      | 724,748       | 3.71x         |
-| Field Sqr   | 179,685      | 636,987       | 3.54x         |
-| Field Inv   | 2,554,314    | 2,925,589     | 1.15x         |
+| Property        | NVIDIA GeForce RTX 5060 Ti      |
+|-----------------|--------------------------------|
+| Vendor          | NVIDIA Corporation             |
+| OpenCL Version  | OpenCL 3.0 CUDA                |
+| Driver          | 580.126.09                     |
+| Global Memory   | 15,847 MB                      |
+| Local Memory    | 48 KB                          |
+| Compute Units   | 36                             |
+| Max Clock       | 2,602 MHz                      |
+| Memory Bus      | 128-bit                        |
 
 ---
 
-## Point Operations (lower is better)
+## Kernel-Only Timing (no buffer alloc/copy overhead)
 
-| Operation      | Intel UHD 750   | NVIDIA GT 730   | Intel Speedup |
-|----------------|----------------|----------------|---------------|
-| Point Double   | 221,327 ns     | 715,677 ns     | 3.23x         |
-| Point Add      | 305,155 ns     | 805,494 ns     | 2.64x         |
-| Scalar Mul     | 1,327.0 µs     | 1,744.2 µs     | 1.31x         |
-
----
-
-## Batch Scalar Multiplication (higher ops/s is better)
-
-| Batch Size | Intel UHD 750          | NVIDIA GT 730          | Intel Speedup |
-|------------|------------------------|------------------------|---------------|
-| 256        | 1.21 ms (211,064 op/s) | 1.78 ms (143,942 op/s) | 1.47x         |
-| 1,024      | 1.70 ms (603,596 op/s) | 2.38 ms (430,252 op/s) | 1.40x         |
-| 4,096      | 4.74 ms (863,516 op/s) | 6.05 ms (676,790 op/s) | 1.28x         |
-| 16,384     | 17.08 ms (959,509 op/s)| 24.27 ms (675,142 op/s)| 1.42x         |
+| Operation | Time/Op | Throughput | Batch |
+|-----------|---------|------------|-------|
+| Field Add | 0.2 ns | 4,124 M/s | 1M |
+| Field Sub | 0.2 ns | 4,119 M/s | 1M |
+| Field Mul | 0.2 ns | 4,137 M/s | 1M |
+| Field Sqr | 0.2 ns | 5,985 M/s | 1M |
+| Field Inv | 14.3 ns | 69.97 M/s | 1M |
+| Point Double | 0.9 ns | 1,139 M/s | 256K |
+| Point Add | 1.6 ns | 630.6 M/s | 256K |
+| kG (kernel) | 295.1 ns | 3.39 M/s | 256K |
 
 ---
 
-## Batch Field Inversion (higher ops/s is better)
+## End-to-End Timing (including buffer transfers)
 
-| Batch Size | Intel UHD 750          | NVIDIA GT 730          | Intel Speedup |
-|------------|------------------------|------------------------|---------------|
-| 256        | 2.80 ms (91,396 op/s)  | 2.90 ms (88,389 op/s)  | 1.03x         |
-| 1,024      | 3.89 ms (263,043 op/s) | 3.10 ms (330,717 op/s) | 0.80x (NVIDIA wins) |
-| 4,096      | 8.35 ms (490,492 op/s) | 7.49 ms (546,592 op/s) | 0.90x (NVIDIA wins) |
+### Field Arithmetic (batch=1,048,576)
+
+| Operation | Time/Op | Throughput |
+|-----------|---------|------------|
+| Field Add | 27.3 ns | 36.67 M/s |
+| Field Sub | 28.5 ns | 35.06 M/s |
+| Field Mul | 27.7 ns | 36.07 M/s |
+| Field Sqr | 15.7 ns | 63.62 M/s |
+| Field Inv | 29.0 ns | 34.43 M/s |
+
+### Point Operations (batch=1,048,576)
+
+| Operation | Time/Op | Throughput |
+|-----------|---------|------------|
+| Point Double | 58.4 ns | 17.11 M/s |
+| Point Add | 111.9 ns | 8.94 M/s |
+
+### Batch Scalar Multiplication (kG)
+
+| Batch Size | Time/Op | Throughput |
+|------------|---------|------------|
+| 256 | 9.5 μs | 105 K/s |
+| 1,024 | 2.4 μs | 422 K/s |
+| 4,096 | 610.6 ns | 1.64 M/s |
+| 16,384 | 311.6 ns | 3.21 M/s |
+| 65,536 | 307.7 ns | 3.25 M/s |
+
+### Batch Field Inversion
+
+| Batch Size | Time/Op | Throughput |
+|------------|---------|------------|
+| 256 | 737.9 ns | 1.36 M/s |
+| 1,024 | 191.8 ns | 5.21 M/s |
+| 4,096 | 53.0 ns | 18.87 M/s |
+| 16,384 | 28.1 ns | 35.62 M/s |
 
 ---
 
-## Summary
+## CUDA vs OpenCL Comparison (Kernel-Only, RTX 5060 Ti)
 
-- **Intel UHD 750** dominates in nearly all categories: **3-4x faster** on single field ops, **1.3-1.5x faster** on batch scalar multiplication
-- **Peak throughput:** Intel reaches **~960K scalar mul ops/s** at batch 16K vs NVIDIA's **~675K ops/s**
-- **NVIDIA GT 730 wins** slightly on batch field inversion at larger sizes (1K-4K), possibly due to the Montgomery inversion algorithm favoring its memory hierarchy
-- Field inversion is the only area competitive between the two GPUs (1.15x difference on single ops)
-- The Intel advantage is primarily due to **16x more compute units** (32 vs 2) and higher clock (1300 vs 901 MHz)
+| Operation | CUDA | OpenCL | Winner |
+|-----------|------|--------|--------|
+| Field Mul | 0.2 ns | 0.2 ns | Tie |
+| Field Inv | 12.1 ns | 14.3 ns | CUDA 1.18× |
+| Point Double | 1.6 ns | 0.9 ns | **OpenCL 1.78×** |
+| Point Add | 2.1 ns | 1.6 ns | **OpenCL 1.31×** |
+| kG | 485.1 ns | 295.1 ns | **OpenCL 1.64×** |
 
----
-
-## Command Reference
-
-```bash
-# NVIDIA benchmark
-opencl_benchmark.exe --nvidia
-
-# Intel benchmark  
-opencl_benchmark.exe --intel
-
-# Explicit platform/device selection
-opencl_benchmark.exe --platform 0 --device 0   # NVIDIA (platform 0)
-opencl_benchmark.exe --platform 1 --device 0   # Intel GPU (platform 1)
-```
+**OpenCL wins** on point ops and scalar multiplication due to optimized
+3-temp point doubling and alias-safe mixed addition with PTX inline assembly.
