@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.0.0] - 2025-07-25
+
+### Added — Cryptographic Features
+- **Pedersen Commitments** — `pedersen_commit(value, blinding)`, `pedersen_verify()`, `pedersen_verify_sum()` (homomorphic balance proofs), `pedersen_blind_sum()`, `pedersen_switch_commit()` (Mimblewimble switch commitments); nothing-up-my-sleeve generators H and J via SHA-256 try-and-increment (`cpu/include/pedersen.hpp`, `cpu/src/pedersen.cpp`)
+- **FROST Threshold Signatures** — `frost_keygen_begin()` / `frost_keygen_finalize()` (Feldman VSS distributed key generation), `frost_sign_nonce_gen()` / `frost_sign()` (partial signature rounds), `frost_verify_partial()`, `frost_aggregate()` → standard BIP-340 SchnorrSignature; `frost_lagrange_coefficient()` helper (`cpu/include/frost.hpp`, `cpu/src/frost.cpp`)
+- **Adaptor Signatures** — Schnorr adaptor: `schnorr_adaptor_sign()`, `schnorr_adaptor_verify()`, `schnorr_adaptor_adapt()`, `schnorr_adaptor_extract()`; ECDSA adaptor: `ecdsa_adaptor_sign()`, `ecdsa_adaptor_verify()`, `ecdsa_adaptor_adapt()`, `ecdsa_adaptor_extract()` — for atomic swaps and DLCs (`cpu/include/adaptor.hpp`, `cpu/src/adaptor.cpp`)
+- **Bitcoin Address Generation** — `hash160()` (RIPEMD-160 + SHA-256), `base58check_encode()` / `base58check_decode()`, `bech32_encode()` / `bech32_decode()` (BIP-173/BIP-350, Bech32/Bech32m), `address_p2pkh()`, `address_p2wpkh()`, `address_p2tr()`, `wif_encode()` / `wif_decode()` (`cpu/include/address.hpp`, `cpu/src/address.cpp`)
+- **BIP-352 Silent Payments** — `silent_payment_address()`, `SilentPaymentAddress::encode()`, `silent_payment_create_output()`, `silent_payment_scan()` with ECDH-based stealth addressing and multi-output support (`cpu/include/address.hpp`, `cpu/src/address.cpp`)
+
+### Added — Tests (90 new)
+- `test_v4_features` — 90 tests across 23 groups: Pedersen (basic/homomorphic/balance/switch/serialization/zero-value), FROST (Lagrange/keygen/2-of-3 signing), Adaptor (Schnorr basic/ECDSA basic/identity), Address (Base58Check/Bech32/Bech32m/hash160/P2PKH/P2WPKH/P2TR/WIF/consistency), Silent Payments (address/flow/multi-output)
+
+---
+
 ## [3.2.0] - 2025-07-24
 
 ### Added — Cryptographic Features
