@@ -149,12 +149,14 @@ jobs:
           path: build-xcframework/output/UltrafastSecp256k1.xcframework
           retention-days: 30
 
-  # ── ROCm/HIP (AMD GPU, Docker) ────────────────────────────────────────────
+  # ── ROCm/HIP (AMD GPU, compile check) ───────────────────────────────────────
+  # NOTE: GitHub-hosted runners have no AMD GPU (/dev/kfd, /dev/dri).
+  # This job validates that the HIP toolchain compiles successfully.
+  # Runtime GPU tests require a self-hosted runner with an AMD GPU.
   rocm:
     runs-on: ubuntu-24.04
     container:
       image: rocm/dev-ubuntu-24.04:6.3-complete
-      options: --device=/dev/kfd --device=/dev/dri --group-add video
 
     steps:
       - uses: actions/checkout@v4
@@ -176,5 +178,73 @@ jobs:
       - name: Build
         run: cmake --build build-rocm -j$(nproc)
 
-      - name: Test (CPU + compile check)
+      - name: Test (CPU-only, compile check)
         run: ctest --test-dir build-rocm --output-on-failure -j$(nproc)
+
+  # ── WebAssembly (Emscripten) ───────────────────────────────────────────────
+  wasm:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.51
+
+      - name: Configure (WASM)
+        run: emcmake cmake -S wasm -B build-wasm -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-wasm -j$(nproc)
+
+      - name: Verify output
+        run: |
+          ls -lh build-wasm/dist/secp256k1_wasm.js
+          ls -lh build-wasm/dist/secp256k1_wasm.wasm
+          echo "WASM size: $(du -h build-wasm/dist/secp256k1_wasm.wasm | cut -f1)"
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: secp256k1-wasm
+          path: |
+            build-wasm/dist/secp256k1_wasm.js
+            build-wasm/dist/secp256k1_wasm.wasm
+            build-wasm/dist/secp256k1.mjs
+            build-wasm/dist/secp256k1.d.ts
+            build-wasm/dist/package.json
+          retention-days: 30
+
+  # ── Android NDK (ARM64) ────────────────────────────────────────────────────
+  android:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+
+      - name: Configure (Android arm64-v8a)
+        run: |
+          cmake -S android -B build-android \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build-android -j$(nproc)
+
+      - name: Verify
+        run: |
+          file build-android/cpu/libfastsecp256k1.a
+          file build-android/libsecp256k1_jni.so
+          echo "Static lib: $(du -h build-android/cpu/libfastsecp256k1.a | cut -f1)"
+          echo "JNI shared: $(du -h build-android/libsecp256k1_jni.so | cut -f1)"

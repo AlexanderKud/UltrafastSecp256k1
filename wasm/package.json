@@ -1,0 +1,42 @@
+{
+  "name": "@ultrafastsecp256k1/wasm",
+  "version": "2.2.0",
+  "description": "Ultra high-performance secp256k1 elliptic curve cryptography — WebAssembly build",
+  "type": "module",
+  "main": "secp256k1.mjs",
+  "types": "secp256k1.d.ts",
+  "exports": {
+    ".": {
+      "import": "./secp256k1.mjs",
+      "types": "./secp256k1.d.ts"
+    },
+    "./wasm": "./secp256k1_wasm.js"
+  },
+  "files": [
+    "secp256k1.mjs",
+    "secp256k1.d.ts",
+    "secp256k1_wasm.js",
+    "secp256k1_wasm.wasm"
+  ],
+  "keywords": [
+    "secp256k1",
+    "elliptic-curve",
+    "ecdsa",
+    "schnorr",
+    "bip-340",
+    "wasm",
+    "webassembly",
+    "cryptography",
+    "bitcoin"
+  ],
+  "license": "AGPL-3.0",
+  "homepage": "https://github.com/shrec/UltrafastSecp256k1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shrec/UltrafastSecp256k1.git",
+    "directory": "wasm"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
