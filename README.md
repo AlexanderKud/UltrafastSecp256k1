@@ -77,7 +77,63 @@ Ultra high-performance secp256k1 elliptic curve cryptography library with multi-
 | **GPU** | CUDA kernels, occupancy | ✅ |
 | **Platforms** | x64, ARM64, RISC-V, ESP32, WASM, iOS, Android, ROCm | ✅ |
 
-## 📦 Use Cases
+## � Batch Modular Inverse (Montgomery Trick)
+
+All backends include **batch modular inversion** — a critical building block for Jacobian→Affine conversion and high-throughput point operations:
+
+| Backend | File | Function(s) |
+|---------|------|-------------|
+| **CPU** | `cpu/src/field.cpp` | `fe_batch_inverse(FieldElement*, size_t)` — Montgomery trick with scratch buffer |
+| **CPU** | `cpu/src/precompute.cpp` | `batch_inverse(std::vector<FieldElement>&)` — vector variant |
+| **CUDA** | `cuda/include/batch_inversion.cuh` | `batch_inverse_montgomery` — GPU Montgomery trick kernel |
+| **CUDA** | `cuda/include/batch_inversion.cuh` | `batch_inverse_fermat` — Fermat's little theorem variant |
+| **CUDA** | `cuda/include/batch_inversion.cuh` | `batch_inverse_kernel` — production kernel (`__launch_bounds__(256, 4)`) |
+| **CUDA** | `cuda/src/test_suite.cu` | `fe_batch_inverse()` — host wrapper + unit tests |
+| **Metal** | `metal/shaders/secp256k1_kernels.metal` | `batch_inverse` — chunked Montgomery inverse (parallel threadgroups) |
+
+**Algorithm**: Montgomery batch inverse computes N field inversions using only **1 modular inversion + 3(N−1) multiplications**, amortizing the expensive inversion across the entire batch.
+## ⚡ Mixed Addition (Jacobian + Affine)
+
+The library provides **branchless mixed addition** (`add_mixed_inplace`) — the fastest way to add a point with known affine coordinates (Z=1) to a Jacobian point. Uses the **madd-2007-bl** formula (7M + 4S, vs 11M + 5S for full Jacobian add).
+
+| Backend | File | Function |
+|---------|------|----------|
+| **CPU** | `cpu/src/point.cpp` | `jacobian_add_mixed(JacobianPoint&, AffinePoint&)` |
+| **CPU** | `cpu/src/point.cpp` | `Point::add_mixed_inplace(FieldElement&, FieldElement&)` |
+| **CPU** | `cpu/src/point.cpp` | `Point::sub_mixed_inplace(FieldElement&, FieldElement&)` |
+| **CPU** | `cpu/src/precompute.cpp` | `jacobian_add_mixed_local(JacobianPoint&, AffinePointPacked&)` |
+| **OpenCL** | `opencl/kernels/secp256k1_point.cl` | `point_add_mixed_impl(JacobianPoint*, AffinePoint*)` |
+| **Metal** | `metal/shaders/secp256k1_point.h` | `jacobian_add_mixed(JacobianPoint&, AffinePoint&)` |
+
+### Usage Example (CPU)
+
+```cpp
+#include <secp256k1/point.hpp>
+
+using namespace secp256k1::fast;
+
+// Start with generator point G
+Point P = Point::generator();
+
+// Get affine coordinates of G for mixed addition
+FieldElement gx = P.x();
+FieldElement gy = P.y();
+
+// Compute 2G using mixed add (Jacobian + Affine, 7M + 4S)
+Point Q = Point::generator();
+Q.add_mixed_inplace(gx, gy);  // Q = G + G = 2G
+
+// Subtraction variant: Q = Q - G
+Q.sub_mixed_inplace(gx, gy);  // Q = 2G - G = G
+
+// Batch walk: P, P+G, P+2G, ... using repeated mixed add
+Point walker = P;
+for (int i = 0; i < 1000; ++i) {
+    walker.add_mixed_inplace(gx, gy);  // walker += G each step
+    // ... process walker ...
+}
+```
+## �📦 Use Cases
 
 > ### ⚠️ Testers Wanted
 > We need community testers for platforms we cannot fully validate in CI:
