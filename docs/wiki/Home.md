@@ -9,13 +9,14 @@ Welcome to the **UltrafastSecp256k1** wiki - an ultra high-performance secp256k1
 | [[Getting Started]] | Installation and first steps |
 | [[API Reference]] | Complete function documentation |
 | [[CPU Guide]] | CPU implementation details (x86-64, RISC-V) |
+| [[Android Guide]] | Android port (ARM64, ARMv7, JNI) |
 | [[CUDA Guide]] | GPU implementation and batch processing |
 | [[Benchmarks]] | Performance measurements |
 | [[Examples]] | Code examples and use cases |
 
 ## ✨ Key Features
 
-- **Multi-Platform**: x86-64, RISC-V, CUDA GPU
+- **Multi-Platform**: x86-64, RISC-V, Android (ARM64/ARMv7), CUDA GPU
 - **High Performance**: 3-5× faster than standard libraries
 - **Constant-Time (CT) Layer**: Side-channel resistant operations (`secp256k1::ct::`)
 - **Production Ready**: Comprehensive test suite
