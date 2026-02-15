@@ -13,14 +13,20 @@ Ultra high-performance secp256k1 elliptic curve cryptography library with multi-
 [![ESP32-S3](https://img.shields.io/badge/ESP32--S3-Xtensa%20LX7-orange.svg)](https://www.espressif.com/en/products/socs/esp32-s3)
 [![ESP32](https://img.shields.io/badge/ESP32-Xtensa%20LX6-orange.svg)](https://www.espressif.com/en/products/socs/esp32)
 [![STM32](https://img.shields.io/badge/STM32-Cortex--M3-orange.svg)](https://www.st.com/en/microcontrollers-microprocessors/stm32f103ze.html)
+[![WebAssembly](https://img.shields.io/badge/WebAssembly-Emscripten-purple.svg)](wasm/)
+[![iOS](https://img.shields.io/badge/iOS-17%2B%20XCFramework-lightgrey.svg)](cmake/ios.toolchain.cmake)
+[![ROCm](https://img.shields.io/badge/ROCm-6.3%20HIP-red.svg)](cuda/README.md)
+[![Android](https://img.shields.io/badge/Android-NDK%20r27-brightgreen.svg)](android/)
 
 ## 🚀 Features
 
 - **Multi-Platform Architecture**
   - CPU: Optimized for x86-64 (BMI2/ADX), RISC-V (RV64GC), and ARM64 (MUL/UMULH)
-  - Mobile: Android ARM64 (NDK r27, Clang 18)
-  - Embedded: ESP32-S3 (Xtensa LX7) + ESP32-PICO-D4 (Xtensa LX6) + STM32F103 (ARM Cortex-M3) support
+  - Mobile: Android ARM64 (NDK r27, Clang 18) + iOS 17+ (XCFramework, SPM, CocoaPods)
+  - WebAssembly: Emscripten ES6 module with TypeScript declarations
+  - Embedded: ESP32-S3 (Xtensa LX7) + ESP32-PICO-D4 (Xtensa LX6) + STM32F103 (ARM Cortex-M3)
   - GPU/CUDA: Batch operations with 4.63M kG/s throughput
+  - GPU/ROCm (HIP): Portable PTX→__int128 fallbacks for AMD GPUs
   - GPU/OpenCL: PTX inline asm, 3.39M kG/s
 
 - **Performance**
@@ -35,10 +41,20 @@ Ultra high-performance secp256k1 elliptic curve cryptography library with multi-
   - Point addition, doubling, and multiplication
   - GLV endomorphism optimization
   - Efficient batch operations
-  - Signature verification (ECDSA)
+  - ECDSA sign/verify (RFC 6979 deterministic nonce, low-S)
+  - Schnorr BIP-340 sign/verify
+  - SHA-256 hashing
+  - Constant-time (CT) layer for side-channel resistance
   - Public key derivation
 
 ## 📦 Use Cases
+
+> ### ⚠️ Testers Wanted
+> We need community testers for platforms we cannot fully validate in CI:
+> - **iOS** — Build & run on real iPhone/iPad hardware with Xcode
+> - **AMD GPU (ROCm/HIP)** — Test on AMD Radeon RX / Instinct GPUs
+>
+> If you can help, please [open an issue](https://github.com/shrec/UltrafastSecp256k1/issues) with your results!
 
 - **Cryptocurrency Applications**
   - Bitcoin/Ethereum address generation
@@ -116,6 +132,23 @@ cmake -S . -B build -G Ninja \
 cmake --build build -j
 ```
 
+### WebAssembly (Emscripten)
+
+```bash
+# Requires Emscripten SDK (emsdk)
+./scripts/build_wasm.sh        # → build-wasm/dist/
+```
+
+Output: `secp256k1_wasm.wasm` + `secp256k1.mjs` (ES6 module with TypeScript types). See [wasm/README.md](wasm/README.md) for JS/TS usage.
+
+### iOS (XCFramework)
+
+```bash
+./scripts/build_xcframework.sh  # → build-xcframework/output/
+```
+
+Produces a universal XCFramework (arm64 device + arm64 simulator). Also available via **Swift Package Manager** and **CocoaPods**.
+
 ### Build Options
 
 | Option | Default | Description |
@@ -123,6 +156,7 @@ cmake --build build -j
 | `SECP256K1_USE_ASM` | ON | Enable assembly optimizations (x64/RISC-V) |
 | `SECP256K1_BUILD_CUDA` | OFF | Build CUDA GPU support |
 | `SECP256K1_BUILD_OPENCL` | OFF | Build OpenCL GPU support |
+| `SECP256K1_BUILD_ROCM` | OFF | Build ROCm/HIP GPU support (AMD) |
 | `SECP256K1_BUILD_TESTS` | ON | Build test suite |
 | `SECP256K1_BUILD_BENCH` | ON | Build benchmarks |
 | `SECP256K1_RISCV_FAST_REDUCTION` | ON | Fast modular reduction (RISC-V) |

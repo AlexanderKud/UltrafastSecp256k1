@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 
 project(UltrafastSecp256k1
-    VERSION 1.0.0
+    VERSION 3.0.0
     DESCRIPTION "Ultra high-performance secp256k1 elliptic curve cryptography library"
     LANGUAGES CXX
 )
@@ -15,9 +15,17 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Generate version header from template
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/secp256k1/version.hpp"
+    @ONLY
+)
+
 # Build options
 option(SECP256K1_BUILD_CPU "Build CPU implementation" ON)
 option(SECP256K1_BUILD_CUDA "Build CUDA GPU support" OFF)
+option(SECP256K1_BUILD_ROCM "Build ROCm/HIP GPU support (AMD)" OFF)
 option(SECP256K1_BUILD_OPENCL "Build OpenCL support" OFF)
 option(SECP256K1_BUILD_TESTS "Build test suite" ON)
 option(SECP256K1_BUILD_BENCH "Build benchmarks" ON)
@@ -81,6 +89,11 @@ endif()
 
 # Subdirectories
 if(SECP256K1_BUILD_CPU)
+    # Enable testing so cpu/CMakeLists.txt BUILD_TESTING guard works
+    if(SECP256K1_BUILD_TESTS OR SECP256K1_BUILD_BENCH)
+        set(BUILD_TESTING ON CACHE BOOL "Enable testing" FORCE)
+        enable_testing()
+    endif()
     add_subdirectory(cpu)
 endif()
 
@@ -116,6 +129,20 @@ if(SECP256K1_BUILD_OPENCL)
     endif()
 endif()
 
+# ROCm/HIP build — reuses cuda/ sources with portable math fallbacks
+if(SECP256K1_BUILD_ROCM)
+    # CMake 3.21+ has native HIP language support
+    cmake_minimum_required(VERSION 3.21)
+    find_package(hip QUIET)
+    if(hip_FOUND)
+        message(STATUS "ROCm/HIP found: ${hip_VERSION}")
+        enable_language(HIP)
+        add_subdirectory(cuda cuda_rocm)  # reuse sources, separate build dir
+    else()
+        message(WARNING "SECP256K1_BUILD_ROCM=ON but HIP SDK not found. Skipping ROCm build.")
+    endif()
+endif()
+
 if(SECP256K1_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
@@ -124,7 +151,18 @@ endif()
 if(SECP256K1_INSTALL)
     include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
-    
+
+    # Install public headers
+    install(DIRECTORY cpu/include/secp256k1
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.hpp"
+    )
+
+    # Install generated version header
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/include/secp256k1/version.hpp"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/secp256k1
+    )
+
     # Generate package config
     write_basic_package_version_file(
         "${CMAKE_CURRENT_BINARY_DIR}/secp256k1-fast-config-version.cmake"
@@ -173,6 +211,7 @@ message(STATUS "")
 message(STATUS "  Components:")
 message(STATUS "    CPU:            ${SECP256K1_BUILD_CPU}")
 message(STATUS "    CUDA:           ${SECP256K1_BUILD_CUDA}")
+message(STATUS "    ROCm/HIP:       ${SECP256K1_BUILD_ROCM}")
 message(STATUS "    OpenCL:         ${SECP256K1_BUILD_OPENCL}")
 message(STATUS "    Tests:          ${SECP256K1_BUILD_TESTS}")
 message(STATUS "    Benchmarks:     ${SECP256K1_BUILD_BENCH}")

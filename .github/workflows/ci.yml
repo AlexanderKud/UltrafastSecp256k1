@@ -1,0 +1,250 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Linux (GCC + Clang) ────────────────────────────────────────────────────
+  linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc-13, clang-17]
+        build_type: [Release, Debug]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install compiler
+        run: |
+          sudo apt-get update -qq
+          if [[ "${{ matrix.compiler }}" == gcc-* ]]; then
+            sudo apt-get install -y g++-13
+          else
+            sudo apt-get install -y clang-17 lld-17
+          fi
+
+      - name: Configure
+        run: |
+          if [[ "${{ matrix.compiler }}" == gcc-* ]]; then
+            export CC=gcc-13 CXX=g++-13
+          else
+            export CC=clang-17 CXX=clang++-17
+          fi
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DSECP256K1_BUILD_TESTS=ON \
+            -DSECP256K1_BUILD_BENCH=ON \
+            -DSECP256K1_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j$(nproc)
+
+  # ── Windows (MSVC + Clang-cl) ──────────────────────────────────────────────
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (MSVC)
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DSECP256K1_BUILD_TESTS=ON `
+            -DSECP256K1_BUILD_BENCH=ON `
+            -DSECP256K1_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} -j
+
+      - name: Test
+        run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure -j
+
+  # ── macOS (AppleClang) ─────────────────────────────────────────────────────
+  macos:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DSECP256K1_BUILD_TESTS=ON \
+            -DSECP256K1_BUILD_BENCH=ON \
+            -DSECP256K1_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.logicalcpu)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.logicalcpu)
+
+  # ── iOS (CMake + Xcode, ARM64) ─────────────────────────────────────────────
+  ios:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [OS, SIMULATOR]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (iOS ${{ matrix.platform }})
+        run: |
+          cmake -S . -B build-ios \
+            -G Xcode \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/ios.toolchain.cmake \
+            -DIOS_PLATFORM=${{ matrix.platform }}
+
+      - name: Build
+        run: cmake --build build-ios --config Release --target fastsecp256k1 -- -quiet
+
+      - name: Verify library
+        run: |
+          LIB=$(find build-ios -name "libfastsecp256k1.a" -path "*/Release*" | head -1)
+          echo "Library: $LIB"
+          file "$LIB"
+          lipo -info "$LIB"
+          echo "Size: $(du -h "$LIB" | cut -f1)"
+
+  # ── iOS XCFramework ────────────────────────────────────────────────────────
+  ios-xcframework:
+    runs-on: macos-14
+    needs: [ios]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build XCFramework
+        run: |
+          chmod +x scripts/build_xcframework.sh
+          ./scripts/build_xcframework.sh
+
+      - name: Upload XCFramework
+        uses: actions/upload-artifact@v4
+        with:
+          name: UltrafastSecp256k1.xcframework
+          path: build-xcframework/output/UltrafastSecp256k1.xcframework
+          retention-days: 30
+
+  # ── ROCm/HIP (AMD GPU, compile check) ───────────────────────────────────────
+  # NOTE: GitHub-hosted runners have no AMD GPU (/dev/kfd, /dev/dri).
+  # This job validates that the HIP toolchain compiles successfully.
+  # Runtime GPU tests require a self-hosted runner with an AMD GPU.
+  rocm:
+    runs-on: ubuntu-24.04
+    container:
+      image: rocm/dev-ubuntu-24.04:6.3-complete
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          apt-get install -y cmake ninja-build
+
+      - name: Configure (ROCm/HIP)
+        run: |
+          cmake -S . -B build-rocm -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSECP256K1_BUILD_CPU=ON \
+            -DSECP256K1_BUILD_ROCM=ON \
+            -DSECP256K1_BUILD_TESTS=ON \
+            -DCMAKE_HIP_ARCHITECTURES="gfx906;gfx908;gfx90a;gfx1030;gfx1100"
+
+      - name: Build
+        run: cmake --build build-rocm -j$(nproc)
+
+      - name: Test (CPU-only, compile check)
+        run: ctest --test-dir build-rocm --output-on-failure -j$(nproc)
+
+  # ── WebAssembly (Emscripten) ───────────────────────────────────────────────
+  wasm:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.51
+
+      - name: Configure (WASM)
+        run: emcmake cmake -S wasm -B build-wasm -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-wasm -j$(nproc)
+
+      - name: Verify output
+        run: |
+          ls -lh build-wasm/dist/secp256k1_wasm.js
+          ls -lh build-wasm/dist/secp256k1_wasm.wasm
+          echo "WASM size: $(du -h build-wasm/dist/secp256k1_wasm.wasm | cut -f1)"
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: secp256k1-wasm
+          path: |
+            build-wasm/dist/secp256k1_wasm.js
+            build-wasm/dist/secp256k1_wasm.wasm
+            build-wasm/dist/secp256k1.mjs
+            build-wasm/dist/secp256k1.d.ts
+            build-wasm/dist/package.json
+          retention-days: 30
+
+  # ── Android NDK (ARM64) ────────────────────────────────────────────────────
+  android:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+
+      - name: Configure (Android arm64-v8a)
+        run: |
+          cmake -S android -B build-android \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build-android -j$(nproc)
+
+      - name: Verify
+        run: |
+          file build-android/cpu/libfastsecp256k1.a
+          file build-android/libsecp256k1_jni.so
+          echo "Static lib: $(du -h build-android/cpu/libfastsecp256k1.a | cut -f1)"
+          echo "JNI shared: $(du -h build-android/libsecp256k1_jni.so | cut -f1)"

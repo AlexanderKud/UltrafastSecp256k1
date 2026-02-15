@@ -64,10 +64,11 @@
 - `test` / `add` device ფუნქციები + batch kernels
 
 ### Search Kernels (ექსპერიმენტული)
-- `search_simple.cuh` — პროტოტიპი (naive per-thread loop)
-- `search_cpu_identical.cuh` — CPU-identical incremental add algorithm (init → add → batch_inv → bloom)
+> **შენიშვნა**: Search kernels `cuda/app/` დირექტორიაშია (არა ბიბლიოთეკაში).
+> პროდაქშენ search app სეპარატულ რეპოზიტორიაში არის.
 
-> **შენიშვნა**: Search kernels ექსპერიმენტულია. პროდაქშენ search app სეპარატულ რეპოზიტორიაში არის.
+- `app/search_simple.cuh` — პროტოტიპი (naive per-thread loop)
+- `app/search_cpu_identical.cuh` — CPU-identical incremental add algorithm (init → add → batch_inv → bloom)
 
 ---
 
@@ -86,7 +87,9 @@ cuda/
 │   ├── bloom.cuh                               # Device-side Bloom filter (FNV-1a + SplitMix)
 │   ├── hash160.cuh                             # SHA-256 + RIPEMD-160 → Hash160
 │   ├── host_helpers.cuh                        # Host-side wrappers (1-thread kernels, test-only)
-│   ├── search_simple.cuh                       # Search prototype (experimental)
+│   └── gpu_compat.h                            # CUDA ↔ HIP (ROCm) compatibility layer
+├── app/
+│   ├── search_simple.cuh                       # Search prototype (experimental, NOT part of library)
 │   └── search_cpu_identical.cuh                # CPU-identical search algorithm (experimental)
 ├── src/
 │   ├── secp256k1.cu                            # Kernel definitions (thin wrappers)
@@ -114,14 +117,32 @@ cmake --build cuda/build -j
 
 | ოფცია | Default | აღწერა |
 |-------|---------|--------|
-| `CMAKE_CUDA_ARCHITECTURES` | 89 (Ada) | GPU არქიტექტურა (75/80/86/89/90) |
+| `CMAKE_CUDA_ARCHITECTURES` | 89 (Ada) | NVIDIA GPU არქიტექტურა (75/80/86/89/90) |
 | `SECP256K1_CUDA_USE_MONTGOMERY` | OFF | Montgomery domain |
 | `SECP256K1_CUDA_LIMBS_32` | OFF | 8×32-bit limb backend |
+| `SECP256K1_BUILD_ROCM` | OFF | AMD ROCm/HIP build (portable math) |
+| `CMAKE_HIP_ARCHITECTURES` | — | AMD GPU არქიტექტურები (gfx906/gfx1030/gfx1100/...) |
 
 ### მოთხოვნები
-- CUDA Toolkit 12.0+
-- NVIDIA GPU Compute Capability 7.0+ (Volta+)
-- CMake 3.18+
+- **NVIDIA**: CUDA Toolkit 12.0+, GPU Compute Capability 7.0+ (Volta+), CMake 3.18+
+- **AMD**: ROCm 5.0+ (HIP SDK), CMake 3.21+, gfx9/gfx10/gfx11 GPU
+
+### ROCm/HIP Build (AMD GPU)
+
+```bash
+# ROCm Docker-ით ან ნატიური ინსტალაციით
+cmake -S . -B build-rocm -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSECP256K1_BUILD_ROCM=ON \
+  -DCMAKE_HIP_ARCHITECTURES="gfx1030;gfx1100"
+
+cmake --build build-rocm -j
+./build-rocm/cuda_rocm/secp256k1_cuda_test
+```
+
+> **შენიშვნა**: ROCm build-ში PTX inline asm ავტომატურად იცვლება პორტაბელური
+> `__int128` ფალბექებით (`gpu_compat.h` → `SECP256K1_USE_PTX=0`).
+> 32-bit hybrid mul backend (PTX-dependent) ავტომატურად გამორთულია HIP-ზე.
 
 ---
 
