@@ -251,12 +251,12 @@ for (int slot = 0; slot < batch_interval; ++slot) {
 
 ### Other Batch Inverse Use Cases
 
-#### 1. სრული წერტილის კონვერსია: Jacobian → Affine (X + Y)
+#### 1. Full Point Conversion: Jacobian → Affine (X + Y)
 
-როდესაც X და Y ორივე გჭირდება (precompute table, სერიალიზაცია, დებაგი):
+When you need both X and Y (precompute table, serialization, debugging):
 
 ```cpp
-// N Jacobian წერტილი → N Affine წერტილი (1 ინვერსია)
+// N Jacobian points → N Affine points (1 inversion)
 FieldElement z_values[N];
 for (size_t i = 0; i < N; ++i)
     z_values[i] = points[i].z();
@@ -272,12 +272,12 @@ for (size_t i = 0; i < N; ++i) {
 }
 ```
 
-#### 2. მხოლოდ X კოორდინატის ამოღება (ძებნა / DB lookup)
+#### 2. X-Only Coordinate Extraction (Search / DB Lookup)
 
-უმეტეს შემთხვევაში Y არ გჭირდება — მხოლოდ X-ით ხდება bloom check ან DB lookup:
+In most cases you don't need Y — bloom checks and DB lookups use only the affine X coordinate:
 
 ```cpp
-// CPU პატერნი (sorted_ecc_db.cpp — production code)
+// CPU pattern (sorted_ecc_db.cpp — production code)
 constexpr size_t BATCH_SIZE = 1024;
 Point batch_points[BATCH_SIZE];
 FieldElement batch_z[BATCH_SIZE];
@@ -290,24 +290,24 @@ for (uint64_t j = start; j < end; ++j) {
     p.next_inplace();
 
     if (batch_idx == BATCH_SIZE || j == end - 1) {
-        fe_batch_inverse(batch_z.data(), batch_idx);  // 1 ინვერსია!
+        fe_batch_inverse(batch_z.data(), batch_idx);  // 1 inversion!
 
         for (size_t i = 0; i < batch_idx; ++i) {
             FieldElement z_inv_sq = batch_z[i].square();           // Z^(-2)
-            FieldElement x_affine = batch_points[i].X() * z_inv_sq;  // მხოლოდ X!
-            // bloom_check(x_affine) ან db_lookup(x_affine)
+            FieldElement x_affine = batch_points[i].X() * z_inv_sq;  // X only!
+            // bloom_check(x_affine) or db_lookup(x_affine)
         }
         batch_idx = 0;
     }
 }
 ```
 
-#### 3. CUDA: Z ამოღება → batch_inverse_kernel → affine X
+#### 3. CUDA: Z Extraction → batch_inverse_kernel → Affine X
 
-GPU-ზე სადაც `JacobianPoint` მასივი გაქვს წერტილებისთვის — Z-ები ცალკე ამოიღება, ინვერსია shared memory-ით:
+On GPU where you have an array of `JacobianPoint` — Z coordinates are extracted separately, inversion uses shared memory:
 
 ```cuda
-// Step 1: Z კოორდინატების ამოღება (1 kernel)
+// Step 1: Extract Z coordinates (1 kernel)
 __global__ void extract_z_kernel(const JacobianPoint* points,
                                  FieldElement* zs, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -315,10 +315,10 @@ __global__ void extract_z_kernel(const JacobianPoint* points,
 }
 
 // Step 2: Montgomery batch inverse (shared memory prefix/suffix scan)
-//         1 ინვერსია block-ზე, შიდა ელემენტები მხოლოდ გამრავლებით
+//         1 inversion per block, inner elements use multiplications only
 batch_inverse_kernel<<<blocks, 256, shared_mem>>>(d_zs, d_inv_zs, N);
 
-// Step 3: Affine X = X_jac * Z_inv² (bloom check-თან ერთად)
+// Step 3: Affine X = X_jac * Z_inv² (combined with bloom check)
 __global__ void affine_and_bloom_kernel(const JacobianPoint* points,
                                         const FieldElement* inv_zs, ...) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -331,11 +331,11 @@ __global__ void affine_and_bloom_kernel(const JacobianPoint* points,
 }
 ```
 
-> ეს პატერნი გამოიყენება: `cuda/app/search_cpu_identical.cuh` — `extract_z_kernel` → `batch_inverse_kernel` → `affine_and_bloom_kernel`
+> This pattern is used in: `cuda/app/search_cpu_identical.cuh` — `extract_z_kernel` → `batch_inverse_kernel` → `affine_and_bloom_kernel`
 
-#### 4. Batch მოდულური გაყოფა: a[i] / b[i]
+#### 4. Batch Modular Division: a[i] / b[i]
 
-ნებისმიერი ბაჩ გაყოფა field ელემენტებისთვის:
+Arbitrary batch division for field elements:
 
 ```cpp
 FieldElement denominators[] = {b0, b1, b2, b3};
@@ -347,37 +347,37 @@ FieldElement r2 = a2 * denominators[2];  // a2 / b2
 FieldElement r3 = a3 * denominators[3];  // a3 / b3
 ```
 
-#### 5. Scratch ბუფერის ხელახალი გამოყენება
+#### 5. Scratch Buffer Reuse
 
-მრავალი round-ის შემთხვევაში ერთხელ ალოცირებული scratch ბუფერი ხელახლა გამოიყენება:
+When processing multiple rounds, a single pre-allocated scratch buffer is reused across all rounds:
 
 ```cpp
 std::vector<FieldElement> scratch;
-scratch.reserve(BATCH_SIZE);  // ერთხელ ალოცირება
+scratch.reserve(BATCH_SIZE);  // Allocate once
 
 for (int round = 0; round < total_rounds; ++round) {
-    // ... batch_z[] შევსება ...
-    fe_batch_inverse(batch_z.data(), N, scratch);  // scratch ხელახლა იყენებს
-    // ... affine კონვერსია ...
+    // ... fill batch_z[] ...
+    fe_batch_inverse(batch_z.data(), N, scratch);  // Reuses scratch buffer
+    // ... affine conversion ...
 }
 ```
 
-### Montgomery Trick - ალგორითმის სრული ახსნა
+### Montgomery Trick — Full Algorithm Explanation
 
 ```
-შეყვანა: [a₀, a₁, a₂, ..., aₙ₋₁]
+Input: [a₀, a₁, a₂, ..., aₙ₋₁]
 
-1) Forward pass — კუმულატიური ნამრავლი:
+1) Forward pass — cumulative products:
    prod[0] = a₀
    prod[1] = a₀ · a₁
    prod[2] = a₀ · a₁ · a₂
    ...
    prod[N-1] = a₀ · a₁ · ... · aₙ₋₁
 
-2) ერთი ინვერსია:
+2) Single inversion:
    inv = prod[N-1]⁻¹ = (a₀ · a₁ · ... · aₙ₋₁)⁻¹
 
-3) Backward pass — ინდივიდუალური ინვერსიების ამოღება:
+3) Backward pass — extract individual inverses:
    aₙ₋₁⁻¹ = inv · prod[N-2]
    inv ← inv · aₙ₋₁(original)
    aₙ₋₂⁻¹ = inv · prod[N-3]
@@ -385,8 +385,8 @@ for (int round = 0; round < total_rounds; ++round) {
    ...
    a₀⁻¹ = inv
 
-ღირებულება: 1 ინვერსია + 3(N-1) გამრავლება
-N=1024: 1×3.5μs + 3069×5ns ≈ 18.8μs (vs 1024×3.5μs = 3584μs → 190× ჩქარი!)
+Cost: 1 inversion + 3(N-1) multiplications
+N=1024: 1×3.5μs + 3069×5ns ≈ 18.8μs (vs 1024×3.5μs = 3584μs → 190× faster!)
 ```
 
 ## �📦 Use Cases
