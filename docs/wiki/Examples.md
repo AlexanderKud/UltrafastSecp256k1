@@ -353,6 +353,147 @@ __global__ void compute_hash160_kernel(
 
 ---
 
+## Constant-Time (CT) Operations
+
+### ECDH with CT Protection
+
+Use `ct::` for secret-dependent scalar multiplication (e.g., ECDH shared secret):
+
+```cpp
+#include <secp256k1/fast.hpp>
+#include <secp256k1/ct/point.hpp>
+#include <iostream>
+
+using namespace secp256k1::fast;
+namespace ct = secp256k1::ct;
+
+int main() {
+    // Alice's secret key
+    Scalar alice_secret = Scalar::from_hex(
+        "E9873D79C6D87DC0FB6A5778633389F4453213303DA61F20BD67FC233AA33262"
+    );
+    
+    // Bob's public key (received over the network — public data)
+    Point bob_public = Point::from_hex(
+        "D2E670A19C6D753D1A6D8B5F5D0C0E4C1A7E4F0B3E3D2A1C0B9A8E7D6C5B4A39",
+        "4E7A1D5C3B2A0F9E8D7C6B5A4F3E2D1C0B9A8E7D6C5B4A3F2E1D0C9B8A7E6D5"
+    );
+    
+    // ECDH: shared_secret = alice_secret × bob_public
+    // Use CT to protect the secret scalar!
+    Point shared_point = ct::scalar_mul(bob_public, alice_secret);
+    
+    // The x-coordinate of the shared point is the shared secret
+    auto shared_secret = shared_point.x().to_bytes();
+    
+    std::cout << "Shared secret (x): " << shared_point.x().to_hex() << std::endl;
+    return 0;
+}
+```
+
+### CT Key Generation
+
+Generate a public key from a secret key using constant-time operations:
+
+```cpp
+#include <secp256k1/fast.hpp>
+#include <secp256k1/ct/point.hpp>
+
+using namespace secp256k1::fast;
+namespace ct = secp256k1::ct;
+
+int main() {
+    Scalar secret_key = Scalar::from_hex(
+        "4727DAF2986A9804B1117F8261ABA645C34537E4474E19BE58700792D501A591"
+    );
+    
+    // CT generator multiplication: public_key = secret_key × G
+    Point public_key = ct::generator_mul(secret_key);
+    
+    // Verify the key is on the curve (also CT)
+    uint64_t on_curve = ct::point_is_on_curve(public_key);
+    if (on_curve) {
+        auto compressed = public_key.to_compressed();
+        // Use compressed public key...
+    }
+    
+    return 0;
+}
+```
+
+### Mixing fast:: and ct::
+
+Use `fast::` for public data, `ct::` for secret-dependent operations:
+
+```cpp
+#include <secp256k1/fast.hpp>
+#include <secp256k1/ct/field.hpp>
+#include <secp256k1/ct/scalar.hpp>
+#include <secp256k1/ct/point.hpp>
+
+using namespace secp256k1::fast;
+namespace ct = secp256k1::ct;
+
+int main() {
+    // ── Public computation (fast::) ──
+    // Base point is public — use fast:: for maximum speed
+    Scalar pub_k = Scalar::from_uint64(100);
+    Point base_point = Point::generator().scalar_mul(pub_k);  // fast::
+    
+    // ── Secret computation (ct::) ──
+    // The scalar is secret — switch to CT
+    Scalar secret_k = Scalar::from_hex(
+        "E9873D79C6D87DC0FB6A5778633389F4453213303DA61F20BD67FC233AA33262"
+    );
+    Point result = ct::scalar_mul(base_point, secret_k);  // ct::
+    
+    // ── Verification (ct::) ──
+    // Compare points without leaking which one matched
+    Point expected = Point::generator().scalar_mul(
+        Scalar::from_uint64(100) * secret_k
+    );
+    uint64_t eq = ct::point_eq(result, expected);
+    // eq == 0xFFFFFFFFFFFFFFFF if equal, 0 otherwise
+    
+    return 0;
+}
+```
+
+### CT Conditional Operations
+
+Branchless conditional logic for secret-dependent control flow:
+
+```cpp
+#include <secp256k1/ct/ops.hpp>
+#include <secp256k1/ct/field.hpp>
+#include <secp256k1/ct/scalar.hpp>
+
+using namespace secp256k1::fast;
+namespace ct = secp256k1::ct;
+
+void ct_conditional_example() {
+    FieldElement a = FieldElement::from_uint64(42);
+    FieldElement b = FieldElement::from_uint64(99);
+    
+    // CT select: choose a or b based on secret condition
+    uint64_t secret_flag = 1;
+    uint64_t mask = ct::bool_to_mask(secret_flag);  // all-ones or all-zeros
+    FieldElement chosen = ct::field_select(a, b, mask);  // a if mask=1s, else b
+    
+    // CT conditional negate
+    FieldElement maybe_neg = ct::field_cneg(a, mask);  // -a if mask=1s, else a
+    
+    // CT conditional swap
+    ct::field_cswap(&a, &b, mask);  // swap if mask=1s
+    
+    // CT comparison (returns mask, not bool)
+    uint64_t is_eq = ct::field_eq(a, b);  // all-ones if equal
+    uint64_t is_z  = ct::field_is_zero(a);  // all-ones if zero
+}
+```
+
+---
+
 ## Self-Test
 
 Always run self-test after building:

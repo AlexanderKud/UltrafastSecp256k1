@@ -185,6 +185,113 @@ bool ok = secp256k1::fast::Selftest(true);  // verbose=true
 
 ---
 
+## Constant-Time (CT) API
+
+**Namespace:** `secp256k1::ct`
+
+**Headers:**
+```cpp
+#include <secp256k1/ct/ops.hpp>    // Low-level CT primitives
+#include <secp256k1/ct/field.hpp>  // CT field arithmetic
+#include <secp256k1/ct/scalar.hpp> // CT scalar arithmetic
+#include <secp256k1/ct/point.hpp>  // CT point operations
+```
+
+All CT functions operate on the **same types** as `fast::` (`FieldElement`, `Scalar`, `Point`). Both namespaces are always compiled — no flags or `#ifdef` needed.
+
+---
+
+### CT Primitives (`ct/ops.hpp`)
+
+Low-level building blocks. Every function has a data-independent execution trace.
+
+| Function | Description |
+|----------|-------------|
+| `value_barrier(v)` | Compiler optimization barrier |
+| `is_zero_mask(v)` | Returns `0xFFF...F` if `v == 0`, else `0` |
+| `is_nonzero_mask(v)` | Returns `0xFFF...F` if `v != 0`, else `0` |
+| `eq_mask(a, b)` | Returns `0xFFF...F` if `a == b`, else `0` |
+| `bool_to_mask(flag)` | Converts bool to all-ones/all-zeros mask |
+| `lt_mask(a, b)` | Returns all-ones if `a < b` (unsigned) |
+| `cmov64(dst, src, mask)` | CT conditional move (64-bit) |
+| `cmov256(dst, src, mask)` | CT conditional move (4×64-bit) |
+| `cswap256(a, b, mask)` | CT conditional swap (4×64-bit) |
+| `ct_select(a, b, mask)` | Returns `a` if mask=all-ones, else `b` |
+| `ct_lookup(table, count, stride, index, out)` | CT table lookup (scans all entries) |
+| `ct_lookup_256(table, count, index, out)` | CT lookup for 256-bit entries |
+
+---
+
+### CT Field Operations (`ct/field.hpp`)
+
+| Function | Description |
+|----------|-------------|
+| `field_add(a, b)` | CT addition mod p |
+| `field_sub(a, b)` | CT subtraction mod p |
+| `field_mul(a, b)` | CT multiplication mod p |
+| `field_sqr(a)` | CT squaring mod p |
+| `field_neg(a)` | CT negation mod p |
+| `field_inv(a)` | CT inverse (addition-chain Fermat, fixed 255 sqr + 14 mul) |
+| `field_cmov(r, a, mask)` | CT conditional move |
+| `field_cswap(a, b, mask)` | CT conditional swap |
+| `field_select(a, b, mask)` | CT select: `a` if mask=1s, else `b` |
+| `field_cneg(a, mask)` | CT conditional negate |
+| `field_is_zero(a)` | CT zero check → mask |
+| `field_eq(a, b)` | CT equality → mask |
+| `field_normalize(a)` | CT reduce to canonical form |
+
+---
+
+### CT Scalar Operations (`ct/scalar.hpp`)
+
+| Function | Description |
+|----------|-------------|
+| `scalar_add(a, b)` | CT addition mod n |
+| `scalar_sub(a, b)` | CT subtraction mod n |
+| `scalar_neg(a)` | CT negation mod n |
+| `scalar_cmov(r, a, mask)` | CT conditional move |
+| `scalar_cswap(a, b, mask)` | CT conditional swap |
+| `scalar_select(a, b, mask)` | CT select |
+| `scalar_cneg(a, mask)` | CT conditional negate |
+| `scalar_is_zero(a)` | CT zero check → mask |
+| `scalar_eq(a, b)` | CT equality → mask |
+| `scalar_bit(a, index)` | CT bit access (reads all limbs) |
+| `scalar_window(a, pos, width)` | CT w-bit window extraction |
+
+---
+
+### CT Point Operations (`ct/point.hpp`)
+
+| Function | Description |
+|----------|-------------|
+| `point_add_complete(p, q)` | Complete addition (handles all cases branchlessly) |
+| `point_dbl(p)` | CT doubling |
+| `point_neg(p)` | CT negation |
+| `point_cmov(r, a, mask)` | CT conditional move |
+| `point_select(a, b, mask)` | CT select |
+| `point_table_lookup(table, size, index)` | CT table lookup (scans all entries) |
+| `scalar_mul(p, k)` | **CT scalar multiplication** (fixed-window w=4) |
+| `generator_mul(k)` | CT generator multiplication (k×G) |
+| `point_is_on_curve(p)` | CT curve membership check → mask |
+| `point_eq(a, b)` | CT point equality → mask |
+
+### CTJacobianPoint
+
+Internal representation with `uint64_t infinity` flag (for branchless operations):
+
+```cpp
+struct CTJacobianPoint {
+    FieldElement x, y, z;
+    std::uint64_t infinity;  // 0 = normal, 0xFFF...F = infinity
+    
+    static CTJacobianPoint from_point(const Point& p) noexcept;
+    Point to_point() const noexcept;
+    static CTJacobianPoint make_infinity() noexcept;
+};
+```
+
+---
+
 ## CUDA API
 
 **Namespace:** `secp256k1::cuda`

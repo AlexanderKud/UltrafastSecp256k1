@@ -10,6 +10,10 @@ set(SECP256K1_SOURCES
     src/glv.cpp        # GLV endomorphism optimization
     src/selftest.cpp   # Self-test with known arithmetic vectors
     src/sorted_ecc_db.cpp  # SortedEccDB - native x86/x64 database
+    # Constant-Time (CT) layer — always compiled, no flags
+    src/ct_field.cpp   # CT field arithmetic (side-channel resistant)
+    src/ct_scalar.cpp  # CT scalar arithmetic
+    src/ct_point.cpp   # CT point ops (complete addition, CT scalar_mul)
 )
 
 # Optional inline assembly (Tier 3: Maximum performance, x64/RISC-V)
@@ -139,9 +143,26 @@ if(SECP256K1_USE_ASM)
 
         add_compile_definitions(SECP256K1_HAS_RISCV_ASM=1)
         set(SECP256K1_HAS_ASM TRUE CACHE INTERNAL "Assembly support enabled")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64")
+        # ARM64 (AArch64) Assembly Support
+        # Uses MUL/UMULH inline assembly for field arithmetic
+        # Available on: Android NDK, Linux aarch64, macOS Apple Silicon
+        message(STATUS "Secp256k1: ARM64 inline assembly enabled (MUL/UMULH) - Expected 2-4x speedup on field operations")
+        
+        list(APPEND SECP256K1_SOURCES
+            src/field_asm_arm64.cpp
+        )
+        
+        add_compile_definitions(SECP256K1_HAS_ARM64_ASM=1)
+        set(SECP256K1_HAS_ASM TRUE CACHE INTERNAL "Assembly support enabled")
+        
+        if(SECP256K1_USE_FAST_REDUCTION)
+            add_compile_definitions(SECP256K1_USE_FAST_REDUCTION=1)
+            message(STATUS "Secp256k1: Fast modular reduction enabled (ARM64 secp256k1-specific)")
+        endif()
     else()
         message(WARNING "Secp256k1: Inline assembly requested but not available for ${CMAKE_SYSTEM_PROCESSOR} on ${CMAKE_SYSTEM_NAME}")
-        message(WARNING "  Assembly is enabled only on: Linux x86_64 (GAS), Windows x64 (MSVC+MASM), Linux RISC-V (GAS). Falling back.")
+        message(WARNING "  Assembly is enabled only on: x86_64, RISC-V 64-bit, ARM64 (aarch64). Falling back.")
         set(SECP256K1_HAS_ASM FALSE)
     endif()
 else()
@@ -269,10 +290,35 @@ endif()
 # Platform-specific architecture flags
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64|RISCV64")
     set(ARCH_FLAGS "-march=rv64gc_zba_zbb")
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
-    set(ARCH_FLAGS "-march=armv8-a+crypto")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64")
+    if(ANDROID)
+        # Android NDK: target ARMv8-A with crypto extensions (NEON is implicit)
+        set(ARCH_FLAGS "-march=armv8-a+crypto")
+        message(STATUS "Secp256k1: Android ARM64 target (ARMv8-A + crypto + NEON)")
+    else()
+        set(ARCH_FLAGS "-march=armv8-a+crypto")
+    endif()
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "armv7|armeabi")
+    # Android ARMv7 (32-bit) — no __int128, uses NO_INT128 fallback
+    set(ARCH_FLAGS "-march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=softfp")
+    add_compile_definitions(SECP256K1_NO_INT128=1)
+    message(STATUS "Secp256k1: Android ARMv7 target (32-bit, no __int128)")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|X64")
-    set(ARCH_FLAGS "-march=native")
+    if(ANDROID)
+        # Android x86_64 emulator — no -march=native for cross-compile
+        set(ARCH_FLAGS "-march=x86-64 -msse4.2")
+        message(STATUS "Secp256k1: Android x86_64 target (emulator)")
+    else()
+        set(ARCH_FLAGS "-march=native")
+    endif()
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "i686|x86")
+    if(ANDROID)
+        set(ARCH_FLAGS "-march=i686 -msse3")
+        add_compile_definitions(SECP256K1_NO_INT128=1)
+        message(STATUS "Secp256k1: Android x86 target (32-bit emulator, no __int128)")
+    else()
+        set(ARCH_FLAGS "")
+    endif()
 else()
     set(ARCH_FLAGS "")
 endif()
@@ -308,9 +354,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 # Special flags for field_asm.cpp (maximize BMI2/MULX utilization on x86)
-if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|X64")
     set_source_files_properties(src/field_asm.cpp PROPERTIES 
         COMPILE_FLAGS "-O3 ${ARCH_FLAGS} -mbmi2 -madx -mpopcnt -funroll-loops -ftree-vectorize -fno-exceptions -fno-rtti"
+    )
+else()
+    # ARM64/other: no BMI2/ADX, just standard optimization
+    set_source_files_properties(src/field_asm.cpp PROPERTIES 
+        COMPILE_FLAGS "-O3 ${ARCH_FLAGS} -funroll-loops -ftree-vectorize -fno-exceptions -fno-rtti"
     )
 endif()
 
@@ -409,4 +460,13 @@ if(BUILD_TESTING)
     add_executable(test_arithmetic_correctness tests/test_arithmetic_correctness.cpp)
     target_link_libraries(test_arithmetic_correctness PRIVATE ${SECP256K1_LIB_NAME})
     add_test(NAME test_arithmetic_correctness COMMAND test_arithmetic_correctness)
+
+    # Test: Constant-Time (CT) layer correctness
+    add_executable(test_ct tests/test_ct.cpp)
+    target_link_libraries(test_ct PRIVATE ${SECP256K1_LIB_NAME})
+    # CT scalar_mul uses large stack (precomputed table + complete addition locals)
+    if(MSVC OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND WIN32))
+        target_link_options(test_ct PRIVATE "LINKER:/STACK:8388608")
+    endif()
+    add_test(NAME test_ct COMMAND test_ct)
 endif()

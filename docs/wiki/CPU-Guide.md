@@ -212,6 +212,85 @@ FieldElement::from_bytes(bytes);
 
 ---
 
+## Constant-Time (CT) Layer
+
+The CT layer provides **side-channel resistant** operations for use with secret data. It lives in `secp256k1::ct::` and is always compiled alongside `fast::` — no build flags needed.
+
+### Architecture
+
+```
+secp256k1::fast::  ←── Maximum throughput (variable-time)
+    FieldElement, Scalar, Point  ←── Shared data types
+secp256k1::ct::    ←── Side-channel resistant (constant-time)
+```
+
+- **Same data types**: `ct::` functions accept and return `fast::FieldElement`, `fast::Scalar`, `fast::Point`
+- **Freely mixable**: Use `fast::` for public data, `ct::` for secret-dependent operations
+- **No compile flags**: Both namespaces always available on all platforms
+
+### CT Guarantees
+
+| Property | Guarantee |
+|----------|-----------|
+| Branches | No secret-dependent branches |
+| Memory access | No secret-dependent access patterns |
+| Instruction count | Fixed regardless of input |
+| Compiler safety | `value_barrier()` prevents branch conversion |
+
+### Key Algorithms
+
+#### Complete Addition Formula
+
+Unlike `fast::Point::add()` which has separate codepaths for P+Q vs P+P, the CT `point_add_complete()` handles **all cases** in a single branchless codepath:
+
+- **P + Q** (general addition)
+- **P + P** (doubling — detected via H==0 && R==0)
+- **P + O** or **O + Q** (identity — selected via cmov)
+- **P + (-P) = O** (inverse — detected via H==0 && R≠0)
+
+Cost: ~16M + 6S (fixed, no branches on point values)
+
+#### CT Scalar Multiplication
+
+Fixed-window method (w=4) with CT table lookup:
+
+1. Precompute table: T[0]=O, T[1]=P, ..., T[15]=15P
+2. For each 4-bit window (64 windows, MSB to LSB):
+   - 4 doublings
+   - CT table lookup (always scans all 16 entries)
+   - Complete addition
+3. Total: **256 doublings + 64 additions** (always, no skip)
+
+#### CT Field Inverse
+
+Uses addition-chain Fermat's little theorem (a^(p-2) mod p):
+- Fixed 255 squarings + 14 multiplications
+- No secret-dependent branching
+
+### Performance vs fast::
+
+| Operation | fast:: | ct:: | Overhead |
+|-----------|--------|------|----------|
+| Field Add | 11 ns | ~15 ns | ~1.4× |
+| Field Mul | 33 ns | ~35 ns | ~1.1× |
+| Scalar Mul | 110 μs | ~250 μs | ~2.3× |
+| Generator Mul | 5 μs | ~250 μs | ~50× |
+
+> **Note:** `fast::generator_mul` uses massive precomputed tables — CT cannot use table shortcuts without leaking information. The CT overhead on regular `scalar_mul` is modest (~2-3×).
+
+### When to Use CT
+
+| Scenario | Recommended API |
+|----------|-----------------|
+| Private key × G (key generation) | `ct::generator_mul(secret_k)` |
+| ECDH (secret × PubKey) | `ct::scalar_mul(pub_point, secret_k)` |
+| ECDSA signing (k⁻¹, s computation) | `ct::field_inv()`, `ct::scalar_*()` |
+| Public key validation | `ct::point_is_on_curve(p)` |
+| Batch public key generation | `fast::` (no secret dependence) |
+| Database search / scanning | `fast::` (public data only) |
+
+---
+
 ## See Also
 
 - [[API Reference]] - Function documentation
