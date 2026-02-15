@@ -443,10 +443,7 @@ Two security profiles are planned and partially implemented:
   * Optional Montgomery ladder implementations
   * Restricted compiler flags (no `-Ofast`, no unsafe math optimizations)
 
-Users are responsible for selecting the appropriate build configuration for their use case.
-
-This project does **not** encourage misuse and does **not** include brute-force or attack logic.
-It is a mathematical cryptographic engine intended for legitimate cryptographic applications.
+Choose the appropriate profile for your use case.
 
 ## 🛠️ Building
 
@@ -967,57 +964,23 @@ secp256k1-fast/
 
 ## 🔬 Research Statement
 
-This project represents over a year of research and several months of implementation effort focused on:
-
-* Efficient field arithmetic
-* Optimized scalar multiplication
-* Cross-architecture portability
-* Clean dependency-free design
-
-The goal is to explore the practical performance limits of secp256k1 implementations while maintaining responsible cryptographic engineering practices.
-
-Community feedback, peer review, and constructive criticism are welcome.
+This library explores the performance ceiling of secp256k1 across CPU architectures (x64, ARM64, RISC-V, Cortex-M, Xtensa) and GPUs (CUDA, OpenCL, Metal, ROCm). Zero external dependencies.
 
 ## 📚 Variant Overview
 
-The different internal variants represent experimental optimization stages and research branches.
+Internal 32-bit arithmetic variants (historical optimization stages):
 
-### `secp256k1_32_fast`
+| Variant | Description |
+|---------|-------------|
+| `secp256k1_32_fast` | Speed-first, variable-time |
+| `secp256k1_32_hybrid_smart` | Mixed strategy experiments |
+| `secp256k1_32_hybrid_final` | Stabilized hybrid arithmetic |
+| `secp256k1_32_really_final` | Most mature 32-bit variant |
 
-Early performance-focused implementation.
-Optimized for speed without strict constant-time guarantees.
+## 🚫 Scope
 
-### `secp256k1_32_hybrid_smart`
-
-Introduces algorithmic balance between raw speed and structural clarity.
-Used for experimentation with mixed optimization strategies.
-
-### `secp256k1_32_hybrid_final`
-
-Refined hybrid approach with improved arithmetic consistency and cleaner internal flow.
-
-### `secp256k1_32_really_final`
-
-Stable experimental branch consolidating performance refinements.
-Represents the most mature 32-bit variant in the research series.
-
-These variants are part of ongoing development and benchmarking.
-Detailed performance comparisons will be added progressively.
-
-## 🚫 Clarification on Usage
-
-UltrafastSecp256k1 is a cryptographic arithmetic library.
-
-It does not implement:
-
-* Brute-force search engines
-* Key cracking tools
-* Wallet recovery systems
-* Attack frameworks
-
-It provides optimized elliptic curve math primitives.
-
-Any higher-level usage is entirely external to this repository.
+This is an ECC arithmetic library. It provides field/scalar/point operations.
+It does not include key cracking, wallet recovery, or attack tools.
 
 ## 📚 Documentation
 
