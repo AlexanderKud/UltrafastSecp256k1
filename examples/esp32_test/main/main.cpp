@@ -17,6 +17,12 @@
 #include "secp256k1/point.hpp"
 #include "secp256k1/selftest.hpp"
 
+// Constant-Time layer
+#include "secp256k1/ct/point.hpp"
+#include "secp256k1/ct/field.hpp"
+#include "secp256k1/ct/scalar.hpp"
+#include "secp256k1/ct/ops.hpp"
+
 using namespace secp256k1::fast;
 
 // Helper to get chip model name
@@ -198,9 +204,195 @@ extern "C" void app_main() {
         (void)sink;
     }
 
+    // ─── Constant-Time (CT) Layer Tests & Benchmarks ─────────────────────
+    printf("\n");
+    printf("==============================================\n");
+    printf("  Constant-Time (CT) Layer Tests\n");
+    printf("==============================================\n");
+
+    int ct_pass = 0;
+    int ct_fail = 0;
+
+    // CT Test 1: ct::scalar_mul(G, k) == fast::G.scalar_mul(k)
+    {
+        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+        Point G = Point::generator();
+        Point fast_result = G.scalar_mul(k);
+        Point ct_result = secp256k1::ct::scalar_mul(G, k);
+        bool ok = (fast_result.x() == ct_result.x()) && (fast_result.y() == ct_result.y());
+        printf("  CT scalar_mul == fast:   %s\n", ok ? "PASS" : "FAIL");
+        ok ? ct_pass++ : ct_fail++;
+    }
+
+    // CT Test 2: ct::generator_mul(k) == fast::G.scalar_mul(k)
+    {
+        Scalar k = Scalar::from_hex("a1b2c3d4e5f6071819283746556473829aabbccddeeff00112233445566778899");
+        Point G = Point::generator();
+        Point fast_result = G.scalar_mul(k);
+        Point ct_result = secp256k1::ct::generator_mul(k);
+        bool ok = (fast_result.x() == ct_result.x()) && (fast_result.y() == ct_result.y());
+        printf("  CT generator_mul == fast: %s\n", ok ? "PASS" : "FAIL");
+        ok ? ct_pass++ : ct_fail++;
+    }
+
+    // CT Test 3: k=1 => result == G
+    {
+        Scalar one = Scalar::from_hex("0000000000000000000000000000000000000000000000000000000000000001");
+        Point G = Point::generator();
+        Point ct_result = secp256k1::ct::scalar_mul(G, one);
+        bool ok = (ct_result.x() == G.x()) && (ct_result.y() == G.y());
+        printf("  CT k=1 => G:             %s\n", ok ? "PASS" : "FAIL");
+        ok ? ct_pass++ : ct_fail++;
+    }
+
+    // CT Test 4: k=2 => result == G+G
+    {
+        Scalar two = Scalar::from_hex("0000000000000000000000000000000000000000000000000000000000000002");
+        Point G = Point::generator();
+        Point ct_result = secp256k1::ct::scalar_mul(G, two);
+        Point expected = G.add(G);
+        bool ok = (ct_result.x() == expected.x()) && (ct_result.y() == expected.y());
+        printf("  CT k=2 => G+G:           %s\n", ok ? "PASS" : "FAIL");
+        ok ? ct_pass++ : ct_fail++;
+    }
+
+    // CT Test 5: point_is_on_curve for generator
+    {
+        Point G = Point::generator();
+        uint64_t on_curve = secp256k1::ct::point_is_on_curve(G);
+        bool ok = (on_curve == UINT64_MAX);
+        printf("  CT G on_curve:           %s\n", ok ? "PASS" : "FAIL");
+        ok ? ct_pass++ : ct_fail++;
+    }
+
+    // CT Test 6: point_eq
+    {
+        Point G = Point::generator();
+        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+        Point p1 = secp256k1::ct::scalar_mul(G, k);
+        Point p2 = G.scalar_mul(k);
+        uint64_t eq = secp256k1::ct::point_eq(p1, p2);
+        bool ok = (eq == UINT64_MAX);
+        printf("  CT point_eq:             %s\n", ok ? "PASS" : "FAIL");
+        ok ? ct_pass++ : ct_fail++;
+    }
+
+    // CT Test 7: ct::ops - field_cmov
+    {
+        FieldElement a = FieldElement::from_limbs({1, 2, 3, 4});
+        FieldElement b = FieldElement::from_limbs({5, 6, 7, 8});
+        FieldElement r = a;
+        secp256k1::ct::field_cmov(&r, b, UINT64_MAX); // mask all-ones => r = b
+        bool ok1 = (r == b);
+        r = a;
+        secp256k1::ct::field_cmov(&r, b, 0); // mask zero => r stays a
+        bool ok2 = (r == a);
+        bool ok = ok1 && ok2;
+        printf("  CT field_cmov:           %s\n", ok ? "PASS" : "FAIL");
+        ok ? ct_pass++ : ct_fail++;
+    }
+
+    // CT Test 8: complete addition (doubling case)
+    {
+        Point G = Point::generator();
+        auto jG = secp256k1::ct::CTJacobianPoint::from_point(G);
+        auto jGG = secp256k1::ct::point_add_complete(jG, jG);
+        Point ctGG = jGG.to_point();
+        Point fastGG = G.add(G);
+        bool ok = (ctGG.x() == fastGG.x()) && (ctGG.y() == fastGG.y());
+        printf("  CT complete_add (dbl):   %s\n", ok ? "PASS" : "FAIL");
+        ok ? ct_pass++ : ct_fail++;
+    }
+
+    printf("\n  CT Results: %d/%d PASS\n", ct_pass, ct_pass + ct_fail);
+
+    // ─── CT Performance Benchmarks ───────────────────────────────────────
+    printf("\n");
+    printf("==============================================\n");
+    printf("  CT Performance Benchmark\n");
+    printf("==============================================\n");
+
+    // CT scalar_mul benchmark
+    {
+        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+        Point G = Point::generator();
+
+        // Warmup
+        volatile uint64_t ct_sink = 0;
+        Point wp = secp256k1::ct::scalar_mul(G, k);
+        ct_sink = wp.x().limbs()[0];
+
+        int64_t start = esp_timer_get_time();
+        Point ct_r = G;
+        for (int i = 0; i < 3; i++) {
+            ct_r = secp256k1::ct::scalar_mul(G, k);
+        }
+        int64_t elapsed = esp_timer_get_time() - start;
+        ct_sink = ct_r.x().limbs()[0];
+        printf("  CT Scalar*G:  %5lld us/op\n", elapsed / 3);
+        (void)ct_sink;
+    }
+
+    // CT complete addition benchmark
+    {
+        Point G = Point::generator();
+        auto jG = secp256k1::ct::CTJacobianPoint::from_point(G);
+
+        int64_t start = esp_timer_get_time();
+        auto r = jG;
+        for (int i = 0; i < iterations; i++) {
+            r = secp256k1::ct::point_add_complete(r, jG);
+        }
+        int64_t elapsed = esp_timer_get_time() - start;
+        printf("  CT Add(compl):%5lld ns/op\n", (elapsed * 1000) / iterations);
+        if (r.x == FieldElement::zero()) printf("!");
+    }
+
+    // CT doubling benchmark
+    {
+        Point G = Point::generator();
+        auto jG = secp256k1::ct::CTJacobianPoint::from_point(G);
+
+        int64_t start = esp_timer_get_time();
+        auto r = jG;
+        for (int i = 0; i < iterations; i++) {
+            r = secp256k1::ct::point_dbl(r);
+        }
+        int64_t elapsed = esp_timer_get_time() - start;
+        printf("  CT Dbl:       %5lld ns/op\n", (elapsed * 1000) / iterations);
+        if (r.x == FieldElement::zero()) printf("!");
+    }
+
+    // Fast vs CT comparison
+    {
+        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+        Point G = Point::generator();
+
+        volatile uint64_t cmp_sink = 0;
+        // Fast
+        int64_t t1 = esp_timer_get_time();
+        Point fr = G.scalar_mul(k);
+        int64_t t_fast = esp_timer_get_time() - t1;
+        cmp_sink = fr.x().limbs()[0];
+        // CT
+        int64_t t2 = esp_timer_get_time();
+        Point cr = secp256k1::ct::scalar_mul(G, k);
+        int64_t t_ct = esp_timer_get_time() - t2;
+        cmp_sink = cr.x().limbs()[0];
+        (void)cmp_sink;
+
+        printf("\n  -- Fast vs CT Comparison --\n");
+        printf("  Fast scalar*G: %lld us\n", t_fast);
+        printf("  CT scalar*G:   %lld us\n", t_ct);
+        if (t_fast > 0) {
+            printf("  CT/Fast ratio: %.1fx\n", (double)t_ct / (double)t_fast);
+        }
+    }
+
     printf("\n");
     printf("============================================================\n");
     printf("   UltrafastSecp256k1 on ESP32 - Test Complete\n");
+    printf("   CT Tests: %d/%d PASS\n", ct_pass, ct_pass + ct_fail);
     printf("============================================================\n");
 
     while (1) {
