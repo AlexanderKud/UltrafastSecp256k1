@@ -34,7 +34,6 @@ Ultra high-performance secp256k1 elliptic curve cryptography library with multi-
   - ARM64: ~5× speedup with MUL/UMULH inline assembly
   - RISC-V: 2-3× speedup with native assembly
   - CUDA: Batch processing of thousands of operations in parallel
-  - Memory-mapped database support for large-scale lookups
 
 - **Features**
   - Complete secp256k1 field and scalar arithmetic
@@ -136,7 +135,7 @@ for (int i = 0; i < 1000; ++i) {
 ### Mixed Add + Batch Inverse: Collecting Z Values for Cheap Jacobian→Affine
 
 During serial mixed additions, each point accumulates a growing Z coordinate.
-To extract affine X (for DB lookup, comparison, etc.), you need Z⁻² — which requires an expensive modular inversion.
+To extract affine X for comparison, you need Z⁻² — which requires an expensive modular inversion.
 **Solution**: Collect Z values in a batch, then invert them all at once with Montgomery trick (1 inversion + 3N multiplications instead of N inversions).
 
 ```cpp
@@ -176,9 +175,7 @@ for (uint64_t j = 0; j < total_count; ++j) {
         for (size_t i = 0; i < idx; ++i) {
             FieldElement z_inv_sq = batch_z[i].square();         // Z^(-2)
             FieldElement x_affine = batch_points[i].X() * z_inv_sq;  // X_affine = X_jac * Z^(-2)
-
-            // Use x_affine for DB lookup, bloom filter check, etc.
-            // ...
+            // Use x_affine as needed
         }
         idx = 0;  // Reset batch
     }
@@ -237,7 +234,7 @@ for (int slot = batch_interval - 1; slot >= 0; --slot) {
 for (int slot = 0; slot < batch_interval; ++slot) {
     int idx = tid + slot * stride;
     FieldElement x_affine = win_x[idx] * h_array[idx];  // X_jac * Z^{-2}
-    // Use x_affine for bloom filter check, DB lookup, etc.
+    // Use x_affine as needed
 }
 ```
 
@@ -272,12 +269,12 @@ for (size_t i = 0; i < N; ++i) {
 }
 ```
 
-#### 2. X-Only Coordinate Extraction (Search / DB Lookup)
+#### 2. X-Only Coordinate Extraction
 
-In most cases you don't need Y — bloom checks and DB lookups use only the affine X coordinate:
+In most cases you don't need Y — only the affine X coordinate is required:
 
 ```cpp
-// CPU pattern (sorted_ecc_db.cpp — production code)
+// CPU pattern
 constexpr size_t BATCH_SIZE = 1024;
 Point batch_points[BATCH_SIZE];
 FieldElement batch_z[BATCH_SIZE];
@@ -295,7 +292,7 @@ for (uint64_t j = start; j < end; ++j) {
         for (size_t i = 0; i < batch_idx; ++i) {
             FieldElement z_inv_sq = batch_z[i].square();           // Z^(-2)
             FieldElement x_affine = batch_points[i].X() * z_inv_sq;  // X only!
-            // bloom_check(x_affine) or db_lookup(x_affine)
+            // Use x_affine as needed
         }
         batch_idx = 0;
     }
@@ -318,20 +315,18 @@ __global__ void extract_z_kernel(const JacobianPoint* points,
 //         1 inversion per block, inner elements use multiplications only
 batch_inverse_kernel<<<blocks, 256, shared_mem>>>(d_zs, d_inv_zs, N);
 
-// Step 3: Affine X = X_jac * Z_inv² (combined with bloom check)
-__global__ void affine_and_bloom_kernel(const JacobianPoint* points,
-                                        const FieldElement* inv_zs, ...) {
+// Step 3: Affine X = X_jac * Z_inv²
+__global__ void affine_extraction_kernel(const JacobianPoint* points,
+                                         const FieldElement* inv_zs, ...) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     FieldElement z_inv = inv_zs[idx];
     FieldElement z2;
     field_sqr(&z_inv, &z2);           // Z^(-2)
     FieldElement x_aff;
     field_mul(&points[idx].x, &z2, &x_aff);  // X_affine
-    // bloom_check(&x_aff, bloom_bits)
+    // Use x_aff as needed
 }
 ```
-
-> This pattern is used in: `cuda/app/search_cpu_identical.cuh` — `extract_z_kernel` → `batch_inverse_kernel` → `affine_and_bloom_kernel`
 
 #### 4. Batch Modular Division: a[i] / b[i]
 

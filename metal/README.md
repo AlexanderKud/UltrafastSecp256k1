@@ -97,7 +97,6 @@ metal/
 ├── shaders/
 │   ├── secp256k1_field.h       # ველის არითმეტიკა (add, sub, mul, sqr, inv)
 │   ├── secp256k1_point.h       # წერტილის ოპერაციები (double, add_mixed, scalar_mul)
-│   ├── secp256k1_bloom.h       # Bloom ფილტრი (FNV-1a + SplitMix64, ემულირებული 64-bit)
 │   └── secp256k1_kernels.metal # Compute kernels (search, batch_inverse, benchmarks)
 ├── include/
 │   ├── gpu_compat_metal.h      # პლატფორმის მაკროსები (CUDA gpu_compat.h pattern)
@@ -130,18 +129,12 @@ metal/
 - `jacobian_add_mixed` — madd-2007-bl (7M + 4S)
 - `jacobian_add` — სრული Jacobian ჯამი (11M + 5S)
 - `scalar_mul` — **4-bit fixed window** (64 double + 64 add, ~35% სწრაფი ვიდრე naive)
-- `affine_select` — **branchless** table lookup (GPU divergence-ს არ იწვევს)
+- `affine_select` — **branchless** table წაკითხვა (GPU divergence-ს არ იწვევს)
 - `jacobian_to_affine` — Jacobian → Affine კონვერსია
 - `apply_endomorphism` — GLV ენდომორფიზმი (β·x mod p)
 
-### Bloom ფილტრი (`secp256k1_bloom.h`)
-- 64-ბიტიანი ჰეშირება ემულირებული `u64` სტრუქტურით
-- FNV-1a ჰეშ ფუნქცია
-- SplitMix64 მიქსერი
-- CUDA `DeviceBloom`-თან თავსებადი ინტერფეისი
-
 ### Compute Kernels (`secp256k1_kernels.metal`)
-- `search_kernel` — ძიების მთავარი kernel (**O(1) per-thread** offset, scalar_mul + bloom check)
+- `search_kernel` — ძიების მთავარი kernel (**O(1) per-thread** offset, scalar_mul)
 - `scalar_mul_batch` — სკალარული გამრავლების ბეჩი (4-bit windowed)
 - `generator_mul_batch` — გენერატორის წერტილზე გამრავლება (4-bit windowed)
 - `field_mul_bench` — ველის გამრავლების ბენჩმარკი (Comba)
