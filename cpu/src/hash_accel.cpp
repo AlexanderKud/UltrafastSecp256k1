@@ -385,9 +385,8 @@ void hash160_33(const std::uint8_t* pubkey33, std::uint8_t* out20) noexcept {
 #ifdef SECP256K1_X86_TARGET
 
 // SHA-NI requires SSE4.1 + SHA instructions
-// MSVC: /arch:AVX2 enables; Clang/GCC: -msha -msse4.1
-#if defined(_MSC_VER) || defined(__SHA__)
-
+// MSVC: intrinsics always available
+// GCC/Clang: __attribute__((target("sha,sse4.1"))) enables per-function
 #include <immintrin.h>
 
 namespace shani {
@@ -580,7 +579,6 @@ void hash160_33(const std::uint8_t* pubkey33, std::uint8_t* out20) noexcept {
 
 } // namespace shani
 
-#endif // _MSC_VER || __SHA__
 #endif // SECP256K1_X86_TARGET
 
 // ============================================================================
@@ -603,24 +601,20 @@ std::array<std::uint8_t, 32> sha256(const void* data, std::size_t len) noexcept 
 
 void sha256_33(const std::uint8_t* pubkey33, std::uint8_t* out32) noexcept {
 #ifdef SECP256K1_X86_TARGET
-#if defined(_MSC_VER) || defined(__SHA__)
     if (sha_ni_available()) {
         shani::sha256_33(pubkey33, out32);
         return;
     }
-#endif
 #endif
     scalar::sha256_33(pubkey33, out32);
 }
 
 void sha256_32(const std::uint8_t* in32, std::uint8_t* out32) noexcept {
 #ifdef SECP256K1_X86_TARGET
-#if defined(_MSC_VER) || defined(__SHA__)
     if (sha_ni_available()) {
         shani::sha256_32(in32, out32);
         return;
     }
-#endif
 #endif
     scalar::sha256_32(in32, out32);
 }
@@ -703,12 +697,10 @@ std::array<std::uint8_t, 20> hash160(const void* data, std::size_t len) noexcept
 
 void hash160_33(const std::uint8_t* pubkey33, std::uint8_t* out20) noexcept {
 #ifdef SECP256K1_X86_TARGET
-#if defined(_MSC_VER) || defined(__SHA__)
     if (sha_ni_available()) {
         shani::hash160_33(pubkey33, out20);
         return;
     }
-#endif
 #endif
     scalar::hash160_33(pubkey33, out20);
 }
