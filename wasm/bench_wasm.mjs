@@ -28,6 +28,7 @@ async function loadModule() {
         resolve(__dirname, '../build-wasm/dist/secp256k1.mjs'),
         resolve(__dirname, 'dist/secp256k1.mjs'),
         resolve(process.cwd(), 'dist/secp256k1.mjs'),
+        resolve(process.cwd(), 'secp256k1.mjs'),
     ];
 
     for (const p of paths) {

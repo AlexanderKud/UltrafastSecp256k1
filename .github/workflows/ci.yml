@@ -258,6 +258,16 @@ jobs:
           ls -lh build-wasm/dist/secp256k1_wasm.wasm
           echo "WASM size: $(du -h build-wasm/dist/secp256k1_wasm.wasm | cut -f1)"
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run WASM benchmark
+        run: |
+          cd build-wasm/dist
+          node ../../wasm/bench_wasm.mjs
+
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
         with:
