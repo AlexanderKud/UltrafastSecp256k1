@@ -698,6 +698,177 @@ struct SelftestRng {
     }
 };
 
+// ── Boundary scalar KAT: limb boundaries + group order edges ──
+// These vectors catch carry/normalize/reduce bugs at critical bit positions.
+// Expected values computed from independent Python reference implementation.
+static bool test_boundary_scalar_vectors(bool verbose) {
+    if (verbose) SELFTEST_PRINT("\nBoundary Scalar KAT (limb/order edges):\n");
+    struct BVec { const char* k; const char* x; const char* y; const char* desc; };
+    static const BVec VECS[] = {
+        // Limb boundaries (uint64_t[4] representation)
+        {"0000000000000000000000000000000000000000000000000000000100000000",
+         "100f44da696e71672791d0a09b7bde459f1215a29b3c03bfefd7835b39a48db0",
+         "cdd9e13192a00b772ec8f3300c090666b7ff4a18ff5195ac0fbd5cd62bc65a09",
+         "2^32 * G"},
+        {"0000000000000000000000000000000000000000000000010000000000000000",
+         "3322d401243c4e2582a2147c104d6ecbf774d163db0f5e5313b7e0e742d0e6bd",
+         "56e70797e9664ef5bfb019bc4ddaf9b72805f63ea2873af624f3a2e96c28b2a0",
+         "2^64 * G"},
+        {"0000000000000000000000000000000000000001000000000000000000000000",
+         "fea74e3dbe778b1b10f238ad61686aa5c76e3db2be43057632427e2840fb27b6",
+         "6e0568db9b0b13297cf674deccb6af93126b596b973f7b77701d3db7f23cb96f",
+         "2^96 * G"},
+        {"0000000000000000000000000000000100000000000000000000000000000000",
+         "8f68b9d2f63b5f339239c1ad981f162ee88c5678723ea3351b7b444c9ec4c0da",
+         "662a9f2dba063986de1d90c2b6be215dbbea2cfe95510bfdf23cbf79501fff82",
+         "2^128 * G"},
+        // GLV split boundary (k near 2^128)
+        {"00000000000000000000000000000000ffffffffffffffffffffffffffffffff",
+         "6c034fd8cc8bd548e12569b630710400e6c24a05d9d6b32f08522a241e936da8",
+         "47ec36379eabcb793bfa408f7898ea619798b51289138f979b8eb3fd33d25f15",
+         "(2^128 - 1) * G"},
+        {"0000000000000000000000000000000100000000000000000000000000000001",
+         "8b300e513eff872cdaa6d12df54a3e332f27ce937be77e3e63c5e885114cbf09",
+         "1cec30677f43c0cc446f0d466b8238ea08f6a7aa9aaf716926c6ff28b3b10a39",
+         "(2^128 + 1) * G"},
+        // High-bit boundary (k near 2^255)
+        {"8000000000000000000000000000000000000000000000000000000000000000",
+         "b23790a42be63e1b251ad6c94fdef07271ec0aada31db6c3e8bd32043f8be384",
+         "fc6b694919d55edbe8d50f88aa81f94517f004f4149ecb58d10a473deb19880e",
+         "2^255 * G"},
+        {"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+         "370ebfed473178159fd08c3f7bc07e12301792fbd251554a80298efc666c651d",
+         "ad08b75161c542e5503b777625c296b9ef85455756ba7d582bc3c00965dea4a2",
+         "(2^255 - 1) * G"},
+        {"8000000000000000000000000000000000000000000000000000000000000001",
+         "885f71c4561e1733119c66fce72d2209771e096a8305ff8fd36a405afbcbbe10",
+         "0887d9db657cf382a6fef4f8269fe0f754c3c33a0c5c87b8f4d006db0392d260",
+         "(2^255 + 1) * G"},
+        // Near group order
+        {"fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413f",
+         "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+         "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705",
+         "(n-2) * G = -2G"},
+        // Wrap-around: (n+1) mod n = 1, result = G
+        {"fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+         "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+         "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8",
+         "(n+1) * G = G (wrap)"},
+    };
+    bool ok = true;
+    for (const auto& v : VECS) {
+        Scalar k = Scalar::from_hex(v.k);
+        Point r = scalar_mul_generator(k);
+        if (r.is_infinity() || !hex_equal(r.x().to_hex(), v.x) || !hex_equal(r.y().to_hex(), v.y)) {
+            ok = false;
+            if (verbose) {
+                SELFTEST_PRINT("    FAIL: %s\n", v.desc);
+                SELFTEST_PRINT("      Expected X: %s\n", v.x);
+                SELFTEST_PRINT("      Got      X: %s\n", r.x().to_hex().c_str());
+            }
+            break;
+        }
+    }
+    if (verbose) SELFTEST_PRINT(ok ? "    PASS\n" : "    FAIL\n");
+    return ok;
+}
+
+// ── Field element limb boundary tests ──
+// Values at uint64 limb boundaries to catch carry propagation bugs
+static bool test_field_limb_boundaries(bool verbose) {
+    if (verbose) SELFTEST_PRINT("\nField Limb Boundaries:\n");
+    bool ok = true;
+    struct LimbCase {
+        std::array<uint64_t, 4> limbs;
+        const char* desc;
+    };
+    static const LimbCase CASES[] = {
+        // All-ones in each limb position
+        {{0xFFFFFFFFFFFFFFFFULL, 0, 0, 0}, "limb0 = max"},
+        {{0, 0xFFFFFFFFFFFFFFFFULL, 0, 0}, "limb1 = max"},
+        {{0, 0, 0xFFFFFFFFFFFFFFFFULL, 0}, "limb2 = max"},
+        {{0, 0, 0, 0xFFFFFFFFFFFFFFFFULL}, "limb3 = max"},
+        // All limbs max (normalizes to small nonzero value ~0x100003D0)
+        {{0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL,
+          0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL}, "all limbs max"},
+        // High bit in each limb
+        {{0x8000000000000000ULL, 0, 0, 0}, "limb0 high bit"},
+        {{0, 0x8000000000000000ULL, 0, 0}, "limb1 high bit"},
+        {{0, 0, 0x8000000000000000ULL, 0}, "limb2 high bit"},
+        {{0, 0, 0, 0x8000000000000000ULL}, "limb3 high bit"},
+        // Value 1 in each limb position
+        {{1, 0, 0, 0}, "limb0 = 1"},
+        {{0, 1, 0, 0}, "limb1 = 1"},
+        {{0, 0, 1, 0}, "limb2 = 1"},
+        {{0, 0, 0, 1}, "limb3 = 1"},
+    };
+    FieldElement c = FieldElement::from_uint64(0x1234567890ABCDEFULL);
+    for (const auto& t : CASES) {
+        FieldElement a = FieldElement::from_limbs(t.limbs);
+        // a * a^(-1) = 1 (unless a normalizes to 0)
+        if (!(a == FieldElement::zero())) {
+            FieldElement inv = a.inverse();
+            if (!(a * inv == FieldElement::one())) {
+                ok = false;
+                if (verbose) SELFTEST_PRINT("    FAIL: %s — a * a^(-1) != 1\n", t.desc);
+                break;
+            }
+        }
+        // (a + c) - c = a
+        if (!((a + c) - c == a)) {
+            ok = false;
+            if (verbose) SELFTEST_PRINT("    FAIL: %s — (a+c)-c != a\n", t.desc);
+            break;
+        }
+        // a * 1 = a
+        if (!(a * FieldElement::one() == a)) {
+            ok = false;
+            if (verbose) SELFTEST_PRINT("    FAIL: %s — a*1 != a\n", t.desc);
+            break;
+        }
+        // a^2 = a * a
+        FieldElement sq = a; sq.square_inplace();
+        if (!(sq == a * a)) {
+            ok = false;
+            if (verbose) SELFTEST_PRINT("    FAIL: %s — a^2 != a*a\n", t.desc);
+            break;
+        }
+    }
+    if (verbose) SELFTEST_PRINT(ok ? "    PASS\n" : "    FAIL\n");
+    return ok;
+}
+
+// ── Batch inverse size sweep ──
+// Various sizes including warp/block boundaries to catch GPU parity bugs
+static bool test_batch_inverse_sweep(bool verbose) {
+    if (verbose) SELFTEST_PRINT("\nBatch Inverse Size Sweep:\n");
+    static const size_t SIZES[] = {
+        1, 2, 3, 7, 15, 16, 17, 31, 32, 33,
+        63, 64, 65, 127, 128, 129, 255, 256, 257, 512, 1024
+    };
+    bool ok = true;
+    for (size_t sz : SIZES) {
+        std::vector<FieldElement> elems(sz);
+        std::vector<FieldElement> copy(sz);
+        for (size_t i = 0; i < sz; ++i) {
+            uint64_t v = 3ULL + 2ULL * static_cast<uint64_t>(i);
+            elems[i] = FieldElement::from_uint64(v);
+            copy[i] = elems[i];
+        }
+        fe_batch_inverse(elems.data(), sz);
+        for (size_t i = 0; i < sz; ++i) {
+            if (!(copy[i].inverse() == elems[i])) {
+                ok = false;
+                if (verbose) SELFTEST_PRINT("    FAIL at size=%zu, idx=%zu\n", sz, i);
+                break;
+            }
+        }
+        if (!ok) break;
+    }
+    if (verbose) SELFTEST_PRINT(ok ? "    PASS\n" : "    FAIL\n");
+    return ok;
+}
+
 // ── Extended kG known vectors: 4G..9G, 15G, 255G ──
 static bool test_extended_kg_vectors(bool verbose) {
     if (verbose) SELFTEST_PRINT("\nExtended kG Vectors (4G-9G, 15G, 255G):\n");
@@ -1098,6 +1269,13 @@ bool Selftest(bool verbose) {
     total++; if (test_batch_inverse_expanded(verbose)) passed++;
     // Bilinearity for K*Q with ±G
     total++; if (test_bilinearity_K_times_Q(verbose)) passed++;
+
+    // ── Boundary & sweep tests ──
+    total++; if (test_boundary_scalar_vectors(verbose)) passed++;
+    total++; if (test_field_limb_boundaries(verbose)) passed++;
+#if !defined(SECP256K1_PLATFORM_ESP32) && !defined(ESP_PLATFORM) && !defined(IDF_VER) && !defined(SECP256K1_PLATFORM_STM32)
+    total++; if (test_batch_inverse_sweep(verbose)) passed++;
+#endif
 
 #if !defined(SECP256K1_PLATFORM_ESP32) && !defined(ESP_PLATFORM) && !defined(IDF_VER) && !defined(SECP256K1_PLATFORM_STM32)
     // Fixed-K plan equivalence (GLV-based, not available on embedded)
