@@ -56,6 +56,15 @@ elseif(TARGET secp256k1_cpu)
 else()
     # Standalone build: gather all CPU .cpp sources
     file(GLOB CPU_SOURCES "${ULTRAFAST_ROOT}/cpu/src/*.cpp")
+
+    # MSVC (non clang-cl): no __uint128_t / __int128 support
+    if(MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # field_52.cpp has a hard #error without __uint128_t
+        list(FILTER CPU_SOURCES EXCLUDE REGEX "field_52\\.cpp$")
+        # scalar.cpp uses __int128 in the 64-bit path; enable 32-bit fallback
+        target_compile_definitions(ultrafast_secp256k1 PRIVATE SECP256K1_NO_INT128)
+    endif()
+
     target_sources(ultrafast_secp256k1 PRIVATE ${CPU_SOURCES})
 endif()
 

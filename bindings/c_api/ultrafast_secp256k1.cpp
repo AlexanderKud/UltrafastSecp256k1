@@ -5,7 +5,9 @@
  * All functions convert between opaque byte arrays and internal C++ types.
  * ============================================================================ */
 
+#ifndef ULTRAFAST_SECP256K1_BUILDING
 #define ULTRAFAST_SECP256K1_BUILDING
+#endif
 #include "ultrafast_secp256k1.h"
 
 #include <cstring>
@@ -55,14 +57,70 @@ static inline Point point_from_compressed(const uint8_t pub[33]) {
     auto x3 = x2 * x;
     auto seven = secp256k1::fast::FieldElement::from_uint64(7);
     auto y2 = x3 + seven;
-    auto y = y2.sqrt();
+
+    // sqrt via Fermat: y = y2^((p+1)/4)
+    // secp256k1 p ≡ 3 (mod 4), so (p+1)/4 = 0x3fffffffffffffffffffffffffffffffffffffffffffffffffffffffbfffff0c
+    // We compute this using the addition chain: repeated squarings then multiplies.
+    // pow((p+1)/4) = pow(2^254 - 2^30 - 2^4 - ... ) — use simple binary approach:
+    //   (p+1)/4 in binary is 254 bits; we use the standard secp256k1 square chain.
+    //
+    // Simple method: y = y2^((p+1)/4) using the identity:
+    //   y2^((p-1)/2) = ±1 (Euler criterion)
+    //   y = y2^((p+1)/4)
+    //
+    // Compute via: e2 = y2^(2^2-1), e4 = y2^(2^4-1), etc. reusing inverse's chain.
+    auto t = y2;
+    // x2 = t^(2^1) * t  →  t^3 = t^(2^2-1)
+    auto a = t.square() * t;
+    // x3 = a^(2^1) * t  →  t^(2^3-1)
+    auto b = a.square() * t;
+    // x6 = b^(2^3) * b  →  t^(2^6-1)
+    auto c = b.square().square().square() * b;
+    // x9 = c^(2^3) * b  →  t^(2^9-1)
+    auto d = c.square().square().square() * b;
+    // x11 = d^(2^2) * a  →  t^(2^11-1)
+    auto e = d.square().square() * a;
+    // x22 = e^(2^11) * e  →  t^(2^22-1)
+    auto f = e;
+    for (int i = 0; i < 11; ++i) f = f.square();
+    f = f * e;
+    // x44 = f^(2^22) * f  →  t^(2^44-1)
+    auto g = f;
+    for (int i = 0; i < 22; ++i) g = g.square();
+    g = g * f;
+    // x88 = g^(2^44) * g  →  t^(2^88-1)
+    auto h = g;
+    for (int i = 0; i < 44; ++i) h = h.square();
+    h = h * g;
+    // x176 = h^(2^88) * h  →  t^(2^176-1)
+    auto j = h;
+    for (int i = 0; i < 88; ++i) j = j.square();
+    j = j * h;
+    // x220 = j^(2^44) * g  →  t^(2^220-1)
+    auto k = j;
+    for (int i = 0; i < 44; ++i) k = k.square();
+    k = k * g;
+    // x223 = k^(2^3) * b  →  t^(2^223-1)
+    auto m = k.square().square().square() * b;
+    // result = m^(2^23) * e * t^(2^6) ...
+    // Following secp256k1 (p+1)/4 addition chain:
+    //   (p+1)/4 = 2^254 - 2^30 - 244  (approximately)
+    //   = (2^223 - 1) * 2^31 + (2^22 + ... )
+    // Exact exponent: shift m by 23 bits, multiply by specific window.
+    auto y = m;
+    for (int i = 0; i < 23; ++i) y = y.square();
+    y = y * f; // f = t^(2^22-1)
+    for (int i = 0; i < 6; ++i) y = y.square();
+    y = y * a; // *t^(2^2-1) = *t^3
+    y = y.square();
+    y = y.square(); // two more squares to reach bit 0
 
     // Check parity — 0x02 = even, 0x03 = odd
     auto y_bytes = y.to_bytes();
     bool y_is_odd = (y_bytes[31] & 1) != 0;
     bool want_odd = (pub[0] == 0x03);
     if (y_is_odd != want_odd) {
-        y = y.negate();
+        y = secp256k1::fast::FieldElement::from_uint64(0) - y;
     }
 
     return Point::from_affine(x, y);
