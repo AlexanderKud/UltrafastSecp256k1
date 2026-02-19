@@ -81,8 +81,6 @@ typedef _CtxCreateC = ffi.Int32 Function(ffi.Pointer<ffi.Pointer<ffi.Void>>);
 typedef _CtxCreateDart = int Function(ffi.Pointer<ffi.Pointer<ffi.Void>>);
 typedef _CtxDestroyC = ffi.Void Function(ffi.Pointer<ffi.Void>);
 typedef _CtxDestroyDart = void Function(ffi.Pointer<ffi.Void>);
-typedef _CtxCloneC = ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Pointer<ffi.Void>>);
-typedef _CtxCloneDart = int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Pointer<ffi.Void>>);
 
 // Version
 typedef _VersionC = ffi.Uint32 Function();
@@ -227,12 +225,6 @@ class UfsecpContext {
   late final _TaprootTweakDart _taprootTweak;
   late final _TaprootVerifyDart _taprootVerify;
 
-  static final Finalizer<ffi.Pointer<ffi.Void>> _finalizer =
-      Finalizer((ptr) {
-    // Best-effort cleanup; can't access _ctxDestroy from finalizer
-    // so we do nothing — explicit destroy() is recommended.
-  });
-
   /// Open the ufsecp native library and create a context.
   UfsecpContext({String? libraryPath}) {
     _lib = ffi.DynamicLibrary.open(libraryPath ?? _defaultLibName());
@@ -275,6 +267,9 @@ class UfsecpContext {
   int get version => _version();
   int get abiVersion => _abiVersion();
   String get versionString => _versionString().toDartString();
+  /// Get human-readable string for an error code.
+  String errorString(int code) => _errorStr(code).toDartString();
+
   int get lastError {
     _ensureAlive();
     return _lastError(_ctx);

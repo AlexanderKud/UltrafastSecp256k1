@@ -219,6 +219,9 @@ if(NOT TARGET ${SECP256K1_LIB_NAME})
     add_library(${SECP256K1_LIB_NAME} STATIC ${SECP256K1_SOURCES})
     add_library(secp256k1::fast ALIAS ${SECP256K1_LIB_NAME})
 
+    # Required for linking into shared libraries (e.g. ufsecp_shared)
+    set_target_properties(${SECP256K1_LIB_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
     # ========================================================================
     # LTO (Link Time Optimization) Support
     # ========================================================================

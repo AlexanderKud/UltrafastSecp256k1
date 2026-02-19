@@ -109,50 +109,51 @@ elseif(TARGET ufsecp_shared)
     add_library(ufsecp::ufsecp ALIAS ufsecp_shared)
 endif()
 
-# ── Install ────────────────────────────────────────────────────────────────
+# ── Install (standalone only — skip when used as sub-project) ──────────────
 
-include(GNUInstallDirs)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    include(GNUInstallDirs)
 
-# Headers
-install(FILES
-    ufsecp.h
-    ufsecp_version.h
-    ufsecp_error.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ufsecp
-)
-
-# Libraries
-if(TARGET ufsecp_shared)
-    install(TARGETS ufsecp_shared
-        EXPORT ufsecpTargets
-        LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
+    # Headers
+    install(FILES
+        ufsecp.h
+        ufsecp_version.h
+        ufsecp_error.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ufsecp
     )
-endif()
-if(TARGET ufsecp_static)
-    install(TARGETS ufsecp_static
-        EXPORT ufsecpTargets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+
+    # Libraries
+    if(TARGET ufsecp_shared)
+        install(TARGETS ufsecp_shared
+            EXPORT ufsecpTargets
+            LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+    endif()
+    if(TARGET ufsecp_static)
+        install(TARGETS ufsecp_static
+            EXPORT ufsecpTargets
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+    endif()
+
+    # CMake package config
+    install(EXPORT ufsecpTargets
+        FILE ufsecpTargets.cmake
+        NAMESPACE ufsecp::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ufsecp
     )
-endif()
 
-# CMake package config
-install(EXPORT ufsecpTargets
-    FILE ufsecpTargets.cmake
-    NAMESPACE ufsecp::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ufsecp
-)
-
-# ── pkg-config ─────────────────────────────────────────────────────────────
-
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/ufsecp.pc.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/ufsecp.pc"
-    @ONLY
-)
-if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/ufsecp.pc")
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/ufsecp.pc"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+    # ── pkg-config ─────────────────────────────────────────────────────────
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/ufsecp.pc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/ufsecp.pc"
+        @ONLY
     )
+    if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/ufsecp.pc")
+        install(FILES "${CMAKE_CURRENT_BINARY_DIR}/ufsecp.pc"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+        )
+    endif()
 endif()
