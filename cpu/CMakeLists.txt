@@ -213,6 +213,7 @@ if(SECP256K1_USE_ASM)
     endif()
 else()
     set(SECP256K1_HAS_ASM FALSE)
+    add_compile_definitions(SECP256K1_NO_ASM=1)
 endif()
 
 if(NOT TARGET ${SECP256K1_LIB_NAME})
