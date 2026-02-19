@@ -101,25 +101,34 @@ struct alignas(8) FieldElement52 {
     bool operator==(const FieldElement52& rhs) const noexcept;
     bool operator!=(const FieldElement52& rhs) const noexcept;
 
+    // ── Fast Variable-time Zero Check ────────────────────────────────
+    // Checks if value reduces to zero mod p WITHOUT full normalization.
+    // Much cheaper than normalize()+is_zero() — no copy, no canonical form.
+    // Variable-time: safe for non-secret values (point coordinates in ECC).
+    bool normalizes_to_zero() const noexcept;
+
     // ── Half ─────────────────────────────────────────────────────────
     // Computes a/2 mod p. Branchless.
     FieldElement52 half() const noexcept;
 };
 
-// ── Free Functions (hot-path, avoid vtable/method overhead) ──────────────────
+// ── Free Functions ────────────────────────────────────────────────────────────
 //
-// These operate on raw uint64_t[5] arrays for maximum performance.
-// Use these in inner loops where every nanosecond counts.
+// Hot-path functions (fe52_mul_inner, fe52_sqr_inner, fe52_normalize_weak,
+// fe52_normalize, from_fe, to_fe) are defined INLINE in field_52_impl.hpp
+// for zero call overhead.
 
-void fe52_mul_inner(std::uint64_t* r, const std::uint64_t* a,
-                    const std::uint64_t* b) noexcept;
-void fe52_sqr_inner(std::uint64_t* r, const std::uint64_t* a) noexcept;
+// Out-of-line fe52_normalize kept for backward compatibility with code
+// that calls it outside hot paths. Actual implementation is inline.
 void fe52_normalize(std::uint64_t* r) noexcept;
-void fe52_normalize_weak(std::uint64_t* r) noexcept;
 
 // Compile-time layout verification
 static_assert(sizeof(FieldElement52) == 40, "FieldElement52 must be 40 bytes (5×8)");
 
 } // namespace secp256k1::fast
+
+// Inline implementations of all hot-path 5×52 operations.
+// Must come AFTER the FieldElement52 class definition.
+#include "secp256k1/field_52_impl.hpp"
 
 #endif // SECP256K1_FIELD_52_HPP

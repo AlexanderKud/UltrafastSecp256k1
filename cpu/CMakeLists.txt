@@ -64,13 +64,26 @@ if(SECP256K1_USE_ASM)
             # GAS syntax for Clang/GCC (Windows MinGW, Linux, macOS)
             enable_language(ASM)
             message(STATUS "Secp256k1: Inline assembly enabled (x64 GAS) - Expected 3-5x speedup on field operations")
-            list(APPEND SECP256K1_SOURCES src/field_asm_x64_gas.S)
+            list(APPEND SECP256K1_SOURCES
+                src/field_asm_x64_gas.S
+                src/field_asm52_x64_gas.S
+            )
 
             # GAS assembler flags
             set(ASM_FLAGS "-x assembler-with-cpp -mbmi2 -madx -fno-lto")
             set_source_files_properties(src/field_asm_x64_gas.S PROPERTIES
                 COMPILE_FLAGS "${ASM_FLAGS}")
+            set_source_files_properties(src/field_asm52_x64_gas.S PROPERTIES
+                COMPILE_FLAGS "${ASM_FLAGS}")
             set(SECP256K1_HAS_ASM TRUE CACHE INTERNAL "Assembly support enabled")
+            # 5×52 ASM: opt-in on x64 (C __int128 inlines better with Clang/GCC)
+            option(SECP256K1_FORCE_X64_FE52_ASM "Force 5×52 MULX assembly instead of C __int128 (slower on Clang/GCC due to call overhead)" OFF)
+            if(SECP256K1_FORCE_X64_FE52_ASM)
+                add_compile_definitions(SECP256K1_HAS_X64_FE52_ASM=1)
+                message(STATUS "Secp256k1: 5x52 MULX assembly FORCED ON (x64)")
+            else()
+                message(STATUS "Secp256k1: 5x52 using C __int128 (x64, inlines better)")
+            endif()
 
             # Enable fast reduction on x64 (uses BMI2/ADX)
             if(SECP256K1_USE_FAST_REDUCTION)
@@ -160,13 +173,18 @@ if(SECP256K1_USE_ASM)
         list(APPEND SECP256K1_SOURCES
             src/field_asm_riscv64.S
             src/field_asm_riscv64.cpp
+            src/field_asm52_riscv64.S
         )
         
         # RISC-V assembler flags with detected march
         set_source_files_properties(src/field_asm_riscv64.S PROPERTIES 
             COMPILE_FLAGS "-x assembler-with-cpp -march=${RISCV_MARCH_FLAG} -fno-lto")
+        set_source_files_properties(src/field_asm52_riscv64.S PROPERTIES
+            COMPILE_FLAGS "-x assembler-with-cpp -march=${RISCV_MARCH_FLAG} -fno-lto")
 
         add_compile_definitions(SECP256K1_HAS_RISCV_ASM=1)
+        add_compile_definitions(SECP256K1_HAS_RISCV_FE52_ASM=1)
+        message(STATUS "Secp256k1: 5x52 MUL/MULHU assembly enabled (RISC-V)")
         set(SECP256K1_HAS_ASM TRUE CACHE INTERNAL "Assembly support enabled")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64")
         # ARM64 (AArch64) Assembly Support
@@ -176,9 +194,12 @@ if(SECP256K1_USE_ASM)
         
         list(APPEND SECP256K1_SOURCES
             src/field_asm_arm64.cpp
+            src/field_asm52_arm64.cpp
         )
         
         add_compile_definitions(SECP256K1_HAS_ARM64_ASM=1)
+        add_compile_definitions(SECP256K1_HAS_ARM64_FE52_ASM=1)
+        message(STATUS "Secp256k1: 5x52 MUL/UMULH assembly enabled (ARM64)")
         set(SECP256K1_HAS_ASM TRUE CACHE INTERNAL "Assembly support enabled")
         
         if(SECP256K1_USE_FAST_REDUCTION)

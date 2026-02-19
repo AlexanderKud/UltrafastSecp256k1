@@ -104,6 +104,8 @@ bindings/rust/*/target/
 bindings/dart/.dart_tool/
 bindings/nodejs/node_modules/
 bindings/ruby/*.gem
+bindings/csharp/**/bin/
+bindings/csharp/**/obj/
 test_errors.txt
 test_f52.txt
 test_f52_err.txt

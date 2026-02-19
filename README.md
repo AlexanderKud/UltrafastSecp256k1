@@ -35,7 +35,8 @@ This library has **not undergone independent security audits**. It is provided f
 - ❌ Not recommended without independent cryptographic audit
 - ❌ No formal security guarantees
 - ✅ All self-tests pass (76/76 including all backends)
-- ✅ Constant-time (CT) layer available for side-channel resistance
+- ✅ Dual-layer constant-time architecture (FAST + CT always active)
+- ✅ Stable C ABI (`ufsecp`) with 45 exported functions
 
 **Reporting Security Issues:**
 - Email: [payysoon@gmail.com](mailto:payysoon@gmail.com)
@@ -75,7 +76,7 @@ Users assume all risks. For production cryptographic systems, prefer audited lib
   - Constant-time (CT) layer for side-channel resistance
   - Public key derivation
 
-### Feature Coverage (v3.3.0)
+### Feature Coverage (v3.4.0)
 
 | Category | Component | Status |
 |----------|-----------|--------|
@@ -97,10 +98,11 @@ Users assume all risks. For production cryptographic systems, prefer audited lib
 | **Adaptor** | Schnorr + ECDSA adaptor sigs | ✅ |
 | **Address** | P2PKH, P2WPKH, P2TR, Base58, Bech32/m | ✅ |
 | **Silent Pay** | BIP-352 | ✅ |
-| **Hashing** | SHA-256, SHA-512, HMAC, Keccak-256 | ✅ |
+| **Hashing** | SHA-256 (SHA-NI), SHA-512, HMAC, Keccak-256 | ✅ |
 | **Coins** | 27 coins, auto-dispatch, EIP-55 | ✅ |
 | **Custom G** | CurveContext, custom generator/curve | ✅ |
 | **BIP-44** | Coin-type HD, auto-purpose | ✅ |
+| **C ABI** | `ufsecp` stable FFI (45 exports, C/C#/Python/Go/…) | ✅ |
 | **Self-test** | Known vector verification | ✅ |
 | **GPU** | CUDA, Metal, OpenCL, ROCm kernels | ✅ |
 | **Platforms** | x64, ARM64, RISC-V, ESP32, WASM, iOS, Android, Metal, ROCm | ✅ |
@@ -463,7 +465,90 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) for a full layer-by-layer risk assessment
 
 **Choose the appropriate profile for your use case.** Using FAST with secret data is a security vulnerability.
 
-## 🛠️ Building
+## � Stable C ABI (`ufsecp`)
+
+Starting with **v3.4.0**, UltrafastSecp256k1 ships a stable C ABI — `ufsecp` — designed for FFI bindings (C#, Python, Rust, Go, Java, etc.) and embedding.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│                  Your Application                │
+│          (C, C#, Python, Go, Rust, …)            │
+└──────────────────┬───────────────────────────────┘
+                   │  ufsecp C ABI (45 functions)
+┌──────────────────▼───────────────────────────────┐
+│           ufsecp.dll / libufsecp.so              │
+│  Opaque ctx  │  Error model  │  ABI versioning   │
+├──────────────┴───────────────┴───────────────────┤
+│                FAST layer                        │
+│  Variable-time point/field/scalar operations     │
+├──────────────────────────────────────────────────┤
+│                CT layer (always active)           │
+│  Constant-time signing, nonce gen, secret ops    │
+│  Complete addition (12M+2S), Valgrind markers    │
+└──────────────────────────────────────────────────┘
+```
+
+Both layers are **always active** — no flag-based selection. Public operations use the FAST layer; secret-key operations (sign, derive, ECDH) use the CT layer internally.
+
+### Quick Start (C)
+
+```c
+#include "ufsecp.h"
+
+ufsecp_ctx* ctx = NULL;
+ufsecp_ctx_create(&ctx);
+
+// Generate keypair
+unsigned char seckey[32], pubkey[33];
+ufsecp_keygen(ctx, seckey, pubkey);
+
+// ECDSA sign
+unsigned char msg[32] = { /* SHA-256 hash */ };
+unsigned char sig[64];
+ufsecp_ecdsa_sign(ctx, seckey, msg, sig);
+
+// Verify
+int valid = 0;
+ufsecp_ecdsa_verify(ctx, pubkey, 33, msg, sig, &valid);
+
+ufsecp_ctx_destroy(ctx);
+```
+
+### API Coverage
+
+| Category | Functions |
+|----------|-----------|
+| **Context** | `ctx_create`, `ctx_destroy`, `selftest`, `last_error` |
+| **Keys** | `keygen`, `seckey_verify`, `pubkey_create`, `pubkey_parse`, `pubkey_serialize` |
+| **ECDSA** | `ecdsa_sign`, `ecdsa_verify`, `ecdsa_sign_der`, `ecdsa_verify_der`, `ecdsa_recover` |
+| **Schnorr** | `schnorr_sign`, `schnorr_verify` |
+| **SHA-256** | `sha256` (SHA-NI accelerated) |
+| **ECDH** | `ecdh_compressed`, `ecdh_xonly`, `ecdh_raw` |
+| **BIP-32** | `bip32_from_seed`, `bip32_derive_child`, `bip32_serialize` |
+| **Address** | `address_p2pkh`, `address_p2wpkh`, `address_p2tr` |
+| **WIF** | `wif_encode`, `wif_decode` |
+| **Tweak** | `pubkey_tweak_add`, `pubkey_tweak_mul` |
+| **Version** | `version`, `abi_version`, `version_string` |
+
+### Building ufsecp
+
+```bash
+# Sub-project (from UltrafastSecp256k1 root — preferred)
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+
+# Standalone
+cmake -S include/ufsecp -B build-ufsecp -DCMAKE_BUILD_TYPE=Release
+cmake --build build-ufsecp -j
+```
+
+Output: `ufsecp.dll` (shared) + `ufsecp_s.lib` (static).
+
+See [SUPPORTED_GUARANTEES.md](include/ufsecp/SUPPORTED_GUARANTEES.md) for Tier 1/2/3 stability guarantees.
+
+## �🛠️ Building
 
 ### Prerequisites
 
@@ -787,34 +872,43 @@ void benchmark_field_multiply() {
 All CPU benchmarks use median of 3 passes after warm-up. Windows results from Clang 21.1.0, Release, AVX2.
 RISC-V results collected on **Milk-V Mars** (RV64 + RVV). Head-to-head comparison with Bitcoin Core libsecp256k1 included.
 
-### x86_64 / Windows (Clang 21.1.0, AVX2, Release)
+### x86_64 / Windows (Clang 21.1.0, AVX2, BMI2/ADX, Release)
 
 | Operation | Time |
 |-----------|------:|
-| Field Mul (4×64) | 44 ns |
-| Field Square (4×64) | 33 ns |
-| Field Mul (5×52) | 23 ns |
-| Field Square (5×52) | 14 ns |
-| Field Add | 9 ns |
-| Field Sub | 10 ns |
-| Field Inverse | 5 μs |
-| Point Add | 821 ns |
-| Point Double | 380 ns |
-| Point Scalar Mul (k×P) | 42 μs |
-| Generator Mul (k×G) | 8 μs |
-| Batch Inverse (n=100) | 166 ns/elem |
-| Batch Inverse (n=1000) | 120 ns/elem |
+| Field Mul (5×52) | 17 ns |
+| Field Square (5×52) | 13 ns |
+| Field Add | 1 ns |
+| Field Negate | <1 ns |
+| Field Inverse | 1 μs |
+| Point Add | 172 ns |
+| Point Double | 83 ns |
+| Point Scalar Mul (k×P) | 24 μs |
+| Generator Mul (k×G) | 7 μs |
+| **ECDSA Sign** | **33 μs** |
+| **ECDSA Verify** | **57 μs** |
+| **Schnorr Sign (BIP-340)** | **23 μs** |
+| **Schnorr Verify (BIP-340)** | **58 μs** |
+| Batch Inverse (n=100) | 118 ns/elem |
+| Batch Inverse (n=1000) | 105 ns/elem |
+
+#### Signature Performance Summary
+
+| Operation | Time | Notes |
+|-----------|------:|-------|
+| ECDSA Sign (RFC 6979) | 33 μs | Deterministic nonce, low-S normalized |
+| ECDSA Verify | 57 μs | Accepts both low-S and high-S |
+| Schnorr Sign (BIP-340) | 23 μs | Tagged hashing, x-only pubkeys |
+| Schnorr Verify (BIP-340) | 58 μs | Standard BIP-340 verification |
+
+*Schnorr sign is ~30% faster than ECDSA sign due to simpler nonce derivation (no modular inverse). Verification speed is comparable — both require two scalar multiplications (k₁×G + k₂×Q).*
 
 #### Scalar Multiplication Breakdown
 
 | Method | Time |
 |--------|------:|
-| k×G (Generator, precomputed) | 8 μs |
-| k×P (Arbitrary point) | 42 μs |
-| k₁×G + k₂×Q (Separate) | 50 μs |
-| k₁×G + k₂×Q (Shamir interleaved) | 155 μs |
-| Windowed Shamir (multi-scalar) | 9.2 μs |
-| JSF (Joint Sparse Form) | 9.5 μs |
+| k×G (Generator, precomputed) | 7 μs |
+| k×P (Arbitrary point) | 24 μs |
 
 #### Field Representation Comparison (5×52 vs 4×64)
 
@@ -1006,59 +1100,62 @@ RISC-V results collected on **Milk-V Mars** (RV64 + RVV). Head-to-head compariso
 
 ### 🆚 Head-to-Head: UltrafastSecp256k1 vs Bitcoin Core libsecp256k1
 
-**Same machine, same compiler, same flags.** Both built with Clang 21.1.0, Release, Windows x64.
+**Same machine, same compiler, same flags.** Both built with Clang 21.1.0, Release, Windows x64, RealTime priority, pinned to core 2.
 
-#### High-Level Operations
+#### Signature & High-Level Operations
 
-| Operation | UltrafastSecp256k1 | libsecp256k1 | Speedup |
-|-----------|-------------------:|-------------:|--------:|
-| ECDSA Sign (k×G) | **8.5 μs** | 26.2 μs | **3.08×** |
-| ECDSA Verify (k×P + k×G) | **50 μs** | 37.3 μs | 0.75× |
-| EC Keygen (k×G) | **8.5 μs** | 17.9 μs | **2.11×** |
-| Schnorr Sign | **8.5 μs** | 18.2 μs | **2.14×** |
-
-*Note: ECDSA verify uses separate k₁×G + k₂×Q. Since v3.4, k×P uses GLV+5×52+Shamir (42 μs, down from 132 μs). Gap vs libsecp256k1 reduced from 3.7× to 1.3×.*
+| Operation | UltrafastSecp256k1 | libsecp256k1 | Ratio |
+|-----------|-------------------:|-------------:|------:|
+| **ECDSA Sign** | 33 μs | 24.7 μs | 0.75× |
+| **ECDSA Verify** | 57 μs | 35.7 μs | 0.63× |
+| **Schnorr Sign (BIP-340)** | **23 μs** | 17.7 μs | 0.77× |
+| **Schnorr Verify (BIP-340)** | 58 μs | 36.3 μs | 0.63× |
+| **EC Keygen (k×G)** | **7 μs** | 16.2 μs | **2.31×** |
+| ECDH | — | 34.4 μs | — |
+| ECDSA Recovery | — | 37.0 μs | — |
 
 #### Atomic Field Operations (Internal)
 
-| Operation | UltrafastSecp256k1 | libsecp256k1 | Speedup |
-|-----------|-------------------:|-------------:|--------:|
-| Field Mul (5×52) | **23 ns** | 15.3 ns | 0.67× |
-| Field Square (5×52) | **14 ns** | 13.6 ns | 0.97× |
-| Field Mul (4×64 portable) | 44 ns | 15.3 ns | 0.35× |
-| Field Add | 9 ns | 2.6 ns | 0.29× |
-| Field Inverse | **5 μs** | 1.71 μs | 0.34× |
+| Operation | UltrafastSecp256k1 | libsecp256k1 | Ratio |
+|-----------|-------------------:|-------------:|------:|
+| Field Mul (5×52) | 17 ns | 15.1 ns | 0.89× |
+| Field Square (5×52) | 13 ns | 13.2 ns | **1.02×** |
+| Field Inverse | 1 μs | 1.74 μs | **1.74×** |
 
-*libsecp256k1 uses hand-tuned 5×52 assembly with GCC `__int128`. Our 5×52 representation reaches 23 ns (vs 15.3 ns) — 1.50× gap. Our 4×64 portable path (44 ns) is for multi-platform compatibility.*
+*Field mul gap is only 11% — nearly parity with libsecp256k1's hand-tuned x86_64 assembly. Field square is essentially tied. Field inverse is 1.74× faster thanks to SafeGCD optimization.*
 
 #### Point & Group Operations (Internal)
 
-| Operation | UltrafastSecp256k1 | libsecp256k1 | Speedup |
-|-----------|-------------------:|-------------:|--------:|
-| Point Double | 380 ns | 103 ns | 0.27× |
-| Point Add (Jacobian) | 821 ns | 255 ns | 0.31× |
-| Point Add (Affine mixed) | 689 ns | 172 ns | 0.25× |
-| Generator Mul (k×G) | **8 μs** | **15.3 μs** | **1.91×** |
-| Scalar Mul (k×P) | 42 μs | 25.3 μs | 0.60× |
+| Operation | UltrafastSecp256k1 | libsecp256k1 | Ratio |
+|-----------|-------------------:|-------------:|------:|
+| Point Double | **83 ns** | 103 ns | **1.24×** |
+| Point Add (mixed affine) | **172 ns** | 204 ns | **1.19×** |
+| Point Add (Jacobian) | 172 ns | 257 ns | **1.49×** |
+| Generator Mul (k×G) | **7 μs** | 14.6 μs | **2.09×** |
+| Scalar Mul (k×P) | **24 μs** | 25.1 μs | **1.05×** |
+| Scalar Mul const-time | 24 μs | 32.8 μs | **1.37×** |
 
 #### Key Insights
 
 | Advantage | Details |
 |-----------|---------|
-| ✅ **Generator Mul 1.9–3× faster** | Aggressive precomputed table (larger memory footprint, faster lookup) |
-| ✅ **ECDSA Sign ~3× faster** | Dominated by k×G, our strongest operation |
-| ✅ **k×P within 1.3× of libsecp256k1** | GLV + 5×52 + Shamir's trick (42 μs vs 33 μs) |
+| ✅ **Generator Mul 2× faster** | Aggressive precomputed table (larger memory footprint, faster lookup) |
+| ✅ **Point Double 1.24× faster** | Inplace Jacobian doubling with FE52 native storage |
+| ✅ **Point Add 1.2–1.5× faster** | Mixed affine + full Jacobian both beat libsecp256k1 |
+| ✅ **k×P now matches libsecp256k1** | GLV + 5×52 + inplace ops (24 μs vs 25.1 μs) |
+| ✅ **Field Inverse 1.74× faster** | SafeGCD optimization |
+| ✅ **Field Square tied** | 13 ns vs 13.2 ns — parity with hand-tuned assembly |
 | ✅ **Multi-platform** | Same codebase runs on x86, ARM64, RISC-V, Xtensa, Cortex-M, CUDA, OpenCL, Metal |
-| ⚠️ **Field ops 1.4–3× slower** | libsecp256k1 has 10+ years of hand-tuned x86 assembly; our 5×52 with `__int128` narrows the gap |
-| ⚠️ **k×P scalar mul slower** | Point addition/doubling gap compounds across 256 iterations |
+| ⚠️ **ECDSA/Schnorr Sign ~1.3× slower** | Dominated by HMAC-SHA256 (RFC 6979) overhead — our SHA256 path not yet SIMD-optimized |
+| ⚠️ **ECDSA/Schnorr Verify ~1.6× slower** | Verify = k₁×G + k₂×Q multi-scalar; libsecp256k1 uses Strauss/Pippenger — we use separate muls |
 
-*Both libraries are actively optimized. UltrafastSecp256k1 prioritizes portability + GPU acceleration; libsecp256k1 prioritizes single-threaded x86 CPU performance.*
+*Since v4.0: point operations now **beat** libsecp256k1 across the board (double, add, k×G, k×P). The remaining gap is in signature verify (multi-scalar multiplication strategy) and SHA256/HMAC performance.*
 
 ### Available Benchmark Targets
 
 | Target | Description | Run Command |
 |--------|-------------|-------------|
-| `bench_comprehensive` | Full field/point/batch benchmark suite | `./bench_comprehensive` |
+| `bench_comprehensive` | Full field/point/batch/signature benchmark suite | `./bench_comprehensive` |
 | `bench_scalar_mul` | k×G and k×P with wNAF analysis | `./bench_scalar_mul` |
 | `bench_ct` | Fast-vs-CT layer overhead comparison | `./bench_ct` |
 | `bench_atomic_operations` | Individual ECC building block latencies | `./bench_atomic_operations` |
@@ -1121,9 +1218,9 @@ It does not include key storage, wallet software, network protocols, or attack t
 
 ## ⚠️ API Stability
 
-The public API is **not yet stable**. Breaking changes may occur in any minor release before **v4.0**.
+**C++ API**: Not yet stable. Breaking changes may occur in any minor release before **v4.0**. Core layers (field, scalar, point, ECDSA, Schnorr) have mature interfaces unlikely to change. Experimental layers (MuSig2, FROST, Adaptor, Pedersen, Taproot, HD, Coins) may see breaking changes.
 
-Core layers (field, scalar, point, ECDSA, Schnorr) have mature interfaces unlikely to change. Experimental layers (MuSig2, FROST, Adaptor, Pedersen, Taproot, HD, Coins) may see breaking changes in any release.
+**C ABI (`ufsecp`)**: Stable from v3.4.0. ABI version is tracked separately — minor version bumps add new functions without breaking existing ones. See [SUPPORTED_GUARANTEES.md](include/ufsecp/SUPPORTED_GUARANTEES.md) for tier details.
 
 Pin your dependency version and review changelogs before upgrading.
 

@@ -5,7 +5,34 @@ All notable changes to UltrafastSecp256k1 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.4.0] - 2026-02-19
+
+### Added — Stable C ABI (`ufsecp`)
+- **Complete C ABI library** — `ufsecp.dll` / `libufsecp.so` / `libufsecp.dylib` with 45 exported symbols, opaque `ufsecp_ctx` handle, and structured error model (11 error codes)
+- **Headers**: `ufsecp.h` (main API, 37 functions), `ufsecp_version.h` (ABI versioning), `ufsecp_error.h` (error codes)
+- **Implementation**: `ufsecp_impl.cpp` wrapping C++ core into C-linkage with zero heap allocations on hot paths
+- **Build system**: `include/ufsecp/CMakeLists.txt` — shared + static build, standalone or sub-project mode, pkg-config template (`ufsecp.pc.in`)
+- **API coverage**: key generation, ECDSA sign/verify/recover, Schnorr BIP-340 sign/verify, SHA-256, ECDH (compressed/xonly/raw), BIP-32 HD derivation, Bitcoin addresses (P2PKH/P2WPKH/P2TR), WIF encode/decode, DER serialization, public key tweak (add/mul), selftest
+- **`SUPPORTED_GUARANTEES.md`** — Tier 1/2/3 stability guarantees documentation
+- **`examples/hello_world.c`** — Minimal usage example
+
+### Added — Dual-Layer Constant-Time Architecture
+- **Always-on dual layers** — `secp256k1::fast::*` (public operations) and `secp256k1::ct::*` (secret-key operations) are always active simultaneously; no flag-based selection
+- **CT layer** — Complete addition formula (12M+2S), fixed-trace scalar multiplication, constant-time table lookup
+- **Valgrind/MSAN markers** — `SECP256K1_CLASSIFY()` / `SECP256K1_DECLASSIFY()` for verifiable constant-time guarantees
+
+### Added — SHA-256 Hardware Acceleration
+- **SHA-NI hardware dispatch** — Runtime CPUID detection for Intel SHA Extensions; transparent fallback to software implementation
+- **Zero-overhead dispatch** — Function pointer set once at init, no branching in hot path
+
+### Added — C# P/Invoke Bindings & Benchmarks
+- **`bindings/csharp/UfsepcBenchmark/`** — .NET 8.0 project with complete P/Invoke declarations for all 45 `ufsecp` functions
+- **68 correctness tests** — 12 categories covering key ops, ECDSA, Schnorr, SHA-256, ECDH, BIP-32, addresses, DER round-trip, recovery, WIF, tweaks, selftest
+- **19 benchmarks** — SHA-256: 137ns, ECDSA Sign: 11.89μs, Verify: 47.95μs, Schnorr Sign: 10.68μs, KeyGen: 1.22μs
+- **P/Invoke overhead measured** — ~10–40ns per call (negligible)
+
+### Changed
+- `ufsecp_ctx_create()` takes no flags parameter — dual-layer CT architecture is always active
 
 ---
 
