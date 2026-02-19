@@ -1239,6 +1239,16 @@ jobs:
           path: bindings/react-native/react-native-ufsecp-*.tgz
           retention-days: 5
 
+      - name: Publish to GitHub Packages (npm — React Native)
+        run: |
+          cd bindings/react-native
+          sed -i 's/"name": "react-native-ufsecp"/"name": "@shrec\/react-native-ufsecp"/' package.json
+          echo "@shrec:registry=https://npm.pkg.github.com" > .npmrc
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
+          npm publish --access public || echo "WARN: npm publish failed (may already exist)"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ══════════════════════════════════════════════════════════════════════════
   # 16) Package bindings — Swift (Package.swift + sources + native libs)
   # ══════════════════════════════════════════════════════════════════════════
