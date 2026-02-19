@@ -754,6 +754,20 @@ See [LICENSE](LICENSE) for full details.
 
 ---
 
+## Acknowledgements
+
+UltrafastSecp256k1 is an independent implementation — written from scratch with our own architecture, GPU pipeline, embedded ports, and optimization techniques. At the same time, no project exists in a vacuum. The published research, specifications, and open discussions from the wider cryptographic community helped us refine our own ideas and validate our results.
+
+We want to acknowledge the teams whose public work informed parts of our journey:
+
+- **[bitcoin-core/secp256k1](https://github.com/bitcoin-core/secp256k1)** — The reference C library whose published research on constant-time field arithmetic and endomorphism-based scalar multiplication (GLV, Strauss, Pippenger) helped us benchmark and verify our own independent implementations on GPU and embedded targets.
+- **[Bitcoin Core](https://github.com/bitcoin/bitcoin)** contributors — For open specifications (BIP-340 Schnorr, BIP-341 Taproot, RFC 6979) and a correctness-first engineering culture that benefits everyone building in this space.
+- **Pieter Wuille, Jonas Nick, Tim Ruffing** and the libsecp256k1 maintainers — For publicly sharing their research on side-channel resistance, exhaustive testing, and field representation trade-offs. Their published findings helped us make better decisions when designing our own architecture.
+
+We share our optimizations, GPU kernels, embedded ports, and cross-platform techniques freely — because open-source cryptography grows stronger when knowledge flows in every direction.
+
+---
+
 ## Support the Project
 
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-ea4aaa.svg?logo=github)](https://github.com/sponsors/shrec)
