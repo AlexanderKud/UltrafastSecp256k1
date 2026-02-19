@@ -447,6 +447,9 @@ BenchResult bench_scalar_mul(const BenchConfig& cfg) {
     // Scalar multiplication is very expensive - use smaller batch
     int batch = std::min(cfg.batch_size, 1 << 16);  // Max 64K
 
+    // Must match __launch_bounds__(128, 2) on scalar_mul_batch_kernel
+    constexpr int kThreads = 128;
+
     JacobianPoint *d_points, *d_results;
     Scalar *d_scalars;
     std::vector<JacobianPoint> h_points(batch);
@@ -462,19 +465,20 @@ BenchResult bench_scalar_mul(const BenchConfig& cfg) {
     CUDA_CHECK(cudaMemcpy(d_points, h_points.data(), batch * sizeof(JacobianPoint), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_scalars, h_scalars.data(), batch * sizeof(Scalar), cudaMemcpyHostToDevice));
 
-    int blocks = (batch + cfg.threads_per_block - 1) / cfg.threads_per_block;
+    int blocks = (batch + kThreads - 1) / kThreads;
 
     // Warmup
     for (int i = 0; i < cfg.warmup_iterations; ++i) {
-        scalar_mul_batch_kernel<<<blocks, cfg.threads_per_block>>>(d_points, d_scalars, d_results, batch);
+        scalar_mul_batch_kernel<<<blocks, kThreads>>>(d_points, d_scalars, d_results, batch);
     }
+    CUDA_CHECK(cudaGetLastError());  // Catch launch failures
     CUDA_CHECK(cudaDeviceSynchronize());
 
     // Measure
     CudaTimer timer;
     timer.start();
     for (int i = 0; i < cfg.measure_iterations; ++i) {
-        scalar_mul_batch_kernel<<<blocks, cfg.threads_per_block>>>(d_points, d_scalars, d_results, batch);
+        scalar_mul_batch_kernel<<<blocks, kThreads>>>(d_points, d_scalars, d_results, batch);
     }
     float total_ms = timer.stop();
 
@@ -492,6 +496,9 @@ BenchResult bench_scalar_mul(const BenchConfig& cfg) {
 BenchResult bench_generator_mul(const BenchConfig& cfg) {
     int batch = std::min(cfg.batch_size, 1 << 17);  // Max 128K
 
+    // Must match __launch_bounds__(128, 2) on generator_mul_batch_kernel
+    constexpr int kThreads = 128;
+
     JacobianPoint *d_results;
     Scalar *d_scalars;
     std::vector<Scalar> h_scalars(batch);
@@ -503,19 +510,20 @@ BenchResult bench_generator_mul(const BenchConfig& cfg) {
 
     CUDA_CHECK(cudaMemcpy(d_scalars, h_scalars.data(), batch * sizeof(Scalar), cudaMemcpyHostToDevice));
 
-    int blocks = (batch + cfg.threads_per_block - 1) / cfg.threads_per_block;
+    int blocks = (batch + kThreads - 1) / kThreads;
 
     // Warmup
     for (int i = 0; i < cfg.warmup_iterations; ++i) {
-        generator_mul_batch_kernel<<<blocks, cfg.threads_per_block>>>(d_scalars, d_results, batch);
+        generator_mul_batch_kernel<<<blocks, kThreads>>>(d_scalars, d_results, batch);
     }
+    CUDA_CHECK(cudaGetLastError());  // Catch launch failures
     CUDA_CHECK(cudaDeviceSynchronize());
 
     // Measure
     CudaTimer timer;
     timer.start();
     for (int i = 0; i < cfg.measure_iterations; ++i) {
-        generator_mul_batch_kernel<<<blocks, cfg.threads_per_block>>>(d_scalars, d_results, batch);
+        generator_mul_batch_kernel<<<blocks, kThreads>>>(d_scalars, d_results, batch);
     }
     float total_ms = timer.stop();
 
