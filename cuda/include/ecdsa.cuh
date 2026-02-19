@@ -367,9 +367,9 @@ __device__ inline bool ecdsa_sign(
     rfc6979_nonce(private_key, msg_hash, &k);
     if (scalar_is_zero(&k)) return false;
 
-    // R = k * G
+    // R = k * G  (use precomputed constant table for generator)
     JacobianPoint R;
-    scalar_mul(&GENERATOR_JACOBIAN, &k, &R);
+    scalar_mul_generator_const(&k, &R);
     if (R.infinity) return false;
 
     // Convert R to affine x-coordinate
@@ -465,11 +465,9 @@ __device__ inline bool ecdsa_verify(
     Scalar u2;
     scalar_mul_mod_n(&sig->r, &w, &u2);
 
-    // R' = u1 * G + u2 * Q
-    JacobianPoint P1, P2, R_prime;
-    scalar_mul(&GENERATOR_JACOBIAN, &u1, &P1);
-    scalar_mul(public_key, &u2, &P2);
-    jacobian_add(&P1, &P2, &R_prime);
+    // R' = u1 * G + u2 * Q  (Shamir's trick with GLV: ~128 doublings instead of 2×256)
+    JacobianPoint R_prime;
+    shamir_double_mul_glv(&GENERATOR_JACOBIAN, &u1, public_key, &u2, &R_prime);
 
     if (R_prime.infinity) return false;
 

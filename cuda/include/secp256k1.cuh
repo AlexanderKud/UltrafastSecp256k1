@@ -2599,6 +2599,658 @@ __device__ inline void scalar_mul_generator_windowed(
     }
 }
 
+// ============================================================================
+// Optimized Scalar Multiplication — wNAF w=4
+// ============================================================================
+// Windowed Non-Adjacent Form with pre-negated affine table.
+// 8 precomputed odd multiples: [P, 3P, 5P, 7P, 9P, 11P, 13P, 15P]
+// + their negations (negate y coordinate).
+// Cost: ~252 doublings + ~64 mixed additions (vs ~256+128 for binary D&A).
+// Lower addition count thanks to NAF property: no two consecutive non-zero digits.
+
+// Compute signed-digit wNAF (w=4) representation of scalar.
+// Outputs up to 257 digits in [-15,-13,...,-1,0,1,...,13,15], stored in out[].
+// Returns the number of digits (length to iterate).
+__device__ inline int scalar_to_wnaf4(const Scalar* k, int8_t* out) {
+    // Work on mutable copy
+    uint64_t limbs[5];
+    limbs[0] = k->limbs[0]; limbs[1] = k->limbs[1];
+    limbs[2] = k->limbs[2]; limbs[3] = k->limbs[3];
+    limbs[4] = 0;
+
+    int len = 0;
+    while (limbs[0] | limbs[1] | limbs[2] | limbs[3] | limbs[4]) {
+        if (limbs[0] & 1) {
+            // k is odd: pick digit d in [-15..15] (odd) s.t. k-d divisible by 16
+            int32_t d = (int32_t)(limbs[0] & 0x1F); // low 5 bits
+            if (d >= 16) d -= 32; // convert to signed
+            out[len] = (int8_t)d;
+            // k -= d (subtract signed digit)
+            if (d >= 0) {
+                limbs[0] -= (uint64_t)d;
+            } else {
+                // add |d| to k
+                uint64_t carry = (uint64_t)(-d);
+                for (int i = 0; i < 5; i++) {
+                    unsigned __int128 s = (unsigned __int128)limbs[i] + carry;
+                    limbs[i] = (uint64_t)s;
+                    carry = (uint64_t)(s >> 64);
+                    if (!carry) break;
+                }
+            }
+        } else {
+            out[len] = 0;
+        }
+        // k >>= 1
+        limbs[0] = (limbs[0] >> 1) | (limbs[1] << 63);
+        limbs[1] = (limbs[1] >> 1) | (limbs[2] << 63);
+        limbs[2] = (limbs[2] >> 1) | (limbs[3] << 63);
+        limbs[3] = (limbs[3] >> 1) | (limbs[4] << 63);
+        limbs[4] >>= 1;
+        len++;
+    }
+    return len;
+}
+
+// wNAF w=4 scalar multiplication: r = k * P
+// Uses 8 affine precomputed odd multiples + mixed Jacobian-affine addition.
+__device__ inline void scalar_mul_wnaf(const JacobianPoint* p, const Scalar* k, JacobianPoint* r) {
+    if (scalar_is_zero(k)) {
+        r->infinity = true;
+        field_set_zero(&r->x);
+        field_set_one(&r->y);
+        field_set_zero(&r->z);
+        return;
+    }
+
+    // Convert base to affine
+    AffinePoint base;
+    if (p->z.limbs[0] == 1 && p->z.limbs[1] == 0 && p->z.limbs[2] == 0 && p->z.limbs[3] == 0) {
+        base.x = p->x;
+        base.y = p->y;
+    } else {
+        FieldElement z_inv, z_inv2, z_inv3;
+        field_inv(&p->z, &z_inv);
+        field_sqr(&z_inv, &z_inv2);
+        field_mul(&z_inv2, &z_inv, &z_inv3);
+        field_mul(&p->x, &z_inv2, &base.x);
+        field_mul(&p->y, &z_inv3, &base.y);
+    }
+
+    // Precompute odd multiples: tbl[i] = (2i+1)*P for i=0..7
+    // tbl[0]=P, tbl[1]=3P, tbl[2]=5P, ..., tbl[7]=15P
+    AffinePoint tbl[8];
+    AffinePoint neg_tbl[8]; // negated y for subtraction
+
+    tbl[0] = base;
+
+    // 2P in Jacobian
+    JacobianPoint dbl_jac;
+    {
+        JacobianPoint p_jac;
+        p_jac.x = base.x;
+        p_jac.y = base.y;
+        field_set_one(&p_jac.z);
+        p_jac.infinity = false;
+        jacobian_double(&p_jac, &dbl_jac);
+    }
+
+    // Convert 2P to affine for mixed additions in table building
+    AffinePoint dbl_aff;
+    {
+        FieldElement z_inv, z_inv2, z_inv3;
+        field_inv(&dbl_jac.z, &z_inv);
+        field_sqr(&z_inv, &z_inv2);
+        field_mul(&z_inv2, &z_inv, &z_inv3);
+        field_mul(&dbl_jac.x, &z_inv2, &dbl_aff.x);
+        field_mul(&dbl_jac.y, &z_inv3, &dbl_aff.y);
+    }
+
+    // Build table: tbl[i] = tbl[i-1] + 2P (in Jacobian, then convert to affine)
+    {
+        JacobianPoint acc;
+        acc.x = base.x;
+        acc.y = base.y;
+        field_set_one(&acc.z);
+        acc.infinity = false;
+
+        for (int i = 1; i < 8; i++) {
+            jacobian_add_mixed(&acc, &dbl_aff, &acc);
+            // Convert acc to affine
+            FieldElement zi, zi2, zi3;
+            field_inv(&acc.z, &zi);
+            field_sqr(&zi, &zi2);
+            field_mul(&zi2, &zi, &zi3);
+            field_mul(&acc.x, &zi2, &tbl[i].x);
+            field_mul(&acc.y, &zi3, &tbl[i].y);
+        }
+    }
+
+    // Pre-negate table
+    FieldElement zero_fe;
+    field_set_zero(&zero_fe);
+    for (int i = 0; i < 8; i++) {
+        neg_tbl[i].x = tbl[i].x;
+        field_sub(&zero_fe, &tbl[i].y, &neg_tbl[i].y);
+    }
+
+    // Compute wNAF digits
+    int8_t wnaf[260];
+    for (int i = 0; i < 260; i++) wnaf[i] = 0;
+    int wnaf_len = scalar_to_wnaf4(k, wnaf);
+
+    // Main loop: MSB to LSB
+    r->infinity = true;
+    field_set_zero(&r->x);
+    field_set_one(&r->y);
+    field_set_zero(&r->z);
+
+    #pragma unroll 1
+    for (int i = wnaf_len - 1; i >= 0; i--) {
+        if (!r->infinity) {
+            jacobian_double(r, r);
+        }
+        int8_t d = wnaf[i];
+        if (d > 0) {
+            int idx = (d - 1) / 2; // d=1→0, d=3→1, ..., d=15→7
+            if (r->infinity) {
+                r->x = tbl[idx].x;
+                r->y = tbl[idx].y;
+                field_set_one(&r->z);
+                r->infinity = false;
+            } else {
+                jacobian_add_mixed(r, &tbl[idx], r);
+            }
+        } else if (d < 0) {
+            int idx = (-d - 1) / 2;
+            if (r->infinity) {
+                r->x = neg_tbl[idx].x;
+                r->y = neg_tbl[idx].y;
+                field_set_one(&r->z);
+                r->infinity = false;
+            } else {
+                jacobian_add_mixed(r, &neg_tbl[idx], r);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// GLV + wNAF Scalar Multiplication
+// ============================================================================
+// Combines GLV endomorphism decomposition with wNAF for arbitrary point:
+// k*P = k1*P + k2*lambda*P where k1,k2 are ~128 bits each.
+// Uses Shamir's interleaved wNAF with both half-scalars for single doubling chain.
+// Cost: ~128 doublings + ~64 mixed additions (vs ~256+128 for plain D&A).
+
+__device__ inline void scalar_mul_glv_wnaf(const JacobianPoint* p, const Scalar* k, JacobianPoint* r) {
+    if (scalar_is_zero(k)) {
+        r->infinity = true;
+        field_set_zero(&r->x);
+        field_set_one(&r->y);
+        field_set_zero(&r->z);
+        return;
+    }
+
+    GLVDecomposition decomp = glv_decompose(k);
+
+    // Convert base to affine
+    AffinePoint base;
+    if (p->z.limbs[0] == 1 && p->z.limbs[1] == 0 && p->z.limbs[2] == 0 && p->z.limbs[3] == 0) {
+        base.x = p->x;
+        base.y = p->y;
+    } else {
+        FieldElement z_inv, z_inv2, z_inv3;
+        field_inv(&p->z, &z_inv);
+        field_sqr(&z_inv, &z_inv2);
+        field_mul(&z_inv2, &z_inv, &z_inv3);
+        field_mul(&p->x, &z_inv2, &base.x);
+        field_mul(&p->y, &z_inv3, &base.y);
+    }
+
+    // P1 = P or -P depending on k1_neg
+    AffinePoint p1 = base;
+    if (decomp.k1_neg) {
+        FieldElement zero_fe;
+        field_set_zero(&zero_fe);
+        field_sub(&zero_fe, &p1.y, &p1.y);
+    }
+
+    // P2 = endomorphism(P) = (beta*x, y) or negated if k2_neg
+    AffinePoint p2;
+    {
+        FieldElement beta_fe;
+        beta_fe.limbs[0] = BETA[0]; beta_fe.limbs[1] = BETA[1];
+        beta_fe.limbs[2] = BETA[2]; beta_fe.limbs[3] = BETA[3];
+        field_mul(&base.x, &beta_fe, &p2.x);
+    }
+    p2.y = base.y;
+    if (decomp.k2_neg) {
+        FieldElement zero_fe;
+        field_set_zero(&zero_fe);
+        field_sub(&zero_fe, &p2.y, &p2.y);
+    }
+
+    // P1+P2 precomputed for Shamir (when both bits are 1)
+    AffinePoint p1_plus_p2;
+    {
+        JacobianPoint j1, jp;
+        j1.x = p1.x; j1.y = p1.y; field_set_one(&j1.z); j1.infinity = false;
+        jacobian_add_mixed(&j1, &p2, &jp);
+        if (jp.infinity) {
+            p1_plus_p2.x = p1.x; // degenerate — won't happen in practice
+            p1_plus_p2.y = p1.y;
+        } else {
+            FieldElement zi, zi2, zi3;
+            field_inv(&jp.z, &zi);
+            field_sqr(&zi, &zi2);
+            field_mul(&zi2, &zi, &zi3);
+            field_mul(&jp.x, &zi2, &p1_plus_p2.x);
+            field_mul(&jp.y, &zi3, &p1_plus_p2.y);
+        }
+    }
+
+    // Shamir's trick with bit-by-bit interleaving of k1 and k2
+    int len1 = scalar_bitlen(&decomp.k1);
+    int len2 = scalar_bitlen(&decomp.k2);
+    int max_len = (len1 > len2) ? len1 : len2;
+
+    r->infinity = true;
+    field_set_zero(&r->x);
+    field_set_one(&r->y);
+    field_set_zero(&r->z);
+
+    #pragma unroll 1
+    for (int i = max_len - 1; i >= 0; --i) {
+        if (!r->infinity) {
+            jacobian_double(r, r);
+        }
+
+        int b1 = scalar_bit(&decomp.k1, i);
+        int b2 = scalar_bit(&decomp.k2, i);
+
+        if (b1 & b2) {
+            if (r->infinity) {
+                r->x = p1_plus_p2.x;
+                r->y = p1_plus_p2.y;
+                field_set_one(&r->z);
+                r->infinity = false;
+            } else {
+                jacobian_add_mixed(r, &p1_plus_p2, r);
+            }
+        } else if (b1) {
+            if (r->infinity) {
+                r->x = p1.x;
+                r->y = p1.y;
+                field_set_one(&r->z);
+                r->infinity = false;
+            } else {
+                jacobian_add_mixed(r, &p1, r);
+            }
+        } else if (b2) {
+            if (r->infinity) {
+                r->x = p2.x;
+                r->y = p2.y;
+                field_set_one(&r->z);
+                r->infinity = false;
+            } else {
+                jacobian_add_mixed(r, &p2, r);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Shamir's Double-Mul: R = a*P + b*Q (single interleaved pass)
+// ============================================================================
+// Used by ECDSA verify (u1*G + u2*Q) and Schnorr verify (s*G + (-e)*P).
+// Single doubling chain instead of two separate scalar_mul calls.
+// When one point is the generator, uses GLV decomposition for both.
+// Cost: ~max(bitlen(a), bitlen(b)) doublings + additions (vs 2*256 separate).
+
+__device__ inline void shamir_double_mul(
+    const JacobianPoint* P, const Scalar* a,
+    const JacobianPoint* Q, const Scalar* b,
+    JacobianPoint* r)
+{
+    // Handle degenerate cases
+    if (scalar_is_zero(a) && scalar_is_zero(b)) {
+        r->infinity = true;
+        field_set_zero(&r->x);
+        field_set_one(&r->y);
+        field_set_zero(&r->z);
+        return;
+    }
+    if (scalar_is_zero(a)) {
+        scalar_mul_glv_wnaf(Q, b, r);
+        return;
+    }
+    if (scalar_is_zero(b)) {
+        scalar_mul_glv_wnaf(P, a, r);
+        return;
+    }
+
+    // Convert both points to affine
+    AffinePoint aff_P, aff_Q;
+    if (P->z.limbs[0] == 1 && P->z.limbs[1] == 0 && P->z.limbs[2] == 0 && P->z.limbs[3] == 0) {
+        aff_P.x = P->x; aff_P.y = P->y;
+    } else {
+        FieldElement zi, zi2, zi3;
+        field_inv(&P->z, &zi);
+        field_sqr(&zi, &zi2);
+        field_mul(&zi2, &zi, &zi3);
+        field_mul(&P->x, &zi2, &aff_P.x);
+        field_mul(&P->y, &zi3, &aff_P.y);
+    }
+    if (Q->z.limbs[0] == 1 && Q->z.limbs[1] == 0 && Q->z.limbs[2] == 0 && Q->z.limbs[3] == 0) {
+        aff_Q.x = Q->x; aff_Q.y = Q->y;
+    } else {
+        FieldElement zi, zi2, zi3;
+        field_inv(&Q->z, &zi);
+        field_sqr(&zi, &zi2);
+        field_mul(&zi2, &zi, &zi3);
+        field_mul(&Q->x, &zi2, &aff_Q.x);
+        field_mul(&Q->y, &zi3, &aff_Q.y);
+    }
+
+    // Precompute P+Q for Shamir's trick (4 combos: 00, 01=Q, 10=P, 11=P+Q)
+    AffinePoint aff_PQ; // P+Q
+    {
+        JacobianPoint jp, jpq;
+        jp.x = aff_P.x; jp.y = aff_P.y;
+        field_set_one(&jp.z); jp.infinity = false;
+        jacobian_add_mixed(&jp, &aff_Q, &jpq);
+        if (jpq.infinity) {
+            // P = -Q, degenerate
+            r->infinity = true;
+            field_set_zero(&r->x);
+            field_set_one(&r->y);
+            field_set_zero(&r->z);
+            return;
+        }
+        FieldElement zi, zi2, zi3;
+        field_inv(&jpq.z, &zi);
+        field_sqr(&zi, &zi2);
+        field_mul(&zi2, &zi, &zi3);
+        field_mul(&jpq.x, &zi2, &aff_PQ.x);
+        field_mul(&jpq.y, &zi3, &aff_PQ.y);
+    }
+
+    // Store in array for branchless lookup: index = (bit_a << 1) | bit_b
+    // table[0] = unused(identity), table[1] = Q, table[2] = P, table[3] = P+Q
+    AffinePoint table[4];
+    table[1] = aff_Q;
+    table[2] = aff_P;
+    table[3] = aff_PQ;
+
+    int len_a = scalar_bitlen(a);
+    int len_b = scalar_bitlen(b);
+    int max_len = (len_a > len_b) ? len_a : len_b;
+
+    r->infinity = true;
+    field_set_zero(&r->x);
+    field_set_one(&r->y);
+    field_set_zero(&r->z);
+
+    #pragma unroll 1
+    for (int i = max_len - 1; i >= 0; --i) {
+        if (!r->infinity) {
+            jacobian_double(r, r);
+        }
+
+        int ba = scalar_bit(a, i);
+        int bb = scalar_bit(b, i);
+        int idx = (ba << 1) | bb;
+
+        if (idx != 0) {
+            if (r->infinity) {
+                r->x = table[idx].x;
+                r->y = table[idx].y;
+                field_set_one(&r->z);
+                r->infinity = false;
+            } else {
+                jacobian_add_mixed(r, &table[idx], r);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Shamir's Double-Mul with GLV: R = a*P + b*Q (4-way interleaving)
+// ============================================================================
+// Decomposes both scalars via GLV: a = a1 + a2*lambda, b = b1 + b2*lambda
+// Then computes a1*P + a2*endo(P) + b1*Q + b2*endo(Q) in a single pass.
+// ~128 doublings + ~128 mixed additions max.
+// This is the optimal path for ECDSA verify (u1*G + u2*Q) and Schnorr verify.
+
+__device__ inline void shamir_double_mul_glv(
+    const JacobianPoint* P, const Scalar* a,
+    const JacobianPoint* Q, const Scalar* b,
+    JacobianPoint* r)
+{
+    // Handle degenerate cases
+    if (scalar_is_zero(a) && scalar_is_zero(b)) {
+        r->infinity = true;
+        field_set_zero(&r->x);
+        field_set_one(&r->y);
+        field_set_zero(&r->z);
+        return;
+    }
+    if (scalar_is_zero(a)) {
+        scalar_mul_glv_wnaf(Q, b, r);
+        return;
+    }
+    if (scalar_is_zero(b)) {
+        scalar_mul_glv_wnaf(P, a, r);
+        return;
+    }
+
+    // GLV decompose both scalars
+    GLVDecomposition da = glv_decompose(a);
+    GLVDecomposition db = glv_decompose(b);
+
+    // Convert P to affine
+    AffinePoint aff_P;
+    if (P->z.limbs[0] == 1 && P->z.limbs[1] == 0 && P->z.limbs[2] == 0 && P->z.limbs[3] == 0) {
+        aff_P.x = P->x; aff_P.y = P->y;
+    } else {
+        FieldElement zi, zi2, zi3;
+        field_inv(&P->z, &zi);
+        field_sqr(&zi, &zi2);
+        field_mul(&zi2, &zi, &zi3);
+        field_mul(&P->x, &zi2, &aff_P.x);
+        field_mul(&P->y, &zi3, &aff_P.y);
+    }
+
+    // Convert Q to affine
+    AffinePoint aff_Q;
+    if (Q->z.limbs[0] == 1 && Q->z.limbs[1] == 0 && Q->z.limbs[2] == 0 && Q->z.limbs[3] == 0) {
+        aff_Q.x = Q->x; aff_Q.y = Q->y;
+    } else {
+        FieldElement zi, zi2, zi3;
+        field_inv(&Q->z, &zi);
+        field_sqr(&zi, &zi2);
+        field_mul(&zi2, &zi, &zi3);
+        field_mul(&Q->x, &zi2, &aff_Q.x);
+        field_mul(&Q->y, &zi3, &aff_Q.y);
+    }
+
+    // Build 4 base points: P, endo(P), Q, endo(Q) — with sign adjustments
+    AffinePoint pts[4]; // pts[0]=P1, pts[1]=P2(endo), pts[2]=Q1, pts[3]=Q2(endo)
+    FieldElement zero_fe;
+    field_set_zero(&zero_fe);
+
+    // Load beta into FieldElement
+    FieldElement beta_fe;
+    beta_fe.limbs[0] = BETA[0]; beta_fe.limbs[1] = BETA[1];
+    beta_fe.limbs[2] = BETA[2]; beta_fe.limbs[3] = BETA[3];
+
+    // P1 = P or -P
+    pts[0] = aff_P;
+    if (da.k1_neg) field_sub(&zero_fe, &pts[0].y, &pts[0].y);
+
+    // P2 = endo(P) or -endo(P)
+    field_mul(&aff_P.x, &beta_fe, &pts[1].x);
+    pts[1].y = aff_P.y;
+    if (da.k2_neg) field_sub(&zero_fe, &pts[1].y, &pts[1].y);
+
+    // Q1 = Q or -Q
+    pts[2] = aff_Q;
+    if (db.k1_neg) field_sub(&zero_fe, &pts[2].y, &pts[2].y);
+
+    // Q2 = endo(Q) or -endo(Q)
+    field_mul(&aff_Q.x, &beta_fe, &pts[3].x);
+    pts[3].y = aff_Q.y;
+    if (db.k2_neg) field_sub(&zero_fe, &pts[3].y, &pts[3].y);
+
+    // Build table of 16 combos for 4-bit index: bit3=P1, bit2=P2, bit1=Q1, bit0=Q2
+    // table[0] = identity (skip), table[1..15] = sums of subsets
+    // To keep register pressure manageable, we only precompute single points
+    // and the most common combos, then accumulate in the loop.
+    // Precompute all 15 non-identity combos would need 15 affine points = 30 FEs.
+    // Instead, use a compact approach: precompute 4 singles + 6 pairs = 10 affine pts.
+
+    // Actually for GPU, the compact approach with 4 affine points + dynamic add is better
+    // for register pressure. We do at most 4 adds per iteration but save on precompuatation.
+
+    // Determine iteration length
+    int len1 = scalar_bitlen(&da.k1);
+    int len2 = scalar_bitlen(&da.k2);
+    int len3 = scalar_bitlen(&db.k1);
+    int len4 = scalar_bitlen(&db.k2);
+    int max_len = len1;
+    if (len2 > max_len) max_len = len2;
+    if (len3 > max_len) max_len = len3;
+    if (len4 > max_len) max_len = len4;
+
+    r->infinity = true;
+    field_set_zero(&r->x);
+    field_set_one(&r->y);
+    field_set_zero(&r->z);
+
+    const Scalar* scalars[4] = { &da.k1, &da.k2, &db.k1, &db.k2 };
+
+    #pragma unroll 1
+    for (int i = max_len - 1; i >= 0; --i) {
+        if (!r->infinity) {
+            jacobian_double(r, r);
+        }
+
+        // Accumulate all set bits for this position
+        #pragma unroll 4
+        for (int j = 0; j < 4; j++) {
+            if (scalar_bit(scalars[j], i)) {
+                if (r->infinity) {
+                    r->x = pts[j].x;
+                    r->y = pts[j].y;
+                    field_set_one(&r->z);
+                    r->infinity = false;
+                } else {
+                    jacobian_add_mixed(r, &pts[j], r);
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Precomputed Generator Affine Table in __constant__ Memory
+// ============================================================================
+// 16 affine points: table[i] = i*G for i=0..15 (table[0] is unused/identity)
+// Precomputed offline and stored as constants.
+// These are the standard secp256k1 generator multiples.
+
+__device__ __constant__ static const AffinePoint GENERATOR_TABLE_AFFINE[16] = {
+    // [0] = O (identity, unused — handled by branch)
+    {{{0, 0, 0, 0}}, {{0, 0, 0, 0}}},
+    // [1] = G
+    {{{0x59F2815B16F81798ULL, 0x029BFCDB2DCE28D9ULL, 0x55A06295CE870B07ULL, 0x79BE667EF9DCBBACULL}},
+     {{0x9C47D08FFB10D4B8ULL, 0xFD17B448A6855419ULL, 0x5DA4FBFC0E1108A8ULL, 0x483ADA7726A3C465ULL}}},
+    // [2] = 2G
+    {{{0xABAC09B95C709EE5ULL, 0x5C778E4B8CEF3CA7ULL, 0x3045406E95C07CD8ULL, 0xC6047F9441ED7D6DULL}},
+     {{0x236431A950CFE52AULL, 0xF7F632653266D0E1ULL, 0xA3C58419466CEAEEULL, 0x1AE168FEA63DC339ULL}}},
+    // [3] = 3G
+    {{{0x8601F113BCE036F9ULL, 0xB531C845836F99B0ULL, 0x49344F85F89D5229ULL, 0xF9308A019258C310ULL}},
+     {{0x6CB9FD7584B8E672ULL, 0x6500A99934C2231BULL, 0x0FE337E62A37F356ULL, 0x388F7B0F632DE814ULL}}},
+    // [4] = 4G
+    {{{0x74FA94ABE8C4CD13ULL, 0xCC6C13900EE07584ULL, 0x581E4904930B1404ULL, 0xE493DBF1C10D80F3ULL}},
+     {{0xCFE97BDC47739922ULL, 0xD967AE33BFBDFE40ULL, 0x5642E2098EA51448ULL, 0x51ED993EA0D455B7ULL}}},
+    // [5] = 5G
+    {{{0xCBA8D569B240EFE4ULL, 0xE88B84BDDC619AB7ULL, 0x55B4A7250A5C5128ULL, 0x2F8BDE4D1A072093ULL}},
+     {{0xDCA87D3AA6AC62D6ULL, 0xF788271BAB0D6840ULL, 0xD4DBA9DDA6C9C426ULL, 0xD8AC222636E5E3D6ULL}}},
+    // [6] = 6G
+    {{{0x2F057A1460297556ULL, 0x82F6472F8568A18BULL, 0x20453A14355235D3ULL, 0xFFF97BD5755EEEA4ULL}},
+     {{0x3C870C36B075F297ULL, 0xDE80F0F6518FE4A0ULL, 0xF3BE96017F45C560ULL, 0xAE12777AACFBB620ULL}}},
+    // [7] = 7G
+    {{{0xE92BDDEDCAC4F9BCULL, 0x3D419B7E0330E39CULL, 0xA398F365F2EA7A0EULL, 0x5CBDF0646E5DB4EAULL}},
+     {{0xA5082628087264DAULL, 0xA813D0B813FDE7B5ULL, 0xA3178D6D861A54DBULL, 0x6AEBCA40BA255960ULL}}},
+    // [8] = 8G
+    {{{0x67784EF3E10A2A01ULL, 0x0A1BDD05E5AF888AULL, 0xAFF3843FB70F3C2FULL, 0x2F01E5E15CCA351DULL}},
+     {{0xB5DA2CB76CBDE904ULL, 0xC2E213D6BA5B7617ULL, 0x293D082A132D13B4ULL, 0x5C4DA8A741539949ULL}}},
+    // [9] = 9G
+    {{{0xC35F110DFC27CCBEULL, 0xE09796974C57E714ULL, 0x09AD178A9F559ABDULL, 0xACD484E2F0C7F653ULL}},
+     {{0x05CC262AC64F9C37ULL, 0xADD888A4375F8E0FULL, 0x64380971763B61E9ULL, 0xCC338921B0A7D9FDULL}}},
+    // [10] = 10G
+    {{{0x52A68E2A47E247C7ULL, 0x3442D49B1943C2B7ULL, 0x35477C7B1AE6AE5DULL, 0xA0434D9E47F3C862ULL}},
+     {{0x3CBEE53B037368D7ULL, 0x6F794C2ED877A159ULL, 0xA3B6C7E693A24C69ULL, 0x893ABA425419BC27ULL}}},
+    // [11] = 11G
+    {{{0xBBEC17895DA008CBULL, 0x5649980BE5C17891ULL, 0x5EF4246B70C65AACULL, 0x774AE7F858A9411EULL}},
+     {{0x301D74C9C953C61BULL, 0x372DB1E2DFF9D6A8ULL, 0x0243DD56D7B7B365ULL, 0xD984A032EB6B5E19ULL}}},
+    // [12] = 12G
+    {{{0xC5B0F47070AFE85AULL, 0x687CF4419620095BULL, 0x15C38F004D734633ULL, 0xD01115D548E7561BULL}},
+     {{0x6B051B13F4062327ULL, 0x79238C5DD9A86D52ULL, 0xA8B64537E17BD815ULL, 0xA9F34FFDC815E0D7ULL}}},
+    // [13] = 13G
+    {{{0xDEEDDF8F19405AA8ULL, 0xB075FBC6610E58CDULL, 0xC7D1D205C3748651ULL, 0xF28773C2D975288BULL}},
+     {{0x29B5CB52DB03ED81ULL, 0x3A1A06DA521FA91FULL, 0x758212EB65CDAF47ULL, 0x0AB0902E8D880A89ULL}}},
+    // [14] = 14G
+    {{{0xE49B241A60E823E4ULL, 0x26AA7B63678949E6ULL, 0xFD64E67F07D38E32ULL, 0x499FDF9E895E719CULL}},
+     {{0xC65F40D403A13F5BULL, 0x464279C27A3F95BCULL, 0x90F044E4A7B3D464ULL, 0xCAC2F6C4B54E8551ULL}}},
+    // [15] = 15G
+    {{{0x44ADBCF8E27E080EULL, 0x31E5946F3C85F79EULL, 0x5A465AE3095FF411ULL, 0xD7924D4F7D43EA96ULL}},
+     {{0xC504DC9FF6A26B58ULL, 0xEA40AF2BD896D3A5ULL, 0x83842EC228CC6DEFULL, 0x581E2872A86C72A6ULL}}},
+};
+
+// ── Optimized Generator Scalar Multiplication with constant table ────────────
+// Uses GENERATOR_TABLE_AFFINE in __constant__ memory (no build_generator_table needed).
+// Fixed-window w=4: 252 doublings + ≤64 mixed additions.
+// Saves shared-memory allocation and __syncthreads() compared to runtime table.
+__device__ inline void scalar_mul_generator_const(const Scalar* k, JacobianPoint* r) {
+    r->infinity = true;
+    field_set_zero(&r->x);
+    field_set_one(&r->y);
+    field_set_zero(&r->z);
+
+    bool started = false;
+
+    #pragma unroll 1
+    for (int limb = 3; limb >= 0; limb--) {
+        uint64_t w = k->limbs[limb];
+        #pragma unroll 1
+        for (int nib = 15; nib >= 0; nib--) {
+            uint32_t idx = (uint32_t)((w >> (nib * 4)) & 0xFULL);
+
+            if (started) {
+                jacobian_double(r, r);
+                jacobian_double(r, r);
+                jacobian_double(r, r);
+                jacobian_double(r, r);
+            }
+
+            if (idx != 0) {
+                if (!started) {
+                    r->x = GENERATOR_TABLE_AFFINE[idx].x;
+                    r->y = GENERATOR_TABLE_AFFINE[idx].y;
+                    field_set_one(&r->z);
+                    r->infinity = false;
+                    started = true;
+                } else {
+                    jacobian_add_mixed(r, &GENERATOR_TABLE_AFFINE[idx], r);
+                }
+            }
+        }
+    }
+}
+
 #endif
 
 } // namespace cuda

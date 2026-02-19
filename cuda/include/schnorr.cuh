@@ -41,6 +41,45 @@ __device__ inline void tagged_hash(
     sha256_final(&ctx, out);
 }
 
+// ── Precomputed Tagged Hash Midstates (BIP-340) ─────────────────────────────
+// SHA256 state after processing SHA256(tag)||SHA256(tag) (one 64-byte block).
+// Saves 2 SHA-256 block compressions per tagged_hash call (6 total per sign/verify).
+// Each midstate: h[8] = SHA256 state, total = 64 bytes processed, buf_len = 0.
+
+// Tag index constants for midstate lookup
+#define BIP340_TAG_AUX       0
+#define BIP340_TAG_NONCE     1
+#define BIP340_TAG_CHALLENGE 2
+
+__device__ __constant__ static const uint32_t BIP340_MIDSTATES[3][8] = {
+    // "BIP0340/aux" midstate
+    {0x24dd3219U, 0x4eba7e70U, 0xca0fabb9U, 0x0fa3166dU,
+     0x3afbe4b1U, 0x4c44df97U, 0x4aac2739U, 0x249e850aU},
+    // "BIP0340/nonce" midstate
+    {0x46615b35U, 0xf4bfbff7U, 0x9f8dc671U, 0x83627ab3U,
+     0x60217180U, 0x57358661U, 0x21a29e54U, 0x68b07b4cU},
+    // "BIP0340/challenge" midstate
+    {0x9cecba11U, 0x23925381U, 0x11679112U, 0xd1627e0fU,
+     0x97c87550U, 0x003cc765U, 0x90f61164U, 0x33e9b66aU},
+};
+
+// Fast tagged hash using precomputed midstate (saves 2 SHA-256 compressions).
+// tag_idx: BIP340_TAG_AUX=0, BIP340_TAG_NONCE=1, BIP340_TAG_CHALLENGE=2
+__device__ inline void tagged_hash_fast(
+    int tag_idx,
+    const uint8_t* data, size_t data_len,
+    uint8_t out[32])
+{
+    SHA256Ctx ctx;
+    // Load precomputed midstate
+    for (int i = 0; i < 8; i++) ctx.h[i] = BIP340_MIDSTATES[tag_idx][i];
+    ctx.buf_len = 0;
+    ctx.total = 64;
+    // Continue with data
+    sha256_update(&ctx, data, data_len);
+    sha256_final(&ctx, out);
+}
+
 // Helper: strlen for device strings
 __device__ inline size_t dev_strlen(const char* s) {
     size_t n = 0;
@@ -128,9 +167,9 @@ __device__ inline bool schnorr_sign(
 {
     if (scalar_is_zero(private_key)) return false;
 
-    // P = d' * G
+    // P = d' * G  (use precomputed constant table for generator)
     JacobianPoint P;
-    scalar_mul(&GENERATOR_JACOBIAN, private_key, &P);
+    scalar_mul_generator_const(private_key, &P);
     if (P.infinity) return false;
 
     // Convert to affine
@@ -157,7 +196,7 @@ __device__ inline bool schnorr_sign(
 
     // t = d XOR tagged_hash("BIP0340/aux", aux_rand)
     uint8_t t_hash[32];
-    tagged_hash("BIP0340/aux", 11, aux_rand, 32, t_hash);
+    tagged_hash_fast(BIP340_TAG_AUX, aux_rand, 32, t_hash);
 
     uint8_t d_bytes[32];
     scalar_to_bytes(&d, d_bytes);
@@ -172,15 +211,15 @@ __device__ inline bool schnorr_sign(
     for (int i = 0; i < 32; i++) nonce_input[64 + i] = msg[i];
 
     uint8_t rand_hash[32];
-    tagged_hash("BIP0340/nonce", 13, nonce_input, 96, rand_hash);
+    tagged_hash_fast(BIP340_TAG_NONCE, nonce_input, 96, rand_hash);
 
     Scalar k_prime;
     scalar_from_bytes(rand_hash, &k_prime);
     if (scalar_is_zero(&k_prime)) return false;
 
-    // R = k' * G
+    // R = k' * G  (use precomputed constant table for generator)
     JacobianPoint R;
-    scalar_mul(&GENERATOR_JACOBIAN, &k_prime, &R);
+    scalar_mul_generator_const(&k_prime, &R);
 
     // Convert R to affine
     FieldElement rz_inv, rz_inv2, rz_inv3, rx, ry;
@@ -210,7 +249,7 @@ __device__ inline bool schnorr_sign(
     for (int i = 0; i < 32; i++) challenge_input[64 + i] = msg[i];
 
     uint8_t e_hash[32];
-    tagged_hash("BIP0340/challenge", 17, challenge_input, 96, e_hash);
+    tagged_hash_fast(BIP340_TAG_CHALLENGE, challenge_input, 96, e_hash);
 
     Scalar e;
     scalar_from_bytes(e_hash, &e);
@@ -263,23 +302,17 @@ __device__ inline bool schnorr_verify(
     for (int i = 0; i < 32; i++) challenge_input[64 + i] = msg[i];
 
     uint8_t e_hash[32];
-    tagged_hash("BIP0340/challenge", 17, challenge_input, 96, e_hash);
+    tagged_hash_fast(BIP340_TAG_CHALLENGE, challenge_input, 96, e_hash);
 
     Scalar e;
     scalar_from_bytes(e_hash, &e);
 
-    // R = s*G - e*P
-    JacobianPoint sG, eP;
-    scalar_mul(&GENERATOR_JACOBIAN, &sig->s, &sG);
-    scalar_mul(&P, &e, &eP);
-
-    // Negate eP: negate Y coordinate
-    FieldElement zero;
-    field_set_zero(&zero);
-    field_sub(&zero, &eP.y, &eP.y);
+    // R = s*G - e*P = s*G + neg_e*P  (Shamir's trick with GLV: ~128 doublings)
+    Scalar neg_e;
+    scalar_negate(&e, &neg_e);
 
     JacobianPoint R;
-    jacobian_add(&sG, &eP, &R);
+    shamir_double_mul_glv(&GENERATOR_JACOBIAN, &sig->s, &P, &neg_e, &R);
 
     if (R.infinity) return false;
 
