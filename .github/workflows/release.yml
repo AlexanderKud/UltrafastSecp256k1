@@ -160,7 +160,7 @@ jobs:
             -DSECP256K1_BUILD_TESTS=ON \
             -DSECP256K1_BUILD_BENCH=OFF \
             -DSECP256K1_BUILD_EXAMPLES=OFF \
-            -DSECP256K1_USE_ASM=OFF
+            -DSECP256K1_USE_ASM=ON
 
       - name: Build
         run: cmake --build build -j$(nproc)
