@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771342277938,
+  "lastUpdate": 1771530133904,
   "repoUrl": "https://github.com/AlexanderKud/UltrafastSecp256k1",
   "entries": {
     "UltrafastSecp256k1 Performance": [
@@ -48,6 +48,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "Point Double",
             "value": 569,
+            "unit": "ns"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "shrec@users.noreply.github.com",
+            "name": "shrec",
+            "username": "shrec"
+          },
+          "committer": {
+            "email": "shrec@users.noreply.github.com",
+            "name": "shrec",
+            "username": "shrec"
+          },
+          "distinct": true,
+          "id": "a85ae3a4dd50104e55c4bf18fb6c4294da5bc81a",
+          "message": "Merge branch 'dev'",
+          "timestamp": "2026-02-19T19:04:30Z",
+          "tree_id": "ec5bc8f5661666a13888855cd7c0ac59f0c5ea3b",
+          "url": "https://github.com/AlexanderKud/UltrafastSecp256k1/commit/a85ae3a4dd50104e55c4bf18fb6c4294da5bc81a"
+        },
+        "date": 1771530133392,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Field Mul",
+            "value": 25,
+            "unit": "ns"
+          },
+          {
+            "name": "Field Square",
+            "value": 23,
+            "unit": "ns"
+          },
+          {
+            "name": "Field Add",
+            "value": 2,
+            "unit": "ns"
+          },
+          {
+            "name": "Field Negate",
+            "value": 0,
+            "unit": "ns"
+          },
+          {
+            "name": "Point Add",
+            "value": 256,
+            "unit": "ns"
+          },
+          {
+            "name": "Point Double",
+            "value": 146,
             "unit": "ns"
           }
         ]
