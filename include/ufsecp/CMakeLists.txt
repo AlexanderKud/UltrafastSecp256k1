@@ -15,8 +15,12 @@
 
 cmake_minimum_required(VERSION 3.18)
 
+# Read version from VERSION file (single source of truth)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION" _version_raw)
+string(STRIP "${_version_raw}" UFSECP_VERSION)
+
 project(ufsecp
-    VERSION 3.4.0
+    VERSION ${UFSECP_VERSION}
     DESCRIPTION "UltrafastSecp256k1 — Stable C ABI"
     LANGUAGES CXX
 )
@@ -25,6 +29,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# ── Generate ufsecp_version.h from template ────────────────────────────────
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/ufsecp_version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/ufsecp_version.h"
+    @ONLY
+)
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 set(ULTRAFAST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")  # UltrafastSecp256k1/
@@ -41,7 +52,8 @@ set(UFSECP_IMPL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/ufsecp_impl.cpp")
 # Helper: configure a target with the right includes/definitions
 function(ufsecp_configure tgt)
     target_include_directories(${tgt}
-        PUBLIC  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        PUBLIC  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
                 $<INSTALL_INTERFACE:include>
         PRIVATE ${CPU_INCLUDE_DIR}
                 ${SHARED_INCLUDE_DIR}
@@ -117,7 +129,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # Headers
     install(FILES
         ufsecp.h
-        ufsecp_version.h
+        ${CMAKE_CURRENT_BINARY_DIR}/ufsecp_version.h
         ufsecp_error.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ufsecp
     )

@@ -1,13 +1,13 @@
 [package]
 name = "ufsecp"
-version = "3.4.0"
+version = "0.0.0-dev"
 edition = "2021"
 license = "AGPL-3.0"
 description = "Safe Rust wrapper for UltrafastSecp256k1 (ufsecp C ABI)"
 repository = "https://github.com/AvraSasmo/UltrafastSecp256k1"
 
 [dependencies]
-ufsecp-sys = { path = "../ufsecp-sys", version = "3.4.0" }
+ufsecp-sys = { path = "../ufsecp-sys", version = "0.0.0-dev" }
 
 [features]
 default = []

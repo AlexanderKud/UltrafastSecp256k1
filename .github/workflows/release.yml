@@ -11,6 +11,11 @@ permissions:
 env:
   CMAKE_BUILD_TYPE: Release
 
+# ────────────────────────────────────────────────────────────────────────────
+# Global: version is always derived from the git tag (e.g. v3.9.0 → 3.9.0)
+# All binding configs use 0.0.0-dev as placeholder; CI overrides at build time.
+# ────────────────────────────────────────────────────────────────────────────
+
 jobs:
   # ══════════════════════════════════════════════════════════════════════════
   # 1) Desktop native binaries (Linux x64, macOS ARM64, Windows x64)
@@ -61,6 +66,11 @@ jobs:
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja
+
+      # ── Inject version from tag into VERSION file ──
+      - name: Set version from tag
+        run: echo "${GITHUB_REF_NAME#v}" > VERSION
+        shell: bash
 
       # ── Configure ──
       - name: Configure
@@ -149,6 +159,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y g++-aarch64-linux-gnu ninja-build qemu-user-static
 
+      - name: Set version from tag
+        run: echo "${GITHUB_REF_NAME#v}" > VERSION
+
       - name: Configure
         run: |
           cmake -S . -B build -G Ninja \
@@ -229,6 +242,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y ninja-build
 
+      - name: Set version from tag
+        run: echo "${GITHUB_REF_NAME#v}" > VERSION
+
       - name: Configure
         run: |
           cmake -S android -B build-android \
@@ -282,6 +298,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set version from tag
+        run: echo "${GITHUB_REF_NAME#v}" > VERSION
+
       - name: Build XCFramework
         run: |
           chmod +x scripts/build_xcframework.sh
@@ -327,6 +346,9 @@ jobs:
         uses: mymindstorm/setup-emsdk@v14
         with:
           version: 3.1.51
+
+      - name: Set version from tag
+        run: echo "${GITHUB_REF_NAME#v}" > VERSION
 
       - name: Configure
         run: emcmake cmake -S wasm -B build-wasm -DCMAKE_BUILD_TYPE=Release
@@ -392,11 +414,15 @@ jobs:
 
       - name: Build ufsecp Python wheels
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           pip install wheel setuptools build
           cd bindings/python
 
           # Use the ufsecp manifest (not the old ultrafast-secp256k1 one)
           cp pyproject.ufsecp.toml pyproject.toml
+
+          # Inject version from git tag
+          sed -i "s/^version = .*/version = \"${VERSION}\"/" pyproject.toml
 
           # Platform → wheel platform tag mapping
           declare -A WHEEL_TAGS=(
@@ -479,8 +505,12 @@ jobs:
 
       - name: Build ufsecp npm package
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           cd bindings/nodejs
           cp package.ufsecp.json package.json
+
+          # Inject version from git tag
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" package.json
 
           # npm prebuild dir naming: <os>-<arch>
           declare -A NPM_PLATS=(
@@ -554,7 +584,11 @@ jobs:
 
       - name: Prepare NuGet runtimes
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           cd bindings/csharp/Ufsecp
+
+          # Inject version from git tag
+          sed -i "s|<Version>[^<]*</Version>|<Version>${VERSION}</Version>|" Ufsecp.csproj
 
           # Platform → .NET RID mapping
           declare -A RIDS=(
@@ -629,7 +663,12 @@ jobs:
 
       - name: Build Ruby gem
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           cd bindings/ruby
+
+          # Inject version from git tag
+          sed -i "s/s\.version .*/s.version     = '${VERSION}'/" ufsecp.gemspec
+
           mkdir -p lib/native
 
           # Extract and copy native libs from all desktop platforms

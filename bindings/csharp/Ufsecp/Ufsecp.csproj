@@ -3,7 +3,7 @@
     <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
     <RootNamespace>Ultrafast.Ufsecp</RootNamespace>
     <AssemblyName>Ufsecp</AssemblyName>
-    <Version>3.4.0</Version>
+    <Version>0.0.0-dev</Version>
     <Authors>UltrafastSecp256k1 Contributors</Authors>
     <Description>C# P/Invoke bindings for UltrafastSecp256k1 — high-performance secp256k1 ECC (ufsecp C ABI v1)</Description>
     <PackageId>Ufsecp</PackageId>

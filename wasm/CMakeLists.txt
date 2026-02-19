@@ -10,8 +10,12 @@
 
 cmake_minimum_required(VERSION 3.18)
 
+# Read version from VERSION file (single source of truth)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" _version_raw)
+string(STRIP "${_version_raw}" UFSECP_VERSION)
+
 project(UltrafastSecp256k1Wasm
-    VERSION 3.0.0
+    VERSION ${UFSECP_VERSION}
     LANGUAGES CXX
     DESCRIPTION "UltrafastSecp256k1 WASM bindings"
 )

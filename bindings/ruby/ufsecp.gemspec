@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = 'ufsecp'
-  s.version     = '3.4.0'
+  s.version     = '0.0.0.dev'
   s.summary     = 'Ruby FFI bindings for UltrafastSecp256k1 (ufsecp C ABI v1)'
   s.description = 'High-performance secp256k1 ECC: ECDSA, Schnorr, ECDH, recovery, BIP-32, Taproot, addresses. Context-based, dual-layer constant-time.'
   s.authors     = ['UltrafastSecp256k1']

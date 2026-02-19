@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ufsecp"
-version = "3.4.0"
+version = "0.0.0.dev0"
 description = "Python ctypes bindings for UltrafastSecp256k1 — high-performance secp256k1 ECC (ufsecp C ABI v1)"
 readme = "README.md"
 license = {text = "AGPL-3.0-only"}
