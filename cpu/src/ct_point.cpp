@@ -1715,8 +1715,10 @@ Point generator_mul(const Scalar& k) noexcept {
 
 CTJacobianPoint CTJacobianPoint::from_point(const Point& p) noexcept {
     CTJacobianPoint r;
-    r.x = p.x();
-    r.y = p.y();
+    // Use X()/Y()/z() which all return raw Jacobian coordinates.
+    // Do NOT use x()/y() — those compute affine (divide by Z²/Z³).
+    r.x = p.X();
+    r.y = p.Y();
     r.z = p.z();
     r.infinity = p.is_infinity() ? ~std::uint64_t(0) : 0;
     return r;
