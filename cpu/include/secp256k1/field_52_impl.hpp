@@ -343,18 +343,20 @@ bool FieldElement52::normalizes_to_zero() const noexcept {
 
 SECP256K1_FE52_FORCE_INLINE
 FieldElement52 FieldElement52::half() const noexcept {
-    FieldElement52 tmp = *this;
-    tmp.normalize_weak();
+    // Note: no normalize_weak needed — parity of n[0] is the parity of the
+    // value regardless of carry overflow, and conditional p-add + carry + shift
+    // are safe for magnitudes up to ~40000 (limbs < 2^58).
+    const std::uint64_t* src = n;
 
     // mask = 0 if even, all-ones if odd
-    std::uint64_t mask = -(tmp.n[0] & 1ULL);
+    std::uint64_t mask = -(src[0] & 1ULL);
 
     // Conditionally add p
-    std::uint64_t t0 = tmp.n[0] + (P0 & mask);
-    std::uint64_t t1 = tmp.n[1] + (P1 & mask);
-    std::uint64_t t2 = tmp.n[2] + (P2 & mask);
-    std::uint64_t t3 = tmp.n[3] + (P3 & mask);
-    std::uint64_t t4 = tmp.n[4] + (P4 & mask);
+    std::uint64_t t0 = src[0] + (P0 & mask);
+    std::uint64_t t1 = src[1] + (P1 & mask);
+    std::uint64_t t2 = src[2] + (P2 & mask);
+    std::uint64_t t3 = src[3] + (P3 & mask);
+    std::uint64_t t4 = src[4] + (P4 & mask);
 
     // Carry propagation
     t1 += (t0 >> 52); t0 &= M52;

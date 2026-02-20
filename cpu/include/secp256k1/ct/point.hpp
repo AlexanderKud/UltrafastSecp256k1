@@ -108,6 +108,12 @@ CTJacobianPoint point_dbl(const CTJacobianPoint& p) noexcept;
 CTJacobianPoint point_add_mixed_unified(const CTJacobianPoint& a,
                                          const CTAffinePoint& b) noexcept;
 
+// In-place variant: writes result directly into *out (avoids 128-byte copy).
+// out may alias &a (reads a first, then writes result).
+void point_add_mixed_unified_into(CTJacobianPoint* out,
+                                   const CTJacobianPoint& a,
+                                   const CTAffinePoint& b) noexcept;
+
 // ─── CT Point Negation ───────────────────────────────────────────────────────
 CTJacobianPoint point_neg(const CTJacobianPoint& p) noexcept;
 
@@ -138,6 +144,20 @@ CTAffinePoint affine_table_lookup_signed(const CTAffinePoint* table,
                                           std::size_t table_size,
                                           std::uint64_t n,
                                           unsigned group_size) noexcept;
+
+// In-place variant: writes result directly into *out (avoids 88-byte copy).
+void affine_table_lookup_signed_into(CTAffinePoint* out,
+                                      const CTAffinePoint* table,
+                                      std::size_t table_size,
+                                      std::uint64_t n,
+                                      unsigned group_size) noexcept;
+
+// ─── CT Batch Doubling ───────────────────────────────────────────────────────
+// In-place batch N doublings — modifies r directly, no return copy.
+void point_dbl_n_inplace(CTJacobianPoint* r, unsigned n) noexcept;
+
+// Return-by-value wrapper (kept for backward compatibility).
+CTJacobianPoint point_dbl_n(const CTJacobianPoint& p, unsigned n) noexcept;
 
 // CT conditional operations on affine points
 void affine_cmov(CTAffinePoint* r, const CTAffinePoint& a,
