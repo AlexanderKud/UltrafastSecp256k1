@@ -92,6 +92,42 @@ inline std::uint64_t fe52_is_zero(const FE52& a) noexcept {
     return is_zero_mask(z);
 }
 
+// Cheaper CT zero check: normalize_weak + overflow reduce + dual representation
+// check. Avoids the full branchless conditional-subtract of p.
+// Matches libsecp256k1's secp256k1_fe_normalizes_to_zero() approach.
+// Returns all-ones if the value normalizes to zero, else 0.
+inline std::uint64_t fe52_normalizes_to_zero(const FE52& a) noexcept {
+    constexpr std::uint64_t M52 = 0x000FFFFFFFFFFFFFULL;
+    constexpr std::uint64_t M48 = 0x0000FFFFFFFFFFFFULL;
+
+    std::uint64_t t0 = a.n[0], t1 = a.n[1], t2 = a.n[2], t3 = a.n[3], t4 = a.n[4];
+
+    // First pass: carry propagation (normalize_weak)
+    t1 += (t0 >> 52); t0 &= M52;
+    t2 += (t1 >> 52); t1 &= M52;
+    t3 += (t2 >> 52); t2 &= M52;
+    t4 += (t3 >> 52); t3 &= M52;
+
+    // Overflow reduction: top bits of t4 wrap around via field modulus
+    std::uint64_t x = t4 >> 48;
+    t4 &= M48;
+    t0 += x * 0x1000003D1ULL;
+
+    // Second carry propagation
+    t1 += (t0 >> 52); t0 &= M52;
+    t2 += (t1 >> 52); t1 &= M52;
+    t3 += (t2 >> 52); t2 &= M52;
+    t4 += (t3 >> 52); t3 &= M52;
+
+    // After two passes, zero is represented as either [0,0,0,0,0] or p.
+    // Check both representations constant-time.
+    // p in 5×52: {0xFFFFEFFFFFC2F, 0xFFFFFFFFFFFFF, 0xFFFFFFFFFFFFF, 0xFFFFFFFFFFFFF, 0xFFFFFFFFFFFF}
+    std::uint64_t z0 = t0 | t1 | t2 | t3 | t4;
+    std::uint64_t z1 = (t0 ^ 0x000FFFFEFFFFFC2FULL) | (t1 ^ M52) |
+                       (t2 ^ M52) | (t3 ^ M52) | (t4 ^ M48);
+    return is_zero_mask(z0) | is_zero_mask(z1);
+}
+
 // CT equality: normalizes both, then compares. Returns all-ones if equal.
 inline std::uint64_t fe52_eq(const FE52& a, const FE52& b) noexcept {
     FE52 ta = a; ta.normalize();
@@ -549,11 +585,16 @@ CTAffinePoint affine_table_lookup_signed(const CTAffinePoint* table,
 
 #if SECP256K1_CT_AVX2
 
-void affine_table_lookup_signed_into(CTAffinePoint* out,
-                                      const CTAffinePoint* table,
-                                      std::size_t table_size,
-                                      std::uint64_t n,
-                                      unsigned group_size) noexcept {
+// ─── Always-inline AVX2 table lookup core ────────────────────────────────────
+// NORMALIZE_Y: if false, skip normalize_weak before Y-negate (safe when table
+// entries are known magnitude-1, i.e. produced by multiplication).  Saves ~5ns.
+template<bool NORMALIZE_Y>
+__attribute__((always_inline)) inline
+void table_lookup_core(CTAffinePoint* out,
+                        const CTAffinePoint* table,
+                        std::size_t table_size,
+                        std::uint64_t n,
+                        unsigned group_size) noexcept {
     std::uint64_t negative = ((n >> (group_size - 1)) ^ 1u) & 1u;
     std::uint64_t neg_mask = static_cast<std::uint64_t>(-negative);
 
@@ -602,20 +643,34 @@ void affine_table_lookup_signed_into(CTAffinePoint* out,
 
     // Conditional Y-negate (sign handling) — scalar, runs once
     FE52 neg_y = out->y;
-    neg_y.normalize_weak();
+    if constexpr (NORMALIZE_Y) {
+        neg_y.normalize_weak();
+    }
     neg_y = neg_y.negate(1);
     fe52_cmov(&out->y, neg_y, neg_mask);
 
     out->infinity = 0;
 }
 
-#else // Scalar fallback
-
+// Public wrapper (conservative: always normalizes Y before negate).
 void affine_table_lookup_signed_into(CTAffinePoint* out,
                                       const CTAffinePoint* table,
                                       std::size_t table_size,
                                       std::uint64_t n,
                                       unsigned group_size) noexcept {
+    table_lookup_core<true>(out, table, table_size, n, group_size);
+}
+
+#else // Scalar fallback
+
+// ─── Always-inline scalar table lookup core (non-AVX2 path) ──────────────────
+template<bool NORMALIZE_Y>
+__attribute__((always_inline)) inline
+void table_lookup_core(CTAffinePoint* out,
+                        const CTAffinePoint* table,
+                        std::size_t table_size,
+                        std::uint64_t n,
+                        unsigned group_size) noexcept {
     std::uint64_t negative = ((n >> (group_size - 1)) ^ 1u) & 1u;
     std::uint64_t neg_mask = static_cast<std::uint64_t>(-negative);
 
@@ -635,11 +690,22 @@ void affine_table_lookup_signed_into(CTAffinePoint* out,
 
     // Conditional Y-negate (sign handling)
     FE52 neg_y = out->y;
-    neg_y.normalize_weak();
+    if constexpr (NORMALIZE_Y) {
+        neg_y.normalize_weak();
+    }
     neg_y = neg_y.negate(1);
     fe52_cmov(&out->y, neg_y, neg_mask);
 
     out->infinity = 0;
+}
+
+// Public wrapper
+void affine_table_lookup_signed_into(CTAffinePoint* out,
+                                      const CTAffinePoint* table,
+                                      std::size_t table_size,
+                                      std::uint64_t n,
+                                      unsigned group_size) noexcept {
+    table_lookup_core<true>(out, table, table_size, n, group_size);
 }
 
 #endif // SECP256K1_CT_AVX2
@@ -904,9 +970,7 @@ CTJacobianPoint point_dbl(const CTJacobianPoint& p) noexcept {
 // Precondition: p is NOT infinity (caller ensures).
 // Output: 2^n · p
 
-// In-place batch N doublings — modifies r directly, no return copy.
-// Uses local accumulators in the loop (register-friendly), writes back once.
-//
+// Always-inline core: called from scalar_mul hot loop AND public wrapper.
 // Magnitude contract (NO normalize_weak calls):
 //   Input from unified add: X M≤2, Y M=1, Z M=1
 //   Input from prev dbl:    X M≤18, Y M≤10, Z M≤2
@@ -914,7 +978,8 @@ CTJacobianPoint point_dbl(const CTJacobianPoint& p) noexcept {
 //   After each dbl: X M=18, Y M=10, Z M=2 (fixed point, independent of input).
 //
 // Precondition: r is NOT infinity.
-void point_dbl_n_inplace(CTJacobianPoint* r, unsigned n) noexcept {
+__attribute__((always_inline)) inline
+void point_dbl_n_core(CTJacobianPoint* r, unsigned n) noexcept {
     FE52 X = r->x;   // no normalize_weak — magnitudes tracked
     FE52 Y = r->y;
     FE52 Z = r->z;
@@ -949,6 +1014,11 @@ void point_dbl_n_inplace(CTJacobianPoint* r, unsigned n) noexcept {
     r->z = Z;
 }
 
+// Public wrapper (out-of-line for external callers).
+void point_dbl_n_inplace(CTJacobianPoint* r, unsigned n) noexcept {
+    point_dbl_n_core(r, n);
+}
+
 // Backward-compatible wrapper (returns by value)
 CTJacobianPoint point_dbl_n(const CTJacobianPoint& p, unsigned n) noexcept {
     CTJacobianPoint result = p;
@@ -977,15 +1047,18 @@ CTJacobianPoint point_add_mixed_unified(const CTJacobianPoint& a,
     return result;
 }
 
-// ─── In-Place Brier-Joye Unified Mixed Addition ─────────────────────────────
-// Writes result directly into *out. When out == &a, first reads are from
-// a's fields before writing (the local copies X1/Y1/Z1 handle this).
+// ─── Always-Inline Brier-Joye Unified Mixed Addition (template core) ────────
+// Template parameter CHECK_INFINITY controls whether infinity handling is done.
+// In scalar_mul's main loop, both a and b are known non-infinity, so
+// CHECK_INFINITY=false saves 3 fe52_cmov + 1 fe52_is_zero per call.
 //
 // Cost: 7M + 5S. Precondition: b MUST NOT be infinity.
 
-void point_add_mixed_unified_into(CTJacobianPoint* out,
-                                   const CTJacobianPoint& a,
-                                   const CTAffinePoint& b) noexcept {
+template<bool CHECK_INFINITY>
+__attribute__((always_inline)) inline
+void unified_add_core(CTJacobianPoint* out,
+                       const CTJacobianPoint& a,
+                       const CTAffinePoint& b) noexcept {
     // Read a's coords into locals (handles out==&a aliasing, register-friendly).
     // NO normalize_weak — magnitude bounds tracked explicitly:
     //   After dbl_n:      X M≤18, Y M≤10, Z M≤2
@@ -994,7 +1067,7 @@ void point_add_mixed_unified_into(CTJacobianPoint* out,
     FE52 X1 = a.x;
     FE52 Y1 = a.y;
     FE52 Z1 = a.z;
-    std::uint64_t a_inf = a.infinity;
+    [[maybe_unused]] std::uint64_t a_inf = a.infinity;
 
     // ── Shared intermediates ──
     FE52 zz = Z1.square();                          // Z1²       [1S]  M=1
@@ -1013,7 +1086,8 @@ void point_add_mixed_unified_into(CTJacobianPoint* out,
     rr = rr + tt;                                    // R   M=2
 
     // ── Degenerate case: M≈0 (y1=-y2) ──
-    std::uint64_t degen = fe52_is_zero(m_val);
+    // Use the cheaper dual-representation zero check (avoids full normalize).
+    std::uint64_t degen = fe52_normalizes_to_zero(m_val);
 
     FE52 rr_alt = s1 + s1;                          // 2·S1   M≤20
     FE52 m_alt  = u1 + neg_u2;                      // U1-U2  M≤20
@@ -1037,17 +1111,31 @@ void point_add_mixed_unified_into(CTJacobianPoint* out,
     FE52 y3_pre = (rr_alt * tq) + n;                // M=1+11=12   [1M=7th]
     FE52 y3 = y3_pre.negate(12).half();              // Y3    M=1 (half normalizes)
 
-    // Handle a=infinity: replace result with (b.x, b.y, 1)
-    FE52 one52 = FE52::one();
-    fe52_cmov(&x3, b.x, a_inf);
-    fe52_cmov(&y3, b.y, a_inf);
-    fe52_cmov(&z3, one52, a_inf);
+    if constexpr (CHECK_INFINITY) {
+        // Handle a=infinity: replace result with (b.x, b.y, 1)
+        FE52 one52 = FE52::one();
+        fe52_cmov(&x3, b.x, a_inf);
+        fe52_cmov(&y3, b.y, a_inf);
+        fe52_cmov(&z3, one52, a_inf);
+    }
 
     // Single write to output at the very end
     out->x = x3;
     out->y = y3;
     out->z = z3;
-    out->infinity = fe52_is_zero(z3);
+
+    if constexpr (CHECK_INFINITY) {
+        out->infinity = fe52_normalizes_to_zero(z3);
+    } else {
+        out->infinity = 0;
+    }
+}
+
+// Public wrapper (out-of-line for external callers, preserves all safety checks).
+void point_add_mixed_unified_into(CTJacobianPoint* out,
+                                   const CTJacobianPoint& a,
+                                   const CTAffinePoint& b) noexcept {
+    unified_add_core<true>(out, a, b);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1427,7 +1515,10 @@ Point scalar_mul(const Point& p, const Scalar& k) noexcept {
     SECP256K1_DECLASSIFY(pre_a, sizeof(pre_a));
     SECP256K1_DECLASSIFY(pre_a_lam, sizeof(pre_a_lam));
 
-    // ── 3. Main loop — FULLY IN-PLACE (zero struct copies) ────────────────
+    // ── 3. Main loop — FULLY IN-PLACE, ALWAYS-INLINE hot ops ────────────
+    // Uses core functions (always_inline) to eliminate function-call overhead.
+    // Uses CHECK_INFINITY=false since R and table entries are never infinity.
+    // Uses NORMALIZE_Y=false since table entries have magnitude 1 (from mul).
     CTJacobianPoint R;
     CTAffinePoint t;  // reused across iterations
 
@@ -1437,31 +1528,34 @@ Point scalar_mul(const Point& p, const Scalar& k) noexcept {
         std::uint64_t bits1 = scalar_window(v1, static_cast<std::size_t>(group) * GROUP_SIZE, GROUP_SIZE);
         std::uint64_t bits2 = scalar_window(v2, static_cast<std::size_t>(group) * GROUP_SIZE, GROUP_SIZE);
 
-        affine_table_lookup_signed_into(&t, pre_a, TABLE_SIZE, bits1, GROUP_SIZE);
+        table_lookup_core<false>(&t, pre_a, TABLE_SIZE, bits1, GROUP_SIZE);
         R.x = t.x;
         R.y = t.y;
         R.z = FE52::one();
         R.infinity = 0;
 
-        affine_table_lookup_signed_into(&t, pre_a_lam, TABLE_SIZE, bits2, GROUP_SIZE);
-        point_add_mixed_unified_into(&R, R, t);
+        table_lookup_core<false>(&t, pre_a_lam, TABLE_SIZE, bits2, GROUP_SIZE);
+        unified_add_core<true>(&R, R, t);   // first add: R.infinity might be relevant
     }
 
-    // Remaining groups: in-place dbl_n + in-place adds
+    // Remaining groups: in-place dbl_n + in-place adds (no infinity possible)
+    // Prevent unrolling: the inlined body is large (~2.5KB per iteration);
+    // unrolling 25 iterations would blow the L1 i-cache (32KB).
+    #pragma clang loop unroll(disable)
     for (int group = static_cast<int>(GROUPS) - 2; group >= 0; --group) {
         std::uint64_t bits1 = scalar_window(v1, static_cast<std::size_t>(group) * GROUP_SIZE, GROUP_SIZE);
         std::uint64_t bits2 = scalar_window(v2, static_cast<std::size_t>(group) * GROUP_SIZE, GROUP_SIZE);
 
-        // In-place batch doubling (no return copy)
-        point_dbl_n_inplace(&R, GROUP_SIZE);
+        // In-place batch doubling — always-inline core
+        point_dbl_n_core(&R, GROUP_SIZE);
 
-        // In-place lookup + in-place add for pre_a
-        affine_table_lookup_signed_into(&t, pre_a, TABLE_SIZE, bits1, GROUP_SIZE);
-        point_add_mixed_unified_into(&R, R, t);
+        // In-place lookup + in-place add for pre_a — core (no infinity check)
+        table_lookup_core<false>(&t, pre_a, TABLE_SIZE, bits1, GROUP_SIZE);
+        unified_add_core<false>(&R, R, t);
 
-        // In-place lookup + in-place add for pre_a_lam
-        affine_table_lookup_signed_into(&t, pre_a_lam, TABLE_SIZE, bits2, GROUP_SIZE);
-        point_add_mixed_unified_into(&R, R, t);
+        // In-place lookup + in-place add for pre_a_lam — core (no infinity check)
+        table_lookup_core<false>(&t, pre_a_lam, TABLE_SIZE, bits2, GROUP_SIZE);
+        unified_add_core<false>(&R, R, t);
     }
 
     Point result = R.to_point();
@@ -1574,11 +1668,13 @@ Point generator_mul(const Scalar& k) noexcept {
     CTJacobianPoint R;
     CTAffinePoint T;  // reused across all iterations
 
-    // ── Main loop — FULLY IN-PLACE (zero struct copies) ──────────────────
+    // ── Main loop — FULLY IN-PLACE, ALWAYS-INLINE hot ops ────────────────
+    // Uses core functions (always_inline) for zero function-call overhead.
+    // Uses NORMALIZE_Y=false (gen table entries have magnitude 1 from mul).
     // First window: set R directly
     {
         std::uint64_t digit0 = scalar_window(v, 0, GEN_W);
-        affine_table_lookup_signed_into(&T,
+        table_lookup_core<false>(&T,
             g_gen_table.entries[0], GEN_SIGNED_TABLE_SIZE, digit0, GEN_W);
         R.x = T.x;
         R.y = T.y;
@@ -1586,14 +1682,16 @@ Point generator_mul(const Scalar& k) noexcept {
         R.infinity = 0;
     }
 
-    // Remaining windows: in-place lookup + in-place unified add
+    // Remaining windows: in-place lookup + in-place unified add (no infinity).
+    // Prevent unrolling: inlined body is large; 63 iterations would blow i-cache.
+    #pragma clang loop unroll(disable)
     for (unsigned i = 1; i < GEN_WINDOWS; ++i) {
         std::uint64_t digit = scalar_window(v, static_cast<std::size_t>(i) * GEN_W, GEN_W);
 
-        affine_table_lookup_signed_into(&T,
+        table_lookup_core<false>(&T,
             g_gen_table.entries[i], GEN_SIGNED_TABLE_SIZE, digit, GEN_W);
 
-        point_add_mixed_unified_into(&R, R, T);
+        unified_add_core<false>(&R, R, T);
     }
 
     Point result = R.to_point();
