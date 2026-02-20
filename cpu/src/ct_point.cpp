@@ -1,7 +1,18 @@
 // ============================================================================
-// Constant-Time Point Arithmetic — Implementation
+// Constant-Time Point Arithmetic — Implementation (5×52 Optimized)
 // ============================================================================
 // Complete addition formula + CT scalar multiplication for secp256k1.
+//
+// INTERNAL REPRESENTATION: FieldElement52 (5×52-bit limbs with lazy reduction)
+// This eliminates the function-call overhead of ct::field_* wrappers and
+// leverages the ~3.6× faster force-inlined 5×52 multiply/square kernels.
+//
+// Conversion to/from 4×64 FieldElement occurs only at API boundaries
+// (from_point / to_point). All internal arithmetic stays in 5×52.
+//
+// Magnitude tracking: mul/sqr produce magnitude 1 output.
+// Lazy adds accumulate magnitude. Max magnitude in point ops ≈ 30,
+// well within the 4096 headroom (12 bits per limb).
 //
 // Complete addition:
 //   Handles P+Q, P+P, P+O, O+Q, P+(-P) in a single branchless codepath.
@@ -13,29 +24,87 @@
 //   into two 128-bit halves: k = k1 + k2·λ (mod n).
 //   Strauss interleaving: 32 windows × (4 dbl + 2 mixed_add).
 //   Total: 128 doublings + 64 mixed_complete additions.
-//   No early exit, no conditional skip, no secret-dependent branches.
 //
 // CT generator multiplication (OPTIMIZED):
 //   Uses precomputed table of 64×16 affine G-multiples.
-//   gen_table[i][j] = j * 2^(4i) * G  — table built once, reused.
 //   Runtime: 64 mixed Jacobian+Affine additions + 64 CT lookups(16).
-//   NO doublings needed. Approximately 3x faster than generic scalar_mul.
+//   NO doublings needed.
 // ============================================================================
 
 #include "secp256k1/ct/point.hpp"
 #include "secp256k1/ct/field.hpp"
 #include "secp256k1/ct/scalar.hpp"
 #include "secp256k1/ct/ops.hpp"
-#include "secp256k1/glv.hpp"   // GLV constants (BETA, LAMBDA, lattice vectors)
+#include "secp256k1/field_52.hpp"
+#include "secp256k1/glv.hpp"
 
 #include <mutex>
 
 namespace secp256k1::ct {
 
-// ─── secp256k1 curve constant b = 7 ─────────────────────────────────────────
+// ─── Type aliases ────────────────────────────────────────────────────────────
+using FE52 = secp256k1::fast::FieldElement52;
+
+// ─── secp256k1 curve constant b = 7 (4×64 for API-boundary functions) ────────
 static const FieldElement B7 = FieldElement::from_uint64(7);
-// 3*b = 21
-static const FieldElement B3 = FieldElement::from_uint64(21);
+
+// ─── 5×52 CT Helper Functions ────────────────────────────────────────────────
+// All operations on FieldElement52 are inherently constant-time:
+//   - mul/sqr: fixed __int128 multiply chain → MULX (data-independent)
+//   - add: 5 plain uint64_t additions (no branches)
+//   - negate: (m+1)*p - a (no branches)
+//   - normalize: branchless mask-based conditional subtract
+// Value barriers are applied in mask generation (is_zero_mask etc.)
+
+namespace /* FE52 CT helpers */ {
+
+// CT conditional move for 5×52 field element
+inline void fe52_cmov(FE52* dst, const FE52& src, std::uint64_t mask) noexcept {
+    dst->n[0] ^= (dst->n[0] ^ src.n[0]) & mask;
+    dst->n[1] ^= (dst->n[1] ^ src.n[1]) & mask;
+    dst->n[2] ^= (dst->n[2] ^ src.n[2]) & mask;
+    dst->n[3] ^= (dst->n[3] ^ src.n[3]) & mask;
+    dst->n[4] ^= (dst->n[4] ^ src.n[4]) & mask;
+}
+
+// CT select: returns a if mask==all-ones, else b
+inline FE52 fe52_select(const FE52& a, const FE52& b, std::uint64_t mask) noexcept {
+    FE52 r;
+    r.n[0] = (a.n[0] & mask) | (b.n[0] & ~mask);
+    r.n[1] = (a.n[1] & mask) | (b.n[1] & ~mask);
+    r.n[2] = (a.n[2] & mask) | (b.n[2] & ~mask);
+    r.n[3] = (a.n[3] & mask) | (b.n[3] & ~mask);
+    r.n[4] = (a.n[4] & mask) | (b.n[4] & ~mask);
+    return r;
+}
+
+// CT zero check: normalizes then checks. Returns all-ones if zero.
+inline std::uint64_t fe52_is_zero(const FE52& a) noexcept {
+    FE52 tmp = a;
+    tmp.normalize();
+    std::uint64_t z = tmp.n[0] | tmp.n[1] | tmp.n[2] | tmp.n[3] | tmp.n[4];
+    return is_zero_mask(z);
+}
+
+// CT equality: normalizes both, then compares. Returns all-ones if equal.
+inline std::uint64_t fe52_eq(const FE52& a, const FE52& b) noexcept {
+    FE52 ta = a; ta.normalize();
+    FE52 tb = b; tb.normalize();
+    std::uint64_t diff = (ta.n[0] ^ tb.n[0]) | (ta.n[1] ^ tb.n[1]) |
+                         (ta.n[2] ^ tb.n[2]) | (ta.n[3] ^ tb.n[3]) |
+                         (ta.n[4] ^ tb.n[4]);
+    return is_zero_mask(diff);
+}
+
+// CT conditional negate: if mask==all-ones, return -a; else a.
+// 'mag' is the current magnitude of a.
+inline FE52 fe52_cneg(const FE52& a, std::uint64_t mask, unsigned mag) noexcept {
+    FE52 neg = a.negate(mag);
+    return fe52_select(neg, a, mask);
+}
+
+} // anonymous namespace (FE52 CT helpers)
+
 
 // ─── CTJacobianPoint helpers ─────────────────────────────────────────────────
 
@@ -44,28 +113,27 @@ CTJacobianPoint CTJacobianPoint::from_point(const Point& p) noexcept {
     if (p.is_infinity()) {
         r = make_infinity();
     } else {
-        r.x = p.X();
-        r.y = p.Y();
-        r.z = p.z();
+        r.x = FE52::from_fe(p.X());
+        r.y = FE52::from_fe(p.Y());
+        r.z = FE52::from_fe(p.z());
         r.infinity = 0;
     }
     return r;
 }
 
 Point CTJacobianPoint::to_point() const noexcept {
-    // Check infinity via mask, but to_point() is not itself a hot-path secret op
     if (infinity != 0) {
         return Point::infinity();
     }
-    return Point::from_jacobian_coords(x, y, z, false);
+    return Point::from_jacobian_coords(x.to_fe(), y.to_fe(), z.to_fe(), false);
 }
 
 CTJacobianPoint CTJacobianPoint::make_infinity() noexcept {
     CTJacobianPoint r;
-    r.x = FieldElement::zero();
-    r.y = FieldElement::one();
-    r.z = FieldElement::zero();
-    r.infinity = ~static_cast<std::uint64_t>(0);  // all-ones
+    r.x = FE52::zero();
+    r.y = FE52::one();
+    r.z = FE52::zero();
+    r.infinity = ~static_cast<std::uint64_t>(0);
     return r;
 }
 
@@ -73,18 +141,18 @@ CTJacobianPoint CTJacobianPoint::make_infinity() noexcept {
 
 void point_cmov(CTJacobianPoint* r, const CTJacobianPoint& a,
                 std::uint64_t mask) noexcept {
-    field_cmov(&r->x, a.x, mask);
-    field_cmov(&r->y, a.y, mask);
-    field_cmov(&r->z, a.z, mask);
+    fe52_cmov(&r->x, a.x, mask);
+    fe52_cmov(&r->y, a.y, mask);
+    fe52_cmov(&r->z, a.z, mask);
     r->infinity = ct_select(a.infinity, r->infinity, mask);
 }
 
 CTJacobianPoint point_select(const CTJacobianPoint& a, const CTJacobianPoint& b,
                              std::uint64_t mask) noexcept {
     CTJacobianPoint r;
-    r.x = field_select(a.x, b.x, mask);
-    r.y = field_select(a.y, b.y, mask);
-    r.z = field_select(a.z, b.z, mask);
+    r.x = fe52_select(a.x, b.x, mask);
+    r.y = fe52_select(a.y, b.y, mask);
+    r.z = fe52_select(a.z, b.z, mask);
     r.infinity = ct_select(a.infinity, b.infinity, mask);
     return r;
 }
@@ -92,7 +160,9 @@ CTJacobianPoint point_select(const CTJacobianPoint& a, const CTJacobianPoint& b,
 CTJacobianPoint point_neg(const CTJacobianPoint& p) noexcept {
     CTJacobianPoint r;
     r.x = p.x;
-    r.y = field_neg(p.y);
+    // normalize_weak before negate to ensure magnitude 1
+    FE52 yn = p.y; yn.normalize_weak();
+    r.y = yn.negate(1);  // -(Y) mod p; magnitude 2
     r.z = p.z;
     r.infinity = p.infinity;
     return r;
@@ -114,8 +184,8 @@ CTJacobianPoint point_table_lookup(const CTJacobianPoint* table,
 
 void affine_cmov(CTAffinePoint* r, const CTAffinePoint& a,
                  std::uint64_t mask) noexcept {
-    field_cmov(&r->x, a.x, mask);
-    field_cmov(&r->y, a.y, mask);
+    fe52_cmov(&r->x, a.x, mask);
+    fe52_cmov(&r->y, a.y, mask);
     r->infinity = ct_select(a.infinity, r->infinity, mask);
 }
 
@@ -131,7 +201,7 @@ CTAffinePoint affine_table_lookup(const CTAffinePoint* table,
     return result;
 }
 
-// ─── Complete Addition (Jacobian, a=0) ───────────────────────────────────────
+// ─── Complete Addition (Jacobian, a=0, 5×52) ────────────────────────────────
 // Complete formula for y²=x³+b on Jacobian coordinates.
 // Handles all cases without branches:
 //   P+Q (general), P+P (doubling), P+O, O+Q, P+(-P)=O
@@ -139,90 +209,92 @@ CTAffinePoint affine_table_lookup(const CTAffinePoint* table,
 // Strategy: compute both general-add and doubling results,
 // then CT-select the correct one based on whether H==0 / R==0.
 // Also handles infinity via cmov at the end.
-//
-// Cost: ~16M + 6S (fixed, no branches on point values)
 
 CTJacobianPoint point_add_complete(const CTJacobianPoint& p,
                                    const CTJacobianPoint& q) noexcept {
-    const FieldElement& X1 = p.x;
-    const FieldElement& Y1 = p.y;
-    const FieldElement& Z1 = p.z;
-    const FieldElement& X2 = q.x;
-    const FieldElement& Y2 = q.y;
-    const FieldElement& Z2 = q.z;
+    // Normalize inputs to guarantee magnitude 1 (previous ops may leave M>1)
+    FE52 X1 = p.x; X1.normalize_weak();
+    FE52 Y1 = p.y; Y1.normalize_weak();
+    FE52 Z1 = p.z; Z1.normalize_weak();
+    FE52 X2 = q.x; X2.normalize_weak();
+    FE52 Y2 = q.y; Y2.normalize_weak();
+    FE52 Z2 = q.z; Z2.normalize_weak();
 
-    // ── 1. General Jacobian addition (assumes P ≠ Q, neither infinity) ──
-    FieldElement z1z1 = field_sqr(Z1);                          // Z1²
-    FieldElement z2z2 = field_sqr(Z2);                          // Z2²
-    FieldElement u1   = field_mul(X1, z2z2);                    // U1 = X1·Z2²
-    FieldElement u2   = field_mul(X2, z1z1);                    // U2 = X2·Z1²
-    FieldElement s1   = field_mul(field_mul(Y1, Z2), z2z2);     // S1 = Y1·Z2³
-    FieldElement s2   = field_mul(field_mul(Y2, Z1), z1z1);     // S2 = Y2·Z1³
+    // ── 1. General Jacobian addition ──
+    FE52 z1z1 = Z1.square();                           // M=1
+    FE52 z2z2 = Z2.square();                           // M=1
+    FE52 u1   = X1 * z2z2;                             // M=1
+    FE52 u2   = X2 * z1z1;                             // M=1
+    FE52 s1   = (Y1 * Z2) * z2z2;                      // M=1
+    FE52 s2   = (Y2 * Z1) * z1z1;                      // M=1
 
-    FieldElement h    = field_sub(u2, u1);                      // H = U2 - U1
-    FieldElement r    = field_sub(s2, s1);                      // R = S2 - S1
+    FE52 h    = u2 + u1.negate(1);                      // H = U2 - U1; M=3
+    FE52 r    = s2 + s1.negate(1);                      // R = S2 - S1; M=3
 
     // Detect special cases via CT masks
-    std::uint64_t h_is_zero = field_is_zero(h);
-    std::uint64_t r_is_zero = field_is_zero(r);
-    std::uint64_t is_double  = h_is_zero & r_is_zero;   // P == Q
-    std::uint64_t is_inverse = h_is_zero & ~r_is_zero;  // P == -Q
+    std::uint64_t h_is_zero = fe52_is_zero(h);
+    std::uint64_t r_is_zero = fe52_is_zero(r);
+    std::uint64_t is_double  = h_is_zero & r_is_zero;
+    std::uint64_t is_inverse = h_is_zero & ~r_is_zero;
 
-    FieldElement hh   = field_sqr(h);                           // H²
-    FieldElement hhh  = field_mul(h, hh);                       // H³
-    FieldElement v    = field_mul(u1, hh);                      // V = U1·H²
+    FE52 hh   = h.square();                            // M=1
+    FE52 hhh  = h * hh;                                // M=1
+    FE52 v    = u1 * hh;                               // M=1
 
-    FieldElement rr      = field_sqr(r);
-    FieldElement x3_add  = field_sub(field_sub(rr, hhh), field_add(v, v));
-    FieldElement y3_add  = field_sub(field_mul(r, field_sub(v, x3_add)),
-                                     field_mul(s1, hhh));
-    FieldElement z3_add  = field_mul(field_mul(Z1, Z2), h);
+    FE52 rr       = r.square();                         // M=1
+    FE52 vv       = v + v;                              // M=2
+    FE52 x3_add   = rr + hhh.negate(1) + vv.negate(2); // M=1+2+3=6
+    FE52 vx3      = v + x3_add.negate(6);              // M=1+7=8
+    FE52 y3_add   = (r * vx3) + (s1 * hhh).negate(1);  // M=1+2=3
+    FE52 z3_add   = (Z1 * Z2) * h;                     // M=1
 
     // ── 2. Doubling of P (dbl-2007-a for a=0) ──
-    FieldElement A   = field_sqr(X1);
-    FieldElement B   = field_sqr(Y1);
-    FieldElement C   = field_sqr(B);
+    FE52 A   = X1.square();                            // M=1
+    FE52 B   = Y1.square();                            // M=1
+    FE52 C   = B.square();                             // M=1
 
-    FieldElement D   = field_sub(field_sqr(field_add(X1, B)), field_add(A, C));
-    D = field_add(D, D);                                       // D = 2·((X+B)²-A-C)
+    FE52 xb  = X1 + B;                                // M=2
+    FE52 AC  = A + C;                                  // M=2
+    FE52 D   = xb.square() + AC.negate(2);             // M=1+3=4
+    D = D + D;                                         // M=8
 
-    FieldElement E   = field_add(field_add(A, A), A);           // E = 3·A
-    FieldElement F   = field_sqr(E);                            // F = E²
+    FE52 E   = (A + A) + A;                            // M=3
+    FE52 F   = E.square();                             // M=1
 
-    FieldElement x3_dbl = field_sub(F, field_add(D, D));        // X3 = F - 2D
+    FE52 DD  = D + D;                                  // M=16
+    FE52 x3_dbl = F + DD.negate(16);                   // M=18
 
-    FieldElement C8  = C;
-    C8 = field_add(C8, C8);  // 2C
-    C8 = field_add(C8, C8);  // 4C
-    C8 = field_add(C8, C8);  // 8C
+    FE52 C8  = C + C;                                  // M=2
+    C8 = C8 + C8;                                      // M=4
+    C8 = C8 + C8;                                      // M=8
 
-    FieldElement y3_dbl = field_sub(field_mul(E, field_sub(D, x3_dbl)), C8);
-    FieldElement yz_dbl = field_mul(Y1, Z1);
-    FieldElement z3_dbl = field_add(yz_dbl, yz_dbl);            // Z3 = 2·Y1·Z1
+    FE52 Dx  = D + x3_dbl.negate(18);                  // M=8+19=27
+    FE52 y3_dbl = (E * Dx) + C8.negate(8);             // M=1+9=10
+
+    FE52 yz_dbl = Y1 * Z1;
+    FE52 z3_dbl = yz_dbl + yz_dbl;                     // M=2
 
     // ── 3. Select result via CT masks ──
-    // field_select(a, b, mask): returns a if mask==all-ones, else b
-    // When is_double: use dbl result. Otherwise: use add result.
-    FieldElement x3 = field_select(x3_dbl, x3_add, is_double);
-    FieldElement y3 = field_select(y3_dbl, y3_add, is_double);
-    FieldElement z3 = field_select(z3_dbl, z3_add, is_double);
+    FE52 x3 = fe52_select(x3_dbl, x3_add, is_double);
+    FE52 y3 = fe52_select(y3_dbl, y3_add, is_double);
+    FE52 z3 = fe52_select(z3_dbl, z3_add, is_double);
 
     // If P == -Q → infinity (0:1:0)
-    FieldElement zero = FieldElement::zero();
-    FieldElement one  = FieldElement::one();
-    field_cmov(&x3, zero, is_inverse);
-    field_cmov(&y3, one,  is_inverse);
-    field_cmov(&z3, zero, is_inverse);
+    FE52 zero52 = FE52::zero();
+    FE52 one52  = FE52::one();
+    fe52_cmov(&x3, zero52, is_inverse);
+    fe52_cmov(&y3, one52,  is_inverse);
+    fe52_cmov(&z3, zero52, is_inverse);
 
     // If P is infinity → result = Q
-    field_cmov(&x3, X2, p.infinity);
-    field_cmov(&y3, Y2, p.infinity);
-    field_cmov(&z3, Z2, p.infinity);
+    fe52_cmov(&x3, X2, p.infinity);
+    fe52_cmov(&y3, Y2, p.infinity);
+    fe52_cmov(&z3, Z2, p.infinity);
 
     // If Q is infinity → result = P
-    field_cmov(&x3, X1, q.infinity);
-    field_cmov(&y3, Y1, q.infinity);
-    field_cmov(&z3, Z1, q.infinity);
+    fe52_cmov(&x3, X1, q.infinity);
+    fe52_cmov(&y3, Y1, q.infinity);
+    fe52_cmov(&z3, Z1, q.infinity);
 
     // Compute infinity flag for result
     std::uint64_t result_inf = is_inverse & ~p.infinity & ~q.infinity;
@@ -236,97 +308,91 @@ CTJacobianPoint point_add_complete(const CTJacobianPoint& p,
     return result;
 }
 
-// ─── Mixed Jacobian+Affine Complete Addition (a=0) ───────────────────────────
+// ─── Mixed Jacobian+Affine Complete Addition (a=0, 5×52) ─────────────────────
 // P = (X1:Y1:Z1) Jacobian, Q = (x2, y2) affine (implied Z2=1).
-// Same strategy as point_add_complete but with Z2=1 optimizations:
-//   - No Z2² / Z2³ computation needed
-//   - U1 = X1, S1 = Y1 (since Z2=1)
-//   - Z3_add = Z1·H (not Z1·Z2·H)
-// Saves 4 field multiplications + 1 field squaring.
-// Cost: ~9M + 8S (fixed, no branches)
+// Z2=1 optimizations: no Z2²/Z2³, U1=X1, S1=Y1, Z3_add=Z1·H.
 
 CTJacobianPoint point_add_mixed_complete(const CTJacobianPoint& p,
                                           const CTAffinePoint& q) noexcept {
-    const FieldElement& X1 = p.x;
-    const FieldElement& Y1 = p.y;
-    const FieldElement& Z1 = p.z;
-    const FieldElement& x2 = q.x;
-    const FieldElement& y2 = q.y;
+    // Normalize inputs to guarantee magnitude 1
+    FE52 X1 = p.x; X1.normalize_weak();
+    FE52 Y1 = p.y; Y1.normalize_weak();
+    FE52 Z1 = p.z; Z1.normalize_weak();
+    FE52 x2 = q.x; x2.normalize_weak();
+    FE52 y2 = q.y; y2.normalize_weak();
 
-    // ── 1. General Jacobian+Affine addition (Z2=1 optimizations) ──
-    FieldElement z1z1 = field_sqr(Z1);                          // Z1²
+    // ── 1. General Jacobian+Affine addition (Z2=1) ──
+    FE52 z1z1 = Z1.square();                          // M=1
+    FE52 u2   = x2 * z1z1;                            // M=1
+    FE52 z1cu = z1z1 * Z1;                             // M=1
+    FE52 s2   = y2 * z1cu;                             // M=1
 
-    // U1 = X1 (since Z2² = 1)
-    // U2 = x2·Z1²
-    FieldElement u2   = field_mul(x2, z1z1);                    // M1
-
-    // S1 = Y1 (since Z2³ = 1)
-    // S2 = y2·Z1³
-    FieldElement z1cu = field_mul(z1z1, Z1);                    // M2: Z1³
-    FieldElement s2   = field_mul(y2, z1cu);                    // M3: y2·Z1³
-
-    FieldElement h    = field_sub(u2, X1);                      // H = U2 - U1
-    FieldElement r    = field_sub(s2, Y1);                      // R = S2 - S1
+    FE52 h    = u2 + X1.negate(1);                     // H = U2 - X1; M=3
+    FE52 r    = s2 + Y1.negate(1);                     // R = S2 - Y1; M=3
 
     // Detect special cases via CT masks
-    std::uint64_t h_is_zero = field_is_zero(h);
-    std::uint64_t r_is_zero = field_is_zero(r);
-    std::uint64_t is_double  = h_is_zero & r_is_zero;   // P == Q
-    std::uint64_t is_inverse = h_is_zero & ~r_is_zero;  // P == -Q
+    std::uint64_t h_is_zero = fe52_is_zero(h);
+    std::uint64_t r_is_zero = fe52_is_zero(r);
+    std::uint64_t is_double  = h_is_zero & r_is_zero;
+    std::uint64_t is_inverse = h_is_zero & ~r_is_zero;
 
-    FieldElement hh   = field_sqr(h);                           // H²
-    FieldElement hhh  = field_mul(h, hh);                       // M4: H³
-    FieldElement v    = field_mul(X1, hh);                      // M5: V = X1·H²
+    FE52 hh   = h.square();                           // M=1
+    FE52 hhh  = h * hh;                               // M=1
+    FE52 v    = X1 * hh;                              // M=1
 
-    FieldElement rr      = field_sqr(r);                        // R²
-    FieldElement x3_add  = field_sub(field_sub(rr, hhh), field_add(v, v));
-    FieldElement y3_add  = field_sub(field_mul(r, field_sub(v, x3_add)),  // M6
-                                     field_mul(Y1, hhh));                 // M7
-    FieldElement z3_add  = field_mul(Z1, h);                    // M8: Z3 = Z1·H
+    FE52 rr       = r.square();                        // M=1
+    FE52 vv       = v + v;                             // M=2
+    FE52 x3_add   = rr + hhh.negate(1) + vv.negate(2); // M=6
+    FE52 vx3      = v + x3_add.negate(6);             // M=8
+    FE52 y3_add   = (r * vx3) + (Y1 * hhh).negate(1); // M=3
+    FE52 z3_add   = Z1 * h;                           // M=1
 
     // ── 2. Doubling of P (dbl-2007-a for a=0) ──
-    FieldElement A   = field_sqr(X1);
-    FieldElement B   = field_sqr(Y1);
-    FieldElement C   = field_sqr(B);
+    FE52 A   = X1.square();                           // M=1
+    FE52 B   = Y1.square();                           // M=1
+    FE52 C   = B.square();                            // M=1
 
-    FieldElement D   = field_sub(field_sqr(field_add(X1, B)), field_add(A, C));
-    D = field_add(D, D);                                       // D = 2·((X+B)²-A-C)
+    FE52 xb  = X1 + B;                               // M=2
+    FE52 AC  = A + C;                                 // M=2
+    FE52 D   = xb.square() + AC.negate(2);            // M=4
+    D = D + D;                                        // M=8
 
-    FieldElement E   = field_add(field_add(A, A), A);           // E = 3·A
-    FieldElement F   = field_sqr(E);                            // F = E²
+    FE52 E   = (A + A) + A;                           // M=3
+    FE52 F   = E.square();                            // M=1
 
-    FieldElement x3_dbl = field_sub(F, field_add(D, D));        // X3 = F - 2D
+    FE52 DD  = D + D;                                 // M=16
+    FE52 x3_dbl = F + DD.negate(16);                  // M=18
 
-    FieldElement C8  = C;
-    C8 = field_add(C8, C8);  // 2C
-    C8 = field_add(C8, C8);  // 4C
-    C8 = field_add(C8, C8);  // 8C
+    FE52 C8  = C + C;                                 // M=2
+    C8 = C8 + C8;                                     // M=4
+    C8 = C8 + C8;                                     // M=8
 
-    FieldElement y3_dbl = field_sub(field_mul(E, field_sub(D, x3_dbl)), C8);  // M9
-    FieldElement yz_mix = field_mul(Y1, Z1);
-    FieldElement z3_dbl = field_add(yz_mix, yz_mix);                          // 2·Y1·Z1
+    FE52 Dx  = D + x3_dbl.negate(18);                 // M=27
+    FE52 y3_dbl = (E * Dx) + C8.negate(8);            // M=10
+    FE52 yz_mix = Y1 * Z1;
+    FE52 z3_dbl = yz_mix + yz_mix;                    // M=2
 
     // ── 3. Select result via CT masks ──
-    FieldElement x3 = field_select(x3_dbl, x3_add, is_double);
-    FieldElement y3 = field_select(y3_dbl, y3_add, is_double);
-    FieldElement z3 = field_select(z3_dbl, z3_add, is_double);
+    FE52 x3 = fe52_select(x3_dbl, x3_add, is_double);
+    FE52 y3 = fe52_select(y3_dbl, y3_add, is_double);
+    FE52 z3 = fe52_select(z3_dbl, z3_add, is_double);
 
     // If P == -Q → infinity (0:1:0)
-    FieldElement zero = FieldElement::zero();
-    FieldElement one  = FieldElement::one();
-    field_cmov(&x3, zero, is_inverse);
-    field_cmov(&y3, one,  is_inverse);
-    field_cmov(&z3, zero, is_inverse);
+    FE52 zero52 = FE52::zero();
+    FE52 one52  = FE52::one();
+    fe52_cmov(&x3, zero52, is_inverse);
+    fe52_cmov(&y3, one52,  is_inverse);
+    fe52_cmov(&z3, zero52, is_inverse);
 
     // If P is infinity → result = Q (affine, so Z=1)
-    field_cmov(&x3, x2, p.infinity);
-    field_cmov(&y3, y2, p.infinity);
-    field_cmov(&z3, one, p.infinity);
+    fe52_cmov(&x3, x2, p.infinity);
+    fe52_cmov(&y3, y2, p.infinity);
+    fe52_cmov(&z3, one52, p.infinity);
 
     // If Q is infinity → result = P
-    field_cmov(&x3, X1, q.infinity);
-    field_cmov(&y3, Y1, q.infinity);
-    field_cmov(&z3, Z1, q.infinity);
+    fe52_cmov(&x3, X1, q.infinity);
+    fe52_cmov(&y3, Y1, q.infinity);
+    fe52_cmov(&z3, Z1, q.infinity);
 
     // Compute infinity flag for result
     std::uint64_t result_inf = is_inverse & ~p.infinity & ~q.infinity;
@@ -340,33 +406,38 @@ CTJacobianPoint point_add_mixed_complete(const CTJacobianPoint& p,
     return result;
 }
 
-// ─── CT Point Doubling ───────────────────────────────────────────────────────
+// ─── CT Point Doubling (5×52) ────────────────────────────────────────────────
 
 CTJacobianPoint point_dbl(const CTJacobianPoint& p) noexcept {
-    // dbl-2007-a formula for a=0 curves, with CT infinity handling
+    // Normalize inputs to guarantee magnitude 1
+    FE52 X1 = p.x; X1.normalize_weak();
+    FE52 Y1 = p.y; Y1.normalize_weak();
+    FE52 Z1 = p.z; Z1.normalize_weak();
 
-    FieldElement A = field_sqr(p.x);
-    FieldElement B = field_sqr(p.y);
-    FieldElement C = field_sqr(B);
+    FE52 A = X1.square();           // M=1
+    FE52 B = Y1.square();           // M=1
+    FE52 C = B.square();            // M=1
 
-    FieldElement xb = field_add(p.x, B);
-    FieldElement D = field_sub(field_sqr(xb), field_add(A, C));
-    D = field_add(D, D);                       // D = 2·((X+B)²-A-C)
+    FE52 xb = X1 + B;              // M=2
+    FE52 AC = A + C;               // M=2
+    FE52 D = xb.square() + AC.negate(2); // M=4
+    D = D + D;                     // M=8
 
-    FieldElement E = field_add(field_add(A, A), A); // E = 3·A
-    FieldElement F = field_sqr(E);              // F = E²
+    FE52 E = (A + A) + A;          // M=3
+    FE52 F = E.square();           // M=1
 
-    FieldElement x3 = field_sub(F, field_add(D, D)); // X3 = F - 2D
+    FE52 DD = D + D;               // M=16
+    FE52 x3 = F + DD.negate(16);   // M=18
 
-    FieldElement C8 = C;
-    C8 = field_add(C8, C8);
-    C8 = field_add(C8, C8);
-    C8 = field_add(C8, C8);  // 8C
+    FE52 C8 = C + C;               // M=2
+    C8 = C8 + C8;                  // M=4
+    C8 = C8 + C8;                  // M=8
 
-    FieldElement y3 = field_sub(field_mul(E, field_sub(D, x3)), C8);
+    FE52 Dx = D + x3.negate(18);   // M=27
+    FE52 y3 = (E * Dx) + C8.negate(8); // M=10
 
-    FieldElement z3 = field_mul(p.y, p.z);
-    z3 = field_add(z3, z3);                     // Z3 = 2·Y·Z
+    FE52 z3 = Y1 * Z1;            // M=1
+    z3 = z3 + z3;                  // M=2
 
     // If P is infinity, result is infinity
     CTJacobianPoint inf = CTJacobianPoint::make_infinity();
@@ -382,15 +453,6 @@ CTJacobianPoint point_dbl(const CTJacobianPoint& p) noexcept {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CT GLV Endomorphism — Helpers & Decomposition
-// ═══════════════════════════════════════════════════════════════════════════════
-// GLV uses secp256k1's efficient endomorphism φ(x,y)=(β·x,y) where β³≡1 (mod p)
-// to split a 256-bit scalar multiplication into two 128-bit ones:
-//   k*P = k1*P + k2*φ(P)  where |k1|,|k2| ≈ 128 bits
-//
-// This cuts the number of doublings in half (128 vs 256),
-// yielding ~40% speedup in the point multiplication loop.
-//
-// All operations on secret data are constant-time (CT).
 // ═══════════════════════════════════════════════════════════════════════════════
 
 namespace /* GLV CT helpers */ {
@@ -412,8 +474,6 @@ static inline std::uint64_t local_sub256(std::uint64_t r[4],
 }
 
 // ─── CT scalar > n/2 check ──────────────────────────────────────────────────
-// Returns all-ones mask if s > n/2, zero otherwise.
-// n/2 (floor) = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0
 static std::uint64_t ct_scalar_is_high(const Scalar& s) noexcept {
     static constexpr std::uint64_t HALF_N[4] = {
         0xDFE92F46681B20A0ULL,
@@ -421,20 +481,17 @@ static std::uint64_t ct_scalar_is_high(const Scalar& s) noexcept {
         0xFFFFFFFFFFFFFFFFULL,
         0x7FFFFFFFFFFFFFFFULL
     };
-    // s > half_n iff sub(half_n, s) borrows
     std::uint64_t tmp[4];
     std::uint64_t borrow = local_sub256(tmp, HALF_N, s.limbs().data());
     return is_nonzero_mask(borrow);
 }
 
 // ─── CT 256×256→512 multiply, shift >>384 with rounding ─────────────────────
-// Same as fast::mul_shift_384 but fully data-independent on x86_64.
 static std::array<std::uint64_t, 4> ct_mul_shift_384(
     const std::array<std::uint64_t, 4>& a,
     const std::array<std::uint64_t, 4>& b) noexcept
 {
     std::uint64_t prod[8] = {};
-    // Schoolbook 4×4 → 8-limb product (fully data-independent)
     for (int i = 0; i < 4; ++i) {
         unsigned __int128 carry = 0;
         for (int j = 0; j < 4; ++j) {
@@ -446,13 +503,10 @@ static std::array<std::uint64_t, 4> ct_mul_shift_384(
         prod[i + 4] = static_cast<std::uint64_t>(carry);
     }
 
-    // Bits [384..511] = prod[6], prod[7]
     std::array<std::uint64_t, 4> result{};
     result[0] = prod[6];
     result[1] = prod[7];
-    // result[2] = result[3] = 0 (product fits ~256+256=512 bits, so [384..511] ≤ 128 bits)
 
-    // CT rounding: add bit 383 (MSB of prod[5])
     std::uint64_t round = prod[5] >> 63;
     std::uint64_t old = result[0];
     result[0] += round;
@@ -463,17 +517,13 @@ static std::array<std::uint64_t, 4> ct_mul_shift_384(
 }
 
 // ─── CT scalar multiplication mod n ──────────────────────────────────────────
-// Schoolbook 4×4 → Barrett reduction, fully constant-time.
-// Used for GLV decomposition: c1*(-b1), c2*(-b2), lambda*k2.
 static Scalar ct_scalar_mul_mod(const Scalar& a, const Scalar& b) noexcept {
-    // secp256k1 curve order n
     static constexpr std::uint64_t ORDER[4] = {
         0xBFD25E8CD0364141ULL,
         0xBAAEDCE6AF48A03BULL,
         0xFFFFFFFFFFFFFFFEULL,
         0xFFFFFFFFFFFFFFFFULL
     };
-    // Barrett mu = floor(2^512 / n)
     static constexpr std::uint64_t MU[5] = {
         0x402DA1732FC9BEC0ULL,
         0x4551231950B75FC4ULL,
@@ -495,8 +545,7 @@ static Scalar ct_scalar_mul_mod(const Scalar& a, const Scalar& b) noexcept {
         prod[i + 4] = static_cast<std::uint64_t>(carry);
     }
 
-    // Step 2: Barrett approximation — q = floor(prod >> 256) = prod[4..7]
-    // q_approx = floor((q * mu) >> 256) = high part of q*mu
+    // Step 2: Barrett approximation
     std::uint64_t qmu[9] = {};
     for (int i = 0; i < 4; ++i) {
         unsigned __int128 carry = 0;
@@ -509,8 +558,6 @@ static Scalar ct_scalar_mul_mod(const Scalar& a, const Scalar& b) noexcept {
         qmu[i + 5] = static_cast<std::uint64_t>(carry);
     }
 
-    // q_approx = qmu[4..7]
-    // Compute r = prod - q_approx * ORDER (low 5 limbs only)
     std::uint64_t qn[5] = {};
     for (int i = 0; i < 4; ++i) {
         unsigned __int128 carry = 0;
@@ -526,7 +573,6 @@ static Scalar ct_scalar_mul_mod(const Scalar& a, const Scalar& b) noexcept {
         }
     }
 
-    // r = prod[0..3] - qn[0..3], with overflow into r4
     std::uint64_t r[4];
     std::uint64_t bw = 0;
     for (int i = 0; i < 4; ++i) {
@@ -539,8 +585,7 @@ static Scalar ct_scalar_mul_mod(const Scalar& a, const Scalar& b) noexcept {
     }
     std::uint64_t r4 = prod[4] - qn[4] - bw;
 
-    // Step 3: CT conditional subtract — always compute, select via cmov
-    // First reduction
+    // Step 3: CT conditional subtract
     std::uint64_t r_sub1[4];
     std::uint64_t bw1 = 0;
     for (int i = 0; i < 4; ++i) {
@@ -552,18 +597,10 @@ static Scalar ct_scalar_mul_mod(const Scalar& a, const Scalar& b) noexcept {
         bw1 = b1 + b2;
     }
     std::uint64_t r4_sub1 = r4 - bw1;
-    // Should subtract if r4 > 0 OR (r4 == 0 AND no borrow)
-    // i.e., the overall value (r4:r[3..0]) >= ORDER
-    std::uint64_t need_sub1 = is_nonzero_mask(r4) | is_zero_mask(bw1);
-    // However, if r4 > 0 and borrow occurred, the subtraction is still valid
-    // Correct condition: the 5-limb value is >= ORDER, i.e. r4>0 or (r4==0 and r>=ORDER)
-    // After subtraction: if no overall underflow (r4_sub1 didn't wrap), keep it
-    // Simplification: if r4 != 0 OR no borrow from 256-bit sub
-    need_sub1 = is_nonzero_mask(r4) | is_zero_mask(bw1 & is_zero_mask(r4));
+    std::uint64_t need_sub1 = is_nonzero_mask(r4) | is_zero_mask(bw1 & is_zero_mask(r4));
     cmov256(r, r_sub1, need_sub1);
     r4 = ct_select(r4_sub1, r4, need_sub1);
 
-    // Second reduction
     std::uint64_t r_sub2[4];
     std::uint64_t bw2 = 0;
     for (int i = 0; i < 4; ++i) {
@@ -582,14 +619,14 @@ static Scalar ct_scalar_mul_mod(const Scalar& a, const Scalar& b) noexcept {
     return Scalar::from_limbs({r[0], r[1], r[2], r[3]});
 }
 
-// ─── β (beta) as FieldElement — cube root of unity mod p ─────────────────────
-static const FieldElement& get_beta_fe() noexcept {
-    static const FieldElement beta = FieldElement::from_bytes(
-        secp256k1::fast::glv_constants::BETA);
+// ─── β (beta) as FE52 — cube root of unity mod p ────────────────────────────
+static const FE52& get_beta_fe52() noexcept {
+    static const FE52 beta = FE52::from_fe(
+        FieldElement::from_bytes(secp256k1::fast::glv_constants::BETA));
     return beta;
 }
 
-// ─── GLV lattice constants (matching libsecp256k1 / glv.cpp) ─────────────────
+// ─── GLV lattice constants ───────────────────────────────────────────────────
 static constexpr std::array<std::uint64_t, 4> kG1{{
     0xE893209A45DBB031ULL, 0x3DAA8A1471E8CA7FULL,
     0xE86C90E49284EB15ULL, 0x3086D221A7D46BCDULL
@@ -619,12 +656,11 @@ static constexpr std::array<std::uint8_t, 32> kLambdaBytes{{
 
 } // anonymous namespace (GLV CT helpers)
 
-// ─── CT GLV Endomorphism ─────────────────────────────────────────────────────
+// ─── CT GLV Endomorphism (5×52) ──────────────────────────────────────────────
 
 CTJacobianPoint point_endomorphism(const CTJacobianPoint& p) noexcept {
-    // φ(x,y,z) = (β·x, y, z) — just one field multiplication, CT
     CTJacobianPoint r;
-    r.x = field_mul(p.x, get_beta_fe());
+    r.x = p.x * get_beta_fe52();
     r.y = p.y;
     r.z = p.z;
     r.infinity = p.infinity;
@@ -632,9 +668,8 @@ CTJacobianPoint point_endomorphism(const CTJacobianPoint& p) noexcept {
 }
 
 CTAffinePoint affine_endomorphism(const CTAffinePoint& p) noexcept {
-    // φ(x,y) = (β·x, y) — one field multiplication, CT
     CTAffinePoint r;
-    r.x = field_mul(p.x, get_beta_fe());
+    r.x = p.x * get_beta_fe52();
     r.y = p.y;
     r.infinity = p.infinity;
     return r;
@@ -643,7 +678,8 @@ CTAffinePoint affine_endomorphism(const CTAffinePoint& p) noexcept {
 CTAffinePoint affine_neg(const CTAffinePoint& p) noexcept {
     CTAffinePoint r;
     r.x = p.x;
-    r.y = field_neg(p.y);
+    FE52 yn = p.y; yn.normalize_weak();
+    r.y = yn.negate(1);
     r.infinity = p.infinity;
     return r;
 }
@@ -651,13 +687,10 @@ CTAffinePoint affine_neg(const CTAffinePoint& p) noexcept {
 // ─── CT GLV Decomposition ────────────────────────────────────────────────────
 
 CTGLVDecomposition ct_glv_decompose(const Scalar& k) noexcept {
-    // Lazy-init constants
     static const Scalar minus_b1 = Scalar::from_bytes(kMinusB1Bytes);
     static const Scalar minus_b2 = Scalar::from_bytes(kMinusB2Bytes);
     static const Scalar lambda   = Scalar::from_bytes(kLambdaBytes);
 
-    // Step 1: c1 = round(k·g1 / 2^384), c2 = round(k·g2 / 2^384)
-    // mul_shift_384 is fully data-independent (schoolbook multiply + shift)
     auto k_limbs = k.limbs();
     auto c1_limbs = ct_mul_shift_384({k_limbs[0], k_limbs[1], k_limbs[2], k_limbs[3]}, kG1);
     auto c2_limbs = ct_mul_shift_384({k_limbs[0], k_limbs[1], k_limbs[2], k_limbs[3]}, kG2);
@@ -665,30 +698,18 @@ CTGLVDecomposition ct_glv_decompose(const Scalar& k) noexcept {
     Scalar c1 = Scalar::from_limbs(c1_limbs);
     Scalar c2 = Scalar::from_limbs(c2_limbs);
 
-    // Step 2: k2 = c1*(-b1) + c2*(-b2) (mod n)
-    // Using CT scalar multiply (no Barrett branches)
     Scalar k2_part1 = ct_scalar_mul_mod(c1, minus_b1);
     Scalar k2_part2 = ct_scalar_mul_mod(c2, minus_b2);
     Scalar k2_mod   = scalar_add(k2_part1, k2_part2);
 
-    // Step 3: CT pick shorter representation for k2
-    // If k2_mod > n/2, negate it → k2_abs = n - k2_mod
     std::uint64_t k2_high = ct_scalar_is_high(k2_mod);
     Scalar k2_abs = scalar_cneg(k2_mod, k2_high);
 
-    // For computing k1: k2_signed = k2_high ? -k2_abs : k2_abs = k2_high ? k2_mod : -k2_mod
-    // Wait: if k2_high, k2_abs = -k2_mod, and k2_signed = -k2_abs = k2_mod
-    // if !k2_high, k2_abs = k2_mod, and k2_signed = k2_abs = k2_mod
-    // Actually we need: k1 = k - λ * k2_original (before taking abs)
-    // k2_original = k2_high ? -k2_abs : k2_abs
-    // k2_signed represents the original value (with sign):
     Scalar k2_signed = scalar_cneg(k2_abs, k2_high);
 
-    // Step 4: k1 = k - λ * k2_signed (mod n)
     Scalar lambda_k2 = ct_scalar_mul_mod(lambda, k2_signed);
     Scalar k1_mod = scalar_sub(k, lambda_k2);
 
-    // Step 5: CT pick shorter representation for k1
     std::uint64_t k1_high = ct_scalar_is_high(k1_mod);
     Scalar k1_abs = scalar_cneg(k1_mod, k1_high);
 
@@ -700,47 +721,23 @@ CTGLVDecomposition ct_glv_decompose(const Scalar& k) noexcept {
     return result;
 }
 
-// ─── CT GLV Scalar Multiplication ────────────────────────────────────────────
-// Uses GLV endomorphism: k*P = k1*P + k2*φ(P) where |k1|,|k2| ≈ 128 bits.
-//
-// Algorithm:
-//   1. CT decompose k → (k1, k2, s1, s2)
-//   2. Build affine tables (fast-path, P is public):
-//      T1[0..15] for P, T2[0..15] for φ(P)
-//   3. CT negate table Y-coords if corresponding sign is negative
-//   4. Strauss interleave (32 windows × 2 tables):
-//      for i = 31..0:
-//        R = 4*R  (4 doublings)
-//        w1 = scalar_window(k1, 4*i, 4)
-//        w2 = scalar_window(k2, 4*i, 4)
-//        R += T1[w1]  (CT mixed complete add)
-//        R += T2[w2]  (CT mixed complete add)
-//
-// Total: 128 doublings + 64 mixed_complete additions
-// vs old: 256 doublings + 64 complete additions
-// Expected ~40% faster.
+// ─── CT GLV Scalar Multiplication (5×52) ─────────────────────────────────────
 
 Point scalar_mul(const Point& p, const Scalar& k) noexcept {
     constexpr unsigned W = 4;
-    constexpr unsigned GLV_WINDOWS = 32;  // 128 bits / 4 = 32 windows per half
-    constexpr std::size_t TABLE_SIZE = 1u << W;  // 16
+    constexpr unsigned GLV_WINDOWS = 32;
+    constexpr std::size_t TABLE_SIZE = 1u << W;
 
-    // ────── GLV Decomposition (CT) ──────
-    // k = (-1)^s1 * k1 + (-1)^s2 * k2 * λ (mod n)
-    // where |k1|, |k2| ≈ 128 bits
+    // GLV Decomposition (CT)
     auto [k1, k2, k1_neg, k2_neg] = ct_glv_decompose(k);
 
-    // ────── Endomorphism: φ(P) = (β·Px, Py, Pz) ──────
-    // Fast-path: P is public, no CT needed for table construction
+    // Endomorphism: φ(P) = (β·Px, Py, Pz)
     Point phiP = secp256k1::fast::apply_endomorphism(p);
 
-    // ────── Build affine precomputation tables (fast-path, public data) ──────
-    // T1[0..15] = multiples of P
-    // T2[0..15] = multiples of φ(P)
+    // Build affine precomputation tables (public data, fast-path)
     CTAffinePoint T1[TABLE_SIZE];
     CTAffinePoint T2[TABLE_SIZE];
 
-    // T1: multiples of P
     T1[0] = CTAffinePoint::make_infinity();
     T1[1] = CTAffinePoint::from_point(p);
     {
@@ -754,7 +751,6 @@ Point scalar_mul(const Point& p, const Scalar& k) noexcept {
         }
     }
 
-    // T2: multiples of φ(P)
     T2[0] = CTAffinePoint::make_infinity();
     T2[1] = CTAffinePoint::from_point(phiP);
     {
@@ -768,71 +764,46 @@ Point scalar_mul(const Point& p, const Scalar& k) noexcept {
         }
     }
 
-    // ────── CT sign handling ──────
-    // If k1 was negated, negate all T1 Y-coords: -P table instead of P table.
-    // If k2 was negated, negate all T2 Y-coords: -φ(P) table instead of φ(P) table.
-    // CT: always compute negated Y, then select via mask. Entry 0 (infinity) is skipped.
+    // CT sign handling: if k1/k2 was negated, negate table Y-coords
     for (std::size_t i = 1; i < TABLE_SIZE; ++i) {
-        T1[i].y = field_cneg(T1[i].y, k1_neg);
-        T2[i].y = field_cneg(T2[i].y, k2_neg);
+        T1[i].y = fe52_cneg(T1[i].y, k1_neg, 1);
+        T2[i].y = fe52_cneg(T2[i].y, k2_neg, 1);
     }
 
-    // Declassify tables (public data, only sign application was secret-dependent)
     SECP256K1_DECLASSIFY(T1, sizeof(T1));
     SECP256K1_DECLASSIFY(T2, sizeof(T2));
 
-    // ────── Strauss interleaving (32 windows × 2 lookups) ──────
-    // For i = 31 downto 0:
-    //   R = 16·R (4 doublings)
-    //   w1 = 4-bit window from k1 at position 4*i
-    //   w2 = 4-bit window from k2 at position 4*i
-    //   R += T1[w1]   (CT mixed complete addition)
-    //   R += T2[w2]   (CT mixed complete addition)
-
+    // Strauss interleaving (32 windows × 2 lookups)
     CTJacobianPoint R = CTJacobianPoint::make_infinity();
 
     for (int i = static_cast<int>(GLV_WINDOWS) - 1; i >= 0; --i) {
-        // 4 doublings
         R = point_dbl(R);
         R = point_dbl(R);
         R = point_dbl(R);
         R = point_dbl(R);
 
-        // CT extract 4-bit windows
         std::uint64_t w1 = scalar_window(k1, static_cast<std::size_t>(i) * W, W);
         std::uint64_t w2 = scalar_window(k2, static_cast<std::size_t>(i) * W, W);
 
-        // CT table lookups (always scan all 16 entries)
         CTAffinePoint A1 = affine_table_lookup(T1, TABLE_SIZE, w1);
         CTAffinePoint A2 = affine_table_lookup(T2, TABLE_SIZE, w2);
 
-        // Mixed complete additions (handles A=O when digit==0)
         R = point_add_mixed_complete(R, A1);
         R = point_add_mixed_complete(R, A2);
     }
 
-    // Declassify result (output is public)
     Point result = R.to_point();
     SECP256K1_DECLASSIFY(&result, sizeof(result));
     return result;
 }
 
-// ─── CT Generator Multiplication (OPTIMIZED) ─────────────────────────────────
-// Uses precomputed table of 64 × 16 affine G-multiples.
-// gen_table[i][j] = j * 2^(4i) * G — each window position has its own table.
-//
-// At runtime: k*G = sum_{i=0..63} gen_table[i][window_i(k)]
-// Just 64 CT lookups(16) + 64 mixed Jacobian+Affine additions.
-// NO doublings needed — all positional shifts baked into the table.
-//
-// Table construction uses fast-path operations (public data, non-secret).
-// Only scalar window extraction and table selection are CT.
+// ─── CT Generator Multiplication (5×52) ──────────────────────────────────────
 
 namespace {
 
 constexpr unsigned GEN_W = 4;
-constexpr unsigned GEN_WINDOWS = 64;           // 256 / 4
-constexpr std::size_t GEN_TABLE_SIZE = 1u << GEN_W;  // 16
+constexpr unsigned GEN_WINDOWS = 64;
+constexpr std::size_t GEN_TABLE_SIZE = 1u << GEN_W;
 
 struct alignas(64) GenPrecompTable {
     CTAffinePoint entries[GEN_WINDOWS][GEN_TABLE_SIZE];
@@ -843,36 +814,23 @@ static GenPrecompTable g_gen_table;
 static std::once_flag g_gen_table_once;
 
 void build_gen_table() noexcept {
-    // Use FAST-path operations — table contents are public (derived from G).
-    // Only the scalar-dependent selection at runtime must be CT.
     Point G = Point::generator();
-
-    // Base for window 0 is G itself.
-    // For window w, base = 2^(4w) * G.
-    // Compute iteratively: each window's base = prev_base doubled 4 times.
     Point base = G;
 
     for (unsigned w = 0; w < GEN_WINDOWS; ++w) {
-        // table[w][0] = O (infinity)
         g_gen_table.entries[w][0] = CTAffinePoint::make_infinity();
-
-        // table[w][1] = base (affine)
         g_gen_table.entries[w][1] = CTAffinePoint::from_point(base);
 
-        // table[w][2] = 2 * base (use doubling, not add)
         Point doubled = base;
         doubled.dbl_inplace();
         g_gen_table.entries[w][2] = CTAffinePoint::from_point(doubled);
 
-        // table[w][j] = j * base for j = 3..15 (add base each time)
         Point running = doubled;
         for (std::size_t j = 3; j < GEN_TABLE_SIZE; ++j) {
             running = running.add(base);
             g_gen_table.entries[w][j] = CTAffinePoint::from_point(running);
         }
 
-        // Advance base by 4 doublings for next window
-        // next_base = 2^4 * base = 16 * base
         base.dbl_inplace();
         base.dbl_inplace();
         base.dbl_inplace();
@@ -889,48 +847,35 @@ void init_generator_table() noexcept {
 }
 
 Point generator_mul(const Scalar& k) noexcept {
-    // Ensure table is initialized (thread-safe, one-time cost ~15ms)
     init_generator_table();
-
-    // k*G = sum_{i=0..63} gen_table[i][window_i(k)]
-    // Each term already includes the 2^(4i) positional factor.
-    // Just 64 CT lookups + 64 mixed complete additions. No doublings.
 
     CTJacobianPoint R = CTJacobianPoint::make_infinity();
 
     for (unsigned i = 0; i < GEN_WINDOWS; ++i) {
-        // CT extract 4-bit window
         std::uint64_t digit = scalar_window(k, static_cast<std::size_t>(i) * GEN_W, GEN_W);
 
-        // CT table lookup (always reads all 16 entries)
         CTAffinePoint T = affine_table_lookup(g_gen_table.entries[i],
                                               GEN_TABLE_SIZE, digit);
 
-        // Mixed complete addition (handles T=O when digit==0)
         R = point_add_mixed_complete(R, T);
     }
 
-    // Declassify result (output is public)
     Point result = R.to_point();
     SECP256K1_DECLASSIFY(&result, sizeof(result));
     return result;
 }
 
-// ─── CT Curve Check ──────────────────────────────────────────────────────────
+// ─── CT Curve Check (uses 4×64 FieldElement at API boundary) ─────────────────
 
 std::uint64_t point_is_on_curve(const Point& p) noexcept {
     if (p.is_infinity()) {
-        return ~static_cast<std::uint64_t>(0);  // infinity is on curve
+        return ~static_cast<std::uint64_t>(0);
     }
 
-    // Convert to affine for check: y² == x³ + 7
     FieldElement x = p.x();
     FieldElement y = p.y();
 
-    // y²
     FieldElement y2 = field_sqr(y);
-
-    // x³ + 7
     FieldElement x2 = field_sqr(x);
     FieldElement x3 = field_mul(x, x2);
     FieldElement rhs = field_add(x3, B7);
@@ -938,13 +883,9 @@ std::uint64_t point_is_on_curve(const Point& p) noexcept {
     return field_eq(y2, rhs);
 }
 
-// ─── CT Point Equality ──────────────────────────────────────────────────────
+// ─── CT Point Equality (uses 4×64 at API boundary) ──────────────────────────
 
 std::uint64_t point_eq(const Point& a, const Point& b) noexcept {
-    // Compare in Jacobian: P1=(X1:Y1:Z1) == P2=(X2:Y2:Z2) iff
-    //   X1·Z2² == X2·Z1²  AND  Y1·Z2³ == Y2·Z1³
-    // (Handles different Z coordinates)
-
     if (a.is_infinity() && b.is_infinity()) {
         return ~static_cast<std::uint64_t>(0);
     }

@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstddef>
 #include "secp256k1/field.hpp"
+#include "secp256k1/field_52.hpp"
 #include "secp256k1/scalar.hpp"
 #include "secp256k1/point.hpp"
 #include "secp256k1/ct/ops.hpp"
@@ -35,14 +36,15 @@ namespace secp256k1::ct {
 
 using Point = secp256k1::fast::Point;
 using FieldElement = secp256k1::fast::FieldElement;
+using FE52 = secp256k1::fast::FieldElement52;
 using Scalar = secp256k1::fast::Scalar;
 
 // ─── CT Jacobian Point (internal representation) ─────────────────────────────
 // Uses uint64_t flag instead of bool for branchless operations
 struct CTJacobianPoint {
-    FieldElement x;
-    FieldElement y;
-    FieldElement z;
+    FE52 x;
+    FE52 y;
+    FE52 z;
     std::uint64_t infinity;  // 0 = normal, 0xFFFF...F = infinity
 
     static CTJacobianPoint from_point(const Point& p) noexcept;
@@ -54,14 +56,14 @@ struct CTJacobianPoint {
 // Compact representation with Z=1 implied. Used in precomputed tables
 // where mixed Jacobian+Affine addition saves ~4 field multiplications.
 struct CTAffinePoint {
-    FieldElement x;
-    FieldElement y;
+    FE52 x;
+    FE52 y;
     std::uint64_t infinity;  // 0 = normal, 0xFFFF...F = infinity
 
     static CTAffinePoint make_infinity() noexcept {
         CTAffinePoint r;
-        r.x = FieldElement::zero();
-        r.y = FieldElement::zero();
+        r.x = FE52::zero();
+        r.y = FE52::zero();
         r.infinity = ~static_cast<std::uint64_t>(0);
         return r;
     }
@@ -71,8 +73,8 @@ struct CTAffinePoint {
         if (p.is_infinity()) {
             r = make_infinity();
         } else {
-            r.x = p.x();
-            r.y = p.y();
+            r.x = FE52::from_fe(p.x());
+            r.y = FE52::from_fe(p.y());
             r.infinity = 0;
         }
         return r;
