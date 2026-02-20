@@ -680,6 +680,13 @@ jobs:
             --api-key "${{ secrets.GITHUB_TOKEN }}" \
             --skip-duplicate || echo "WARN: NuGet push failed (may already exist)"
 
+      - name: Publish to nuget.org (public registry)
+        run: |
+          dotnet nuget push bindings/csharp/Ufsecp/nupkgs/*.nupkg \
+            --source "https://api.nuget.org/v3/index.json" \
+            --api-key "${{ secrets.NUGET_ORG_API_KEY }}" \
+            --skip-duplicate || echo "WARN: nuget.org push failed (may already exist)"
+
   # ══════════════════════════════════════════════════════════════════════════
   # 9) Package bindings — Ruby gem
   # ══════════════════════════════════════════════════════════════════════════
