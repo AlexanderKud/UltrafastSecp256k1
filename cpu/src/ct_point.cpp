@@ -31,6 +31,7 @@
 //   NO doublings needed.
 // ============================================================================
 
+#include "secp256k1/config.hpp"  // SECP256K1_FAST_52BIT, SECP256K1_INLINE
 #include "secp256k1/ct/point.hpp"
 #include "secp256k1/ct/field.hpp"
 #include "secp256k1/ct/scalar.hpp"
@@ -48,11 +49,16 @@
 
 namespace secp256k1::ct {
 
-// ─── Type aliases ────────────────────────────────────────────────────────────
-using FE52 = secp256k1::fast::FieldElement52;
-
 // ─── secp256k1 curve constant b = 7 (4×64 for API-boundary functions) ────────
 static const FieldElement B7 = FieldElement::from_uint64(7);
+
+// ============================================================================
+// 5×52 Optimized Path (requires __int128 / SECP256K1_FAST_52BIT)
+// ============================================================================
+#if defined(SECP256K1_FAST_52BIT)
+
+// ─── Type aliases ────────────────────────────────────────────────────────────
+using FE52 = secp256k1::fast::FieldElement52;
 
 // ─── 5×52 CT Helper Functions ────────────────────────────────────────────────
 // All operations on FieldElement52 are inherently constant-time:
@@ -1698,6 +1704,215 @@ Point generator_mul(const Scalar& k) noexcept {
     SECP256K1_DECLASSIFY(&result, sizeof(result));
     return result;
 }
+
+#else // !SECP256K1_FAST_52BIT — Fallback for MSVC / 32-bit / non-__int128
+
+// ─── Fallback stubs: delegate to fast:: (variable-time) ──────────────────────
+// On platforms without 5×52 + __int128, CT point ops are stubbed.
+// scalar_mul / generator_mul delegate to fast::Point which is NOT constant-time.
+// This is acceptable because these platforms (MSVC, ARM32, ESP32) are used for
+// functional testing and C API bindings, not side-channel-resistant production.
+
+CTJacobianPoint CTJacobianPoint::from_point(const Point& p) noexcept {
+    CTJacobianPoint r;
+    r.x = p.x();
+    r.y = p.y();
+    r.z = p.z();
+    r.infinity = p.is_infinity() ? ~std::uint64_t(0) : 0;
+    return r;
+}
+
+Point CTJacobianPoint::to_point() const noexcept {
+    if (infinity) return Point::infinity();
+    return Point::from_jacobian_coords(x, y, z, false);
+}
+
+CTJacobianPoint CTJacobianPoint::make_infinity() noexcept {
+    CTJacobianPoint r;
+    r.x = FieldElement();
+    r.y = FieldElement();
+    r.z = FieldElement();
+    r.infinity = ~std::uint64_t(0);
+    return r;
+}
+
+CTJacobianPoint point_add_complete(const CTJacobianPoint& p,
+                                   const CTJacobianPoint& q) noexcept {
+    Point pp = p.to_point();
+    Point qq = q.to_point();
+    if (pp.is_infinity()) return q;
+    if (qq.is_infinity()) return p;
+    return CTJacobianPoint::from_point(pp.add(qq));
+}
+
+CTJacobianPoint point_add_mixed_complete(const CTJacobianPoint& p,
+                                          const CTAffinePoint& q) noexcept {
+    CTJacobianPoint jq;
+    jq.x = q.x; jq.y = q.y;
+    jq.z = FieldElement::one();
+    jq.infinity = q.infinity;
+    return point_add_complete(p, jq);
+}
+
+CTJacobianPoint point_dbl(const CTJacobianPoint& p) noexcept {
+    Point pp = p.to_point();
+    pp.dbl_inplace();
+    return CTJacobianPoint::from_point(pp);
+}
+
+CTJacobianPoint point_add_mixed_unified(const CTJacobianPoint& a,
+                                         const CTAffinePoint& b) noexcept {
+    return point_add_mixed_complete(a, b);
+}
+
+void point_add_mixed_unified_into(CTJacobianPoint* out,
+                                   const CTJacobianPoint& a,
+                                   const CTAffinePoint& b) noexcept {
+    *out = point_add_mixed_unified(a, b);
+}
+
+CTJacobianPoint point_neg(const CTJacobianPoint& p) noexcept {
+    CTJacobianPoint r = p;
+    r.y = field_neg(r.y, 1);
+    return r;
+}
+
+void point_cmov(CTJacobianPoint* r, const CTJacobianPoint& a,
+                std::uint64_t mask) noexcept {
+    if (mask) *r = a;
+}
+
+CTJacobianPoint point_select(const CTJacobianPoint& a, const CTJacobianPoint& b,
+                             std::uint64_t mask) noexcept {
+    return mask ? a : b;
+}
+
+CTJacobianPoint point_table_lookup(const CTJacobianPoint* table,
+                                   std::size_t table_size,
+                                   std::size_t index) noexcept {
+    // Scan all entries for basic CT-like behavior
+    CTJacobianPoint r = table[0];
+    for (std::size_t i = 1; i < table_size; ++i) {
+        std::uint64_t mask = is_equal_mask(static_cast<std::uint64_t>(i),
+                                            static_cast<std::uint64_t>(index));
+        if (mask) r = table[i];
+    }
+    return r;
+}
+
+CTAffinePoint affine_table_lookup(const CTAffinePoint* table,
+                                  std::size_t table_size,
+                                  std::size_t index) noexcept {
+    CTAffinePoint r = table[0];
+    for (std::size_t i = 1; i < table_size; ++i) {
+        std::uint64_t mask = is_equal_mask(static_cast<std::uint64_t>(i),
+                                            static_cast<std::uint64_t>(index));
+        if (mask) r = table[i];
+    }
+    return r;
+}
+
+CTAffinePoint affine_table_lookup_signed(const CTAffinePoint* table,
+                                          std::size_t table_size,
+                                          std::uint64_t n,
+                                          unsigned group_size) noexcept {
+    CTAffinePoint r;
+    affine_table_lookup_signed_into(&r, table, table_size, n, group_size);
+    return r;
+}
+
+void affine_table_lookup_signed_into(CTAffinePoint* out,
+                                      const CTAffinePoint* table,
+                                      std::size_t table_size,
+                                      std::uint64_t n,
+                                      unsigned group_size) noexcept {
+    unsigned index_bits = group_size - 1;
+    std::uint64_t negative = ((n >> index_bits) ^ 1u) & 1u;
+    std::uint64_t neg_mask = static_cast<std::uint64_t>(-negative);
+    std::uint64_t index = (neg_mask ^ n) & ((1ULL << index_bits) - 1u);
+
+    *out = table[0];
+    for (std::size_t i = 1; i < table_size; ++i) {
+        std::uint64_t mask = is_equal_mask(static_cast<std::uint64_t>(i),
+                                            static_cast<std::uint64_t>(index));
+        if (mask) *out = table[i];
+    }
+    if (neg_mask) out->y = field_neg(out->y, 1);
+}
+
+void point_dbl_n_inplace(CTJacobianPoint* r, unsigned n) noexcept {
+    Point p = r->to_point();
+    for (unsigned i = 0; i < n; ++i) p.dbl_inplace();
+    *r = CTJacobianPoint::from_point(p);
+}
+
+CTJacobianPoint point_dbl_n(const CTJacobianPoint& p, unsigned n) noexcept {
+    CTJacobianPoint r = p;
+    point_dbl_n_inplace(&r, n);
+    return r;
+}
+
+void affine_cmov(CTAffinePoint* r, const CTAffinePoint& a,
+                 std::uint64_t mask) noexcept {
+    if (mask) *r = a;
+}
+
+Point scalar_mul(const Point& p, const Scalar& k) noexcept {
+    // Fallback: use fast:: scalar_mul (NOT constant-time on non-52bit platforms)
+    return p.scalar_mul(k);
+}
+
+Point generator_mul(const Scalar& k) noexcept {
+    return Point::generator().scalar_mul(k);
+}
+
+void init_generator_table() noexcept {
+    // No-op: fallback uses fast:: which has its own precomputation.
+}
+
+CTJacobianPoint point_endomorphism(const CTJacobianPoint& p) noexcept {
+    // β in 4×64: secp256k1 endomorphism constant
+    static const FieldElement BETA = FieldElement::from_hex(
+        "7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee");
+    CTJacobianPoint r = p;
+    r.x = field_mul(r.x, BETA);
+    return r;
+}
+
+CTAffinePoint affine_endomorphism(const CTAffinePoint& p) noexcept {
+    static const FieldElement BETA = FieldElement::from_hex(
+        "7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee");
+    CTAffinePoint r = p;
+    r.x = field_mul(r.x, BETA);
+    return r;
+}
+
+CTAffinePoint affine_neg(const CTAffinePoint& p) noexcept {
+    CTAffinePoint r = p;
+    r.y = field_neg(r.y, 1);
+    return r;
+}
+
+CTGLVDecomposition ct_glv_decompose(const Scalar& k) noexcept {
+    auto [k1, k2] = secp256k1::fast::glv_decompose(k);
+    CTGLVDecomposition d;
+    d.k1_neg = 0;
+    d.k2_neg = 0;
+    // Make both positive
+    if (k1.is_high()) {
+        k1 = k1.negate();
+        d.k1_neg = ~std::uint64_t(0);
+    }
+    if (k2.is_high()) {
+        k2 = k2.negate();
+        d.k2_neg = ~std::uint64_t(0);
+    }
+    d.k1 = k1;
+    d.k2 = k2;
+    return d;
+}
+
+#endif // SECP256K1_FAST_52BIT
 
 // ─── CT Curve Check (uses 4×64 FieldElement at API boundary) ─────────────────
 

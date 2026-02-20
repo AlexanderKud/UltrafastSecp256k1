@@ -1,6 +1,7 @@
 #include "secp256k1/ecdsa.hpp"
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/multiscalar.hpp"
+#include "secp256k1/config.hpp"  // SECP256K1_FAST_52BIT
 #include "secp256k1/field_52.hpp"
 #include <cstring>
 
@@ -263,6 +264,7 @@ bool ecdsa_verify(const std::array<uint8_t, 32>& msg_hash,
     // Check: R'.x/R'.z² mod n == sig.r
     // Equivalent: sig.r * R'.z² == R'.x (mod p)
     // This saves ~3μs by avoiding the field inversion in Point::x().
+#if defined(SECP256K1_FAST_52BIT)
     using FE52 = fast::FieldElement52;
 
     FE52 r52 = FE52::from_fe(FieldElement::from_bytes(sig.r.to_bytes()));
@@ -306,6 +308,19 @@ bool ecdsa_verify(const std::array<uint8_t, 32>& msg_hash,
     }
 
     return false;
+#else
+    // Fallback: extract affine x via field inverse
+    auto r_fe = FieldElement::from_bytes(sig.r.to_bytes());
+    auto rx_fe = R_prime.x();
+    if (r_fe == rx_fe) return true;
+
+    // Rare case: check (sig.r + n) mod p
+    static const Scalar N_SCALAR = Scalar::from_hex(
+        "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
+    auto r_plus_n_bytes = (sig.r + N_SCALAR).to_bytes();
+    auto r2_fe = FieldElement::from_bytes(r_plus_n_bytes);
+    return r2_fe == rx_fe;
+#endif
 }
 
 } // namespace secp256k1

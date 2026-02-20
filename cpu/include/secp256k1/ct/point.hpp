@@ -36,8 +36,14 @@ namespace secp256k1::ct {
 
 using Point = secp256k1::fast::Point;
 using FieldElement = secp256k1::fast::FieldElement;
-using FE52 = secp256k1::fast::FieldElement52;
 using Scalar = secp256k1::fast::Scalar;
+
+// FE type for CT internals: FieldElement52 on 5×52 platforms, FieldElement otherwise.
+#if defined(SECP256K1_FAST_52BIT)
+using FE52 = secp256k1::fast::FieldElement52;
+#else
+using FE52 = secp256k1::fast::FieldElement;
+#endif
 
 // ─── CT Jacobian Point (internal representation) ─────────────────────────────
 // Uses uint64_t flag instead of bool for branchless operations
@@ -62,8 +68,13 @@ struct CTAffinePoint {
 
     static CTAffinePoint make_infinity() noexcept {
         CTAffinePoint r;
+#if defined(SECP256K1_FAST_52BIT)
         r.x = FE52::zero();
         r.y = FE52::zero();
+#else
+        r.x = FieldElement();
+        r.y = FieldElement();
+#endif
         r.infinity = ~static_cast<std::uint64_t>(0);
         return r;
     }
@@ -73,8 +84,13 @@ struct CTAffinePoint {
         if (p.is_infinity()) {
             r = make_infinity();
         } else {
+#if defined(SECP256K1_FAST_52BIT)
             r.x = FE52::from_fe(p.x());
             r.y = FE52::from_fe(p.y());
+#else
+            r.x = p.x();
+            r.y = p.y();
+#endif
             r.infinity = 0;
         }
         return r;

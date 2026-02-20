@@ -1,6 +1,7 @@
 #include "secp256k1/schnorr.hpp"
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/multiscalar.hpp"
+#include "secp256k1/config.hpp"    // SECP256K1_FAST_52BIT
 #include "secp256k1/field_52.hpp"
 #include <cstring>
 
@@ -9,7 +10,9 @@ namespace secp256k1 {
 using fast::Scalar;
 using fast::Point;
 using fast::FieldElement;
+#if defined(SECP256K1_FAST_52BIT)
 using FE52 = fast::FieldElement52;
+#endif
 
 // ── FE52 sqrt() and inverse() available as FieldElement52 class methods ──────
 // sqrt() uses FE52 ops (~4μs, faster than 4×64 ~6.8μs).
@@ -169,6 +172,7 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
     auto e = Scalar::from_bytes(e_hash);
 
     // Step 3: Lift x-only pubkey to point (all in FE52 — ~3x faster sqrt)
+#if defined(SECP256K1_FAST_52BIT)
     FE52 px52 = FE52::from_fe(FieldElement::from_bytes(pubkey_x));
 
     // y² = x³ + 7
@@ -197,6 +201,18 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
 
     // Convert to Point (FE52 → Point is zero-copy on FE52 path)
     auto P = Point::from_affine(px52.to_fe(), y52.to_fe());
+#else
+    // Fallback: 4×64 lift_x
+    auto px_fe = FieldElement::from_bytes(pubkey_x);
+    auto x3 = px_fe * px_fe * px_fe;
+    auto y2 = x3 + FieldElement::from_uint64(7);
+    auto y_fe = y2.sqrt();
+    auto check = y_fe * y_fe;
+    if (!(check == y2)) return false;
+    auto y_bytes = y_fe.to_bytes();
+    if (y_bytes[31] & 1) y_fe = y_fe.negate();
+    auto P = Point::from_affine(px_fe, y_fe);
+#endif
 
     // Step 4: R = s*G - e*P  (4-stream GLV Strauss: s*G + (-e)*P in one pass)
     auto neg_e = e.negate();
@@ -205,6 +221,7 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
     if (R.is_infinity()) return false;
 
     // Step 5: Fast Z²-based X check (no field inverse needed!)
+#if defined(SECP256K1_FAST_52BIT)
     FE52 r52 = FE52::from_fe(FieldElement::from_bytes(sig.r));
     FE52 z2 = R.Z52().square();
     FE52 lhs = r52 * z2;       // sig.r * Z²
@@ -214,6 +231,11 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
     rx.normalize();
 
     if (!(lhs == rx)) return false;
+#else
+    auto rx_fe = R.x();
+    auto r_fe = FieldElement::from_bytes(sig.r);
+    if (!(r_fe == rx_fe)) return false;
+#endif
 
     // Step 6: Check R has even Y (SafeGCD inverse — ~2-3μs, faster than FE52 Fermat)
     FieldElement z_inv = R.z_raw().inverse();
@@ -228,6 +250,7 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
 
 bool schnorr_xonly_pubkey_parse(SchnorrXonlyPubkey& out,
                                 const std::array<uint8_t, 32>& pubkey_x) {
+#if defined(SECP256K1_FAST_52BIT)
     FE52 px52 = FE52::from_fe(FieldElement::from_bytes(pubkey_x));
 
     FE52 x3 = px52.square() * px52;
@@ -250,6 +273,18 @@ bool schnorr_xonly_pubkey_parse(SchnorrXonlyPubkey& out,
     }
 
     out.point = Point::from_affine(px52.to_fe(), y52.to_fe());
+#else
+    // Fallback: 4×64 lift_x
+    auto px_fe = FieldElement::from_bytes(pubkey_x);
+    auto x3 = px_fe * px_fe * px_fe;
+    auto y2 = x3 + FieldElement::from_uint64(7);
+    auto y_fe = y2.sqrt();
+    auto check = y_fe * y_fe;
+    if (!(check == y2)) return false;
+    auto y_bytes_chk = y_fe.to_bytes();
+    if (y_bytes_chk[31] & 1) y_fe = y_fe.negate();
+    out.point = Point::from_affine(px_fe, y_fe);
+#endif
     out.x_bytes = pubkey_x;
     return true;
 }
@@ -259,9 +294,14 @@ SchnorrXonlyPubkey schnorr_xonly_from_keypair(const SchnorrKeypair& kp) {
     auto P = Point::generator().scalar_mul(kp.d);
     auto [px, p_y_odd] = P.x_bytes_and_parity();
     if (p_y_odd) {
+#if defined(SECP256K1_FAST_52BIT)
         FE52 neg_y = P.Y52().negate(1);
         neg_y.normalize_weak();
         P = Point::from_jacobian52(P.X52(), neg_y, P.Z52(), false);
+#else
+        auto y_neg = P.y().negate();
+        P = Point::from_jacobian_coords(P.x(), y_neg, P.z(), false);
+#endif
     }
     pub.point = P;
     pub.x_bytes = px;
@@ -291,6 +331,7 @@ bool schnorr_verify(const SchnorrXonlyPubkey& pubkey,
     if (R.is_infinity()) return false;
 
     // Z²-based X check
+#if defined(SECP256K1_FAST_52BIT)
     FE52 r52 = FE52::from_fe(FieldElement::from_bytes(sig.r));
     FE52 z2 = R.Z52().square();
     FE52 lhs = r52 * z2;
@@ -300,6 +341,11 @@ bool schnorr_verify(const SchnorrXonlyPubkey& pubkey,
     rx.normalize();
 
     if (!(lhs == rx)) return false;
+#else
+    auto rx_fe = R.x();
+    auto r_fe = FieldElement::from_bytes(sig.r);
+    if (!(r_fe == rx_fe)) return false;
+#endif
 
     // Y parity check (SafeGCD inverse — faster than FE52 Fermat)
     FieldElement z_inv = R.z_raw().inverse();
