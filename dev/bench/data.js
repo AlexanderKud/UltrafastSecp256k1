@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771566626131,
+  "lastUpdate": 1771692133245,
   "repoUrl": "https://github.com/AlexanderKud/UltrafastSecp256k1",
   "entries": {
     "UltrafastSecp256k1 Performance": [
@@ -156,6 +156,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "Point Double",
             "value": 147,
+            "unit": "ns"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "shrec@users.noreply.github.com",
+            "name": "shrec",
+            "username": "shrec"
+          },
+          "committer": {
+            "email": "shrec@users.noreply.github.com",
+            "name": "shrec",
+            "username": "shrec"
+          },
+          "distinct": true,
+          "id": "c649f6dfd80b1611b17f606206b156e3c2e6a058",
+          "message": "ci: make publish steps continue-on-error + release job always runs\n\n- npmjs.com publish (ufsecp, react-native-ufsecp): continue-on-error: true\n- nuget.org publish: continue-on-error: true\n- Prevents already-published version 403 from blocking release asset upload",
+          "timestamp": "2026-02-21T01:56:08Z",
+          "tree_id": "feef8c7b5d6dfe3c680475f40d7468ad481d9578",
+          "url": "https://github.com/AlexanderKud/UltrafastSecp256k1/commit/c649f6dfd80b1611b17f606206b156e3c2e6a058"
+        },
+        "date": 1771692132044,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Field Mul",
+            "value": 23,
+            "unit": "ns"
+          },
+          {
+            "name": "Field Square",
+            "value": 20,
+            "unit": "ns"
+          },
+          {
+            "name": "Field Add",
+            "value": 2,
+            "unit": "ns"
+          },
+          {
+            "name": "Field Negate",
+            "value": 0,
+            "unit": "ns"
+          },
+          {
+            "name": "Point Add",
+            "value": 255,
+            "unit": "ns"
+          },
+          {
+            "name": "Point Double",
+            "value": 129,
             "unit": "ns"
           }
         ]
