@@ -459,6 +459,73 @@ FieldElement FieldElement52::to_fe() const noexcept {
     return FieldElement::from_limbs_raw(L);  // already canonical — skip redundant normalize
 }
 
+// ── Direct 4×64 limbs → 5×52 (no FieldElement construction) ─────────────
+// Same bit-slicing as from_fe but takes raw uint64_t[4] pointer.
+// Avoids FieldElement copy + normalization when caller knows value < p.
+
+SECP256K1_FE52_FORCE_INLINE
+FieldElement52 FieldElement52::from_4x64_limbs(const std::uint64_t* L) noexcept {
+    FieldElement52 r;
+    r.n[0] =  L[0]                           & M52;
+    r.n[1] = (L[0] >> 52) | ((L[1] & 0xFFFFFFFFFFULL) << 12);
+    r.n[2] = (L[1] >> 40) | ((L[2] & 0xFFFFFFFULL)    << 24);
+    r.n[3] = (L[2] >> 28) | ((L[3] & 0xFFFFULL)       << 36);
+    r.n[4] =  L[3] >> 16;
+    return r;
+}
+
+// ── Direct bytes (big-endian) → 5×52 conversion ────────────────────────
+// Combines FieldElement::from_bytes + from_fe into a single step.
+
+SECP256K1_FE52_FORCE_INLINE
+FieldElement52 FieldElement52::from_bytes(const std::uint8_t* bytes) noexcept {
+    // Read 4 uint64_t limbs from big-endian bytes (same layout as FieldElement::from_bytes)
+    std::uint64_t L[4];
+    for (int i = 0; i < 4; ++i) {
+        std::uint64_t limb = 0;
+        for (int j = 0; j < 8; ++j) {
+            limb = (limb << 8) | static_cast<std::uint64_t>(bytes[i * 8 + j]);
+        }
+        L[3 - i] = limb;
+    }
+    // Reduce mod p if value >= p.
+    // p = {0xFFFFFFFEFFFFFC2F, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}
+    static constexpr std::uint64_t P[4] = {
+        0xFFFFFFFEFFFFFC2FULL, 0xFFFFFFFFFFFFFFFFULL,
+        0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
+    };
+    // ge(L, P): check L >= P lexicographically from high limb
+    bool ge_p = true;
+    for (int i = 3; i >= 0; --i) {
+        if (L[i] < P[i]) { ge_p = false; break; }
+        if (L[i] > P[i]) { break; }
+    }
+    if (ge_p) {
+        // L -= P (with borrow)
+        unsigned __int128 acc = static_cast<unsigned __int128>(L[0]) + (~P[0]) + 1;
+        L[0] = static_cast<std::uint64_t>(acc);
+        acc = static_cast<unsigned __int128>(L[1]) + (~P[1]) + (acc >> 64);
+        L[1] = static_cast<std::uint64_t>(acc);
+        acc = static_cast<unsigned __int128>(L[2]) + (~P[2]) + (acc >> 64);
+        L[2] = static_cast<std::uint64_t>(acc);
+        L[3] = L[3] + (~P[3]) + static_cast<std::uint64_t>(acc >> 64);
+    }
+    return from_4x64_limbs(L);
+}
+
+SECP256K1_FE52_FORCE_INLINE
+FieldElement52 FieldElement52::from_bytes(const std::array<std::uint8_t, 32>& bytes) noexcept {
+    return from_bytes(bytes.data());
+}
+
+// ── Inverse via safegcd (4×64 round-trip, single wrapper) ───────────────
+// Replaces the common pattern: FieldElement52::from_fe(x.to_fe().inverse())
+
+SECP256K1_FE52_FORCE_INLINE
+FieldElement52 FieldElement52::inverse_safegcd() const noexcept {
+    return from_fe(to_fe().inverse());
+}
+
 } // namespace secp256k1::fast
 
 #endif // __int128 guard

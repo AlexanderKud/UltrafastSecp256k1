@@ -848,8 +848,7 @@ static Point scalar_mul_glv52(const Point& base, const Scalar& scalar) {
         for (int i = 1; i < glv_table_size; i++) {
             prods[i] = prods[i - 1] * jtbl[i].z;
         }
-        FieldElement inv_fe = prods[glv_table_size - 1].to_fe().inverse();
-        FieldElement52 inv = FieldElement52::from_fe(inv_fe);
+        FieldElement52 inv = prods[glv_table_size - 1].inverse_safegcd();
         for (int i = glv_table_size - 1; i > 0; --i) {
             zs[i] = prods[i - 1] * inv;
             inv = inv * jtbl[i].z;
@@ -1155,6 +1154,10 @@ Point Point::from_jacobian_coords(const FieldElement& x, const FieldElement& y, 
 Point Point::from_jacobian52(const FieldElement52& x, const FieldElement52& y, const FieldElement52& z, bool infinity) {
     if (infinity) return Point::infinity();
     return Point(x, y, z, false, false);
+}
+
+Point Point::from_affine52(const FieldElement52& x, const FieldElement52& y) {
+    return Point(x, y, FieldElement52::one(), false, false);
 }
 #endif
 
@@ -2277,9 +2280,12 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
     // ── Static generator tables (computed once, 8192 entries per base) ──
     // Two bases: G (generator) and H = 2^128·G
     // Uses effective-affine technique for efficient table building.
+    // Pre-negated tables avoid per-digit negate+normalize_weak in hot loop.
     struct GenTables {
-        AffinePoint52 tbl_G[G_TABLE_SIZE];   // [G, 3G, 5G, ..., 16383G]
-        AffinePoint52 tbl_H[G_TABLE_SIZE];   // [H, 3H, 5H, ..., 16383H]
+        AffinePoint52 tbl_G[G_TABLE_SIZE];       // [G, 3G, 5G, ..., 16383G]
+        AffinePoint52 tbl_H[G_TABLE_SIZE];       // [H, 3H, 5H, ..., 16383H]
+        AffinePoint52 neg_tbl_G[G_TABLE_SIZE];   // negated Y for negative wNAF digits
+        AffinePoint52 neg_tbl_H[G_TABLE_SIZE];   // negated Y for negative wNAF digits
     };
     static const GenTables* const gen_tables = []() -> const GenTables* {
         auto* t = new GenTables;
@@ -2312,8 +2318,7 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
             for (int i = 1; i < count; i++) {
                 prods[i] = prods[i - 1] * eff_z[i];
             }
-            FieldElement inv_fe = prods[count - 1].to_fe().inverse();
-            FieldElement52 inv = FieldElement52::from_fe(inv_fe);
+            FieldElement52 inv = prods[count - 1].inverse_safegcd();
             auto* zs = new FieldElement52[count];
             for (int i = count - 1; i > 0; --i) {
                 zs[i] = prods[i - 1] * inv;
@@ -2345,6 +2350,16 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
             jac52_double_inplace(H52);
         }
         build_table(H52, t->tbl_H, G_TABLE_SIZE);
+
+        // Pre-negate G/H tables: avoid per-digit negate+normalize_weak in hot loop
+        for (int i = 0; i < G_TABLE_SIZE; i++) {
+            t->neg_tbl_G[i].x = t->tbl_G[i].x;
+            t->neg_tbl_G[i].y = t->tbl_G[i].y.negate(1);
+            t->neg_tbl_G[i].y.normalize_weak();
+            t->neg_tbl_H[i].x = t->tbl_H[i].x;
+            t->neg_tbl_H[i].y = t->tbl_H[i].y.negate(1);
+            t->neg_tbl_H[i].y.normalize_weak();
+        }
 
         return t;
     }();
@@ -2397,8 +2412,7 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
         for (int i = 1; i < P_TABLE_SIZE; i++) {
             prods[i] = prods[i - 1] * eff_z[i];
         }
-        FieldElement inv_fe = prods[P_TABLE_SIZE - 1].to_fe().inverse();
-        FieldElement52 inv = FieldElement52::from_fe(inv_fe);
+        FieldElement52 inv = prods[P_TABLE_SIZE - 1].inverse_safegcd();
         std::array<FieldElement52, P_TABLE_SIZE> zs;
         for (int i = P_TABLE_SIZE - 1; i > 0; --i) {
             zs[i] = prods[i - 1] * inv;
@@ -2469,29 +2483,23 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
     for (int i = static_cast<int>(max_len) - 1; i >= 0; --i) {
         jac52_double_inplace(result52);
 
-        // Stream 1: a_lo * G (inline Y-negate for negative digits)
+        // Stream 1: a_lo * G (pre-negated table for negative digits)
         {
             int32_t d = wnaf_a_lo[static_cast<std::size_t>(i)];
             if (d > 0) {
                 jac52_add_mixed_inplace(result52, gen_tables->tbl_G[(d - 1) >> 1]);
             } else if (d < 0) {
-                AffinePoint52 entry = gen_tables->tbl_G[(-d - 1) >> 1];
-                entry.y = entry.y.negate(1);
-                entry.y.normalize_weak();
-                jac52_add_mixed_inplace(result52, entry);
+                jac52_add_mixed_inplace(result52, gen_tables->neg_tbl_G[(-d - 1) >> 1]);
             }
         }
 
-        // Stream 2: a_hi * H (inline Y-negate for negative digits)
+        // Stream 2: a_hi * H (pre-negated table for negative digits)
         {
             int32_t d = wnaf_a_hi[static_cast<std::size_t>(i)];
             if (d > 0) {
                 jac52_add_mixed_inplace(result52, gen_tables->tbl_H[(d - 1) >> 1]);
             } else if (d < 0) {
-                AffinePoint52 entry = gen_tables->tbl_H[(-d - 1) >> 1];
-                entry.y = entry.y.negate(1);
-                entry.y.normalize_weak();
-                jac52_add_mixed_inplace(result52, entry);
+                jac52_add_mixed_inplace(result52, gen_tables->neg_tbl_H[(-d - 1) >> 1]);
             }
         }
 

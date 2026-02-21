@@ -173,7 +173,8 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
 
     // Step 3: Lift x-only pubkey to point (all in FE52 — ~3x faster sqrt)
 #if defined(SECP256K1_FAST_52BIT)
-    FE52 px52 = FE52::from_fe(FieldElement::from_bytes(pubkey_x));
+    // Direct bytes→FE52: avoids FieldElement construction overhead
+    FE52 px52 = FE52::from_bytes(pubkey_x);
 
     // y² = x³ + 7
     FE52 x3 = px52.square() * px52;
@@ -199,8 +200,8 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
         y52.normalize_weak();
     }
 
-    // Convert to Point (FE52 → Point is zero-copy on FE52 path)
-    auto P = Point::from_affine(px52.to_fe(), y52.to_fe());
+    // Zero-conversion: construct Point directly from FE52 affine coordinates
+    auto P = Point::from_affine52(px52, y52);
 #else
     // Fallback: 4×64 lift_x
     auto px_fe = FieldElement::from_bytes(pubkey_x);
@@ -222,7 +223,8 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
 
     // Step 5: Fast Z²-based X check (no field inverse needed!)
 #if defined(SECP256K1_FAST_52BIT)
-    FE52 r52 = FE52::from_fe(FieldElement::from_bytes(sig.r));
+    // Direct bytes→FE52: avoids FieldElement construction overhead
+    FE52 r52 = FE52::from_bytes(sig.r);
     FE52 z2 = R.Z52().square();
     FE52 lhs = r52 * z2;       // sig.r * Z²
     lhs.normalize();
@@ -237,13 +239,15 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
     if (!(r_fe == rx_fe)) return false;
 #endif
 
-    // Step 6: Check R has even Y (SafeGCD inverse — ~2-3μs, faster than FE52 Fermat)
+    // Step 6: Check R has even Y
+    // SafeGCD inverse in 4×64 (~2-3μs), then check lowest bit of affine Y.
+    // Avoids to_bytes() overhead — parity is the lowest bit of limbs[0].
     FieldElement z_inv = R.z_raw().inverse();
     FieldElement z_inv2 = z_inv;
     z_inv2.square_inplace();
     FieldElement y_aff = R.y_raw() * z_inv2 * z_inv;
-    auto y_bytes_r = y_aff.to_bytes();
-    return (y_bytes_r[31] & 1) == 0;
+    // 4×64 FE is always canonical after multiply — limbs[0] bit 0 = parity
+    return (y_aff.limbs()[0] & 1) == 0;
 }
 
 // ── Pre-cached X-only Pubkey ─────────────────────────────────────────────────
@@ -251,7 +255,8 @@ bool schnorr_verify(const std::array<uint8_t, 32>& pubkey_x,
 bool schnorr_xonly_pubkey_parse(SchnorrXonlyPubkey& out,
                                 const std::array<uint8_t, 32>& pubkey_x) {
 #if defined(SECP256K1_FAST_52BIT)
-    FE52 px52 = FE52::from_fe(FieldElement::from_bytes(pubkey_x));
+    // Direct bytes→FE52: avoids FieldElement construction overhead
+    FE52 px52 = FE52::from_bytes(pubkey_x);
 
     FE52 x3 = px52.square() * px52;
     static const FE52 seven52 = FE52::from_fe(FieldElement::from_uint64(7));
@@ -272,7 +277,8 @@ bool schnorr_xonly_pubkey_parse(SchnorrXonlyPubkey& out,
         y52.normalize_weak();
     }
 
-    out.point = Point::from_affine(px52.to_fe(), y52.to_fe());
+    // Zero-conversion: construct Point directly from FE52 affine coordinates
+    out.point = Point::from_affine52(px52, y52);
 #else
     // Fallback: 4×64 lift_x
     auto px_fe = FieldElement::from_bytes(pubkey_x);

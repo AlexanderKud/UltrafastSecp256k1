@@ -293,9 +293,10 @@ CTJacobianPoint CTJacobianPoint::from_point(const Point& p) noexcept {
     if (p.is_infinity()) {
         r = make_infinity();
     } else {
-        r.x = FE52::from_fe(p.X());
-        r.y = FE52::from_fe(p.Y());
-        r.z = FE52::from_fe(p.z());
+        // Direct FE52 access: avoids FE52→FE(4×64)→FE52 double conversion
+        r.x = p.X52();
+        r.y = p.Y52();
+        r.z = p.Z52();
         r.infinity = 0;
     }
     return r;
@@ -305,7 +306,12 @@ Point CTJacobianPoint::to_point() const noexcept {
     if (infinity != 0) {
         return Point::infinity();
     }
-    return Point::from_jacobian_coords(x.to_fe(), y.to_fe(), z.to_fe(), false);
+    // Defensive: z==0 implies infinity even if flag wasn't set (e.g. 0*G)
+    if (z.is_zero()) {
+        return Point::infinity();
+    }
+    // Direct FE52 construction: avoids 3× to_fe + Point ctor 3× from_fe round-trip
+    return Point::from_jacobian52(x, y, z, false);
 }
 
 CTJacobianPoint CTJacobianPoint::make_infinity() noexcept {
