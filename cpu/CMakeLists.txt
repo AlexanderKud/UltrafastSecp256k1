@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.18)
 
+# Allow standalone builds (when not included as a subdirectory)
+if(NOT CMAKE_PROJECT_NAME OR CMAKE_PROJECT_NAME STREQUAL "Project")
+    project(UltrafastSecp256k1 LANGUAGES CXX C ASM)
+    set(CMAKE_CXX_STANDARD 20)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    include(CTest)
+endif()
+
 set(SECP256K1_LIB_NAME fastsecp256k1)
 
 # Core sources (always available - Tier 1: Portable C++)
