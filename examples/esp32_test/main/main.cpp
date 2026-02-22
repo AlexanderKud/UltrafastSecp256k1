@@ -25,6 +25,9 @@
 #include "secp256k1/ct/scalar.hpp"
 #include "secp256k1/ct/ops.hpp"
 
+// libsecp256k1 (bitcoin-core) benchmark
+extern "C" void libsecp_benchmark(void);
+
 using namespace secp256k1::fast;
 
 // Helper to get chip model name
@@ -309,6 +312,9 @@ extern "C" void app_main() {
     printf("\n  CT Results: %d/%d PASS\n", ct_pass, ct_pass + ct_fail);
 
     // ─── CT Performance Benchmarks ───────────────────────────────────────
+    // Feed watchdog before heavy benchmarks
+    vTaskDelay(pdMS_TO_TICKS(10));
+
     printf("\n");
     printf("==============================================\n");
     printf("  CT Performance Benchmark\n");
@@ -334,6 +340,28 @@ extern "C" void app_main() {
         printf("  CT Scalar*G:  %5lld us/op\n", elapsed / 3);
         (void)ct_sink;
     }
+    vTaskDelay(pdMS_TO_TICKS(10));  // feed watchdog
+
+    // CT generator_mul benchmark (Comb method — comparable to libsecp pubkey_create)
+    {
+        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+
+        // Warmup (triggers Comb table init)
+        volatile uint64_t ct_sink2 = 0;
+        Point wp = secp256k1::ct::generator_mul(k);
+        ct_sink2 = wp.x().limbs()[0];
+
+        int64_t start = esp_timer_get_time();
+        Point ct_r = wp;
+        for (int i = 0; i < 3; i++) {
+            ct_r = secp256k1::ct::generator_mul(k);
+        }
+        int64_t elapsed = esp_timer_get_time() - start;
+        ct_sink2 = ct_r.x().limbs()[0];
+        printf("  CT Gen*k:     %5lld us/op  (Comb 43x32)\n", elapsed / 3);
+        (void)ct_sink2;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));  // feed watchdog
 
     // CT complete addition benchmark
     {
@@ -349,6 +377,7 @@ extern "C" void app_main() {
         printf("  CT Add(compl):%5lld ns/op\n", (elapsed * 1000) / iterations);
         if (r.x == FieldElement::zero()) printf("!");
     }
+    vTaskDelay(pdMS_TO_TICKS(10));  // feed watchdog
 
     // CT doubling benchmark
     {
@@ -587,6 +616,11 @@ extern "C" void app_main() {
             (void)sink;
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // libsecp256k1 (bitcoin-core) comparison benchmark
+    // ═══════════════════════════════════════════════════════════════════
+    libsecp_benchmark();
 
     printf("\n");
     printf("============================================================\n");

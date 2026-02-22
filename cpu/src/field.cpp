@@ -862,12 +862,14 @@ static limbs4 esp32_reduce_secp256k1(const std::uint32_t r[16]) {
 #undef REDUCE_COL
 
 #else
-// Generic C reduction for ESP32/Xtensa
+// Generic C reduction for ESP32/Xtensa — fully branchless for CT safety
 static limbs4 esp32_reduce_secp256k1(const std::uint32_t r[16]) {
     std::uint64_t acc;
     std::uint32_t res[8];
 
     // First reduction pass: fold r[8..15] into r[0..7]
+    // 2^256 ≡ 2^32 + 977 (mod p), so t_high[i] contributes
+    //   t_high[i] * 977 to position i, t_high[i] * 2^32 to position i+1
     acc = (std::uint64_t)r[0] + (std::uint64_t)r[8] * 977ULL;
     res[0] = (std::uint32_t)acc;
     acc >>= 32;
@@ -895,14 +897,19 @@ static limbs4 esp32_reduce_secp256k1(const std::uint32_t r[16]) {
 
     acc += r[15];
 
-    if (acc) {
+    // Second pass: always fold the overflow (branchless).
+    // Maximum overflow after first pass: acc < 2^34 (since max product <2^512
+    // and k=2^32+977). After this fold, result is in [0, 2p).
+    // Note: ov can be >= 2^32 for edge cases (e.g. (p-1)^2), so we
+    // must NOT truncate it — use full uint64_t in word-1 addition.
+    {
         std::uint64_t ov = acc;
 
         acc = (std::uint64_t)res[0] + ov * 977ULL;
         res[0] = (std::uint32_t)acc;
         acc >>= 32;
 
-        acc += (std::uint64_t)res[1] + ov;
+        acc += (std::uint64_t)res[1] + ov;   // full ov, not (uint32_t)ov
         res[1] = (std::uint32_t)acc;
         acc >>= 32;
 
@@ -920,9 +927,20 @@ static limbs4 esp32_reduce_secp256k1(const std::uint32_t r[16]) {
     out[2] = (std::uint64_t)res[4] | ((std::uint64_t)res[5] << 32);
     out[3] = (std::uint64_t)res[6] | ((std::uint64_t)res[7] << 32);
 
-    if (ge(out, PRIME)) {
-        sub_in_place(out, PRIME);
-    }
+    // Branchless conditional subtract p if out >= p.
+    // Try subtract: tmp = out - PRIME
+    limbs4 tmp{};
+    unsigned char borrow = 0;
+    tmp[0] = sub64(out[0], PRIME[0], borrow);
+    tmp[1] = sub64(out[1], PRIME[1], borrow);
+    tmp[2] = sub64(out[2], PRIME[2], borrow);
+    tmp[3] = sub64(out[3], PRIME[3], borrow);
+    // If no borrow → out >= p → use tmp. If borrow → out < p → keep out.
+    const auto mask = -static_cast<std::uint64_t>(1U - borrow);
+    out[0] ^= (out[0] ^ tmp[0]) & mask;
+    out[1] ^= (out[1] ^ tmp[1]) & mask;
+    out[2] ^= (out[2] ^ tmp[2]) & mask;
+    out[3] ^= (out[3] ^ tmp[3]) & mask;
     return out;
 }
 #endif // ARM reduction

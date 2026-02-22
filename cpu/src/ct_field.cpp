@@ -144,9 +144,10 @@ FieldElement field_mul(const FieldElement& a, const FieldElement& b) noexcept {
     using FE52 = secp256k1::fast::FieldElement52;
     return (FE52::from_fe(a) * FE52::from_fe(b)).to_fe();
 #else
-    // ARM64 / generic: fast:: operator* (ARM64 delegates to native ASM internally).
-    FieldElement r = a * b;
-    return field_normalize(r);
+    // ARM64 / generic: fast:: operator* → mul_impl which already returns
+    // a fully reduced result (ESP32 Comba, ARM64 ASM, generic reduce all
+    // normalize). No additional field_normalize needed.
+    return a * b;
 #endif
 }
 
@@ -156,9 +157,9 @@ FieldElement field_sqr(const FieldElement& a) noexcept {
     using FE52 = secp256k1::fast::FieldElement52;
     return FE52::from_fe(a).square().to_fe();
 #else
-    // ARM64 / generic: fast:: square (ARM64 delegates to native ASM internally).
-    FieldElement r = a.square();
-    return field_normalize(r);
+    // ARM64 / generic: fast:: square → square_impl which already returns
+    // a fully reduced result. No additional field_normalize needed.
+    return a.square();
 #endif
 }
 
@@ -174,6 +175,34 @@ FieldElement field_neg(const FieldElement& a) noexcept {
     cmov256(r, z, zero_mask);
 
     return FieldElement::from_limbs_raw({r[0], r[1], r[2], r[3]});
+}
+
+FieldElement field_half(const FieldElement& a) noexcept {
+    // r = a/2 mod p. Branchless.
+    // If a is odd: r = (a + p) / 2; if even: r = a / 2.
+    const auto& al = a.limbs();
+    std::uint64_t odd = -(al[0] & 1);  // all-ones if odd, 0 if even
+
+    // Conditionally add p (only if odd)
+    std::uint64_t t[4];
+    std::uint64_t carry = 0;
+    for (int i = 0; i < 4; ++i) {
+        std::uint64_t addend = P[i] & odd;
+        std::uint64_t sum_lo = al[i] + addend;
+        std::uint64_t c1 = static_cast<std::uint64_t>(sum_lo < al[i]);
+        std::uint64_t sum = sum_lo + carry;
+        std::uint64_t c2 = static_cast<std::uint64_t>(sum < sum_lo);
+        t[i] = sum;
+        carry = c1 + c2;
+    }
+
+    // Right shift 257-bit value (t[0..3] + carry*2^256) by 1
+    std::uint64_t r0 = (t[0] >> 1) | (t[1] << 63);
+    std::uint64_t r1 = (t[1] >> 1) | (t[2] << 63);
+    std::uint64_t r2 = (t[2] >> 1) | (t[3] << 63);
+    std::uint64_t r3 = (t[3] >> 1) | (carry << 63);
+
+    return FieldElement::from_limbs_raw({r0, r1, r2, r3});
 }
 
 // ── CT SafeGCD building blocks (extracted for register allocation) ──────────
@@ -501,16 +530,26 @@ FieldElement field_inv(const FieldElement& a) noexcept {
 
 void field_cmov(FieldElement* r, const FieldElement& a,
                 std::uint64_t mask) noexcept {
-    // Avoid const_cast UB: use field_select + assignment
-    *r = field_select(a, *r, mask);
+    // In-place XOR-mask conditional move — no temporary FieldElement.
+    // mask is all-ones (select a) or all-zeros (keep r).
+    auto& rd = r->data().limbs;
+    const auto& ad = a.data().limbs;
+    rd[0] ^= (rd[0] ^ ad[0]) & mask;
+    rd[1] ^= (rd[1] ^ ad[1]) & mask;
+    rd[2] ^= (rd[2] ^ ad[2]) & mask;
+    rd[3] ^= (rd[3] ^ ad[3]) & mask;
 }
 
 void field_cswap(FieldElement* a, FieldElement* b,
                  std::uint64_t mask) noexcept {
-    FieldElement old_a = *a;
-    FieldElement old_b = *b;
-    *a = field_select(old_b, old_a, mask);
-    *b = field_select(old_a, old_b, mask);
+    // Direct in-place XOR swap — no temporaries.
+    auto& ad = a->data().limbs;
+    auto& bd = b->data().limbs;
+    for (int i = 0; i < 4; ++i) {
+        std::uint64_t diff = (ad[i] ^ bd[i]) & mask;
+        ad[i] ^= diff;
+        bd[i] ^= diff;
+    }
 }
 
 FieldElement field_select(const FieldElement& a, const FieldElement& b,

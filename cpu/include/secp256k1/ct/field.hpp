@@ -53,6 +53,10 @@ FieldElement field_sqr(const FieldElement& a) noexcept;
 // CT modular negation: r = -a mod p = p - a (if a != 0), 0 (if a == 0)
 FieldElement field_neg(const FieldElement& a) noexcept;
 
+// CT modular half: r = a/2 mod p
+// If a is odd: r = (a + p) / 2; if even: r = a / 2. Branchless.
+FieldElement field_half(const FieldElement& a) noexcept;
+
 // CT modular inverse: r = a⁻¹ mod p  (via Fermat: a^(p-2))
 // Fixed add-chain: always same number of mul+sqr regardless of input
 FieldElement field_inv(const FieldElement& a) noexcept;

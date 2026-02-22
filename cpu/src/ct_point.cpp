@@ -1601,18 +1601,129 @@ Point generator_mul(const Scalar& k) noexcept {
     return result;
 }
 
-#else // !SECP256K1_FAST_52BIT — Fallback for MSVC / 32-bit / non-__int128
+#else // !SECP256K1_FAST_52BIT — Full CT for 4×64 FieldElement
 
-// ─── Fallback stubs: delegate to fast:: (variable-time) ──────────────────────
-// On platforms without 5×52 + __int128, CT point ops are stubbed.
-// scalar_mul / generator_mul delegate to fast::Point which is NOT constant-time.
-// This is acceptable because these platforms (MSVC, ARM32, ESP32) are used for
-// functional testing and C API bindings, not side-channel-resistant production.
+// ═══════════════════════════════════════════════════════════════════════════════
+// 4×64 Constant-Time Path (MSVC / 32-bit / non-__int128 platforms)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Full CT implementation using ct::field_* on FieldElement (4×64 limbs).
+// All arithmetic is always fully reduced — no magnitude tracking needed.
+// Supports: ESP32-S3, MSVC x86-64, ARM32, RISC-V 32-bit.
+//
+// Translation from FE52 (5×52 lazy reduction):
+//   a * b           → field_mul(a, b)
+//   a.square()      → field_sqr(a)
+//   a + b           → field_add(a, b)
+//   a - b           → field_sub(a, b)
+//   a.negate(m)     → field_neg(a)   (magnitude param ignored)
+//   a.half()        → field_half(a)
+//   normalize_weak  → no-op          (always normalized)
+//   fe52_cmov       → field_cmov
+//   fe52_normalizes_to_zero → field_is_zero
+
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <intrin.h>
+#endif
+
+// FE52 = FieldElement on this path (typedef from ct/point.hpp)
+
+namespace /* 4×64 CT helpers */ {
+
+// ─── Portable 64×64→128 multiply (no __int128) ──────────────────────────────
+
+struct U128 { std::uint64_t lo, hi; };
+
+inline U128 mul64(std::uint64_t u, std::uint64_t v) noexcept {
+#if defined(_MSC_VER) && defined(_M_X64)
+    std::uint64_t hi;
+    std::uint64_t lo = _umul128(u, v, &hi);
+    return {lo, hi};
+#else
+    // Knuth Algorithm M: 4 × 32-bit multiplies
+    std::uint64_t u0 = u & 0xFFFFFFFFULL, u1 = u >> 32;
+    std::uint64_t v0 = v & 0xFFFFFFFFULL, v1 = v >> 32;
+    std::uint64_t t  = u0 * v0;
+    std::uint64_t w0 = t & 0xFFFFFFFFULL;
+    std::uint64_t k  = t >> 32;
+    t = u1 * v0 + k;
+    std::uint64_t w1 = t & 0xFFFFFFFFULL;
+    std::uint64_t w2 = t >> 32;
+    t = u0 * v1 + w1;
+    return { ((t & 0xFFFFFFFFULL) << 32) | w0,
+             u1 * v1 + w2 + (t >> 32) };
+#endif
+}
+
+// ─── 4×4 → 8 limb schoolbook multiply ───────────────────────────────────────
+
+inline void mul_4x4(std::uint64_t d[8],
+                    const std::uint64_t a[4],
+                    const std::uint64_t b[4]) noexcept {
+    for (int i = 0; i < 8; ++i) d[i] = 0;
+    for (int i = 0; i < 4; ++i) {
+        std::uint64_t carry = 0;
+        for (int j = 0; j < 4; ++j) {
+            U128 m = mul64(a[i], b[j]);
+            std::uint64_t sum = d[i + j] + m.lo;
+            std::uint64_t c1 = static_cast<std::uint64_t>(sum < d[i + j]);
+            sum += carry;
+            std::uint64_t c2 = static_cast<std::uint64_t>(sum < carry);
+            d[i + j] = sum;
+            carry = m.hi + c1 + c2;
+        }
+        d[i + 4] = carry;
+    }
+}
+
+// ─── Variable-time Jacobian + Affine addition (for public table build) ───────
+// NOT constant-time: used only for precomputation where POINT is public.
+// Standard formula: 3S + 8M. Caller ensures no degenerate cases.
+
+struct Jac4x64 { FE52 x, y, z; };
+
+inline Jac4x64 jac_add_ge_var_zr(const Jac4x64& a,
+                                  const FE52& bx, const FE52& by,
+                                  FE52* zr_out) noexcept {
+    FE52 z1sq = field_sqr(a.z);
+    FE52 u2   = field_mul(bx, z1sq);
+    FE52 z1cu = field_mul(z1sq, a.z);
+    FE52 s2   = field_mul(by, z1cu);
+    FE52 h    = field_sub(u2, a.x);
+    FE52 r    = field_sub(s2, a.y);
+    FE52 h2   = field_sqr(h);
+    FE52 h3   = field_mul(h, h2);
+    FE52 u1h2 = field_mul(a.x, h2);
+    FE52 x3   = field_sub(field_sub(field_sqr(r), h3),
+                           field_add(u1h2, u1h2));
+    FE52 y3   = field_sub(field_mul(r, field_sub(u1h2, x3)),
+                           field_mul(a.y, h3));
+    FE52 z3   = field_mul(a.z, h);
+    *zr_out = h;
+    return {x3, y3, z3};
+}
+
+// ─── Montgomery batch inversion ──────────────────────────────────────────────
+
+inline void fe_batch_inverse(FE52* inv, const FE52* z, std::size_t n) noexcept {
+    if (n == 0) return;
+    if (n == 1) { inv[0] = field_inv(z[0]); return; }
+    inv[0] = z[0];
+    for (std::size_t i = 1; i < n; ++i)
+        inv[i] = field_mul(inv[i - 1], z[i]);
+    FE52 acc = field_inv(inv[n - 1]);
+    for (std::size_t i = n - 1; i > 0; --i) {
+        inv[i] = field_mul(inv[i - 1], acc);
+        acc = field_mul(acc, z[i]);
+    }
+    inv[0] = acc;
+}
+
+} // anonymous namespace (4×64 CT helpers)
+
+// ─── CTJacobianPoint helpers ─────────────────────────────────────────────────
 
 CTJacobianPoint CTJacobianPoint::from_point(const Point& p) noexcept {
     CTJacobianPoint r;
-    // Use X()/Y()/z() which all return raw Jacobian coordinates.
-    // Do NOT use x()/y() — those compute affine (divide by Z²/Z³).
     r.x = p.X();
     r.y = p.Y();
     r.z = p.z();
@@ -1621,90 +1732,83 @@ CTJacobianPoint CTJacobianPoint::from_point(const Point& p) noexcept {
 }
 
 Point CTJacobianPoint::to_point() const noexcept {
-    if (infinity) return Point::infinity();
+    if (infinity != 0) return Point::infinity();
+    if (field_is_zero(z)) return Point::infinity();
     return Point::from_jacobian_coords(x, y, z, false);
 }
 
 CTJacobianPoint CTJacobianPoint::make_infinity() noexcept {
     CTJacobianPoint r;
     r.x = FieldElement();
-    r.y = FieldElement();
+    r.y = FieldElement::one();
     r.z = FieldElement();
     r.infinity = ~std::uint64_t(0);
     return r;
 }
 
-CTJacobianPoint point_add_complete(const CTJacobianPoint& p,
-                                   const CTJacobianPoint& q) noexcept {
-    Point pp = p.to_point();
-    Point qq = q.to_point();
-    if (pp.is_infinity()) return q;
-    if (qq.is_infinity()) return p;
-    return CTJacobianPoint::from_point(pp.add(qq));
-}
-
-CTJacobianPoint point_add_mixed_complete(const CTJacobianPoint& p,
-                                          const CTAffinePoint& q) noexcept {
-    CTJacobianPoint jq;
-    jq.x = q.x; jq.y = q.y;
-    jq.z = FieldElement::one();
-    jq.infinity = q.infinity;
-    return point_add_complete(p, jq);
-}
-
-CTJacobianPoint point_dbl(const CTJacobianPoint& p) noexcept {
-    Point pp = p.to_point();
-    pp.dbl_inplace();
-    return CTJacobianPoint::from_point(pp);
-}
-
-CTJacobianPoint point_add_mixed_unified(const CTJacobianPoint& a,
-                                         const CTAffinePoint& b) noexcept {
-    return point_add_mixed_complete(a, b);
-}
-
-void point_add_mixed_unified_into(CTJacobianPoint* out,
-                                   const CTJacobianPoint& a,
-                                   const CTAffinePoint& b) noexcept {
-    *out = point_add_mixed_unified(a, b);
-}
-
-CTJacobianPoint point_neg(const CTJacobianPoint& p) noexcept {
-    CTJacobianPoint r = p;
-    r.y = field_neg(r.y);
-    return r;
-}
+// ─── CT Conditional Operations on Points ─────────────────────────────────────
 
 void point_cmov(CTJacobianPoint* r, const CTJacobianPoint& a,
                 std::uint64_t mask) noexcept {
-    if (mask) *r = a;
+    field_cmov(&r->x, a.x, mask);
+    field_cmov(&r->y, a.y, mask);
+    field_cmov(&r->z, a.z, mask);
+    r->infinity = ct_select(a.infinity, r->infinity, mask);
 }
 
 CTJacobianPoint point_select(const CTJacobianPoint& a, const CTJacobianPoint& b,
                              std::uint64_t mask) noexcept {
-    return mask ? a : b;
+    CTJacobianPoint r;
+    r.x = field_select(a.x, b.x, mask);
+    r.y = field_select(a.y, b.y, mask);
+    r.z = field_select(a.z, b.z, mask);
+    r.infinity = ct_select(a.infinity, b.infinity, mask);
+    return r;
+}
+
+CTJacobianPoint point_neg(const CTJacobianPoint& p) noexcept {
+    CTJacobianPoint r;
+    r.x = p.x;
+    r.y = field_neg(p.y);
+    r.z = p.z;
+    r.infinity = p.infinity;
+    return r;
 }
 
 CTJacobianPoint point_table_lookup(const CTJacobianPoint* table,
                                    std::size_t table_size,
                                    std::size_t index) noexcept {
-    // Scan all entries for basic CT-like behavior
-    CTJacobianPoint r = table[0];
-    for (std::size_t i = 1; i < table_size; ++i) {
-        if (i == index) r = table[i];
+    CTJacobianPoint result = CTJacobianPoint::make_infinity();
+    for (std::size_t i = 0; i < table_size; ++i) {
+        std::uint64_t mask = eq_mask(static_cast<std::uint64_t>(i),
+                                     static_cast<std::uint64_t>(index));
+        point_cmov(&result, table[i], mask);
     }
-    return r;
+    return result;
+}
+
+// ─── CT Conditional Operations on Affine Points ──────────────────────────────
+
+void affine_cmov(CTAffinePoint* r, const CTAffinePoint& a,
+                 std::uint64_t mask) noexcept {
+    field_cmov(&r->x, a.x, mask);
+    field_cmov(&r->y, a.y, mask);
+    r->infinity = ct_select(a.infinity, r->infinity, mask);
 }
 
 CTAffinePoint affine_table_lookup(const CTAffinePoint* table,
                                   std::size_t table_size,
                                   std::size_t index) noexcept {
-    CTAffinePoint r = table[0];
-    for (std::size_t i = 1; i < table_size; ++i) {
-        if (i == index) r = table[i];
+    CTAffinePoint result = CTAffinePoint::make_infinity();
+    for (std::size_t i = 0; i < table_size; ++i) {
+        std::uint64_t mask = eq_mask(static_cast<std::uint64_t>(i),
+                                     static_cast<std::uint64_t>(index));
+        affine_cmov(&result, table[i], mask);
     }
-    return r;
+    return result;
 }
+
+// ─── Signed-Digit Affine Table Lookup (Hamburg encoding, 4×64) ───────────────
 
 CTAffinePoint affine_table_lookup_signed(const CTAffinePoint* table,
                                           std::size_t table_size,
@@ -1715,84 +1819,844 @@ CTAffinePoint affine_table_lookup_signed(const CTAffinePoint* table,
     return r;
 }
 
+// ─── Always-inline scalar table lookup core (4×64) ───────────────────────────
+// NORMALIZE_Y exists for API compat with FE52 path; ignored (always normalized).
+
+template<bool NORMALIZE_Y>
+SECP256K1_INLINE
+void table_lookup_core(CTAffinePoint* out,
+                        const CTAffinePoint* table,
+                        std::size_t table_size,
+                        std::uint64_t n,
+                        unsigned group_size) noexcept {
+    std::uint64_t negative = ((n >> (group_size - 1)) ^ 1u) & 1u;
+    std::uint64_t neg_mask = static_cast<std::uint64_t>(-negative);
+
+    unsigned index_bits = group_size - 1;
+    std::uint64_t index = (static_cast<std::uint64_t>(-negative) ^ n) &
+                          ((1ULL << index_bits) - 1u);
+
+    out->x = table[0].x;
+    out->y = table[0].y;
+    for (std::size_t m = 1; m < table_size; ++m) {
+        std::uint64_t mask = eq_mask(static_cast<std::uint64_t>(m),
+                                     static_cast<std::uint64_t>(index));
+        field_cmov(&out->x, table[m].x, mask);
+        field_cmov(&out->y, table[m].y, mask);
+    }
+
+    FE52 neg_y = field_neg(out->y);
+    field_cmov(&out->y, neg_y, neg_mask);
+    out->infinity = 0;
+}
+
 void affine_table_lookup_signed_into(CTAffinePoint* out,
                                       const CTAffinePoint* table,
                                       std::size_t table_size,
                                       std::uint64_t n,
                                       unsigned group_size) noexcept {
-    unsigned index_bits = group_size - 1;
-    std::uint64_t negative = ((n >> index_bits) ^ 1u) & 1u;
-    std::uint64_t neg_mask = static_cast<std::uint64_t>(-negative);
-    std::uint64_t index = (neg_mask ^ n) & ((1ULL << index_bits) - 1u);
+    table_lookup_core<true>(out, table, table_size, n, group_size);
+}
 
-    *out = table[0];
-    for (std::size_t i = 1; i < table_size; ++i) {
-        if (i == index) *out = table[i];
+// ─── Complete Addition (Jacobian, a=0, 4×64) ────────────────────────────────
+// Brier-Joye unified addition/doubling. Handles all cases branchlessly.
+// Cost: 11M + 6S.
+
+CTJacobianPoint point_add_complete(const CTJacobianPoint& p,
+                                   const CTJacobianPoint& q) noexcept {
+    FE52 X1 = p.x, Y1 = p.y, Z1 = p.z;
+    FE52 X2 = q.x, Y2 = q.y, Z2 = q.z;
+
+    FE52 z1z1 = field_sqr(Z1);                                  // [sqr 1]
+    FE52 z2z2 = field_sqr(Z2);                                  // [sqr 2]
+    FE52 u1   = field_mul(X1, z2z2);                             // [mul 1]
+    FE52 u2   = field_mul(X2, z1z1);                             // [mul 2]
+    FE52 s1   = field_mul(field_mul(Y1, z2z2), Z2);             // [mul 3,4]
+    FE52 s2   = field_mul(field_mul(Y2, z1z1), Z1);             // [mul 5,6]
+    FE52 z     = field_mul(Z1, Z2);                              // [mul 7]
+
+    FE52 t_val  = field_add(u1, u2);
+    FE52 m_val  = field_add(s1, s2);
+
+    FE52 rr = field_add(field_sqr(t_val),                        // [sqr 3]
+                        field_mul(u1, field_neg(u2)));            // [mul 8]
+
+    std::uint64_t degen     = field_is_zero(m_val);
+    std::uint64_t not_degen = ~degen;
+
+    FE52 rr_alt = field_add(s1, s1);
+    FE52 m_alt  = field_sub(u1, u2);
+
+    field_cmov(&rr_alt, rr,    not_degen);
+    field_cmov(&m_alt,  m_val, not_degen);
+
+    FE52 nn    = field_sqr(m_alt);                               // [sqr 4]
+    FE52 q_val = field_mul(field_neg(t_val), nn);                // [mul 9]
+
+    nn = field_sqr(nn);                                          // [sqr 5]
+    field_cmov(&nn, m_val, degen);
+
+    FE52 x3 = field_add(field_sqr(rr_alt), q_val);              // [sqr 6]
+    FE52 z3 = field_mul(z, m_alt);                               // [mul 10]
+
+    FE52 tq  = field_add(field_add(x3, x3), q_val);
+    FE52 y3p = field_add(field_mul(rr_alt, tq), nn);            // [mul 11]
+    FE52 y3  = field_half(field_neg(y3p));
+
+    // Infinity handling
+    std::uint64_t z3_zero = field_is_zero(z3);
+
+    field_cmov(&x3, X2, p.infinity);
+    field_cmov(&y3, Y2, p.infinity);
+    field_cmov(&z3, Z2, p.infinity);
+
+    field_cmov(&x3, X1, q.infinity);
+    field_cmov(&y3, Y1, q.infinity);
+    field_cmov(&z3, Z1, q.infinity);
+
+    std::uint64_t result_inf = z3_zero & ~p.infinity & ~q.infinity;
+    result_inf |= p.infinity & q.infinity;
+
+    CTJacobianPoint result;
+    result.x = x3;  result.y = y3;  result.z = z3;
+    result.infinity = result_inf;
+    return result;
+}
+
+// ─── Mixed Jacobian+Affine Complete Addition (a=0, 4×64) ─────────────────────
+// Brier-Joye 7M + 5S. Handles all cases branchlessly.
+
+CTJacobianPoint point_add_mixed_complete(const CTJacobianPoint& p,
+                                          const CTAffinePoint& q) noexcept {
+    FE52 X1 = p.x, Y1 = p.y, Z1 = p.z;
+
+    FE52 zz     = field_sqr(Z1);                                // [sqr 1]
+    FE52 u1     = X1;
+    FE52 u2     = field_mul(q.x, zz);                           // [mul 1]
+    FE52 s1     = Y1;
+    FE52 s2     = field_mul(field_mul(q.y, zz), Z1);            // [mul 2,3]
+
+    FE52 t_val  = field_add(u1, u2);
+    FE52 m_val  = field_add(s1, s2);
+
+    FE52 rr     = field_add(field_sqr(t_val),                    // [sqr 2]
+                            field_mul(u1, field_neg(u2)));        // [mul 4]
+
+    std::uint64_t degen     = field_is_zero(m_val);
+    std::uint64_t not_degen = ~degen;
+
+    FE52 rr_alt = field_add(s1, s1);
+    FE52 m_alt  = field_sub(u1, u2);
+
+    field_cmov(&rr_alt, rr,    not_degen);
+    field_cmov(&m_alt,  m_val, not_degen);
+
+    FE52 nn     = field_sqr(m_alt);                              // [sqr 3]
+    FE52 q_val  = field_mul(field_neg(t_val), nn);               // [mul 5]
+
+    nn = field_sqr(nn);                                          // [sqr 4]
+    field_cmov(&nn, m_val, degen);
+
+    FE52 x3     = field_add(field_sqr(rr_alt), q_val);          // [sqr 5]
+    FE52 z3     = field_mul(m_alt, Z1);                          // [mul 6]
+
+    FE52 tq     = field_add(field_add(x3, x3), q_val);
+    FE52 y3p    = field_add(field_mul(rr_alt, tq), nn);         // [mul 7]
+    FE52 y3     = field_half(field_neg(y3p));
+
+    // Infinity handling
+    std::uint64_t z3_zero = field_is_zero(z3);
+    FE52 one_fe = FieldElement::one();
+
+    field_cmov(&x3, q.x,   p.infinity);
+    field_cmov(&y3, q.y,   p.infinity);
+    field_cmov(&z3, one_fe, p.infinity);
+
+    field_cmov(&x3, X1, q.infinity);
+    field_cmov(&y3, Y1, q.infinity);
+    field_cmov(&z3, Z1, q.infinity);
+
+    std::uint64_t result_inf = z3_zero & ~p.infinity & ~q.infinity;
+    result_inf |= p.infinity & q.infinity;
+
+    CTJacobianPoint result;
+    result.x = x3;  result.y = y3;  result.z = z3;
+    result.infinity = result_inf;
+    return result;
+}
+
+// ─── CT Point Doubling (4×64) ────────────────────────────────────────────────
+// 3M + 4S + 1half. Formula: L=(3/2)X², S=Y², T=-XS, X3=L²+2T,
+// Y3=-(L(X3+T)+S²), Z3=YZ.
+
+CTJacobianPoint point_dbl(const CTJacobianPoint& p) noexcept {
+    FE52 X = p.x, Y = p.y, Z = p.z;
+
+    FE52 s  = field_sqr(Y);                                     // [sqr 1]
+    FE52 l  = field_sqr(X);                                     // [sqr 2]
+    l = field_half(field_add(field_add(l, l), l));               // (3/2)X²
+    FE52 t  = field_mul(field_neg(s), X);                        // [mul 1]
+    FE52 z3 = field_mul(Z, Y);                                   // [mul 2]
+    FE52 x3 = field_add(field_add(field_sqr(l), t), t);         // [sqr 3]
+    s = field_sqr(s);                                            // [sqr 4]
+    FE52 y3 = field_neg(
+        field_add(field_mul(field_add(t, x3), l), s));           // [mul 3]
+
+    CTJacobianPoint inf = CTJacobianPoint::make_infinity();
+    CTJacobianPoint result;
+    result.x = x3;  result.y = y3;  result.z = z3;
+    result.infinity = 0;
+    point_cmov(&result, inf, p.infinity);
+    return result;
+}
+
+// ─── Brier-Joye Unified Mixed Addition template (4×64) ──────────────────────
+// CHECK_INFINITY=false skips infinity handling (safe in scalar_mul inner loop).
+// Cost: 7M + 5S.
+
+template<bool CHECK_INFINITY>
+SECP256K1_INLINE
+void unified_add_core(CTJacobianPoint* out,
+                       const CTJacobianPoint& a,
+                       const CTAffinePoint& b) noexcept {
+    FE52 X1 = a.x, Y1 = a.y, Z1 = a.z;
+    [[maybe_unused]] std::uint64_t a_inf = a.infinity;
+
+    FE52 zz    = field_sqr(Z1);
+    FE52 u1    = X1;
+    FE52 u2    = field_mul(b.x, zz);
+    FE52 s1    = Y1;
+    FE52 s2    = field_mul(field_mul(b.y, zz), Z1);
+
+    FE52 t_val = field_add(u1, u2);
+    FE52 m_val = field_add(s1, s2);
+
+    FE52 rr = field_add(field_sqr(t_val),
+                        field_mul(u1, field_neg(u2)));
+
+    std::uint64_t degen = field_is_zero(m_val);
+
+    FE52 rr_alt = field_add(s1, s1);
+    FE52 m_alt  = field_sub(u1, u2);
+
+    field_cmov(&rr_alt, rr,    ~degen);
+    field_cmov(&m_alt,  m_val, ~degen);
+
+    FE52 n_val = field_sqr(m_alt);
+    FE52 q     = field_mul(field_neg(t_val), n_val);
+    n_val = field_sqr(n_val);
+    field_cmov(&n_val, m_val, degen);
+
+    FE52 x3 = field_add(field_sqr(rr_alt), q);
+    FE52 z3 = field_mul(m_alt, Z1);
+    FE52 y3 = field_half(field_neg(
+        field_add(field_mul(rr_alt, field_add(field_add(x3, x3), q)),
+                  n_val)));
+
+    if constexpr (CHECK_INFINITY) {
+        FE52 one_fe = FieldElement::one();
+        field_cmov(&x3, b.x, a_inf);
+        field_cmov(&y3, b.y, a_inf);
+        field_cmov(&z3, one_fe, a_inf);
     }
-    if (neg_mask) out->y = field_neg(out->y);
+
+    out->x = x3;  out->y = y3;  out->z = z3;
+    if constexpr (CHECK_INFINITY) {
+        out->infinity = field_is_zero(z3);
+    } else {
+        out->infinity = 0;
+    }
+}
+
+CTJacobianPoint point_add_mixed_unified(const CTJacobianPoint& a,
+                                         const CTAffinePoint& b) noexcept {
+    CTJacobianPoint result;
+    unified_add_core<true>(&result, a, b);
+    return result;
+}
+
+void point_add_mixed_unified_into(CTJacobianPoint* out,
+                                   const CTJacobianPoint& a,
+                                   const CTAffinePoint& b) noexcept {
+    unified_add_core<true>(out, a, b);
+}
+
+// ─── Batch N Doublings (4×64) ────────────────────────────────────────────────
+// 3M + 4S + 1half per doubling. No magnitude tracking (always normalized).
+// Precondition: r is NOT infinity.
+
+SECP256K1_INLINE
+void point_dbl_n_core(CTJacobianPoint* r, unsigned n) noexcept {
+    FE52 X = r->x, Y = r->y, Z = r->z;
+    for (unsigned i = 0; i < n; ++i) {
+        FE52 s  = field_sqr(Y);
+        FE52 l  = field_sqr(X);
+        l = field_half(field_add(field_add(l, l), l));
+        FE52 t  = field_mul(field_neg(s), X);
+        FE52 z3 = field_mul(Z, Y);
+        FE52 x3 = field_add(field_add(field_sqr(l), t), t);
+        s = field_sqr(s);
+        FE52 y3 = field_neg(
+            field_add(field_mul(field_add(t, x3), l), s));
+        X = x3;  Y = y3;  Z = z3;
+    }
+    r->x = X;  r->y = Y;  r->z = Z;
 }
 
 void point_dbl_n_inplace(CTJacobianPoint* r, unsigned n) noexcept {
-    Point p = r->to_point();
-    for (unsigned i = 0; i < n; ++i) p.dbl_inplace();
-    *r = CTJacobianPoint::from_point(p);
+    point_dbl_n_core(r, n);
 }
 
 CTJacobianPoint point_dbl_n(const CTJacobianPoint& p, unsigned n) noexcept {
-    CTJacobianPoint r = p;
-    point_dbl_n_inplace(&r, n);
-    return r;
+    CTJacobianPoint result = p;
+    result.infinity = 0;
+    point_dbl_n_inplace(&result, n);
+    return result;
 }
 
-void affine_cmov(CTAffinePoint* r, const CTAffinePoint& a,
-                 std::uint64_t mask) noexcept {
-    if (mask) *r = a;
+// ═══════════════════════════════════════════════════════════════════════════════
+// CT GLV Endomorphism — Helpers & Decomposition (4×64, portable)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+namespace /* GLV CT helpers 4×64 */ {
+
+static inline std::uint64_t local_sub256(std::uint64_t r[4],
+                                          const std::uint64_t a[4],
+                                          const std::uint64_t b[4]) noexcept {
+    std::uint64_t borrow = 0;
+    for (int i = 0; i < 4; ++i) {
+        std::uint64_t diff = a[i] - b[i];
+        std::uint64_t b1 = static_cast<std::uint64_t>(a[i] < b[i]);
+        std::uint64_t result = diff - borrow;
+        std::uint64_t b2 = static_cast<std::uint64_t>(diff < borrow);
+        r[i] = result;
+        borrow = b1 + b2;
+    }
+    return borrow;
 }
 
-Point scalar_mul(const Point& p, const Scalar& k) noexcept {
-    // Fallback: use fast:: scalar_mul (NOT constant-time on non-52bit platforms)
-    return p.scalar_mul(k);
+static std::uint64_t ct_scalar_is_high(const Scalar& s) noexcept {
+    static constexpr std::uint64_t HALF_N[4] = {
+        0xDFE92F46681B20A0ULL, 0x5D576E7357A4501DULL,
+        0xFFFFFFFFFFFFFFFFULL, 0x7FFFFFFFFFFFFFFFULL
+    };
+    std::uint64_t tmp[4];
+    std::uint64_t borrow = local_sub256(tmp, HALF_N, s.limbs().data());
+    return is_nonzero_mask(borrow);
 }
 
-Point generator_mul(const Scalar& k) noexcept {
-    return Point::generator().scalar_mul(k);
+static constexpr std::uint64_t ORDER[4] = {
+    0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL,
+    0xFFFFFFFFFFFFFFFEULL, 0xFFFFFFFFFFFFFFFFULL
+};
+static constexpr std::uint64_t NC0 = 0x402DA1732FC9BEBFULL;
+static constexpr std::uint64_t NC1 = 0x4551231950B75FC4ULL;
+
+// ─── CT 256×256→512, shift >>384 (portable) ─────────────────────────────────
+
+static std::array<std::uint64_t, 4> ct_mul_shift_384(
+    const std::array<std::uint64_t, 4>& a,
+    const std::array<std::uint64_t, 4>& b) noexcept
+{
+    std::uint64_t prod[8];
+    mul_4x4(prod, a.data(), b.data());
+
+    std::array<std::uint64_t, 4> result{};
+    result[0] = prod[6];
+    result[1] = prod[7];
+
+    std::uint64_t round = prod[5] >> 63;
+    std::uint64_t old = result[0];
+    result[0] += round;
+    std::uint64_t carry = static_cast<std::uint64_t>(result[0] < old);
+    result[1] += carry;
+
+    return result;
 }
 
-void init_generator_table() noexcept {
-    // No-op: fallback uses fast:: which has its own precomputation.
+// ─── CT 128×128 → mod n (portable) ──────────────────────────────────────────
+
+static Scalar ct_mul_lo128_mod(const std::uint64_t a[2],
+                                const std::uint64_t b[2]) noexcept {
+    U128 p00 = mul64(a[0], b[0]);
+    U128 p01 = mul64(a[0], b[1]);
+    U128 p10 = mul64(a[1], b[0]);
+    U128 p11 = mul64(a[1], b[1]);
+
+    std::uint64_t r0 = p00.lo;
+    std::uint64_t c = 0;
+    std::uint64_t r1 = p00.hi + p01.lo;
+    c = static_cast<std::uint64_t>(r1 < p00.hi);
+    std::uint64_t t = r1 + p10.lo;
+    c += static_cast<std::uint64_t>(t < r1);
+    r1 = t;
+
+    std::uint64_t r2 = p01.hi + p10.hi;
+    std::uint64_t c2 = static_cast<std::uint64_t>(r2 < p01.hi);
+    t = r2 + p11.lo;  c2 += static_cast<std::uint64_t>(t < r2);
+    t += c;            c2 += static_cast<std::uint64_t>(t < c);
+    r2 = t;
+
+    std::uint64_t r3 = p11.hi + c2;
+
+    std::uint64_t r_arr[4] = {r0, r1, r2, r3};
+    std::uint64_t sub[4];
+    std::uint64_t borrow = local_sub256(sub, r_arr, ORDER);
+    cmov256(r_arr, sub, is_zero_mask(borrow));
+
+    return Scalar::from_limbs({r_arr[0], r_arr[1], r_arr[2], r_arr[3]});
 }
+
+// ─── CT 256×128 → mod n (portable, secp256k1-specific reduction) ────────────
+
+static Scalar ct_mul_256x_lo128_mod(const Scalar& a,
+                                     const std::uint64_t b[2]) noexcept {
+    const auto& al = a.limbs();
+
+    // 4×2 schoolbook → 6 limbs
+    std::uint64_t d[6] = {};
+    for (int i = 0; i < 4; ++i) {
+        std::uint64_t carry = 0;
+        for (int j = 0; j < 2; ++j) {
+            U128 m = mul64(al[i], b[j]);
+            std::uint64_t sum = d[i + j] + m.lo;
+            std::uint64_t c1 = static_cast<std::uint64_t>(sum < d[i + j]);
+            sum += carry;
+            std::uint64_t c2 = static_cast<std::uint64_t>(sum < carry);
+            d[i + j] = sum;
+            carry = m.hi + c1 + c2;
+        }
+        for (int k = i + 2; k < 6; ++k) {
+            std::uint64_t old = d[k];
+            d[k] += carry;
+            carry = static_cast<std::uint64_t>(d[k] < old);
+        }
+    }
+
+    // Single-phase reduction: r = d[0..3] + d[4..5] * NC
+    U128 m;
+    std::uint64_t sum, s_hi, c_hi;
+
+    m = mul64(d[4], NC0);
+    sum = m.lo + d[0];
+    c_hi = m.hi + static_cast<std::uint64_t>(sum < m.lo);
+    std::uint64_t r0 = sum;
+
+    U128 m1 = mul64(d[5], NC0);
+    U128 m2 = mul64(d[4], NC1);
+    sum = m1.lo + m2.lo;
+    s_hi = m1.hi + m2.hi + static_cast<std::uint64_t>(sum < m1.lo);
+    sum += d[1]; s_hi += static_cast<std::uint64_t>(sum < d[1]);
+    sum += c_hi; s_hi += static_cast<std::uint64_t>(sum < c_hi);
+    std::uint64_t r1 = sum;
+    c_hi = s_hi;
+
+    m = mul64(d[5], NC1);
+    sum = m.lo + d[4];
+    s_hi = m.hi + static_cast<std::uint64_t>(sum < m.lo);
+    sum += d[2]; s_hi += static_cast<std::uint64_t>(sum < d[2]);
+    sum += c_hi; s_hi += static_cast<std::uint64_t>(sum < c_hi);
+    std::uint64_t r2 = sum;
+    c_hi = s_hi;
+
+    sum = d[5] + d[3];
+    s_hi = static_cast<std::uint64_t>(sum < d[5]);
+    sum += c_hi; s_hi += static_cast<std::uint64_t>(sum < c_hi);
+    std::uint64_t r3 = sum;
+    unsigned overflow = static_cast<unsigned>(s_hi);
+
+    std::uint64_t r_arr[4] = {r0, r1, r2, r3};
+    std::uint64_t sub[4];
+    std::uint64_t borrow = local_sub256(sub, r_arr, ORDER);
+    cmov256(r_arr, sub, is_nonzero_mask(static_cast<std::uint64_t>(overflow))
+                      | is_zero_mask(borrow));
+
+    return Scalar::from_limbs({r_arr[0], r_arr[1], r_arr[2], r_arr[3]});
+}
+
+// ─── β (beta) as 4×64 FieldElement ──────────────────────────────────────────
+
+static const FE52& get_beta_fe() noexcept {
+    static const FE52 beta = FieldElement::from_bytes(
+        secp256k1::fast::glv_constants::BETA);
+    return beta;
+}
+
+// ─── GLV lattice constants ───────────────────────────────────────────────────
+
+static constexpr std::array<std::uint64_t, 4> kG1{{
+    0xE893209A45DBB031ULL, 0x3DAA8A1471E8CA7FULL,
+    0xE86C90E49284EB15ULL, 0x3086D221A7D46BCDULL
+}};
+static constexpr std::array<std::uint64_t, 4> kG2{{
+    0x1571B4AE8AC47F71ULL, 0x221208AC9DF506C6ULL,
+    0x6F547FA90ABFE4C4ULL, 0xE4437ED6010E8828ULL
+}};
+static constexpr std::array<std::uint8_t, 32> kLambdaBytes{{
+    0x53,0x63,0xAD,0x4C,0xC0,0x5C,0x30,0xE0,
+    0xA5,0x26,0x1C,0x02,0x88,0x12,0x64,0x5A,
+    0x12,0x2E,0x22,0xEA,0x20,0x81,0x66,0x78,
+    0xDF,0x02,0x96,0x7C,0x1B,0x23,0xBD,0x72
+}};
+
+} // anonymous namespace (GLV CT helpers 4×64)
+
+// ─── CT GLV Endomorphism (4×64) ──────────────────────────────────────────────
 
 CTJacobianPoint point_endomorphism(const CTJacobianPoint& p) noexcept {
-    // β in 4×64: secp256k1 endomorphism constant
-    static const FieldElement BETA = FieldElement::from_hex(
-        "7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee");
-    CTJacobianPoint r = p;
-    r.x = field_mul(r.x, BETA);
+    CTJacobianPoint r;
+    r.x = field_mul(p.x, get_beta_fe());
+    r.y = p.y;
+    r.z = p.z;
+    r.infinity = p.infinity;
     return r;
 }
 
 CTAffinePoint affine_endomorphism(const CTAffinePoint& p) noexcept {
-    static const FieldElement BETA = FieldElement::from_hex(
-        "7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee");
-    CTAffinePoint r = p;
-    r.x = field_mul(r.x, BETA);
+    CTAffinePoint r;
+    r.x = field_mul(p.x, get_beta_fe());
+    r.y = p.y;
+    r.infinity = p.infinity;
     return r;
 }
 
 CTAffinePoint affine_neg(const CTAffinePoint& p) noexcept {
-    CTAffinePoint r = p;
-    r.y = field_neg(r.y);
+    CTAffinePoint r;
+    r.x = p.x;
+    r.y = field_neg(p.y);
+    r.infinity = p.infinity;
     return r;
 }
 
+// ─── CT GLV Decomposition (4×64, fully CT, portable) ────────────────────────
+
 CTGLVDecomposition ct_glv_decompose(const Scalar& k) noexcept {
-    auto decomp = secp256k1::fast::glv_decompose(k);
-    CTGLVDecomposition d;
-    d.k1 = decomp.k1;
-    d.k2 = decomp.k2;
-    d.k1_neg = decomp.k1_neg ? ~std::uint64_t(0) : 0;
-    d.k2_neg = decomp.k2_neg ? ~std::uint64_t(0) : 0;
-    return d;
+    static const Scalar lambda = Scalar::from_bytes(kLambdaBytes);
+
+    static constexpr std::uint64_t minus_b1_lo[2] = {
+        0x6F547FA90ABFE4C3ULL, 0xE4437ED6010E8828ULL
+    };
+    static constexpr std::uint64_t b2_pos_lo[2] = {
+        0xE86C90E49284EB15ULL, 0x3086D221A7D46BCDULL
+    };
+
+    auto k_limbs = k.limbs();
+    auto c1_limbs = ct_mul_shift_384(
+        {k_limbs[0], k_limbs[1], k_limbs[2], k_limbs[3]}, kG1);
+    auto c2_limbs = ct_mul_shift_384(
+        {k_limbs[0], k_limbs[1], k_limbs[2], k_limbs[3]}, kG2);
+
+    Scalar p1     = ct_mul_lo128_mod(c1_limbs.data(), minus_b1_lo);
+    Scalar p2     = ct_mul_lo128_mod(c2_limbs.data(), b2_pos_lo);
+    Scalar k2_mod = scalar_sub(p1, p2);
+
+    std::uint64_t k2_high = ct_scalar_is_high(k2_mod);
+    Scalar k2_abs = scalar_cneg(k2_mod, k2_high);
+
+    Scalar lambda_k2 = scalar_cneg(
+        ct_mul_256x_lo128_mod(lambda, k2_abs.limbs().data()), k2_high);
+    Scalar k1_mod = scalar_sub(k, lambda_k2);
+
+    std::uint64_t k1_high = ct_scalar_is_high(k1_mod);
+    Scalar k1_abs = scalar_cneg(k1_mod, k1_high);
+
+    CTGLVDecomposition result;
+    result.k1     = k1_abs;
+    result.k2     = k2_abs;
+    result.k1_neg = k1_high;
+    result.k2_neg = k2_high;
+    return result;
+}
+
+// ─── CT GLV Scalar Multiplication (4×64) — Hamburg Signed-Digit ──────────────
+// Hamburg signed-digit comb + GLV. GROUP_SIZE=5, TABLE_SIZE=16, GROUPS=26.
+// Cost: 125 dbl + 52 unified_add + 52 signed_lookups(16).
+
+Point scalar_mul(const Point& p, const Scalar& k) noexcept {
+    constexpr unsigned GROUP_SIZE = 5;
+    constexpr unsigned TABLE_SIZE = 1u << (GROUP_SIZE - 1);  // 16
+    constexpr unsigned GROUPS = 26;
+
+    static const Scalar K_CONST = Scalar::from_limbs({
+        0xb5c2c1dcde9798d9ULL, 0x589ae84826ba29e4ULL,
+        0xc2bdd6bf7c118d6bULL, 0xa4e88a7dcb13034eULL
+    });
+    static const Scalar S_OFFSET = Scalar::from_limbs({0, 0, 1, 0});
+
+    // 1. Hamburg transform + GLV split
+    Scalar s = scalar_add(k, K_CONST);
+    s = scalar_half(s);
+
+    auto [k1_abs, k2_abs, k1_neg, k2_neg] = ct_glv_decompose(s);
+    Scalar s1 = scalar_cneg(k1_abs, k1_neg);
+    Scalar s2 = scalar_cneg(k2_abs, k2_neg);
+    Scalar v1 = scalar_add(s1, S_OFFSET);
+    Scalar v2 = scalar_add(s2, S_OFFSET);
+
+    // 2. Build odd-multiples table via effective-affine + Z-ratio normalization
+    CTAffinePoint pre_a[TABLE_SIZE];
+    CTAffinePoint pre_a_lam[TABLE_SIZE];
+
+    Point p2 = p;
+    p2.dbl_inplace();
+    FE52 C  = p2.z();
+    FE52 C2 = field_sqr(C);
+    FE52 C3 = field_mul(C2, C);
+
+    FE52 d_x = p2.X();
+    FE52 d_y = p2.Y();
+
+    Jac4x64 iso[TABLE_SIZE];
+    iso[0] = { field_mul(p.X(), C2), field_mul(p.Y(), C3), p.z() };
+
+    FE52 zr[TABLE_SIZE];
+    for (std::size_t i = 1; i < TABLE_SIZE; ++i) {
+        iso[i] = jac_add_ge_var_zr(iso[i - 1], d_x, d_y, &zr[i]);
+    }
+
+    FE52 global_z = field_mul(iso[TABLE_SIZE - 1].z, C);
+
+    const FE52& beta = get_beta_fe();
+
+    pre_a[TABLE_SIZE - 1].x = iso[TABLE_SIZE - 1].x;
+    pre_a[TABLE_SIZE - 1].y = iso[TABLE_SIZE - 1].y;
+    pre_a[TABLE_SIZE - 1].infinity = 0;
+    pre_a_lam[TABLE_SIZE - 1].x = field_mul(pre_a[TABLE_SIZE - 1].x, beta);
+    pre_a_lam[TABLE_SIZE - 1].y = pre_a[TABLE_SIZE - 1].y;
+    pre_a_lam[TABLE_SIZE - 1].infinity = 0;
+
+    FE52 zs_acc = zr[TABLE_SIZE - 1];
+    for (int i = static_cast<int>(TABLE_SIZE) - 2; i >= 0; --i) {
+        FE52 zs2 = field_sqr(zs_acc);
+        FE52 zs3 = field_mul(zs2, zs_acc);
+        pre_a[i].x = field_mul(iso[i].x, zs2);
+        pre_a[i].y = field_mul(iso[i].y, zs3);
+        pre_a[i].infinity = 0;
+        pre_a_lam[i].x = field_mul(pre_a[i].x, beta);
+        pre_a_lam[i].y = pre_a[i].y;
+        pre_a_lam[i].infinity = 0;
+        if (i > 0) {
+            zs_acc = field_mul(zs_acc, zr[i]);
+        }
+    }
+
+    SECP256K1_DECLASSIFY(pre_a, sizeof(pre_a));
+    SECP256K1_DECLASSIFY(pre_a_lam, sizeof(pre_a_lam));
+
+    // 3. Main loop — in-place, always-inline
+    CTJacobianPoint R;
+    CTAffinePoint t;
+
+    {
+        int group = static_cast<int>(GROUPS) - 1;
+        std::uint64_t bits1 = scalar_window(v1,
+            static_cast<std::size_t>(group) * GROUP_SIZE, GROUP_SIZE);
+        std::uint64_t bits2 = scalar_window(v2,
+            static_cast<std::size_t>(group) * GROUP_SIZE, GROUP_SIZE);
+
+        table_lookup_core<false>(&t, pre_a, TABLE_SIZE, bits1, GROUP_SIZE);
+        R.x = t.x;  R.y = t.y;  R.z = FieldElement::one();  R.infinity = 0;
+
+        table_lookup_core<false>(&t, pre_a_lam, TABLE_SIZE, bits2, GROUP_SIZE);
+        unified_add_core<true>(&R, R, t);
+    }
+
+    for (int group = static_cast<int>(GROUPS) - 2; group >= 0; --group) {
+        std::uint64_t bits1 = scalar_window(v1,
+            static_cast<std::size_t>(group) * GROUP_SIZE, GROUP_SIZE);
+        std::uint64_t bits2 = scalar_window(v2,
+            static_cast<std::size_t>(group) * GROUP_SIZE, GROUP_SIZE);
+
+        point_dbl_n_core(&R, GROUP_SIZE);
+
+        table_lookup_core<false>(&t, pre_a, TABLE_SIZE, bits1, GROUP_SIZE);
+        unified_add_core<false>(&R, R, t);
+
+        table_lookup_core<false>(&t, pre_a_lam, TABLE_SIZE, bits2, GROUP_SIZE);
+        unified_add_core<false>(&R, R, t);
+    }
+
+    R.z = field_mul(R.z, global_z);
+
+    Point result = R.to_point();
+    SECP256K1_DECLASSIFY(&result, sizeof(result));
+    return result;
+}
+
+// ─── CT Generator Multiplication (4×64) — Comb Method ────────────────────────
+// COMB_TEETH=6, COMB_BLOCKS=43.  teeth × blocks = 258 ≥ 256.
+// Table: 43 blocks × 32 entries = 1376 affine points.
+// Runtime: 42 additions + 43 lookups + 1 correction.
+
+namespace {
+
+constexpr unsigned COMB_TEETH = 6;
+constexpr unsigned COMB_BLOCKS = 43;
+constexpr std::size_t COMB_TABLE_SIZE = 1u << (COMB_TEETH - 1);  // 32
+
+static constexpr std::uint64_t K_GEN[4] = {
+    0x402DA1732FC9BEBEULL, 0x4551231950B75FC4ULL,
+    0x0000000000000001ULL, 0x0000000000000000ULL
+};
+
+struct alignas(64) CombGenTable {
+    CTAffinePoint entries[COMB_BLOCKS][COMB_TABLE_SIZE];
+    CTAffinePoint correction;
+    bool initialized = false;
+};
+
+static CombGenTable g_comb_table;
+static std::once_flag g_comb_table_once;
+
+inline std::uint64_t extract_comb_digit(const Scalar& v,
+                                         unsigned block) noexcept {
+    std::uint64_t digit = 0;
+    for (unsigned tooth = 0; tooth < COMB_TEETH; ++tooth) {
+        std::size_t pos = static_cast<std::size_t>(tooth) * COMB_BLOCKS + block;
+        std::uint64_t bit = (pos < 256) ? scalar_bit(v, pos) : 0;
+        digit |= bit << tooth;
+    }
+    return digit;
+}
+
+static inline
+void comb_lookup(CTAffinePoint* out,
+                  const CTAffinePoint* table,
+                  std::uint64_t digit) noexcept {
+    std::uint64_t top = (digit >> (COMB_TEETH - 1)) & 1;
+    std::uint64_t needs_negate = top ^ 1;
+    std::uint64_t neg_mask = static_cast<std::uint64_t>(
+                      -static_cast<std::int64_t>(needs_negate));
+
+    std::uint64_t d_lo = digit & (COMB_TABLE_SIZE - 1);
+    std::uint64_t idx_pos = d_lo;
+    std::uint64_t idx_neg = (COMB_TABLE_SIZE - 1) - d_lo;
+    std::uint64_t index = idx_pos ^ ((idx_pos ^ idx_neg) & neg_mask);
+
+    out->x = table[0].x;
+    out->y = table[0].y;
+    for (std::size_t m = 1; m < COMB_TABLE_SIZE; ++m) {
+        std::uint64_t mask = eq_mask(static_cast<std::uint64_t>(m), index);
+        field_cmov(&out->x, table[m].x, mask);
+        field_cmov(&out->y, table[m].y, mask);
+    }
+
+    FE52 neg_y = field_neg(out->y);
+    field_cmov(&out->y, neg_y, neg_mask);
+    out->infinity = 0;
+}
+
+void build_comb_table() noexcept {
+    Point G = Point::generator();
+
+    Point teeth_bases[COMB_TEETH];
+    teeth_bases[0] = G;
+    for (unsigned j = 1; j < COMB_TEETH; ++j) {
+        teeth_bases[j] = teeth_bases[j - 1];
+        for (unsigned d = 0; d < COMB_BLOCKS; ++d) {
+            teeth_bases[j].dbl_inplace();
+        }
+    }
+
+    for (unsigned b = 0; b < COMB_BLOCKS; ++b) {
+        FE52 zs[COMB_TEETH], z_invs[COMB_TEETH];
+        for (unsigned j = 0; j < COMB_TEETH; ++j)
+            zs[j] = teeth_bases[j].z();
+        fe_batch_inverse(z_invs, zs, COMB_TEETH);
+
+        FE52 aff_x[COMB_TEETH], aff_y[COMB_TEETH];
+        for (unsigned j = 0; j < COMB_TEETH; ++j) {
+            FE52 zi2 = field_sqr(z_invs[j]);
+            FE52 zi3 = field_mul(zi2, z_invs[j]);
+            aff_x[j] = field_mul(teeth_bases[j].X(), zi2);
+            aff_y[j] = field_mul(teeth_bases[j].Y(), zi3);
+        }
+
+        Point entries_jac[COMB_TABLE_SIZE];
+        for (unsigned idx = 0; idx < COMB_TABLE_SIZE; ++idx) {
+            Point entry = Point::from_affine(aff_x[COMB_TEETH - 1],
+                                              aff_y[COMB_TEETH - 1]);
+            for (unsigned j = 0; j < COMB_TEETH - 1; ++j) {
+                FE52 py = ((idx >> j) & 1) ? aff_y[j] : field_neg(aff_y[j]);
+                Point pj = Point::from_affine(aff_x[j], py);
+                entry = entry.add(pj);
+            }
+            entries_jac[idx] = entry;
+        }
+
+        FE52 ent_zs[COMB_TABLE_SIZE], ent_zis[COMB_TABLE_SIZE];
+        for (unsigned idx = 0; idx < COMB_TABLE_SIZE; ++idx)
+            ent_zs[idx] = entries_jac[idx].z();
+        fe_batch_inverse(ent_zis, ent_zs, COMB_TABLE_SIZE);
+
+        for (unsigned idx = 0; idx < COMB_TABLE_SIZE; ++idx) {
+            FE52 zi2 = field_sqr(ent_zis[idx]);
+            FE52 zi3 = field_mul(zi2, ent_zis[idx]);
+            g_comb_table.entries[b][idx].x = field_mul(
+                entries_jac[idx].X(), zi2);
+            g_comb_table.entries[b][idx].y = field_mul(
+                entries_jac[idx].Y(), zi3);
+            g_comb_table.entries[b][idx].infinity = 0;
+        }
+
+        if (b + 1 < COMB_BLOCKS) {
+            for (unsigned j = 0; j < COMB_TEETH; ++j)
+                teeth_bases[j].dbl_inplace();
+        }
+    }
+
+    // Correction point: (2^256 + 2^257)*G = 3 * 2^256 * G
+    Point p256 = G;
+    for (unsigned d = 0; d < 256; ++d)
+        p256.dbl_inplace();
+    Point p257 = p256;
+    p257.dbl_inplace();
+    Point corr = p256.add(p257);
+    FE52 cz_inv = field_inv(corr.z());
+    FE52 cz2 = field_sqr(cz_inv);
+    FE52 cz3 = field_mul(cz2, cz_inv);
+    g_comb_table.correction.x = field_mul(corr.X(), cz2);
+    g_comb_table.correction.y = field_mul(corr.Y(), cz3);
+    g_comb_table.correction.infinity = 0;
+
+    g_comb_table.initialized = true;
+}
+
+} // anonymous namespace
+
+void init_generator_table() noexcept {
+    std::call_once(g_comb_table_once, build_comb_table);
+}
+
+Point generator_mul(const Scalar& k) noexcept {
+    init_generator_table();
+
+    static const Scalar K_gen_scalar = Scalar::from_limbs(
+        {K_GEN[0], K_GEN[1], K_GEN[2], K_GEN[3]});
+
+    Scalar s = scalar_add(k, K_gen_scalar);
+    Scalar v = scalar_half(s);
+
+    CTJacobianPoint R;
+    CTAffinePoint T;
+
+    {
+        std::uint64_t digit = extract_comb_digit(v, 0);
+        comb_lookup(&T, g_comb_table.entries[0], digit);
+        R.x = T.x;  R.y = T.y;  R.z = FieldElement::one();  R.infinity = 0;
+    }
+
+    for (unsigned b = 1; b < COMB_BLOCKS; ++b) {
+        std::uint64_t digit = extract_comb_digit(v, b);
+        comb_lookup(&T, g_comb_table.entries[b], digit);
+        unified_add_core<false>(&R, R, T);
+    }
+
+    unified_add_core<false>(&R, R, g_comb_table.correction);
+
+    Point result = R.to_point();
+    SECP256K1_DECLASSIFY(&result, sizeof(result));
+    return result;
 }
 
 #endif // SECP256K1_FAST_52BIT

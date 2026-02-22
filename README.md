@@ -240,11 +240,23 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) for a full layer-by-layer risk assessment
 
 | Operation | ESP32-S3 LX7 (240 MHz) | ESP32 LX6 (240 MHz) | STM32F103 (72 MHz) |
 |-----------|-------------------:|-------------------:|-------------------:|
-| Field Mul | 7,458 ns | 6,993 ns | 15,331 ns |
-| Field Square | 7,592 ns | 6,247 ns | 12,083 ns |
-| Field Add | 636 ns | 985 ns | 4,139 ns |
-| Field Inv | 844 μs | 609 μs | 1,645 μs |
-| Scalar × G | 2,483 μs | 6,203 μs | 37,982 μs |
+| Field Mul | 6,105 ns | 6,993 ns | 15,331 ns |
+| Field Square | 5,020 ns | 6,247 ns | 12,083 ns |
+| Field Add | 850 ns | 985 ns | 4,139 ns |
+| Field Inv | 2,524 μs | 609 μs | 1,645 μs |
+| **Fast** Scalar × G | 5,226 μs | 6,203 μs | 37,982 μs |
+| **CT** Scalar × G | 15,527 μs | — | — |
+| **CT** Generator × k | 4,951 μs | — | — |
+
+### ESP32-S3: UltrafastSecp256k1 vs libsecp256k1 (bitcoin-core v0.7.2)
+
+| Operation | UltrafastSecp256k1 | libsecp256k1 | Speedup |
+|-----------|-------------------:|-------------:|--------:|
+| Generator × k (CT) | **4,951 μs** | 8,209 μs | **1.66×** |
+| ECDSA Sign | — | 10,414 μs | — |
+| ECDSA Verify | — | 26,055 μs | — |
+
+*libsecp256k1 compiled with COMB 11×6 tables (22KB) optimized for ESP32 memory constraints.*
 
 ### Field Representation: 5×52 vs 4×64
 
@@ -265,12 +277,12 @@ For full benchmark results, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 UltrafastSecp256k1 runs on resource-constrained microcontrollers with **portable C++ (no `__int128`, no assembly required)**:
 
-- **ESP32-S3** (Xtensa LX7 @ 240 MHz): Scalar × G in 2.5 ms — fast enough for IoT signing
+- **ESP32-S3** (Xtensa LX7 @ 240 MHz): Fast scalar × G in 5.2 ms, **CT generator × k in 4.9 ms** — 1.66× faster than libsecp256k1
 - **ESP32-PICO-D4** (Xtensa LX6 @ 240 MHz): Scalar × G in 6.2 ms, CT layer available (44.8 ms CT)
 - **STM32F103** (ARM Cortex-M3 @ 72 MHz): Scalar × G in 38 ms with ARM inline assembly (UMULL/ADDS/ADCS)
 - **Android ARM64** (Cortex-A55/A76 @ 2.4 GHz): Scalar × G in 7.6 μs with MUL/UMULH assembly
 
-All 35 library tests pass on every embedded target. See [examples/esp32_test/](examples/esp32_test/) and [examples/stm32_test/](examples/stm32_test/).
+All 37 library tests pass on every embedded target. See [examples/esp32_test/](examples/esp32_test/) and [examples/stm32_test/](examples/stm32_test/).
 
 ### Porting to New Platforms
 
