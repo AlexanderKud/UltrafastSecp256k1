@@ -1,17 +1,29 @@
 /**
- * UltrafastSecp256k1 - ESP32 Integration Test
+ * UltrafastSecp256k1 — ESP32-S3 Comprehensive Benchmark
  *
- * Testing real secp256k1 library on ESP32 using the library's Selftest
+ * Full benchmark matching x86/ARM64 format (bench_comprehensive_riscv.cpp):
+ *   1. Field Arithmetic    (mul, square, add, negate, inverse)
+ *   2. Point Operations    (add, double, scalar_mul, generator_mul)
+ *   3. ECDSA & Schnorr     (sign, verify — BIP-340)
+ *   4. Batch Operations    (batch inversion)
+ *   5. Constant-Time Layer (CT scalar_mul, CT generator_mul, CT add/dbl)
+ *   6. libsecp256k1        (bitcoin-core comparison)
+ *
+ * Measurement: median of 3 runs, per-function warmup, esp_timer (1 us).
+ * Output: aligned section + Markdown summary table suitable for README.
  */
 
-#include <stdio.h>
+#include <cstdio>
+#include <cstring>
+#include <cinttypes>
+#include <array>
 #include "esp_chip_info.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-// Include real secp256k1 library
+// ── Core library ─────────────────────────────────────────────────────────────
 #include "secp256k1/field.hpp"
 #include "secp256k1/field_26.hpp"
 #include "secp256k1/field_optimal.hpp"
@@ -19,616 +31,719 @@
 #include "secp256k1/point.hpp"
 #include "secp256k1/selftest.hpp"
 
-// Constant-Time layer
+// ── Signatures ───────────────────────────────────────────────────────────────
+#include "secp256k1/ecdsa.hpp"
+#include "secp256k1/schnorr.hpp"
+
+// ── Constant-Time layer ──────────────────────────────────────────────────────
 #include "secp256k1/ct/point.hpp"
 #include "secp256k1/ct/field.hpp"
 #include "secp256k1/ct/scalar.hpp"
-#include "secp256k1/ct/ops.hpp"
 
-// libsecp256k1 (bitcoin-core) benchmark
+// ── libsecp256k1 (bitcoin-core) benchmark ────────────────────────────────────
 extern "C" void libsecp_benchmark(void);
 
 using namespace secp256k1::fast;
 
-// Helper to get chip model name
-static const char* get_chip_model_name(esp_chip_model_t model) {
-    switch (model) {
-        case CHIP_ESP32:   return "ESP32";
-        case CHIP_ESP32S2: return "ESP32-S2";
-        case CHIP_ESP32S3: return "ESP32-S3";
-        case CHIP_ESP32C3: return "ESP32-C3";
-        case CHIP_ESP32C2: return "ESP32-C2";
-        case CHIP_ESP32C6: return "ESP32-C6";
-        case CHIP_ESP32H2: return "ESP32-H2";
-        default:           return "Unknown";
+// ════════════════════════════════════════════════════════════════════════════
+//  Platform Detection
+// ════════════════════════════════════════════════════════════════════════════
+
+static const char* chip_model_name(esp_chip_model_t m) {
+    switch (m) {
+        case CHIP_ESP32:   return "ESP32 (Xtensa LX6, dual-core)";
+        case CHIP_ESP32S2: return "ESP32-S2 (Xtensa LX7, single-core)";
+        case CHIP_ESP32S3: return "ESP32-S3 (Xtensa LX7, dual-core)";
+        case CHIP_ESP32C3: return "ESP32-C3 (RISC-V, single-core)";
+        case CHIP_ESP32C2: return "ESP32-C2 (RISC-V, single-core)";
+        case CHIP_ESP32C6: return "ESP32-C6 (RISC-V, single-core)";
+        case CHIP_ESP32H2: return "ESP32-H2 (RISC-V, single-core)";
+        default:           return "Unknown ESP32";
     }
 }
 
-extern "C" void app_main() {
-    vTaskDelay(pdMS_TO_TICKS(1000));
+// ════════════════════════════════════════════════════════════════════════════
+//  Formatting helpers (identical logic to x86 bench)
+// ════════════════════════════════════════════════════════════════════════════
 
-    printf("\n");
-    printf("============================================================\n");
-    printf("   UltrafastSecp256k1 - ESP32 Library Test\n");
-    printf("============================================================\n");
-    printf("\n");
+// format_time: < 1000 ns → "NNN ns", < 1 ms → "NNN us", else → "NNN ms"
+static int format_time(char* buf, size_t sz, double ns) {
+    if      (ns < 1000.0)     return snprintf(buf, sz, "%d ns",  (int)(ns + 0.5));
+    else if (ns < 1000000.0)  return snprintf(buf, sz, "%d us",  (int)(ns / 1000.0 + 0.5));
+    else                      return snprintf(buf, sz, "%d ms",  (int)(ns / 1000000.0 + 0.5));
+}
 
-    // Platform information
-    esp_chip_info_t chip_info;
-    esp_chip_info(&chip_info);
+static void print_result(const char* label, double ns) {
+    char buf[32];
+    format_time(buf, sizeof(buf), ns);
+    printf("  %-28s %10s\n", label, buf);
+}
 
-    printf("Platform Information:\n");
-    printf("  Chip Model:   %s\n", get_chip_model_name(chip_info.model));
-    printf("  Cores:        %d\n", chip_info.cores);
-    printf("  Revision:     %d.%d\n", chip_info.revision / 100, chip_info.revision % 100);
-    printf("  Free Heap:    %lu bytes\n", (unsigned long)esp_get_free_heap_size());
-    printf("  Build:        32-bit Portable (no __int128)\n");
-    printf("\n");
+static void print_result_suffix(const char* label, double ns, const char* suffix) {
+    char buf[32];
+    format_time(buf, sizeof(buf), ns);
+    printf("  %-28s %10s  %s\n", label, buf, suffix);
+}
 
-    // Run the real library self-test
-    printf("Running SECP256K1 Library Self-Test...\n");
-    printf("(This may take a few seconds on ESP32)\n\n");
+// ════════════════════════════════════════════════════════════════════════════
+//  PRNG — xoshiro128** (deterministic, no stdlib rand dependency)
+// ════════════════════════════════════════════════════════════════════════════
 
-    // Quick field diagnostics BEFORE selftest
-    printf("\n=== Field Arithmetic Diagnostics ===\n");
+static uint32_t s_prng[4] = {0x12345678, 0x9ABCDEF0, 0x13579BDF, 0x2468ACE0};
+
+static inline uint32_t rotl32(uint32_t x, int k) {
+    return (x << k) | (x >> (32 - k));
+}
+
+static uint32_t prng_next() {
+    const uint32_t result = rotl32(s_prng[1] * 5, 7) * 9;
+    const uint32_t t = s_prng[1] << 9;
+    s_prng[2] ^= s_prng[0];
+    s_prng[3] ^= s_prng[1];
+    s_prng[1] ^= s_prng[2];
+    s_prng[0] ^= s_prng[3];
+    s_prng[2] ^= t;
+    s_prng[3] = rotl32(s_prng[3], 11);
+    return result;
+}
+
+static FieldElement random_fe() {
+    uint64_t limbs[4];
+    for (int i = 0; i < 4; i++)
+        limbs[i] = ((uint64_t)prng_next() << 32) | prng_next();
+    return FieldElement::from_limbs({limbs[0], limbs[1], limbs[2], limbs[3]});
+}
+
+static Scalar random_scalar() {
+    uint8_t bytes[32];
+    for (int i = 0; i < 32; i += 4) {
+        uint32_t v = prng_next();
+        memcpy(&bytes[i], &v, 4);
+    }
+    return Scalar::from_bytes(*reinterpret_cast<std::array<uint8_t,32>*>(bytes));
+}
+
+static std::array<uint8_t,32> random_msg() {
+    std::array<uint8_t,32> msg;
+    for (int i = 0; i < 32; i += 4) {
+        uint32_t v = prng_next();
+        memcpy(&msg[i], &v, 4);
+    }
+    return msg;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Measurement: median of 3
+// ════════════════════════════════════════════════════════════════════════════
+
+static double median3(double a, double b, double c) {
+    if (a > b) { double t = a; a = b; b = t; }
+    if (b > c) { double t = b; b = c; c = t; }
+    if (a > b) { double t = a; a = b; b = t; }
+    return b;
+}
+
+// Feed watchdog between measurement phases
+#define WDT_YIELD()  vTaskDelay(pdMS_TO_TICKS(10))
+
+// ════════════════════════════════════════════════════════════════════════════
+//  1. FIELD ARITHMETIC BENCHMARKS
+// ════════════════════════════════════════════════════════════════════════════
+
+static double bench_field_mul(int N) {
+    FieldElement a = random_fe(), b = random_fe();
+    for (int i = 0; i < 100; i++) a = a * b;  // warmup
+
+    int64_t t0 = esp_timer_get_time();
+    FieldElement r = a;
+    for (int i = 0; i < N; i++) r = r * b;
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;            // ns/op
+}
+
+static double bench_field_sqr(int N) {
+    FieldElement a = random_fe();
+    for (int i = 0; i < 100; i++) a = a.square();
+
+    int64_t t0 = esp_timer_get_time();
+    FieldElement r = a;
+    for (int i = 0; i < N; i++) r = r.square();
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_field_add(int N) {
+    FieldElement a = random_fe(), b = random_fe();
+    for (int i = 0; i < 100; i++) a = a + b;
+
+    int64_t t0 = esp_timer_get_time();
+    FieldElement r = a;
+    for (int i = 0; i < N; i++) r = r + b;
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_field_neg(int N) {
+    FieldElement a = random_fe();
+    for (int i = 0; i < 100; i++) a = a.negate();
+
+    int64_t t0 = esp_timer_get_time();
+    FieldElement r = a;
+    for (int i = 0; i < N; i++) r = r.negate();
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_field_inv(int N) {
+    FieldElement a = random_fe();
+    for (int i = 0; i < 3; i++) a = a.inverse();
+
+    int64_t t0 = esp_timer_get_time();
+    FieldElement r = a;
+    for (int i = 0; i < N; i++) r = r.inverse();
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  2. POINT OPERATION BENCHMARKS
+// ════════════════════════════════════════════════════════════════════════════
+
+static double bench_point_add(int N) {
+    Point G = Point::generator();
+    Point P = G.scalar_mul(Scalar::from_uint64(7));
+    Point Q = G.scalar_mul(Scalar::from_uint64(11));
+    Q = Point::from_affine(Q.x(), Q.y());
+    for (int i = 0; i < 50; i++) P.add_inplace(Q);
+
+    int64_t t0 = esp_timer_get_time();
+    Point r = P;
+    for (int i = 0; i < N; i++) r.add_inplace(Q);
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.x_raw().limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_point_dbl(int N) {
+    Point G = Point::generator();
+    Point P = G.scalar_mul(Scalar::from_uint64(7));
+    for (int i = 0; i < 50; i++) P.dbl_inplace();
+
+    int64_t t0 = esp_timer_get_time();
+    Point r = P;
+    for (int i = 0; i < N; i++) r.dbl_inplace();
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.x_raw().limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_scalar_mul(int N) {
+    Point G = Point::generator();
+    Point Q = G.scalar_mul(Scalar::from_uint64(12345));
+    Scalar k = Scalar::from_hex(
+        "4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+    volatile auto warm = Q.scalar_mul(k); (void)warm;
+
+    int64_t t0 = esp_timer_get_time();
+    Point r = Q;
+    for (int i = 0; i < N; i++) r = Q.scalar_mul(k);
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.x_raw().limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_generator_mul(int N) {
+    Point G = Point::generator();
+    Scalar k = Scalar::from_hex(
+        "4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+    volatile auto warm = G.scalar_mul(k); (void)warm;
+
+    int64_t t0 = esp_timer_get_time();
+    Point r = G;
+    for (int i = 0; i < N; i++) r = G.scalar_mul(k);
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.x_raw().limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  3. ECDSA & SCHNORR BENCHMARKS
+// ════════════════════════════════════════════════════════════════════════════
+
+static double bench_ecdsa_sign(int N) {
+    Scalar key = random_scalar();
+    auto msg = random_msg();
+    volatile auto w = secp256k1::ecdsa_sign(msg, key); (void)w;
+
+    int64_t t0 = esp_timer_get_time();
+    for (int i = 0; i < N; i++) {
+        volatile auto sig = secp256k1::ecdsa_sign(msg, key); (void)sig;
+    }
+    int64_t dt = esp_timer_get_time() - t0;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_ecdsa_verify(int N) {
+    Scalar key = random_scalar();
+    auto msg = random_msg();
+    Point G = Point::generator();
+    Point pubkey = G.scalar_mul(key);
+    auto sig = secp256k1::ecdsa_sign(msg, key);
+    volatile bool w = secp256k1::ecdsa_verify(msg, pubkey, sig); (void)w;
+
+    int64_t t0 = esp_timer_get_time();
+    for (int i = 0; i < N; i++) {
+        volatile bool ok = secp256k1::ecdsa_verify(msg, pubkey, sig); (void)ok;
+    }
+    int64_t dt = esp_timer_get_time() - t0;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_schnorr_sign(int N) {
+    Scalar key = random_scalar();
+    auto msg = random_msg();
+    std::array<uint8_t,32> aux{};
+    volatile auto w = secp256k1::schnorr_sign(key, msg, aux); (void)w;
+
+    int64_t t0 = esp_timer_get_time();
+    for (int i = 0; i < N; i++) {
+        volatile auto sig = secp256k1::schnorr_sign(key, msg, aux); (void)sig;
+    }
+    int64_t dt = esp_timer_get_time() - t0;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_schnorr_verify(int N) {
+    Scalar key = random_scalar();
+    auto msg = random_msg();
+    std::array<uint8_t,32> aux{};
+    auto sig = secp256k1::schnorr_sign(key, msg, aux);
+    auto xpk = secp256k1::schnorr_pubkey(key);
+    volatile bool w = secp256k1::schnorr_verify(xpk, msg, sig); (void)w;
+
+    int64_t t0 = esp_timer_get_time();
+    for (int i = 0; i < N; i++) {
+        volatile bool ok = secp256k1::schnorr_verify(xpk, msg, sig); (void)ok;
+    }
+    int64_t dt = esp_timer_get_time() - t0;
+    return (double)dt * 1000.0 / N;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  4. BATCH OPERATIONS
+// ════════════════════════════════════════════════════════════════════════════
+
+static double bench_batch_inverse(int batch_sz) {
+    constexpr int MAX_BATCH = 100;
+    if (batch_sz > MAX_BATCH) batch_sz = MAX_BATCH;
+    FieldElement src[MAX_BATCH], tmp[MAX_BATCH];
+    for (int i = 0; i < batch_sz; i++) src[i] = random_fe();
+
+    // warmup
+    memcpy(tmp, src, sizeof(FieldElement) * batch_sz);
+    fe_batch_inverse(tmp, batch_sz);
+
+    // measure
+    memcpy(tmp, src, sizeof(FieldElement) * batch_sz);
+    int64_t t0 = esp_timer_get_time();
+    fe_batch_inverse(tmp, batch_sz);
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = tmp[0].limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / batch_sz;   // ns per element
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  5. CONSTANT-TIME (CT) LAYER BENCHMARKS
+// ════════════════════════════════════════════════════════════════════════════
+
+static const Scalar CT_TEST_K = Scalar::from_hex(
+    "4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+
+static double bench_ct_scalar_mul(int N) {
+    Point G = Point::generator();
+    volatile auto w = secp256k1::ct::scalar_mul(G, CT_TEST_K); (void)w;
+
+    int64_t t0 = esp_timer_get_time();
+    Point r = G;
+    for (int i = 0; i < N; i++) r = secp256k1::ct::scalar_mul(G, CT_TEST_K);
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.x().limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_ct_generator_mul(int N) {
+    // warmup (triggers Comb table init on first call)
+    volatile auto w = secp256k1::ct::generator_mul(CT_TEST_K); (void)w;
+
+    int64_t t0 = esp_timer_get_time();
+    Point r = Point::generator();
+    for (int i = 0; i < N; i++) r = secp256k1::ct::generator_mul(CT_TEST_K);
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.x().limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_ct_point_add(int N) {
+    Point G = Point::generator();
+    auto jG = secp256k1::ct::CTJacobianPoint::from_point(G);
+    auto r = jG;
+    for (int i = 0; i < 50; i++) r = secp256k1::ct::point_add_complete(r, jG);
+
+    int64_t t0 = esp_timer_get_time();
+    r = jG;
+    for (int i = 0; i < N; i++) r = secp256k1::ct::point_add_complete(r, jG);
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.x.limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+static double bench_ct_point_dbl(int N) {
+    Point G = Point::generator();
+    auto jG = secp256k1::ct::CTJacobianPoint::from_point(G);
+    auto r = jG;
+    for (int i = 0; i < 50; i++) r = secp256k1::ct::point_dbl(r);
+
+    int64_t t0 = esp_timer_get_time();
+    r = jG;
+    for (int i = 0; i < N; i++) r = secp256k1::ct::point_dbl(r);
+    int64_t dt = esp_timer_get_time() - t0;
+    volatile auto sink = r.x.limbs()[0]; (void)sink;
+    return (double)dt * 1000.0 / N;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Result accumulator for summary table
+// ════════════════════════════════════════════════════════════════════════════
+
+struct BenchResult {
+    const char* name;
+    double ns;
+};
+
+static BenchResult g_results[40];
+static int         g_nresults = 0;
+
+static void record(const char* name, double ns) {
+    if (g_nresults < 40) g_results[g_nresults++] = {name, ns};
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CT CORRECTNESS TESTS
+// ════════════════════════════════════════════════════════════════════════════
+
+static int run_ct_tests() {
+    int pass = 0, fail = 0;
+    auto check = [&](const char* name, bool ok) {
+        ok ? pass++ : fail++;
+        printf("  [%s] %s\n", ok ? "PASS" : "FAIL", name);
+    };
+
+    // 1) CT scalar_mul matches fast path
     {
-        // (p-1)^2 should equal 1
-        FieldElement pm1 = FieldElement::from_limbs({
-            0xFFFFFFFEFFFFFC2EULL, 0xFFFFFFFFFFFFFFFFULL,
-            0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
-        });
-        FieldElement pm1_mul = pm1 * pm1;
-        printf("  (p-1)*(p-1)==1?  %s\n", (pm1_mul == FieldElement::one()) ? "PASS" : "FAIL");
-        if (pm1_mul != FieldElement::one()) {
-            printf("    Got: %s\n", pm1_mul.to_hex().c_str());
-        }
-        FieldElement pm1_sq = pm1; pm1_sq.square_inplace();
-        printf("  (p-1).sq()==1?   %s\n", (pm1_sq == FieldElement::one()) ? "PASS" : "FAIL");
-        if (pm1_sq != FieldElement::one()) {
-            printf("    Got: %s\n", pm1_sq.to_hex().c_str());
-        }
-        printf("  sq==mul?         %s\n", (pm1_sq == pm1_mul) ? "PASS" : "FAIL");
-
-        // Random-ish values
-        FieldElement x = FieldElement::from_limbs({
-            0xA1B2C3D4E5F60718ULL, 0x1928374655647382ULL,
-            0xBBAACCDDEEFF0011ULL, 0x2233445566778899ULL
-        });
-        FieldElement y = FieldElement::from_limbs({
-            0xFEDCBA9876543210ULL, 0x0123456789ABCDEFULL,
-            0x1122334455667788ULL, 0x99AABBCCDDEEFF00ULL
-        });
-        FieldElement z = FieldElement::from_limbs({
-            0x1111111122222222ULL, 0x3333333344444444ULL,
-            0x5555555566666666ULL, 0x7777777788888888ULL
-        });
-        printf("  x*y==y*x?        %s\n", (x*y == y*x) ? "PASS" : "FAIL");
-        printf("  (x*y)*z==x*(y*z)? %s\n", ((x*y)*z == x*(y*z)) ? "PASS" : "FAIL");
-        FieldElement xsq = x; xsq.square_inplace();
-        FieldElement xmul = x * x;
-        printf("  x.sq==x*x?       %s\n", (xsq == xmul) ? "PASS" : "FAIL");
-        if (xsq != xmul) {
-            printf("    sq:  %s\n", xsq.to_hex().c_str());
-            printf("    mul: %s\n", xmul.to_hex().c_str());
-        }
-        printf("  x*(y+z)==x*y+x*z? %s\n", (x*(y+z) == x*y + x*z) ? "PASS" : "FAIL");
-    }
-    printf("=== End Diagnostics ===\n\n");
-
-    bool test_passed = Selftest(true);  // verbose = true
-
-    printf("\n");
-    if (test_passed) {
-        printf("============================================================\n");
-        printf("   SUCCESS: All library tests passed on ESP32!\n");
-        printf("============================================================\n");
-    } else {
-        printf("============================================================\n");
-        printf("   FAILURE: Some tests failed. Check output above.\n");
-        printf("============================================================\n");
-    }
-
-    // Simple performance benchmark
-    printf("\n");
-    printf("==============================================\n");
-    printf("  Basic Performance Benchmark\n");
-    printf("==============================================\n");
-
-    const int iterations = 1000;
-    FieldElement a = FieldElement::from_limbs({0x12345678, 0xABCDEF01, 0x11223344, 0x55667788});
-    FieldElement b = FieldElement::from_limbs({0x87654321, 0xFEDCBA98, 0x99AABBCC, 0xDDEEFF00});
-
-    // Field Multiplication
-    {
-        int64_t start = esp_timer_get_time();
-        FieldElement result = a;
-        for (int i = 0; i < iterations; i++) {
-            result = result * b;
-        }
-        int64_t elapsed = esp_timer_get_time() - start;
-        printf("  Field Mul:    %5lld ns/op\n", (elapsed * 1000) / iterations);
-        // Force use of result to prevent optimization
-        if (result == FieldElement::zero()) printf("!");
-    }
-
-    // Field Squaring
-    {
-        int64_t start = esp_timer_get_time();
-        FieldElement result = a;
-        for (int i = 0; i < iterations; i++) {
-            result = result.square();
-        }
-        int64_t elapsed = esp_timer_get_time() - start;
-        printf("  Field Square: %5lld ns/op\n", (elapsed * 1000) / iterations);
-        if (result == FieldElement::zero()) printf("!");
-    }
-
-    // Field Addition
-    {
-        int64_t start = esp_timer_get_time();
-        FieldElement result = a;
-        for (int i = 0; i < iterations; i++) {
-            result = result + b;
-        }
-        int64_t elapsed = esp_timer_get_time() - start;
-        printf("  Field Add:    %5lld ns/op\n", (elapsed * 1000) / iterations);
-        if (result == FieldElement::zero()) printf("!");
-    }
-
-    // Field Inversion
-    {
-        int64_t start = esp_timer_get_time();
-        FieldElement result = a;
-        for (int i = 0; i < 100; i++) {
-            result = result.inverse();
-        }
-        int64_t elapsed = esp_timer_get_time() - start;
-        printf("  Field Inv:    %5lld us/op\n", elapsed / 100);
-        if (result == FieldElement::zero()) printf("!");
-    }
-
-    // Scalar Multiplication (full 256-bit scalar)
-    if (test_passed) {
-        printf("\n  Scalar Mul benchmark (full 256-bit scalar):\n");
-        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
         Point G = Point::generator();
-
-        // Warmup
-        volatile uint64_t sink = 0;
-        Point warmup = G.scalar_mul(k);
-        sink = warmup.x().limbs()[0];
-
-        int64_t start = esp_timer_get_time();
-        Point result = G;
-        for (int i = 0; i < 5; i++) {
-            result = G.scalar_mul(k);
-        }
-        int64_t elapsed = esp_timer_get_time() - start;
-        sink = result.x().limbs()[0];
-        printf("  Scalar*G:     %5lld us/op\n", elapsed / 5);
-        (void)sink;
+        Point fast_r = G.scalar_mul(CT_TEST_K);
+        Point ct_r   = secp256k1::ct::scalar_mul(G, CT_TEST_K);
+        check("CT scalar_mul == fast scalar_mul",
+              fast_r.x() == ct_r.x() && fast_r.y() == ct_r.y());
     }
-
-    // ─── Constant-Time (CT) Layer Tests & Benchmarks ─────────────────────
-    printf("\n");
-    printf("==============================================\n");
-    printf("  Constant-Time (CT) Layer Tests\n");
-    printf("==============================================\n");
-
-    int ct_pass = 0;
-    int ct_fail = 0;
-
-    // CT Test 1: ct::scalar_mul(G, k) == fast::G.scalar_mul(k)
+    // 2) CT generator_mul matches fast path
     {
-        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+        Scalar k2 = Scalar::from_hex(
+            "a1b2c3d4e5f6071819283746556473829aabbccddeeff00112233445566778899");
         Point G = Point::generator();
-        Point fast_result = G.scalar_mul(k);
-        Point ct_result = secp256k1::ct::scalar_mul(G, k);
-        bool ok = (fast_result.x() == ct_result.x()) && (fast_result.y() == ct_result.y());
-        printf("  CT scalar_mul == fast:   %s\n", ok ? "PASS" : "FAIL");
-        ok ? ct_pass++ : ct_fail++;
+        Point fast_r = G.scalar_mul(k2);
+        Point ct_r   = secp256k1::ct::generator_mul(k2);
+        check("CT generator_mul == fast generator_mul",
+              fast_r.x() == ct_r.x() && fast_r.y() == ct_r.y());
     }
-
-    // CT Test 2: ct::generator_mul(k) == fast::G.scalar_mul(k)
-    {
-        Scalar k = Scalar::from_hex("a1b2c3d4e5f6071819283746556473829aabbccddeeff00112233445566778899");
-        Point G = Point::generator();
-        Point fast_result = G.scalar_mul(k);
-        Point ct_result = secp256k1::ct::generator_mul(k);
-        bool ok = (fast_result.x() == ct_result.x()) && (fast_result.y() == ct_result.y());
-        printf("  CT generator_mul == fast: %s\n", ok ? "PASS" : "FAIL");
-        ok ? ct_pass++ : ct_fail++;
-    }
-
-    // CT Test 3: k=1 => result == G
-    {
-        Scalar one = Scalar::from_hex("0000000000000000000000000000000000000000000000000000000000000001");
-        Point G = Point::generator();
-        Point ct_result = secp256k1::ct::scalar_mul(G, one);
-        bool ok = (ct_result.x() == G.x()) && (ct_result.y() == G.y());
-        printf("  CT k=1 => G:             %s\n", ok ? "PASS" : "FAIL");
-        ok ? ct_pass++ : ct_fail++;
-    }
-
-    // CT Test 4: k=2 => result == G+G
-    {
-        Scalar two = Scalar::from_hex("0000000000000000000000000000000000000000000000000000000000000002");
-        Point G = Point::generator();
-        Point ct_result = secp256k1::ct::scalar_mul(G, two);
-        Point expected = G.add(G);
-        bool ok = (ct_result.x() == expected.x()) && (ct_result.y() == expected.y());
-        printf("  CT k=2 => G+G:           %s\n", ok ? "PASS" : "FAIL");
-        ok ? ct_pass++ : ct_fail++;
-    }
-
-    // CT Test 5: point_is_on_curve for generator
-    {
-        Point G = Point::generator();
-        uint64_t on_curve = secp256k1::ct::point_is_on_curve(G);
-        bool ok = (on_curve == UINT64_MAX);
-        printf("  CT G on_curve:           %s\n", ok ? "PASS" : "FAIL");
-        ok ? ct_pass++ : ct_fail++;
-    }
-
-    // CT Test 6: point_eq
-    {
-        Point G = Point::generator();
-        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
-        Point p1 = secp256k1::ct::scalar_mul(G, k);
-        Point p2 = G.scalar_mul(k);
-        uint64_t eq = secp256k1::ct::point_eq(p1, p2);
-        bool ok = (eq == UINT64_MAX);
-        printf("  CT point_eq:             %s\n", ok ? "PASS" : "FAIL");
-        ok ? ct_pass++ : ct_fail++;
-    }
-
-    // CT Test 7: ct::ops - field_cmov
+    // 3) field_cmov
     {
         FieldElement a = FieldElement::from_limbs({1, 2, 3, 4});
         FieldElement b = FieldElement::from_limbs({5, 6, 7, 8});
         FieldElement r = a;
-        secp256k1::ct::field_cmov(&r, b, UINT64_MAX); // mask all-ones => r = b
+        secp256k1::ct::field_cmov(&r, b, UINT64_MAX);
         bool ok1 = (r == b);
         r = a;
-        secp256k1::ct::field_cmov(&r, b, 0); // mask zero => r stays a
+        secp256k1::ct::field_cmov(&r, b, 0);
         bool ok2 = (r == a);
-        bool ok = ok1 && ok2;
-        printf("  CT field_cmov:           %s\n", ok ? "PASS" : "FAIL");
-        ok ? ct_pass++ : ct_fail++;
+        check("CT field_cmov (select / no-select)", ok1 && ok2);
     }
-
-    // CT Test 8: complete addition (doubling case)
+    // 4) Complete addition (P+P = 2P)
     {
         Point G = Point::generator();
-        auto jG = secp256k1::ct::CTJacobianPoint::from_point(G);
+        auto jG  = secp256k1::ct::CTJacobianPoint::from_point(G);
         auto jGG = secp256k1::ct::point_add_complete(jG, jG);
-        Point ctGG = jGG.to_point();
-        Point fastGG = G.add(G);
-        bool ok = (ctGG.x() == fastGG.x()) && (ctGG.y() == fastGG.y());
-        printf("  CT complete_add (dbl):   %s\n", ok ? "PASS" : "FAIL");
-        ok ? ct_pass++ : ct_fail++;
+        Point ct_2G   = jGG.to_point();
+        Point fast_2G = G.add(G);
+        check("CT complete_add(G,G) == fast G+G",
+              ct_2G.x() == fast_2G.x() && ct_2G.y() == fast_2G.y());
     }
 
-    printf("\n  CT Results: %d/%d PASS\n", ct_pass, ct_pass + ct_fail);
+    printf("  CT Tests: %d/%d PASS\n", pass, pass + fail);
+    return fail;
+}
 
-    // ─── CT Performance Benchmarks ───────────────────────────────────────
-    // Feed watchdog before heavy benchmarks
-    vTaskDelay(pdMS_TO_TICKS(10));
+// ════════════════════════════════════════════════════════════════════════════════
+//  MAIN
+// ════════════════════════════════════════════════════════════════════════════════
+
+extern "C" void app_main() {
+    // Let serial settle
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    esp_chip_info_t ci;
+    esp_chip_info(&ci);
 
     printf("\n");
-    printf("==============================================\n");
-    printf("  CT Performance Benchmark\n");
-    printf("==============================================\n");
+    printf("================================================================\n");
+    printf("   UltrafastSecp256k1 — Comprehensive Benchmark\n");
+    printf("================================================================\n\n");
 
-    // CT scalar_mul benchmark
+    printf("Platform Information:\n");
+    printf("  Chip:           %s\n", chip_model_name(ci.model));
+    printf("  CPU Freq:       240 MHz\n");
+    printf("  Cores:          %d\n", ci.cores);
+    printf("  Revision:       %d.%d\n", ci.revision / 100, ci.revision % 100);
+    printf("  Free Heap:      %lu bytes\n", (unsigned long)esp_get_free_heap_size());
+    printf("  Compiler:       GCC %s\n", __VERSION__);
+    printf("  Build Target:   Release (-O3)\n\n");
+
+    printf("Optimization Configuration:\n");
+    printf("  Assembly:       Portable C++ (no platform ASM)\n");
+    printf("  Int128:         Disabled (32-bit Xtensa)\n");
+    printf("  Field Tier:     %s\n", secp256k1::fast::kOptimalTierName);
+    printf("  Reduction:      ESP32 Comba 8x32 + branchless reduce\n\n");
+
+    printf("Benchmark method: median of 3 runs, per-op warmup\n\n");
+
+    // ── Self-Test ────────────────────────────────────────────────────────────
+    printf("Self-Test...\n");
+    bool ok = Selftest(true);
+    printf("\n");
+    if (!ok) {
+        printf("!!! SELF-TEST FAILED — aborting benchmark !!!\n");
+        while (1) vTaskDelay(pdMS_TO_TICKS(10000));
+        return;
+    }
+    printf("Self-Test: ALL PASSED\n\n");
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  1. FIELD ARITHMETIC
+    // ══════════════════════════════════════════════════════════════════════════
+    printf("================================================================\n");
+    printf("  1. FIELD ARITHMETIC  (%s)\n", secp256k1::fast::kOptimalTierName);
+    printf("================================================================\n");
     {
-        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
+        const int N = 2000;
+        double t;
+
+        t = median3(bench_field_mul(N), bench_field_mul(N), bench_field_mul(N));
+        record("Field Mul", t);
+        print_result("Field Mul", t);
+
+        t = median3(bench_field_sqr(N), bench_field_sqr(N), bench_field_sqr(N));
+        record("Field Square", t);
+        print_result("Field Square", t);
+
+        t = median3(bench_field_add(N), bench_field_add(N), bench_field_add(N));
+        record("Field Add", t);
+        print_result("Field Add", t);
+
+        t = median3(bench_field_neg(N), bench_field_neg(N), bench_field_neg(N));
+        record("Field Negate", t);
+        print_result("Field Negate", t);
+
+        t = median3(bench_field_inv(50), bench_field_inv(50), bench_field_inv(50));
+        record("Field Inverse", t);
+        print_result("Field Inverse", t);
+    }
+    WDT_YIELD();
+    printf("\n");
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  2. POINT OPERATIONS
+    // ══════════════════════════════════════════════════════════════════════════
+    printf("================================================================\n");
+    printf("  2. POINT OPERATIONS\n");
+    printf("================================================================\n");
+    {
+        double t;
+
+        t = median3(bench_point_add(500), bench_point_add(500), bench_point_add(500));
+        record("Point Add (Jacobian)", t);
+        print_result("Point Add (Jacobian)", t);
+        WDT_YIELD();
+
+        t = median3(bench_point_dbl(500), bench_point_dbl(500), bench_point_dbl(500));
+        record("Point Double", t);
+        print_result("Point Double", t);
+        WDT_YIELD();
+
+        t = median3(bench_scalar_mul(3), bench_scalar_mul(3), bench_scalar_mul(3));
+        record("Scalar Mul (k*P)", t);
+        print_result("Scalar Mul (k*P)", t);
+        WDT_YIELD();
+
+        t = median3(bench_generator_mul(3), bench_generator_mul(3), bench_generator_mul(3));
+        record("Generator Mul (k*G)", t);
+        print_result("Generator Mul (k*G)", t);
+    }
+    WDT_YIELD();
+    printf("\n");
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  3. ECDSA & SCHNORR SIGNATURES
+    // ══════════════════════════════════════════════════════════════════════════
+    printf("================================================================\n");
+    printf("  3. ECDSA & SCHNORR SIGNATURES\n");
+    printf("================================================================\n");
+    {
+        double t;
+
+        WDT_YIELD();
+        t = median3(bench_ecdsa_sign(3), bench_ecdsa_sign(3), bench_ecdsa_sign(3));
+        record("ECDSA Sign", t);
+        print_result("ECDSA Sign", t);
+        WDT_YIELD();
+
+        t = median3(bench_ecdsa_verify(3), bench_ecdsa_verify(3), bench_ecdsa_verify(3));
+        record("ECDSA Verify", t);
+        print_result("ECDSA Verify", t);
+        WDT_YIELD();
+
+        t = median3(bench_schnorr_sign(3), bench_schnorr_sign(3), bench_schnorr_sign(3));
+        record("Schnorr Sign (BIP-340)", t);
+        print_result("Schnorr Sign (BIP-340)", t);
+        WDT_YIELD();
+
+        t = median3(bench_schnorr_verify(3), bench_schnorr_verify(3), bench_schnorr_verify(3));
+        record("Schnorr Verify (BIP-340)", t);
+        print_result("Schnorr Verify (BIP-340)", t);
+    }
+    WDT_YIELD();
+    printf("\n");
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  4. BATCH OPERATIONS
+    // ══════════════════════════════════════════════════════════════════════════
+    printf("================================================================\n");
+    printf("  4. BATCH OPERATIONS\n");
+    printf("================================================================\n");
+    {
+        double t;
+
+        t = median3(bench_batch_inverse(32), bench_batch_inverse(32), bench_batch_inverse(32));
+        record("Batch Inv (n=32)", t);
+        print_result_suffix("Batch Inv (n=32)", t, "per elem");
+
+        t = median3(bench_batch_inverse(100), bench_batch_inverse(100), bench_batch_inverse(100));
+        record("Batch Inv (n=100)", t);
+        print_result_suffix("Batch Inv (n=100)", t, "per elem");
+    }
+    WDT_YIELD();
+    printf("\n");
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  5. CONSTANT-TIME (CT) LAYER
+    // ══════════════════════════════════════════════════════════════════════════
+    printf("================================================================\n");
+    printf("  5. CONSTANT-TIME (CT) LAYER\n");
+    printf("================================================================\n\n");
+
+    // -- CT correctness --
+    printf("--- CT Correctness Tests ---\n");
+    run_ct_tests();
+    WDT_YIELD();
+    printf("\n");
+
+    // -- CT performance --
+    printf("--- CT Performance ---\n");
+    {
+        double t;
+
+        t = median3(bench_ct_scalar_mul(3), bench_ct_scalar_mul(3), bench_ct_scalar_mul(3));
+        record("CT Scalar Mul (k*P)", t);
+        print_result("CT Scalar Mul (k*P)", t);
+        WDT_YIELD();
+
+        t = median3(bench_ct_generator_mul(3), bench_ct_generator_mul(3), bench_ct_generator_mul(3));
+        record("CT Generator Mul (k*G)", t);
+        print_result_suffix("CT Generator Mul (k*G)", t, "(Comb)");
+        WDT_YIELD();
+
+        t = median3(bench_ct_point_add(500), bench_ct_point_add(500), bench_ct_point_add(500));
+        record("CT Point Add (complete)", t);
+        print_result("CT Point Add (complete)", t);
+        WDT_YIELD();
+
+        t = median3(bench_ct_point_dbl(500), bench_ct_point_dbl(500), bench_ct_point_dbl(500));
+        record("CT Point Double", t);
+        print_result("CT Point Double", t);
+    }
+    WDT_YIELD();
+
+    // -- Fast vs CT comparison --
+    printf("\n--- Fast vs CT Comparison ---\n");
+    {
         Point G = Point::generator();
 
-        // Warmup
-        volatile uint64_t ct_sink = 0;
-        Point wp = secp256k1::ct::scalar_mul(G, k);
-        ct_sink = wp.x().limbs()[0];
-
-        int64_t start = esp_timer_get_time();
-        Point ct_r = G;
-        for (int i = 0; i < 3; i++) {
-            ct_r = secp256k1::ct::scalar_mul(G, k);
-        }
-        int64_t elapsed = esp_timer_get_time() - start;
-        ct_sink = ct_r.x().limbs()[0];
-        printf("  CT Scalar*G:  %5lld us/op\n", elapsed / 3);
-        (void)ct_sink;
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));  // feed watchdog
-
-    // CT generator_mul benchmark (Comb method — comparable to libsecp pubkey_create)
-    {
-        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
-
-        // Warmup (triggers Comb table init)
-        volatile uint64_t ct_sink2 = 0;
-        Point wp = secp256k1::ct::generator_mul(k);
-        ct_sink2 = wp.x().limbs()[0];
-
-        int64_t start = esp_timer_get_time();
-        Point ct_r = wp;
-        for (int i = 0; i < 3; i++) {
-            ct_r = secp256k1::ct::generator_mul(k);
-        }
-        int64_t elapsed = esp_timer_get_time() - start;
-        ct_sink2 = ct_r.x().limbs()[0];
-        printf("  CT Gen*k:     %5lld us/op  (Comb 43x32)\n", elapsed / 3);
-        (void)ct_sink2;
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));  // feed watchdog
-
-    // CT complete addition benchmark
-    {
-        Point G = Point::generator();
-        auto jG = secp256k1::ct::CTJacobianPoint::from_point(G);
-
-        int64_t start = esp_timer_get_time();
-        auto r = jG;
-        for (int i = 0; i < iterations; i++) {
-            r = secp256k1::ct::point_add_complete(r, jG);
-        }
-        int64_t elapsed = esp_timer_get_time() - start;
-        printf("  CT Add(compl):%5lld ns/op\n", (elapsed * 1000) / iterations);
-        if (r.x == FieldElement::zero()) printf("!");
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));  // feed watchdog
-
-    // CT doubling benchmark
-    {
-        Point G = Point::generator();
-        auto jG = secp256k1::ct::CTJacobianPoint::from_point(G);
-
-        int64_t start = esp_timer_get_time();
-        auto r = jG;
-        for (int i = 0; i < iterations; i++) {
-            r = secp256k1::ct::point_dbl(r);
-        }
-        int64_t elapsed = esp_timer_get_time() - start;
-        printf("  CT Dbl:       %5lld ns/op\n", (elapsed * 1000) / iterations);
-        if (r.x == FieldElement::zero()) printf("!");
-    }
-
-    // Fast vs CT comparison
-    {
-        Scalar k = Scalar::from_hex("4727daf2986a9804b1117f8261aba645c34537e4474e19be58700792d501a591");
-        Point G = Point::generator();
-
-        volatile uint64_t cmp_sink = 0;
-        // Fast
         int64_t t1 = esp_timer_get_time();
-        Point fr = G.scalar_mul(k);
+        volatile auto fr = G.scalar_mul(CT_TEST_K); (void)fr;
         int64_t t_fast = esp_timer_get_time() - t1;
-        cmp_sink = fr.x().limbs()[0];
-        // CT
+
         int64_t t2 = esp_timer_get_time();
-        Point cr = secp256k1::ct::scalar_mul(G, k);
+        volatile auto cr = secp256k1::ct::scalar_mul(G, CT_TEST_K); (void)cr;
         int64_t t_ct = esp_timer_get_time() - t2;
-        cmp_sink = cr.x().limbs()[0];
-        (void)cmp_sink;
 
-        printf("\n  -- Fast vs CT Comparison --\n");
-        printf("  Fast scalar*G: %lld us\n", t_fast);
-        printf("  CT scalar*G:   %lld us\n", t_ct);
-        if (t_fast > 0) {
-            printf("  CT/Fast ratio: %.1fx\n", (double)t_ct / (double)t_fast);
-        }
+        printf("  Fast Scalar*G:   %" PRId64 " us\n", t_fast);
+        printf("  CT Scalar*G:     %" PRId64 " us\n", t_ct);
+        if (t_fast > 0)
+            printf("  CT/Fast ratio:   %.2fx\n", (double)t_ct / (double)t_fast);
     }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 10×26 Field Element Benchmark (Lazy-Reduction for 32-bit)
-    // ═══════════════════════════════════════════════════════════════════
+    WDT_YIELD();
     printf("\n");
-    printf("==============================================\n");
-    printf("  10x26 Field Element Benchmark\n");
-    printf("  (Lazy-Reduction for 32-bit Platforms)\n");
-    printf("==============================================\n");
 
-    // ── Correctness ──
-    {
-        FieldElement fe_x = FieldElement::from_limbs({0xDEADBEEF12345678ULL, 0xCAFEBABE87654321ULL, 0x1122334455667788ULL, 0x99AABBCCDDEEFF00ULL});
-        FieldElement fe_y = FieldElement::from_limbs({0xFEDCBA9876543210ULL, 0x0123456789ABCDEFULL, 0xAABBCCDDEEFF0011ULL, 0x2233445566778899ULL});
-
-        FieldElement26 f26_x = FieldElement26::from_fe(fe_x);
-        FieldElement26 f26_y = FieldElement26::from_fe(fe_y);
-
-        // Mul correctness
-        FieldElement mul64 = fe_x * fe_y;
-        FieldElement26 mul26 = f26_x * f26_y;
-        FieldElement mul26_back = mul26.to_fe();
-        printf("  10x26 mul OK: %s\n", (mul26_back == mul64) ? "PASS" : "FAIL");
-
-        // Sqr correctness
-        FieldElement sqr64 = fe_x.square();
-        FieldElement26 sqr26 = f26_x.square();
-        FieldElement sqr26_back = sqr26.to_fe();
-        printf("  10x26 sqr OK: %s\n", (sqr26_back == sqr64) ? "PASS" : "FAIL");
-
-        // Add correctness (lazy + normalize)
-        FieldElement add64 = fe_x + fe_y;
-        FieldElement26 add26 = f26_x + f26_y;
-        add26.normalize();
-        FieldElement add26_back = add26.to_fe();
-        printf("  10x26 add OK: %s\n", (add26_back == add64) ? "PASS" : "FAIL");
-
-        // Roundtrip
-        FieldElement rt = f26_x.to_fe();
-        printf("  10x26 roundtrip: %s\n", (rt == fe_x) ? "PASS" : "FAIL");
-    }
-
-    // ── Benchmarks ──
-    {
-        FieldElement fe_a_ref = FieldElement::from_limbs({0x12345678, 0xABCDEF01, 0x11223344, 0x55667788});
-        FieldElement fe_b_ref = FieldElement::from_limbs({0x87654321, 0xFEDCBA98, 0x99AABBCC, 0xDDEEFF00});
-        FieldElement26 fa26 = FieldElement26::from_fe(fe_a_ref);
-        FieldElement26 fb26 = FieldElement26::from_fe(fe_b_ref);
-
-        // 10x26 Multiplication
-        {
-            int64_t start = esp_timer_get_time();
-            FieldElement26 result = fa26;
-            for (int i = 0; i < iterations; i++) {
-                result = result * fb26;
-            }
-            int64_t elapsed = esp_timer_get_time() - start;
-            printf("  10x26 Mul:    %5lld ns/op\n", (elapsed * 1000) / iterations);
-            if (result.n[0] == 0xDEAD) printf("!");
-        }
-
-        // 10x26 Squaring
-        {
-            int64_t start = esp_timer_get_time();
-            FieldElement26 result = fa26;
-            for (int i = 0; i < iterations; i++) {
-                result.square_inplace();
-            }
-            int64_t elapsed = esp_timer_get_time() - start;
-            printf("  10x26 Square: %5lld ns/op\n", (elapsed * 1000) / iterations);
-            if (result.n[0] == 0xDEAD) printf("!");
-        }
-
-        // 10x26 Addition (lazy, no normalization per add!)
-        {
-            int64_t start = esp_timer_get_time();
-            FieldElement26 result = fa26;
-            for (int i = 0; i < iterations; i++) {
-                result.add_assign(fb26);
-            }
-            result.normalize_weak();
-            int64_t elapsed = esp_timer_get_time() - start;
-            printf("  10x26 Add:    %5lld ns/op  (LAZY! no carry per-add)\n", (elapsed * 1000) / iterations);
-            if (result.n[0] == 0xDEAD) printf("!");
-        }
-
-        // 10x26 Negation
-        {
-            int64_t start = esp_timer_get_time();
-            FieldElement26 result = fa26;
-            for (int i = 0; i < iterations; i++) {
-                result = result.negate(1);
-            }
-            int64_t elapsed = esp_timer_get_time() - start;
-            printf("  10x26 Neg:    %5lld ns/op\n", (elapsed * 1000) / iterations);
-            if (result.n[0] == 0xDEAD) printf("!");
-        }
-
-        // 10x26 Half
-        {
-            int64_t start = esp_timer_get_time();
-            FieldElement26 result = fa26;
-            for (int i = 0; i < iterations; i++) {
-                result = result.half();
-            }
-            int64_t elapsed = esp_timer_get_time() - start;
-            printf("  10x26 Half:   %5lld ns/op\n", (elapsed * 1000) / iterations);
-            if (result.n[0] == 0xDEAD) printf("!");
-        }
-
-        // 10x26 Add chains (lazy reduction advantage!)
-        printf("\n  --- Lazy Add Chains ---\n");
-        for (int chain : {4, 8, 16, 32, 64}) {
-            int reps = 500;
-            int64_t start = esp_timer_get_time();
-            for (int r = 0; r < reps; r++) {
-                FieldElement26 acc = fa26;
-                for (int i = 0; i < chain; i++) acc.add_assign(fb26);
-                acc.normalize_weak();
-                if (acc.n[0] == 0xDEAD) printf("!");
-            }
-            int64_t elapsed = esp_timer_get_time() - start;
-            printf("  10x26 %2d adds+norm: %5lld ns/chain\n", chain, (elapsed * 1000) / reps);
-        }
-
-        // Comparison table
-        printf("\n  --- 4x64 vs 10x26 on ESP32 ---\n");
-        printf("  (4x64 uses emulated 64-bit math on 32-bit CPU)\n");
-        printf("  (10x26 uses native 32x32->64 multiplies)\n");
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // Optimal Field Element (compile-time dispatch)
-    // ═══════════════════════════════════════════════════════════════════
-    printf("\n");
-    printf("==============================================\n");
-    printf("  Optimal Field Element (Auto-Dispatch)\n");
-    printf("  Selected: %s\n", secp256k1::fast::kOptimalTierName);
-    printf("==============================================\n");
-
-    {
-        using OFE = secp256k1::fast::OptimalFieldElement;
-        FieldElement fe_a_ref = FieldElement::from_limbs({0x12345678, 0xABCDEF01, 0x11223344, 0x55667788});
-        FieldElement fe_b_ref = FieldElement::from_limbs({0x87654321, 0xFEDCBA98, 0x99AABBCC, 0xDDEEFF00});
-        OFE oa = secp256k1::fast::to_optimal(fe_a_ref);
-        OFE ob = secp256k1::fast::to_optimal(fe_b_ref);
-
-        // Correctness
-        OFE ofe_mul = oa * ob;
-        FieldElement rt_mul = secp256k1::fast::from_optimal(ofe_mul);
-        FieldElement ref_mul = fe_a_ref * fe_b_ref;
-        printf("  Optimal Mul OK: %s\n", (rt_mul == ref_mul) ? "PASS" : "FAIL");
-
-        OFE ofe_sqr = oa.square();
-        FieldElement rt_sqr = secp256k1::fast::from_optimal(ofe_sqr);
-        FieldElement ref_sqr = fe_a_ref.square();
-        printf("  Optimal Sqr OK: %s\n", (rt_sqr == ref_sqr) ? "PASS" : "FAIL");
-
-        // Benchmark Optimal Mul
-        {
-            int64_t start = esp_timer_get_time();
-            OFE result = oa;
-            for (int i = 0; i < iterations; i++) {
-                result = result * ob;
-            }
-            int64_t elapsed = esp_timer_get_time() - start;
-            printf("  Optimal Mul:    %5lld ns/op\n", (elapsed * 1000) / iterations);
-            volatile auto sink = result;
-            (void)sink;
-        }
-
-        // Benchmark Optimal Sqr
-        {
-            int64_t start = esp_timer_get_time();
-            OFE result = oa;
-            for (int i = 0; i < iterations; i++) {
-                result = result.square();
-            }
-            int64_t elapsed = esp_timer_get_time() - start;
-            printf("  Optimal Sqr:    %5lld ns/op\n", (elapsed * 1000) / iterations);
-            volatile auto sink = result;
-            (void)sink;
-        }
-
-        // Benchmark Optimal Add
-        {
-            int64_t start = esp_timer_get_time();
-            OFE result = oa;
-            for (int i = 0; i < iterations; i++) {
-                result = result + ob;
-            }
-            int64_t elapsed = esp_timer_get_time() - start;
-            printf("  Optimal Add:    %5lld ns/op\n", (elapsed * 1000) / iterations);
-            volatile auto sink = result;
-            (void)sink;
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // libsecp256k1 (bitcoin-core) comparison benchmark
-    // ═══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════════
+    //  6. libsecp256k1 (bitcoin-core) COMPARISON
+    // ══════════════════════════════════════════════════════════════════════════
+    printf("================================================================\n");
+    printf("  6. libsecp256k1 (bitcoin-core v0.7.2) COMPARISON\n");
+    printf("================================================================\n");
     libsecp_benchmark();
+    WDT_YIELD();
+    printf("\n");
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  SUMMARY TABLE (for README)
+    // ══════════════════════════════════════════════════════════════════════════
+    printf("================================================================\n");
+    printf("  PERFORMANCE SUMMARY\n");
+    printf("================================================================\n\n");
+    printf("Platform: %s @ 240 MHz\n", chip_model_name(ci.model));
+    printf("Compiler: GCC %s | Field: %s\n\n", __VERSION__, secp256k1::fast::kOptimalTierName);
+
+    printf("| %-28s | %12s |\n", "Operation", "Time");
+    printf("|%-30s|%14s|\n",
+           "------------------------------", "--------------");
+    for (int i = 0; i < g_nresults; i++) {
+        char buf[32];
+        format_time(buf, sizeof(buf), g_results[i].ns);
+        printf("| %-28s | %12s |\n", g_results[i].name, buf);
+    }
 
     printf("\n");
-    printf("============================================================\n");
-    printf("   UltrafastSecp256k1 on ESP32 - Test Complete\n");
-    printf("   CT Tests: %d/%d PASS\n", ct_pass, ct_pass + ct_fail);
-    printf("   Optimal Tier: %s\n", secp256k1::fast::kOptimalTierName);
-    printf("============================================================\n");
+    printf("================================================================\n");
+    printf("   Benchmark Complete — %s @ 240 MHz\n", chip_model_name(ci.model));
+    printf("   Field Tier: %s\n", secp256k1::fast::kOptimalTierName);
+    printf("================================================================\n");
 
+    // idle loop
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
