@@ -1803,28 +1803,33 @@ static Point gen_fixed_mul(const Scalar& k) {
     static const FieldElement beta =
         FieldElement::from_bytes(glv_constants::BETA);
 
-    Point result = Point::infinity();
+    // Work directly with JacobianPoint to avoid Point wrapper overhead.
+    // Eliminates 3 FieldElement copies per add (Point::from_affine + add_inplace copies).
+    JacobianPoint jac = {FieldElement::zero(), FieldElement::one(), FieldElement::zero(), true};
 
     for (int w = 0; w < 32; w++) {
         std::uint8_t d1 = get_nybble(decomp.k1, w);
         if (d1 > 0) {
             const GenAffine& e = gen_fb_table[w * 15 + d1 - 1];
-            FieldElement ey = decomp.k1_neg
+            AffinePoint q;
+            q.x = e.x;
+            q.y = decomp.k1_neg
                 ? (FieldElement::zero() - e.y) : e.y;
-            result.add_inplace(Point::from_affine(e.x, ey));
+            jacobian_add_mixed_inplace(jac, q);
         }
 
         std::uint8_t d2 = get_nybble(decomp.k2, w);
         if (d2 > 0) {
             const GenAffine& e = gen_fb_table[w * 15 + d2 - 1];
-            FieldElement px = e.x * beta;
-            FieldElement py = decomp.k2_neg
+            AffinePoint q;
+            q.x = e.x * beta;
+            q.y = decomp.k2_neg
                 ? (FieldElement::zero() - e.y) : e.y;
-            result.add_inplace(Point::from_affine(px, py));
+            jacobian_add_mixed_inplace(jac, q);
         }
     }
 
-    return result;
+    return Point::from_jacobian_coords(jac.x, jac.y, jac.z, jac.infinity);
 }
 
 }  // anonymous namespace
@@ -2662,47 +2667,47 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
     const AffinePoint* pg_pos = flip_a ? s_gen4->neg_tbl_phiG : s_gen4->tbl_phiG;
     const AffinePoint* pg_neg = flip_a ? s_gen4->tbl_phiG : s_gen4->neg_tbl_phiG;
 
-    // ── 4-stream Shamir interleaved scan ─────────────────────────────
+    // ── 4-stream Shamir interleaved scan (JacobianPoint direct — no Point wrapper) ──
     std::size_t max_len = len_a1;
     if (len_a2 > max_len) max_len = len_a2;
     if (len_b1 > max_len) max_len = len_b1;
     if (len_b2 > max_len) max_len = len_b2;
 
-    Point result = Point::infinity();
+    JacobianPoint jac = {FieldElement::zero(), FieldElement::one(), FieldElement::zero(), true};
 
     for (int i = static_cast<int>(max_len) - 1; i >= 0; --i) {
-        result.dbl_inplace();
+        jacobian_double_inplace(jac);
 
-        // Stream 1: a1 * G
+        // Stream 1: a1 * G (affine tables → mixed add)
         {
             int32_t d = wnaf_a1[static_cast<std::size_t>(i)];
-            if (d > 0) result.add_inplace(Point::from_affine(g_pos[(d-1)>>1].x, g_pos[(d-1)>>1].y));
-            else if (d < 0) result.add_inplace(Point::from_affine(g_neg[(-d-1)>>1].x, g_neg[(-d-1)>>1].y));
+            if (d > 0) jacobian_add_mixed_inplace(jac, g_pos[(d-1)>>1]);
+            else if (d < 0) jacobian_add_mixed_inplace(jac, g_neg[(-d-1)>>1]);
         }
 
-        // Stream 2: a2 * φ(G)
+        // Stream 2: a2 * φ(G) (affine tables → mixed add)
         {
             int32_t d = wnaf_a2[static_cast<std::size_t>(i)];
-            if (d > 0) result.add_inplace(Point::from_affine(pg_pos[(d-1)>>1].x, pg_pos[(d-1)>>1].y));
-            else if (d < 0) result.add_inplace(Point::from_affine(pg_neg[(-d-1)>>1].x, pg_neg[(-d-1)>>1].y));
+            if (d > 0) jacobian_add_mixed_inplace(jac, pg_pos[(d-1)>>1]);
+            else if (d < 0) jacobian_add_mixed_inplace(jac, pg_neg[(-d-1)>>1]);
         }
 
-        // Stream 3: b1 * P
+        // Stream 3: b1 * P (affine tables → mixed add)
         {
             int32_t d = wnaf_b1[static_cast<std::size_t>(i)];
-            if (d > 0) result.add_inplace(Point::from_affine(tbl_P[(d-1)>>1].x, tbl_P[(d-1)>>1].y));
-            else if (d < 0) result.add_inplace(Point::from_affine(neg_tbl_P[(-d-1)>>1].x, neg_tbl_P[(-d-1)>>1].y));
+            if (d > 0) jacobian_add_mixed_inplace(jac, tbl_P[(d-1)>>1]);
+            else if (d < 0) jacobian_add_mixed_inplace(jac, neg_tbl_P[(-d-1)>>1]);
         }
 
-        // Stream 4: b2 * φ(P)
+        // Stream 4: b2 * φ(P) (affine tables → mixed add)
         {
             int32_t d = wnaf_b2[static_cast<std::size_t>(i)];
-            if (d > 0) result.add_inplace(Point::from_affine(tbl_phiP[(d-1)>>1].x, tbl_phiP[(d-1)>>1].y));
-            else if (d < 0) result.add_inplace(Point::from_affine(neg_tbl_phiP[(-d-1)>>1].x, neg_tbl_phiP[(-d-1)>>1].y));
+            if (d > 0) jacobian_add_mixed_inplace(jac, tbl_phiP[(d-1)>>1]);
+            else if (d < 0) jacobian_add_mixed_inplace(jac, neg_tbl_phiP[(-d-1)>>1]);
         }
     }
 
-    return result;
+    return Point(jac.x, jac.y, jac.z, jac.infinity);
 }
 #else
 // Non-52bit / non-embedded fallback: separate multiplications
