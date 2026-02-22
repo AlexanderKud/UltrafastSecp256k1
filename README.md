@@ -782,6 +782,10 @@ We want to acknowledge the teams whose public work informed parts of our journey
 
 We share our optimizations, GPU kernels, embedded ports, and cross-platform techniques freely — because open-source cryptography grows stronger when knowledge flows in every direction.
 
+Special thanks to the [Stacker News](https://stacker.news) and [Delving Bitcoin](https://delvingbitcoin.org) communities for their early support and technical feedback.
+
+Extra gratitude to [@0xbitcoiner](https://stacker.news/0xbitcoiner) for the initial outreach and for helping bridge the project with the wider Bitcoin developer ecosystem.
+
 ---
 
 ## Support the Project
