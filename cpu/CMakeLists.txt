@@ -173,18 +173,31 @@ if(SECP256K1_USE_ASM)
         list(APPEND SECP256K1_SOURCES
             src/field_asm_riscv64.S
             src/field_asm_riscv64.cpp
-            src/field_asm52_riscv64.S
         )
         
         # RISC-V assembler flags with detected march
         set_source_files_properties(src/field_asm_riscv64.S PROPERTIES 
             COMPILE_FLAGS "-x assembler-with-cpp -march=${RISCV_MARCH_FLAG} -fno-lto")
-        set_source_files_properties(src/field_asm52_riscv64.S PROPERTIES
-            COMPILE_FLAGS "-x assembler-with-cpp -march=${RISCV_MARCH_FLAG} -fno-lto")
 
         add_compile_definitions(SECP256K1_HAS_RISCV_ASM=1)
-        add_compile_definitions(SECP256K1_HAS_RISCV_FE52_ASM=1)
-        message(STATUS "Secp256k1: 5x52 MUL/MULHU assembly enabled (RISC-V)")
+
+        # 5x52 FE52 assembly: external function calls add 13-register save/restore
+        # overhead per call (~26 extra memory ops). On in-order cores (U74, etc.) this
+        # negates scheduling benefits. C++ __int128 inline path is 26-33% faster for
+        # field ops because the compiler eliminates call overhead and can cross-inline.
+        # Enable SECP256K1_USE_RISCV_FE52_ASM=ON only for OoO cores where the explicit
+        # register scheduling matters more than inlining.
+        option(SECP256K1_USE_RISCV_FE52_ASM "Use hand-written RISC-V assembly for 5x52 field multiply/square (slower on in-order cores like U74)" OFF)
+        if(SECP256K1_USE_RISCV_FE52_ASM)
+            list(APPEND SECP256K1_SOURCES src/field_asm52_riscv64.S)
+            set_source_files_properties(src/field_asm52_riscv64.S PROPERTIES
+                COMPILE_FLAGS "-x assembler-with-cpp -march=${RISCV_MARCH_FLAG} -fno-lto")
+            add_compile_definitions(SECP256K1_HAS_RISCV_FE52_ASM=1)
+            message(STATUS "Secp256k1: 5x52 MUL/MULHU assembly ENABLED (RISC-V) -- external function calls")
+        else()
+            message(STATUS "Secp256k1: 5x52 field uses C++ __int128 INLINE (faster on in-order RISC-V)")
+        endif()
+
         set(SECP256K1_HAS_ASM TRUE CACHE INTERNAL "Assembly support enabled")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64")
         # ARM64 (AArch64) Assembly Support
