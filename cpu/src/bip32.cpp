@@ -235,7 +235,6 @@ ExtendedKey ExtendedKey::to_public() const {
 
     ExtendedKey pub{};
     auto pk = public_key();
-    auto compressed = pk.to_compressed();
     // Store the x-coordinate of the public key
     auto x_bytes = pk.x().to_bytes();
     pub.key = x_bytes;
