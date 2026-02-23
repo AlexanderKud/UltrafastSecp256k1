@@ -18,6 +18,7 @@ Guide for the CUDA GPU implementation of UltrafastSecp256k1.
 | Ampere | 8.0, 8.6 | A100, RTX 3060-3090 |
 | Ada Lovelace | 8.9 | RTX 4060-4090, L4, L40 |
 | Hopper | 9.0 | H100 |
+| Blackwell | 12.0 | RTX 5060-5090, B100, B200 |
 
 ---
 
@@ -43,8 +44,11 @@ Set `CMAKE_CUDA_ARCHITECTURES` for your GPU:
 # RTX 4090
 -DCMAKE_CUDA_ARCHITECTURES=89
 
+# RTX 5060 Ti / 5090
+-DCMAKE_CUDA_ARCHITECTURES=120
+
 # Multiple GPUs
--DCMAKE_CUDA_ARCHITECTURES="86;89"
+-DCMAKE_CUDA_ARCHITECTURES="86;89;120"
 ```
 
 ---

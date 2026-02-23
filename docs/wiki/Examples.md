@@ -8,9 +8,11 @@ Code examples for common use cases with UltrafastSecp256k1.
 
 1. [Basic Operations](#basic-operations)
 2. [Key Generation](#key-generation)
-3. [Batch Processing](#batch-processing)
-4. [Database Lookups](#database-lookups)
-5. [CUDA Examples](#cuda-examples)
+3. [ECDSA Signatures](#ecdsa-signatures)
+4. [Schnorr Signatures](#schnorr-signatures)
+5. [Batch Processing](#batch-processing)
+6. [Database Lookups](#database-lookups)
+7. [CUDA Examples](#cuda-examples)
 
 ---
 
@@ -159,6 +161,101 @@ int main() {
     auto keys = generate_key_range(start, 1000);
     
     // keys[i] corresponds to private key (start + i)
+    return 0;
+}
+```
+
+---
+
+## ECDSA Signatures
+
+### Sign and Verify
+
+```cpp
+#include <secp256k1/ecdsa.hpp>
+#include <secp256k1/sha256.hpp>
+#include <iostream>
+
+using namespace secp256k1::fast;
+
+int main() {
+    // Private key
+    Scalar seckey = Scalar::from_hex(
+        "E9873D79C6D87DC0FB6A5778633389F4453213303DA61F20BD67FC233AA33262"
+    );
+    
+    // Message hash (SHA-256 of the actual message)
+    uint8_t msg[] = "Hello, UltrafastSecp256k1!";
+    auto msg_hash = sha256(msg, sizeof(msg) - 1);
+    
+    // Sign (RFC 6979 deterministic nonces, low-S normalization)
+    auto [sig_r, sig_s] = ecdsa_sign(msg_hash.data(), seckey);
+    
+    // Derive public key
+    Point pubkey = Point::generator().scalar_mul(seckey);
+    
+    // Verify
+    bool valid = ecdsa_verify(msg_hash.data(), pubkey, sig_r, sig_s);
+    std::cout << "ECDSA verification: " << (valid ? "PASSED" : "FAILED") << std::endl;
+    
+    return 0;
+}
+```
+
+### Recoverable Signatures (EIP-155 / Ethereum)
+
+```cpp
+#include <secp256k1/ecdsa.hpp>
+
+using namespace secp256k1::fast;
+
+int main() {
+    Scalar seckey = Scalar::from_hex("...");
+    uint8_t msg_hash[32] = { /* ... */ };
+    
+    // Sign with recovery ID
+    auto [sig_r, sig_s, recid] = ecdsa_sign_recoverable(msg_hash, seckey);
+    
+    // Recover public key from signature (no private key needed)
+    Point recovered = ecdsa_recover(msg_hash, sig_r, sig_s, recid);
+    
+    // Verify recovery
+    Point original = Point::generator().scalar_mul(seckey);
+    // recovered == original
+    
+    return 0;
+}
+```
+
+---
+
+## Schnorr Signatures
+
+### BIP-340 Sign and Verify
+
+```cpp
+#include <secp256k1/schnorr.hpp>
+#include <iostream>
+
+using namespace secp256k1::fast;
+
+int main() {
+    Scalar seckey = Scalar::from_hex(
+        "E9873D79C6D87DC0FB6A5778633389F4453213303DA61F20BD67FC233AA33262"
+    );
+    
+    uint8_t msg[32] = { /* message hash */ };
+    uint8_t aux[32] = { /* auxiliary randomness */ };
+    
+    // Sign (BIP-340 tagged hashing)
+    auto sig = schnorr_sign(msg, seckey, aux);
+    
+    // Verify with x-only pubkey (32 bytes, not 33)
+    auto pubkey_x = Point::generator().scalar_mul(seckey).x().to_bytes();
+    bool valid = schnorr_verify(msg, pubkey_x.data(), sig);
+    
+    std::cout << "Schnorr verification: " << (valid ? "PASSED" : "FAILED") << std::endl;
+    
     return 0;
 }
 ```

@@ -119,10 +119,14 @@ pkg-config --cflags --libs secp256k1-fast
 |--------|---------|-------------|
 | `SECP256K1_USE_ASM` | ON | Assembly optimizations |
 | `SECP256K1_BUILD_CUDA` | OFF | CUDA GPU support |
+| `SECP256K1_BUILD_OPENCL` | OFF | OpenCL GPU support |
+| `SECP256K1_BUILD_METAL` | OFF | Metal GPU support (macOS) |
+| `SECP256K1_BUILD_ROCM` | OFF | ROCm GPU support (AMD) |
 | `SECP256K1_BUILD_TESTS` | ON | Build tests |
 | `SECP256K1_BUILD_BENCH` | ON | Build benchmarks |
 | `SECP256K1_USE_LTO` | OFF | Link-Time Optimization |
 | `SECP256K1_SPEED_FIRST` | OFF | Aggressive optimizations |
+| `SECP256K1_ALLOW_MSVC` | OFF | Allow MSVC 2022+ compiler |
 
 ## Next Steps
 
