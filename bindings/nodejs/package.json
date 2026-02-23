@@ -7,7 +7,8 @@
   "files": [
     "lib/",
     "binding.gyp",
-    "src/"
+    "src/",
+    "README.md"
   ],
   "scripts": {
     "install": "node-gyp rebuild",
@@ -30,10 +31,10 @@
     "taproot"
   ],
   "license": "MIT",
-  "homepage": "https://github.com/shrec/Secp256K1fast",
+  "homepage": "https://github.com/shrec/UltrafastSecp256k1",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shrec/Secp256K1fast.git"
+    "url": "https://github.com/shrec/UltrafastSecp256k1.git"
   },
   "engines": {
     "node": ">=16.0.0"

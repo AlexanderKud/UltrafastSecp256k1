@@ -20,10 +20,10 @@
   "keywords": ["react-native", "secp256k1", "bitcoin", "crypto", "ecdsa", "schnorr"],
   "author": "UltrafastSecp256k1",
   "license": "MIT",
-  "homepage": "https://github.com/shrec/Secp256K1fast",
+  "homepage": "https://github.com/shrec/UltrafastSecp256k1",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shrec/Secp256K1fast.git",
+    "url": "https://github.com/shrec/UltrafastSecp256k1.git",
     "directory": "libs/UltrafastSecp256k1/bindings/react-native"
   },
   "peerDependencies": {

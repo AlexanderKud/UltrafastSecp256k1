@@ -1,6 +1,14 @@
-# UltrafastSecp256k1 — WebAssembly (WASM) Build
+# @ultrafastsecp256k1/wasm
 
 Ultra high-performance secp256k1 for the browser and Node.js via Emscripten/WebAssembly.
+
+Powered by [UltrafastSecp256k1](https://github.com/shrec/UltrafastSecp256k1).
+
+## Install
+
+```bash
+npm install @ultrafastsecp256k1/wasm
+```
 
 ## Features
 
@@ -125,3 +133,13 @@ For direct use from C/C++ or custom WASM bindings, see [`secp256k1_wasm.h`](secp
 emcmake cmake -S wasm -B build-wasm -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-wasm -j
 ```
+
+## License
+
+AGPL-3.0
+
+## Links
+
+- [GitHub](https://github.com/shrec/UltrafastSecp256k1)
+- [Benchmarks](https://github.com/shrec/UltrafastSecp256k1/blob/main/libs/UltrafastSecp256k1/docs/BENCHMARKS.md)
+- [Changelog](https://github.com/shrec/UltrafastSecp256k1/blob/main/libs/UltrafastSecp256k1/CHANGELOG.md)

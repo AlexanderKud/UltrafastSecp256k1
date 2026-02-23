@@ -16,7 +16,8 @@
     "secp256k1.mjs",
     "secp256k1.d.ts",
     "secp256k1_wasm.js",
-    "secp256k1_wasm.wasm"
+    "secp256k1_wasm.wasm",
+    "README.md"
   ],
   "keywords": [
     "secp256k1",
@@ -30,10 +31,10 @@
     "bitcoin"
   ],
   "license": "AGPL-3.0",
-  "homepage": "https://github.com/shrec/Secp256K1fast",
+  "homepage": "https://github.com/shrec/UltrafastSecp256k1",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shrec/Secp256K1fast.git",
+    "url": "https://github.com/shrec/UltrafastSecp256k1.git",
     "directory": "libs/UltrafastSecp256k1/wasm"
   },
   "engines": {
