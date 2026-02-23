@@ -309,7 +309,7 @@ static void test_ecdsa_roundtrip() {
 
         // DER roundtrip
         auto [der, der_len] = sig.to_der();
-        // Just verify it's non-empty
+        (void)der;  // only length is checked here
         CHECK(der_len >= 8 && der_len <= 72, "DER length in range");
     }
 
