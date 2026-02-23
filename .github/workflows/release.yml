@@ -393,7 +393,7 @@ jobs:
           cp build-wasm/dist/package.json          "${PKG_NAME}/" 2>/dev/null || true
 
           cp LICENSE      "${PKG_NAME}/" 2>/dev/null || true
-          cp README.md    "${PKG_NAME}/" 2>/dev/null || true
+          cp wasm/README.md "${PKG_NAME}/" 2>/dev/null || true
           cp CHANGELOG.md "${PKG_NAME}/" 2>/dev/null || true
 
           tar czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"
@@ -871,7 +871,7 @@ jobs:
           JAR="ufsecp-${VERSION}.jar"
           GROUP="com.ultrafast"
           ARTIFACT="ufsecp"
-          REPO_URL="https://maven.pkg.github.com/shrec/Secp256K1fast"
+          REPO_URL="https://maven.pkg.github.com/shrec/UltrafastSecp256k1"
 
           # Generate minimal POM
           cat > pom.xml <<'POMEOF'
@@ -884,7 +884,7 @@ jobs:
             <packaging>jar</packaging>
             <name>UltrafastSecp256k1 JNI</name>
             <description>Java JNI bindings for UltrafastSecp256k1</description>
-            <url>https://github.com/shrec/Secp256K1fast</url>
+            <url>https://github.com/shrec/UltrafastSecp256k1</url>
           </project>
           POMEOF
           # Fix version in POM (heredoc can't expand shell vars with quoted delimiter)

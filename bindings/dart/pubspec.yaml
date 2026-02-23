@@ -1,7 +1,7 @@
 name: ultrafast_secp256k1
 description: High-performance secp256k1 elliptic curve cryptography bindings via dart:ffi.
 version: 1.0.0
-homepage: https://github.com/AvraSasmo/UltrafastSecp256k1
+homepage: https://github.com/shrec/UltrafastSecp256k1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

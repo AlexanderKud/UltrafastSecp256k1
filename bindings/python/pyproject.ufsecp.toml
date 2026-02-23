@@ -30,9 +30,9 @@ classifiers = [
 keywords = ["secp256k1", "ecdsa", "schnorr", "bitcoin", "cryptography", "ufsecp", "taproot", "bip32"]
 
 [project.urls]
-Homepage = "https://github.com/AvraSasmo/UltrafastSecp256k1"
-Repository = "https://github.com/AvraSasmo/UltrafastSecp256k1"
-Documentation = "https://github.com/AvraSasmo/UltrafastSecp256k1/tree/main/bindings/python"
+Homepage = "https://github.com/shrec/UltrafastSecp256k1"
+Repository = "https://github.com/shrec/UltrafastSecp256k1"
+Documentation = "https://github.com/shrec/UltrafastSecp256k1/tree/main/bindings/python"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -27,7 +27,7 @@ xcrun metal --version   # Metal compiler
 
 ```bash
 # 1. კლონირება
-git clone https://github.com/shrec/Secp256K1fast.git
+git clone https://github.com/shrec/UltrafastSecp256k1.git
 cd UltrafastSecp256k1
 
 # 2. კონფიგურაცია Metal-ით

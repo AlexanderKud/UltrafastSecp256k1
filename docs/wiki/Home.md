@@ -50,13 +50,13 @@ See [[API Reference]] for the full CT API and [[Examples]] for usage patterns.
 
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/shrec/Secp256K1fast)
-- [Main Project](https://github.com/shrec/Secp256K1fast)
-- [Issue Tracker](https://github.com/shrec/Secp256K1fast/issues)
+- [GitHub Repository](https://github.com/shrec/UltrafastSecp256k1)
+- [Main Project](https://github.com/shrec/UltrafastSecp256k1)
+- [Issue Tracker](https://github.com/shrec/UltrafastSecp256k1/issues)
 
 ## 📄 License
 
-AGPL v3 - See [LICENSE](https://github.com/shrec/Secp256K1fast/blob/main/LICENSE)
+AGPL v3 - See [LICENSE](https://github.com/shrec/UltrafastSecp256k1/blob/main/LICENSE)
 
 ## ☕ Support the Project
 

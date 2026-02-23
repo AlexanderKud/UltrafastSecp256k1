@@ -18,10 +18,10 @@
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AvraSasmo/UltrafastSecp256k1"
+    "url": "https://github.com/shrec/UltrafastSecp256k1"
   },
   "engines": {
     "node": ">=16.0.0"
   },
-  "homepage": "https://github.com/AvraSasmo/UltrafastSecp256k1"
+  "homepage": "https://github.com/shrec/UltrafastSecp256k1"
 }

@@ -18,7 +18,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/AvraSasmo/UltrafastSecp256k1"
+    "url": "https://github.com/shrec/UltrafastSecp256k1"
   },
-  "homepage": "https://github.com/AvraSasmo/UltrafastSecp256k1"
+  "homepage": "https://github.com/shrec/UltrafastSecp256k1"
 }

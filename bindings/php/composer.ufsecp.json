@@ -17,8 +17,8 @@
         "secp256k1", "ecdsa", "schnorr", "bitcoin", "cryptography",
         "elliptic-curve", "taproot", "bip32", "ecdh", "ufsecp"
     ],
-    "homepage": "https://github.com/AvraSasmo/UltrafastSecp256k1",
+    "homepage": "https://github.com/shrec/UltrafastSecp256k1",
     "support": {
-        "issues": "https://github.com/AvraSasmo/UltrafastSecp256k1/issues"
+        "issues": "https://github.com/shrec/UltrafastSecp256k1/issues"
     }
 }
