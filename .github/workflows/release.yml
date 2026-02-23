@@ -401,7 +401,7 @@ jobs:
       - name: Test WASM
         run: |
           cd build/wasm/dist
-          node ../../wasm/bench_wasm.mjs
+          node ../../../wasm/bench_wasm.mjs
 
       - name: Collect release artifacts
         run: |
