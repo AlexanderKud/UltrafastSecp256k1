@@ -756,4 +756,12 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME ct_sidechannel COMMAND test_ct_sidechannel_standalone)
     set_tests_properties(ct_sidechannel PROPERTIES TIMEOUT 300)
+
+    # Standalone differential/self-consistency test (from top-level tests/)
+    add_executable(test_differential_standalone
+        ${CMAKE_CURRENT_SOURCE_DIR}/../tests/differential_test.cpp
+    )
+    target_link_libraries(test_differential_standalone PRIVATE ${SECP256K1_LIB_NAME})
+    add_test(NAME differential COMMAND test_differential_standalone)
+    set_tests_properties(differential PROPERTIES TIMEOUT 120)
 endif()

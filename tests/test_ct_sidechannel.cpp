@@ -671,24 +671,35 @@ static void test_ct_scalar() {
         check(t < T_THRESHOLD, "ct::scalar_is_zero timing leak");
     }
 
-    // -- 3e: scalar_bit (position 0 vs random position) ------------------
+    // -- 3e: scalar_bit (class 0: scalar with bit=0, class 1: scalar with bit=1 at same position) --
     {
-        // Pre-generate positions. Test: same scalar, different bit positions
-        size_t positions[2][N];
+        // Security-relevant test: same position (public), different scalar values.
+        // In scalar mul, position is the loop counter (public); scalar is secret.
+        // We test that timing doesn't reveal the bit VALUE at a fixed position.
+        constexpr size_t TEST_POS = 128;  // middle bit, limb 2
+
+        // Pre-generate scalars where bit TEST_POS is forced to 0 or 1
+        static Scalar sc_cls[2][N];
         for (int i = 0; i < N; ++i) {
-            positions[0][i] = 0;          // always bit 0
-            positions[1][i] = rng() % 256; // random bit
+            auto s = random_scalar();
+            auto limbs = s.limbs();
+            // Class 0: force bit to 0
+            limbs[TEST_POS / 64] &= ~(uint64_t(1) << (TEST_POS % 64));
+            sc_cls[0][i] = Scalar::from_limbs(limbs);
+            // Class 1: force bit to 1
+            limbs[TEST_POS / 64] |= (uint64_t(1) << (TEST_POS % 64));
+            sc_cls[1][i] = Scalar::from_limbs(limbs);
         }
 
         WelchState ws;
         for (int i = 0; i < N; ++i) {
             int cls = classes[i];
-            size_t pos = positions[cls][i];
+            const auto& sc = sc_cls[cls][i];
 
-            asm volatile("" : "+r"(pos) :: "memory");
+            asm volatile("" ::: "memory");
             uint64_t t0 = rdtsc();
             asm volatile("" ::: "memory");
-            volatile auto bit = secp256k1::ct::scalar_bit(sc_base[i], pos);
+            volatile auto bit = secp256k1::ct::scalar_bit(sc, TEST_POS);
             (void)bit;
             asm volatile("" ::: "memory");
             uint64_t t1 = rdtsc();

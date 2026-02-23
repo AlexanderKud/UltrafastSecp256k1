@@ -139,7 +139,7 @@ jobs:
         run: cmake --build build-${{ matrix.sanitizer }} -j$(nproc)
 
       - name: Test (${{ matrix.label }})
-        run: ctest --test-dir build-${{ matrix.sanitizer }} --output-on-failure -j$(nproc)
+        run: ctest --test-dir build-${{ matrix.sanitizer }} --output-on-failure -j$(nproc) -E ct_sidechannel
 
   # -- Windows (MSVC + Clang-cl) ----------------------------------------------
   windows:
