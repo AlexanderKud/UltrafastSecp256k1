@@ -113,11 +113,17 @@ jobs:
         run: |
           ctest --test-dir build --output-on-failure -j"$(nproc)" \
             --overwrite MemoryCheckCommand=/usr/bin/valgrind \
-            --overwrite "MemoryCheckCommandOptions=--leak-check=full --error-exitcode=1" \
+            --overwrite "MemoryCheckCommandOptions=--leak-check=full --error-exitcode=1 --show-leak-kinds=definite,indirect,possible --errors-for-leak-kinds=definite,indirect,possible" \
             -T MemCheck || true
-          # Check for errors in memcheck output
-          if find build/Testing/Temporary -name 'MemoryChecker.*.log' -exec grep -l 'ERROR SUMMARY: [^0]' {} + 2>/dev/null | head -1; then
+          # Check for real errors in memcheck output (ignore "still reachable")
+          if grep -rl 'ERROR SUMMARY: [1-9]' build/Testing/Temporary/MemoryChecker.*.log 2>/dev/null | head -1; then
             echo "::error::Valgrind found memory errors"
+            cat build/Testing/Temporary/MemoryChecker.*.log
+            exit 1
+          fi
+          # Also check for definite leaks
+          if grep -rl 'definitely lost: [1-9]' build/Testing/Temporary/MemoryChecker.*.log 2>/dev/null | head -1; then
+            echo "::error::Valgrind found definite memory leaks"
             cat build/Testing/Temporary/MemoryChecker.*.log
             exit 1
           fi
