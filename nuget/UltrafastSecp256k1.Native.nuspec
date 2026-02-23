@@ -61,7 +61,7 @@ Dual-layer constant-time architecture: secret operations always use CT layer.
     <file src="build\UltrafastSecp256k1.Native.targets" target="build\UltrafastSecp256k1.Native.targets" />
     <file src="buildTransitive\UltrafastSecp256k1.Native.targets" target="buildTransitive\UltrafastSecp256k1.Native.targets" />
 
-    <!-- Package docs -->
-    <file src="docs\README.md" target="docs\README.md" />
+    <!-- Package docs (README rendered on nuget.org) -->
+    <file src="docs\README.md" target="docs\" />
   </files>
 </package>

@@ -9,11 +9,17 @@
     <PackageId>Ufsecp</PackageId>
     <PackageTags>secp256k1;ecdsa;schnorr;bitcoin;cryptography;ufsecp;taproot;bip32</PackageTags>
     <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/AvraSasmo/UltrafastSecp256k1</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/AvraSasmo/UltrafastSecp256k1</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/shrec/UltrafastSecp256k1</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/shrec/UltrafastSecp256k1</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
+
+  <!-- README for nuget.org -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <!-- Bundle native libraries for multi-RID NuGet package -->
   <ItemGroup>
