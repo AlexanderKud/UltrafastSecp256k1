@@ -38,7 +38,7 @@ jobs:
           sudo apt-get install -y clang-17 lld-17 ninja-build
 
       - name: Install SonarCloud build-wrapper
-        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@2500896589ef8f7247069a56136f8dc177c27ccf # v5.2.0
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9 # v7.0.0
 
       - name: Build with build-wrapper
         run: |
@@ -54,7 +54,7 @@ jobs:
             cmake --build build-sonar -j$(nproc)
 
       - name: Run SonarCloud scan
-        uses: SonarSource/sonarqube-scan-action@2500896589ef8f7247069a56136f8dc177c27ccf # v5.2.0
+        uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9 # v7.0.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
