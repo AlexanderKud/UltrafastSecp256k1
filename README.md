@@ -782,9 +782,9 @@ Extra gratitude to [@0xbitcoiner](https://stacker.news/0xbitcoiner) for the init
 
 If you find **UltrafastSecp256k1** useful, consider supporting its development!
 
-[![Donate with Bitcoin Lightning](https://img.shields.io/badge/Donate%20with-Lightning-yellow?style=for-the-badge&logo=bitcoin)](lightning:shrec@stacker.news)
+[![Donate with Bitcoin Lightning](https://img.shields.io/badge/Donate%20with-Lightning%20%E2%9A%A1-yellow?style=for-the-badge&logo=bitcoin)](https://stacker.news/shrec)
 
-**Lightning Address:** `shrec@stacker.news`
+**Lightning Address:** `shrec@stacker.news` — send sats via any Lightning wallet or [stacker.news/shrec](https://stacker.news/shrec)
 
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-ea4aaa.svg?logo=github)](https://github.com/sponsors/shrec)
 [![PayPal](https://img.shields.io/badge/PayPal-Donate-blue.svg?logo=paypal)](https://paypal.me/IChkheidze)
