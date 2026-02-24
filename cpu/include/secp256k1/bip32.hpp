@@ -33,6 +33,7 @@ struct ExtendedKey {
     std::uint32_t child_number;                // Which child this is
     std::array<std::uint8_t, 4> parent_fingerprint; // First 4 bytes of HASH160(parent pubkey)
     bool is_private;                           // true = xprv, false = xpub
+    std::uint8_t pub_prefix = 0;               // 0x02 or 0x03 when is_private==false
 
     // Derive a child key at index.
     // Hardened key: index >= 0x80000000 (or use derive_hardened())

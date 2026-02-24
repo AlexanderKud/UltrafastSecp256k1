@@ -12,6 +12,7 @@ namespace secp256k1 {
 
 using fast::Scalar;
 using fast::Point;
+using fast::FieldElement;
 
 // -- HMAC-SHA512 --------------------------------------------------------------
 
@@ -220,10 +221,22 @@ fast::Point ExtendedKey::public_key() const {
         auto sk = Scalar::from_bytes(key);
         return Point::generator().scalar_mul(sk);
     }
-    // If public key, key holds compressed x only (we need to reconstruct)
-    // For simplicity, store full compressed pubkey in serialize
-    auto sk = Scalar::from_bytes(key);
-    return Point::generator().scalar_mul(sk);
+    // Public key: decompress from pub_prefix + key (x-coordinate)
+    // y² = x³ + 7, then pick y matching parity
+    auto x = fast::FieldElement::from_bytes(key);
+    auto x2 = x * x;
+    auto x3 = x2 * x;
+    auto seven = fast::FieldElement::from_uint64(7);
+    auto y2 = x3 + seven;
+    auto y = y2.sqrt();
+    // Check parity: prefix 0x02 = even y, 0x03 = odd y
+    auto y_bytes = y.to_bytes();
+    bool y_is_odd = (y_bytes[31] & 1) != 0;
+    bool need_odd = (pub_prefix == 0x03);
+    if (y_is_odd != need_odd) {
+        y = y.negate();
+    }
+    return Point::from_affine(x, y);
 }
 
 fast::Scalar ExtendedKey::private_key() const {
@@ -235,7 +248,9 @@ ExtendedKey ExtendedKey::to_public() const {
 
     ExtendedKey pub{};
     auto pk = public_key();
-    // Store the x-coordinate of the public key
+    auto compressed = pk.to_compressed();
+    // Store prefix (0x02 or 0x03) and x-coordinate separately
+    pub.pub_prefix = compressed[0];
     auto x_bytes = pk.x().to_bytes();
     pub.key = x_bytes;
     pub.chain_code = chain_code;
@@ -275,9 +290,9 @@ std::array<uint8_t, 78> ExtendedKey::serialize() const {
         out[45] = 0x00;
         std::memcpy(out.data() + 46, key.data(), 32);
     } else {
-        auto pk = Point::generator().scalar_mul(Scalar::from_bytes(key));
-        auto compressed = pk.to_compressed();
-        std::memcpy(out.data() + 45, compressed.data(), 33);
+        // Reconstruct compressed pubkey from prefix + x-coordinate
+        out[45] = pub_prefix;
+        std::memcpy(out.data() + 46, key.data(), 32);
     }
     return out;
 }
@@ -338,6 +353,8 @@ std::pair<ExtendedKey, bool> ExtendedKey::derive_child(uint32_t index) const {
         auto parent_point = public_key();
         auto child_point = IL_point.add(parent_point);
         if (child_point.is_infinity()) return {ExtendedKey{}, false};
+        auto compressed = child_point.to_compressed();
+        child.pub_prefix = compressed[0];
         child.key = child_point.x().to_bytes();
         child.is_private = false;
     }
