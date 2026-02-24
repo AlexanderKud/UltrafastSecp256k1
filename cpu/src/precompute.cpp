@@ -89,21 +89,21 @@
 #include <iomanip>
 #endif
 
-// RDTSC benchmark macro (inline, no external header needed)
-#if defined(__x86_64__) || defined(_M_X64)
-    #if defined(__GNUC__) || defined(__clang__)
-    [[maybe_unused]] static inline uint64_t RDTSC() {
+// RDTSC benchmark helper — only compiled when profiling is enabled
+#if SECP256K1_PROFILE_DECOMP
+  #if (defined(__x86_64__) || defined(_M_X64)) && (defined(__GNUC__) || defined(__clang__))
+    static inline uint64_t RDTSC() {
         uint32_t lo, hi;
         __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
         return ((uint64_t)hi << 32) | lo;
     }
-    #endif
-#else
-    // RISC-V and other platforms: return 0 (timing disabled)
-    static inline uint64_t RDTSC() {
-        return 0;
-    }
-#endif
+  #elif defined(_MSC_VER)
+    #define RDTSC() __rdtsc()
+  #else
+    // Platforms without rdtsc: return 0 (timing disabled)
+    static inline uint64_t RDTSC() { return 0; }
+  #endif
+#endif // SECP256K1_PROFILE_DECOMP
 
 // GCC/Clang intrinsics wrappers (not needed for MSVC/ClangCL)
 #ifndef _MSC_VER
@@ -151,7 +151,6 @@ static inline unsigned char _BitScanReverse64(unsigned long* index, uint64_t mas
 #else
 // MSVC
 #include <intrin.h>
-#define RDTSC() __rdtsc()
 #endif
 
 #include "platform_compat.h"
@@ -418,26 +417,11 @@ static void mul64x64(std::uint64_t a, std::uint64_t b, std::uint64_t& lo, std::u
 }
 
 [[nodiscard]] UInt128 multiply_u64(std::uint64_t a, std::uint64_t b) {
-#if defined(_MSC_VER) && !defined(__clang__)
-    unsigned __int64 hi = 0ULL;
-    const unsigned __int64 lo = _umul128(a, b, &hi);
-    return make_uint128(lo, hi);
-#elif defined(SECP256K1_NO_INT128) || defined(SECP256K1_PLATFORM_ESP32)
-    // Portable 64x64->128 for 32-bit platforms
+    // _umul128 dispatches to platform-optimal 64×64→128 multiply
+    // (MSVC intrinsic, __int128, or portable 32-bit fallback)
     uint64_t hi = 0;
-    uint64_t lo = _umul128(a, b, &hi);
+    const uint64_t lo = _umul128(a, b, &hi);
     return make_uint128(lo, hi);
-#else
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#endif
-    const unsigned __int128 product = static_cast<unsigned __int128>(a) * static_cast<unsigned __int128>(b);
-    return make_uint128(static_cast<std::uint64_t>(product), static_cast<std::uint64_t>(product >> 64));
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-#endif
 }
 
 [[nodiscard]] UInt128 add_uint64(UInt128 value, std::uint64_t addend) {
@@ -1428,22 +1412,8 @@ constexpr std::array<std::uint8_t, 32> kB2MagBytes{
 
 // Multiply two 64-bit numbers to get 128-bit result
 static void mul64x64(std::uint64_t a, std::uint64_t b, std::uint64_t& lo, std::uint64_t& hi) {
-#if defined(_MSC_VER) && !defined(__clang__)
+    // _umul128 dispatches to platform-optimal 64×64→128 multiply
     lo = _umul128(a, b, &hi);
-#elif defined(SECP256K1_NO_INT128) || defined(SECP256K1_PLATFORM_ESP32)
-    lo = _umul128(a, b, &hi);
-#else
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#endif
-    unsigned __int128 product = static_cast<unsigned __int128>(a) * b;
-    lo = static_cast<std::uint64_t>(product);
-    hi = static_cast<std::uint64_t>(product >> 64);
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-#endif
 }
 
 // Multiply two scalars and return result as raw 512-bit value (no modular reduction)
@@ -1997,22 +1967,7 @@ ScalarDecomposition split_scalar_internal(const Scalar& scalar) {
         for(int i=0;i<4;++i){
             for(int j=0;j<4;++j){
                 uint64_t hi=0;
-#if defined(_MSC_VER) && !defined(__clang__)
                 uint64_t lo = _umul128(a[i], b[j], &hi);
-#elif defined(SECP256K1_NO_INT128) || defined(SECP256K1_PLATFORM_ESP32)
-                uint64_t lo = _umul128(a[i], b[j], &hi);
-#else
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-#endif
-                unsigned __int128 prod = (unsigned __int128)a[i] * (unsigned __int128)b[j];
-                uint64_t lo = (uint64_t)prod;
-                hi = (uint64_t)(prod >> 64);
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-#endif
                 int k = i + j;
                 // Add low part with carry propagation
                 uint64_t prev = out[k];
