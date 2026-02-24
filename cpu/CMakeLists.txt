@@ -640,6 +640,7 @@ if(BUILD_TESTING)
         tests/test_ecdsa_schnorr.cpp
         tests/test_multiscalar_batch.cpp
         tests/test_bip32.cpp
+        tests/test_bip32_vectors.cpp
         tests/test_musig2.cpp
         tests/test_ecdh_recovery_taproot.cpp
         tests/test_simd_batch.cpp
@@ -725,6 +726,14 @@ if(BUILD_TESTING)
     target_link_libraries(test_bip340_vectors_standalone PRIVATE ${SECP256K1_LIB_NAME})
     target_compile_definitions(test_bip340_vectors_standalone PRIVATE STANDALONE_TEST)
     add_test(NAME bip340_vectors COMMAND test_bip340_vectors_standalone)
+
+    # Standalone BIP-32 official test vectors (TV1-TV5)
+    add_executable(test_bip32_vectors_standalone
+        tests/test_bip32_vectors.cpp
+    )
+    target_link_libraries(test_bip32_vectors_standalone PRIVATE ${SECP256K1_LIB_NAME})
+    target_compile_definitions(test_bip32_vectors_standalone PRIVATE STANDALONE_TEST)
+    add_test(NAME bip32_vectors COMMAND test_bip32_vectors_standalone)
 
     # Standalone RFC 6979 ECDSA test vectors
     add_executable(test_rfc6979_vectors_standalone
