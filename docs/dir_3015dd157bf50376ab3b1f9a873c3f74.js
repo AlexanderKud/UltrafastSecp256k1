@@ -6,6 +6,7 @@ var dir_3015dd157bf50376ab3b1f9a873c3f74 =
     [ "address.hpp", "address_8hpp.html", "address_8hpp" ],
     [ "batch_add_affine.hpp", "batch__add__affine_8hpp.html", "batch__add__affine_8hpp" ],
     [ "batch_verify.hpp", "batch__verify_8hpp.html", "batch__verify_8hpp" ],
+    [ "benchmark_harness.hpp", "benchmark__harness_8hpp.html", "benchmark__harness_8hpp" ],
     [ "bip32.hpp", "bip32_8hpp.html", "bip32_8hpp" ],
     [ "context.hpp", "context_8hpp.html", "context_8hpp" ],
     [ "ct_utils.hpp", "ct__utils_8hpp.html", "ct__utils_8hpp" ],
@@ -38,6 +39,7 @@ var dir_3015dd157bf50376ab3b1f9a873c3f74 =
     [ "selftest.hpp", "selftest_8hpp.html", "selftest_8hpp" ],
     [ "sha256.hpp", "sha256_8hpp.html", "sha256_8hpp" ],
     [ "sha512.hpp", "sha512_8hpp.html", "sha512_8hpp" ],
+    [ "tagged_hash.hpp", "tagged__hash_8hpp.html", "tagged__hash_8hpp" ],
     [ "taproot.hpp", "taproot_8hpp.html", "taproot_8hpp" ],
     [ "test_framework.hpp", "test__framework_8hpp.html", "test__framework_8hpp" ],
     [ "types.hpp", "cpu_2include_2secp256k1_2types_8hpp.html", null ]

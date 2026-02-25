@@ -25,7 +25,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">UltrafastSecp256k1<span id="projectnumber">&#160;3.10.0</span>
+   <div id="projectname">UltrafastSecp256k1<span id="projectnumber">&#160;3.14.0</span>
    </div>
    <div id="projectbrief">Ultra high-performance secp256k1 elliptic curve cryptography library</div>
   </td>
@@ -145,6 +145,10 @@ Classes</h2></td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classsecp256k1_1_1fast_1_1Scalar.html">Scalar</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsecp256k1_1_1fast_1_1ScalarDecomposition.html">ScalarDecomposition</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsecp256k1_1_1fast_1_1SelftestCaseResult.html">SelftestCaseResult</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsecp256k1_1_1fast_1_1SelftestReport.html">SelftestReport</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="typedef-members" name="typedef-members"></a>
@@ -437,6 +441,8 @@ Functions</h2></td></tr>
 <tr class="separator:a0f2630617093e195459d21cdac4db28a"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ae749942cd0a5c56c5b1a95b7e051f71b" id="r_ae749942cd0a5c56c5b1a95b7e051f71b"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacesecp256k1_1_1fast.html#ae749942cd0a5c56c5b1a95b7e051f71b">Selftest</a> (bool verbose, <a class="el" href="namespacesecp256k1_1_1fast.html#aa79919388fa732a5045d756e9fe2830a">SelftestMode</a> mode, uint64_t seed=0)</td></tr>
 <tr class="separator:ae749942cd0a5c56c5b1a95b7e051f71b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a811eb7556b7b171489fca5e2503d461d" id="r_a811eb7556b7b171489fca5e2503d461d"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structsecp256k1_1_1fast_1_1SelftestReport.html">SelftestReport</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacesecp256k1_1_1fast.html#a811eb7556b7b171489fca5e2503d461d">selftest_report</a> (<a class="el" href="namespacesecp256k1_1_1fast.html#aa79919388fa732a5045d756e9fe2830a">SelftestMode</a> mode=<a class="el" href="namespacesecp256k1_1_1fast.html#aa79919388fa732a5045d756e9fe2830aafdfa02ecf86feac3801254da57c1c9ba">SelftestMode::smoke</a>, uint64_t seed=0)</td></tr>
+<tr class="separator:a811eb7556b7b171489fca5e2503d461d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="var-members" name="var-members"></a>
 Variables</h2></td></tr>
@@ -533,7 +539,7 @@ Variables</h2></td></tr>
 <tr><td class="fieldname"><a id="aa79919388fa732a5045d756e9fe2830aae10a36f1a5231e597daf8f42dc1ab55a" name="aa79919388fa732a5045d756e9fe2830aae10a36f1a5231e597daf8f42dc1ab55a"></a>stress&#160;</td><td class="fielddoc"></td></tr>
 </table>
 
-<p class="definition">Definition at line <a class="el" href="selftest_8hpp_source.html#l00013">13</a> of file <a class="el" href="selftest_8hpp_source.html">selftest.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="selftest_8hpp_source.html#l00015">15</a> of file <a class="el" href="selftest_8hpp_source.html">selftest.hpp</a>.</p>
 
 </div>
 </div>
@@ -738,20 +744,20 @@ Variables</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>Compute P + T[i] for all i ∈ [0, count), returning affine X-coordinates.</p>
+<p>Compute P + T[i] for all i in [0, count), returning affine X-coordinates.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">base_x</td><td>Base point X coordinate (affine) </td></tr>
     <tr><td class="paramname">base_y</td><td>Base point Y coordinate (affine) </td></tr>
     <tr><td class="paramname">offsets</td><td>Array of precomputed affine offset points T[0..count-1] </td></tr>
-    <tr><td class="paramname">out_x</td><td>Output: X-coordinates of P + T[i] (caller-allocated, size ≥ count) </td></tr>
+    <tr><td class="paramname">out_x</td><td>Output: X-coordinates of P + T[i] (caller-allocated, size &gt;= count) </td></tr>
     <tr><td class="paramname">count</td><td>Number of offset points </td></tr>
     <tr><td class="paramname">scratch</td><td>Reusable scratch buffer (avoids allocation; resized internally if needed)</td></tr>
   </table>
   </dd>
 </dl>
 <dl class="section note"><dt>Note</dt><dd>Edge cases (P == T[i] or P == -T[i]) are handled via branchless sentinel: output X is set to <a class="el" href="classsecp256k1_1_1fast_1_1FieldElement.html#a7def1a58663c0f5caa6339ea1db9c1e3">FieldElement::zero()</a> which is never a valid curve X. Caller should skip zero results if exactness matters (astronomically rare in search).</dd></dl>
-<p>Hot-path contract: No heap allocation when scratch is pre-sized ≥ count. </p>
+<p>Hot-path contract: No heap allocation when scratch is pre-sized &gt;= count. </p>
 
 </div>
 </div>
@@ -885,7 +891,7 @@ Variables</h2></td></tr>
 <p>Extract Y-parity bit for each result point. parity[i] = lowest bit of Y-coordinate (0x02 or 0x03 prefix). Use when you need compressed pubkey prefix without computing full Y.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
-    <tr><td class="paramname">out_parity</td><td>Output: 0 for even Y, 1 for odd Y (caller-allocated, size ≥ count) </td></tr>
+    <tr><td class="paramname">out_parity</td><td>Output: 0 for even Y, 1 for odd Y (caller-allocated, size &gt;= count) </td></tr>
   </table>
   </dd>
 </dl>
@@ -950,7 +956,7 @@ Variables</h2></td></tr>
 <p>Same as above but also outputs Y-coordinates.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
-    <tr><td class="paramname">out_y</td><td>Output: Y-coordinates of P + T[i] (caller-allocated, size ≥ count) </td></tr>
+    <tr><td class="paramname">out_y</td><td>Output: Y-coordinates of P + T[i] (caller-allocated, size &gt;= count) </td></tr>
   </table>
   </dd>
 </dl>
@@ -1493,12 +1499,12 @@ This function is optimized for fixed-step ECC walks where we have a deterministi
 <p>Example usage: </p><div class="fragment"><div class="line">std::vector&lt;FieldElement&gt; h_values = compute_jacobian_walk_h_values(Q, 256);</div>
 <div class="line"><a class="code hl_class" href="classsecp256k1_1_1fast_1_1FieldElement.html">FieldElement</a> z0 = Q.z;</div>
 <div class="line"> </div>
-<div class="line"><span class="comment">// Convert H values → Z^{-2} values (in-place)</span></div>
+<div class="line"><span class="comment">// Convert H values -&gt; Z^{-2} values (in-place)</span></div>
 <div class="line"><a class="code hl_function" href="namespacesecp256k1_1_1fast.html#a7f16e9e295808b8e747764b2b52506d7">fe_h_based_inversion</a>(h_values.data(), z0, h_values.size());</div>
 <div class="line"> </div>
 <div class="line"><span class="comment">// Now h_values contains Z^{-2} for each point</span></div>
 <div class="line"><span class="keywordflow">for</span> (<span class="keywordtype">size_t</span> i = 0; i &lt; h_values.size(); i++) {</div>
-<div class="line">    <a class="code hl_class" href="classsecp256k1_1_1fast_1_1FieldElement.html">FieldElement</a> x_affine = jacobian_x[i] * h_values[i];  <span class="comment">// X / Z²</span></div>
+<div class="line">    <a class="code hl_class" href="classsecp256k1_1_1fast_1_1FieldElement.html">FieldElement</a> x_affine = jacobian_x[i] * h_values[i];  <span class="comment">// X / Z^2</span></div>
 <div class="line">}</div>
 <div class="ttc" id="aclasssecp256k1_1_1fast_1_1FieldElement_html"><div class="ttname"><a href="classsecp256k1_1_1fast_1_1FieldElement.html">secp256k1::fast::FieldElement</a></div><div class="ttdef"><b>Definition</b> <a href="field_8hpp_source.html#l00042">field.hpp:42</a></div></div>
 <div class="ttc" id="anamespacesecp256k1_1_1fast_html_a7f16e9e295808b8e747764b2b52506d7"><div class="ttname"><a href="namespacesecp256k1_1_1fast.html#a7f16e9e295808b8e747764b2b52506d7">secp256k1::fast::fe_h_based_inversion</a></div><div class="ttdeci">void fe_h_based_inversion(FieldElement *h_values, const FieldElement &amp;z0_value, std::size_t count)</div><div class="ttdef"><b>Definition</b> <a href="field__h__based_8hpp_source.html#l00095">field_h_based.hpp:95</a></div></div>
@@ -1554,7 +1560,7 @@ This function is optimized for fixed-step ECC walks where we have a deterministi
   </tr>
 </table>
 </div><div class="memdoc">
-<p>H-based serial inversion with explicit Z₀ per point</p>
+<p>H-based serial inversion with explicit Z_0 per point</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">h_values</td><td>[IN/OUT] H values per batch (size: batch_size * n_threads) </td></tr>
@@ -3443,7 +3449,7 @@ This function is optimized for fixed-step ECC walks where we have a deterministi
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Vector of affine G-multiples</dd></dl>
-<dl class="section note"><dt>Note</dt><dd>This is a one-time cost at startup. For batch_size=1024: ~370 μs (1024 point additions + 1 batch inverse). Table size: 1024 * 64 = 64 KB (fits in L1 cache!). </dd></dl>
+<dl class="section note"><dt>Note</dt><dd>This is a one-time cost at startup. For batch_size=1024: ~370 us (1024 point additions + 1 batch inverse). Table size: 1024 * 64 = 64 KB (fits in L1 cache!). </dd></dl>
 
 </div>
 </div>
@@ -3794,6 +3800,34 @@ This function is optimized for fixed-step ECC walks where we have a deterministi
 
 </div>
 </div>
+<a id="a811eb7556b7b171489fca5e2503d461d" name="a811eb7556b7b171489fca5e2503d461d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a811eb7556b7b171489fca5e2503d461d">&#9670;&#160;</a></span>selftest_report()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structsecp256k1_1_1fast_1_1SelftestReport.html">SelftestReport</a> secp256k1::fast::selftest_report </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="namespacesecp256k1_1_1fast.html#aa79919388fa732a5045d756e9fe2830a">SelftestMode</a>&#160;</td>
+          <td class="paramname"><em>mode</em> = <code><a class="el" href="namespacesecp256k1_1_1fast.html#aa79919388fa732a5045d756e9fe2830aafdfa02ecf86feac3801254da57c1c9ba">SelftestMode::smoke</a></code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint64_t&#160;</td>
+          <td class="paramname"><em>seed</em> = <code>0</code>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="ad3ced354357f695073913024f5539a8d" name="ad3ced354357f695073913024f5539a8d"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#ad3ced354357f695073913024f5539a8d">&#9670;&#160;</a></span>split_scalar_glv()</h2>
 
@@ -3866,7 +3900,7 @@ This function is optimized for fixed-step ECC walks where we have a deterministi
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="field_8hpp_source.html#l00129">129</a> of file <a class="el" href="field_8hpp_source.html">field.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="field_8hpp_source.html#l00136">136</a> of file <a class="el" href="field_8hpp_source.html">field.hpp</a>.</p>
 
 </div>
 </div>
@@ -3894,7 +3928,7 @@ This function is optimized for fixed-step ECC walks where we have a deterministi
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="field_8hpp_source.html#l00125">125</a> of file <a class="el" href="field_8hpp_source.html">field.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="field_8hpp_source.html#l00132">132</a> of file <a class="el" href="field_8hpp_source.html">field.hpp</a>.</p>
 
 </div>
 </div>
