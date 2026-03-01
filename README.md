@@ -28,6 +28,10 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12011/badge)](https://www.bestpractices.dev/projects/12011)
 [![CodeQL](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/codeql.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/codeql.yml)
 [![Security Audit](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/security-audit.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/security-audit.yml)
+[![CT ARM64](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ct-arm64.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ct-arm64.yml)
+[![CT-Verif](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ct-verif.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ct-verif.yml)
+[![Valgrind CT](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/valgrind-ct.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/valgrind-ct.yml)
+[![Perf Gate](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/bench-regression.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/bench-regression.yml)
 [![Clang-Tidy](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/clang-tidy.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/clang-tidy.yml)
 [![SonarCloud](https://sonarcloud.io/api/project_badges/measure?project=shrec_UltrafastSecp256k1&metric=security_rating)](https://sonarcloud.io/summary/overall?id=shrec_UltrafastSecp256k1)
 [![codecov](https://codecov.io/gh/shrec/UltrafastSecp256k1/graph/badge.svg)](https://codecov.io/gh/shrec/UltrafastSecp256k1)
@@ -113,6 +117,15 @@ Features are organized into **maturity tiers** (see [SUPPORTED_GUARANTEES.md](in
 | -- | Platforms | x64, ARM64, RISC-V, ESP32, STM32, WASM, iOS, Android | [OK] |
 
 > **Tier 1** = battle-tested core crypto with stable API. **Tier 2** = protocol-level features, API may evolve. **Tier 3** = convenience utilities.
+
+### BIP-340 Strict Encoding
+
+All public API functions enforce **canonical input encoding** as required by BIP-340 and Bitcoin consensus:
+- Signatures with `r >= p` or `s >= n` are **rejected, not reduced**
+- Public keys with `x >= p` are **rejected, not reduced**
+- Private keys must satisfy `1 <= sk < n`
+
+The C ABI (`ufsecp_*`) returns distinct error codes: `UFSECP_ERR_BAD_SIG` (non-canonical signature) vs `UFSECP_ERR_VERIFY_FAIL` (valid encoding, bad math). See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for details.
 
 ---
 

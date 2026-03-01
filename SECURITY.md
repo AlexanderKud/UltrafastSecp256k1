@@ -4,9 +4,9 @@
 
 | Version | Supported |
 |---------|-----------|
-| 3.15.x  | [OK] Active  |
-| 3.14.x  | [OK] Maintained |
-| 3.12.x-3.13.x | [!] Critical fixes only |
+| 3.16.x  | [OK] Active  |
+| 3.15.x  | [OK] Maintained |
+| 3.14.x  | [!] Critical fixes only |
 | 3.11.x  | [!] Critical fixes only |
 | < 3.11  | [FAIL] Unsupported |
 
@@ -80,16 +80,28 @@ The following automated security measures are in place:
 - **libFuzzer harnesses** -- continuous fuzz testing of field/scalar/point layers
 - **Docker SHA-pinned images** -- reproducible builds with digest-pinned base images
 - **dudect timing analysis** -- Welch t-test side-channel detection (1300+ line test suite)
+- **Native ARM64 dudect** -- Apple Silicon (M1) smoke + full statistical analysis on macos-14 runners
+- **ct-verif LLVM pass** -- deterministic compile-time constant-time verification of CT modules
 - **Internal audit suite** -- 641,194 checks across 8 dedicated audit test suites
+- **Valgrind CT taint analysis** -- MAKE_MEM_UNDEFINED + --track-origins secret-dependent branch detection
+- **MuSig2/FROST dudect** -- protocol-level timing analysis (partial_sign, frost_sign, Lagrange)
+- **SARIF audit output** -- `--sarif` flag for GitHub Code Scanning integration
+- **Perf regression gate** -- per-commit benchmark check, fails on >20% regression
 
 ### Planned Security Improvements
 
 - [ ] Independent third-party cryptographic audit (seeking funding)
 - [ ] Formal verification of field/scalar arithmetic (Fiat-Crypto / Cryptol)
-- [ ] ct-verif LLVM pass integration for compile-time CT verification
-- [ ] Hardware timing analysis on multiple CPU microarchitectures
-- [ ] Multi-uarch dudect campaign (Intel, AMD, ARM, Apple Silicon)
-- [ ] FROST / MuSig2 protocol-level test vectors from reference implementations
+- [x] ct-verif LLVM pass integration for compile-time CT verification (`.github/workflows/ct-verif.yml`)
+- [x] Native ARM64 / Apple Silicon dudect CI -- macos-14 M1 runner, smoke + full (`.github/workflows/ct-arm64.yml`)
+- [x] Multi-uarch dudect campaign -- x86-64 native + RISC-V via QEMU + ARM64 cross-compile
+- [x] CT buffer erasure -- volatile function-pointer trick in signing paths
+- [x] value_barrier on CT mask derivation
+- [x] Valgrind CT taint CI -- secret-dependent branch detection (`.github/workflows/valgrind-ct.yml`)
+- [x] MuSig2/FROST protocol-level dudect -- timing tests for partial_sign, frost_sign, Lagrange
+- [x] SARIF output from audit runner -- `--sarif` CLI flag + GitHub Code Scanning upload
+- [x] Performance regression gate -- per-commit 120% threshold (`.github/workflows/bench-regression.yml`)
+- [ ] FROST / MuSig2 reference test vectors from BIP-327/RFC-9591 implementations
 - [ ] Cross-ABI / FFI correctness tests across calling conventions
 
 For production cryptographic systems, prefer audited libraries such as
@@ -141,8 +153,10 @@ The CT layer uses no secret-dependent branches or memory access patterns. It car
 ### Memory Handling
 
 - No dynamic allocation in hot paths
-- Sensitive data (private keys, nonces) should be zeroed by the caller after use
+- **Library-side secret erasure**: `ct::schnorr_sign` and `ct::ecdsa_sign` automatically erase intermediate nonces and scalar buffers via a volatile function-pointer trick (same pattern as libsecp256k1). The compiler cannot elide this erasure.
+- `value_barrier` applied to CT mask derivations to prevent compiler speculation
 - Fixed-size POD types used throughout (no hidden copies)
+- Callers should still erase their own copies of private keys after use
 
 ---
 
@@ -194,6 +208,12 @@ The public API is **not yet stable**. Breaking changes may occur in any minor re
 
 Layers marked "Stable" in the Production Readiness table above have mature interfaces that are unlikely to change, but no formal compatibility guarantee exists until v4.0.
 
+For detailed stability classifications, see:
+- [docs/adoption/API_STABILITY.md](docs/adoption/API_STABILITY.md) -- Tiered header classification (Stable / Provisional / Experimental / Internal)
+- [docs/ABI_VERSIONING.md](docs/ABI_VERSIONING.md) -- MAJOR.MINOR.PATCH + ABI version
+- [docs/DEPRECATION_POLICY.md](docs/DEPRECATION_POLICY.md) -- 2 minor release deprecation cycle
+- [docs/LTS_POLICY.md](docs/LTS_POLICY.md) -- 12-month LTS, SemVer 2.0.0
+
 ---
 
 ## Vulnerability Disclosure Policy
@@ -234,4 +254,4 @@ We appreciate responsible disclosure. Contributors who report valid security iss
 
 ---
 
-*UltrafastSecp256k1 v3.15.0 -- Security Policy*
+*UltrafastSecp256k1 v3.16.0 -- Security Policy*

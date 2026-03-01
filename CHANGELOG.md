@@ -5,6 +5,76 @@ All notable changes to UltrafastSecp256k1 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.16.0] - 2026-03-01
+
+> No breaking changes -- drop-in upgrade from v3.15.x | ABI compatible
+
+### 1. Security Hardening
+- **BIP-340 strict parsing** -- `Scalar::parse_bytes_strict`, `FieldElement::parse_bytes_strict`, `SchnorrSignature::parse_strict` reject all malformed inputs (#73)
+- **CT buffer erasure** -- `ct::schnorr_sign` and `ct::ecdsa_sign` erase intermediate nonces via volatile function-pointer trick (same as libsecp256k1)
+- **lift_x deduplication** -- single `static lift_x()` replaces duplicated code in schnorr verify/sign
+- **Y-parity fix** -- uses `limbs()[0] & 1` instead of byte-level parity check
+- **Pragma balance fix** -- removed misbalanced `#pragma GCC diagnostic push/pop` in ct_field.cpp
+
+### 2. Audit Infrastructure
+- **Advisory flag** -- `ct_sidechannel_smoke` marked advisory in unified_audit_runner (timing flakes on shared CI runners don't fail the audit)
+- **carry_propagation cross-validation** -- test now verifies generator-optimized path vs generic GLV path and prints hex diagnostics on ARM64 mismatch
+- **BIP-340 strict test suite** -- 31 tests covering reject-zero, reject-overflow, reject-p-plus, accept-valid for all strict parsing APIs
+
+### 3. Local CI (Docker)
+- **docker-compose.ci.yml** -- single-command orchestration for all 14 CI jobs
+- **pre-push target** -- `docker compose run --rm pre-push` validates warnings + tests + ASan + audit in ~5 min
+- **audit job** -- `docker/run_ci.sh audit` mirrors audit-report.yml (GCC-13 + Clang-17)
+- **ccache integration** -- Docker volume persistence for fast rebuilds
+- **pre-push hook** -- `scripts/hooks/pre-push` blocks push on CI failure
+- **PowerShell wrapper** -- `scripts/pre-push-ci.ps1` for Windows
+
+### 4. Documentation
+- **COMPATIBILITY.md** -- BIP-340 strict encoding compatibility notes
+- **BINDINGS_ERROR_MODEL.md** -- BIP-340 strict semantics for binding authors
+- **SECURITY.md** -- updated Memory Handling (library-side erasure), Planned items checklist, API Stability references
+- **UFSECP_BITCOIN_STRICT** -- CMake option to enforce strict-only parsing at compile time
+
+### 5. Build & CI
+- **packaging.yml** -- release workflow race condition fix (gh release upload with retry)
+- **C ABI** -- `ufsecp_schnorr_verify`, `ufsecp_schnorr_sign`, `ufsecp_xonly_pubkey_parse` now use strict parsing internally
+
+### 6. CT Verification CI
+- **ct-arm64.yml** -- native ARM64 / Apple Silicon dudect (macos-14 M1): smoke per-PR + full nightly
+- **ct-verif.yml** -- compile-time CT verification via ct-verif LLVM pass (deterministic, not statistical)
+- **valgrind-ct.yml** -- Valgrind MAKE_MEM_UNDEFINED taint analysis: detects secret-dependent branches at binary level
+- **MuSig2/FROST dudect** -- protocol-level timing tests: musig2_partial_sign, frost_sign, frost_lagrange_coefficient
+
+### 7. Audit Infrastructure
+- **SARIF output** -- `unified_audit_runner --sarif` generates SARIF v2.1.0 for GitHub Code Scanning
+- **bench-regression.yml** -- per-commit performance regression gate (120% threshold, fail-on-alert)
+- **audit-report.yml** -- now uploads SARIF to GitHub Code Scanning (linux-gcc job)
+
+### 8. OpenSSF Scorecard Hardening
+- **Pinned actions** -- all GitHub Actions pinned to full SHA (codeql-action v4.32.4, upload-artifact v6.0.0)
+- **harden-runner** -- added to discord-commits and packaging RPM jobs
+- **persist-credentials: false** -- added to all checkout steps with write permissions (benchmark, docs, packaging, release, bench-regression)
+- **Standardized versions** -- 13 workflow files audited and hardened
+
+### 9. FROST RFC 9591 Protocol Invariant Tests
+- **test_rfc9591_invariants** -- 7 ciphersuite-independent invariants: verification share = signing_share * G, Lagrange interpolation of Y_i, Feldman VSS, partial sig linearity, partial sig verification, wrong-share rejection, nonce commitment consistency
+- **test_rfc9591_3of5** -- exhaustive 3-of-5 FROST signing across all C(5,3)=10 subsets with BIP-340 verification
+- **valgrind_ct_check.sh** -- fixed binary path (audit/ not cpu/) for test_ct_sidechannel_standalone
+
+### 10. Audit UX
+- **audit_check.hpp** -- centralized CHECK macro with 20-char ASCII progress bar (`[####................] N OK`), interval 4096
+- **22 audit .cpp files** -- migrated from per-file CHECK macros to shared `audit_check.hpp`
+- **Windows stdout fix** -- `setvbuf(stdout, nullptr, _IONBF, 0)` for unbuffered output on Windows (avoids `_IOLBF` crash)
+
+### 11. New Audit Modules
+- **test_musig2_bip327_vectors.cpp** -- 35 BIP-327 MuSig2 reference tests (key aggregation, nonce aggregation, signing, verification)
+- **test_ffi_round_trip.cpp** -- 103 FFI round-trip boundary tests (Schnorr, ECDSA, pubkey, ECDH, tweaking, error paths)
+- **test_fiat_crypto_vectors.cpp** -- expanded to 752 cross-checks (field arithmetic against Fiat-Crypto reference)
+
+### 12. Community
+- **ADOPTERS.md** -- production/development/hobby adopter categories
+- **GitHub Discussion templates** -- Q&A, Show-and-Tell, Ideas, Integration Help
+
 ## [3.15.3] - 2026-03-01
 
 ### Fixed -- Code Quality (136 code scanning alerts resolved)
