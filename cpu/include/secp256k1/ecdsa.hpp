@@ -40,6 +40,10 @@ struct ECDSASignature {
     static ECDSASignature from_compact(const std::uint8_t* data64);
     static ECDSASignature from_compact(const std::array<std::uint8_t, 64>& data);
 
+    // Strict compact parse: rejects r >= n, s >= n, r == 0, s == 0 (no reduce)
+    static bool parse_compact_strict(const std::uint8_t* data64, ECDSASignature& out) noexcept;
+    static bool parse_compact_strict(const std::array<std::uint8_t, 64>& data, ECDSASignature& out) noexcept;
+
     // Normalize to low-S form (BIP-62): if s > n/2, replace with n - s
     ECDSASignature normalize() const;
 
@@ -55,6 +59,27 @@ struct ECDSASignature {
 // Returns {zero, zero} signature on failure (zero key, etc.)
 ECDSASignature ecdsa_sign(const std::array<std::uint8_t, 32>& msg_hash,
                           const fast::Scalar& private_key);
+
+// Sign + verify (FIPS 186-4 fault attack countermeasure).
+// Verifies the produced signature before returning it.
+// Use this when fault injection resistance is required.
+ECDSASignature ecdsa_sign_verified(const std::array<std::uint8_t, 32>& msg_hash,
+                                   const fast::Scalar& private_key);
+
+// Sign with hedged nonce: RFC 6979 + extra entropy (RFC 6979 Section 3.6).
+// aux_rand: 32 bytes of fresh CSPRNG randomness mixed into the HMAC-DRBG.
+// This provides defense-in-depth against HMAC-SHA256 weakness or fault
+// injection while maintaining deterministic fallback behavior.
+// The nonce is deterministic for a given (key, msg, aux_rand) triple.
+// Equivalent to libsecp256k1's secp256k1_ecdsa_sign() with ndata parameter.
+ECDSASignature ecdsa_sign_hedged(const std::array<std::uint8_t, 32>& msg_hash,
+                                  const fast::Scalar& private_key,
+                                  const std::array<std::uint8_t, 32>& aux_rand);
+
+// Hedged sign + verify (FIPS 186-4 fault attack countermeasure).
+ECDSASignature ecdsa_sign_hedged_verified(const std::array<std::uint8_t, 32>& msg_hash,
+                                          const fast::Scalar& private_key,
+                                          const std::array<std::uint8_t, 32>& aux_rand);
 
 // Verify an ECDSA signature against a public key and message hash.
 // Accepts both low-S and high-S signatures.
@@ -75,6 +100,12 @@ bool ecdsa_verify(const std::array<std::uint8_t, 32>& msg_hash,
 // Output: scalar k suitable for ECDSA signing.
 fast::Scalar rfc6979_nonce(const fast::Scalar& private_key,
                            const std::array<std::uint8_t, 32>& msg_hash);
+
+// Hedged variant: RFC 6979 Section 3.6 with extra entropy.
+// aux_rand (32 bytes of CSPRNG randomness) is mixed into the HMAC-DRBG.
+fast::Scalar rfc6979_nonce_hedged(const fast::Scalar& private_key,
+                                   const std::array<std::uint8_t, 32>& msg_hash,
+                                   const std::array<std::uint8_t, 32>& aux_rand);
 
 } // namespace secp256k1
 

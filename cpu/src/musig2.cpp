@@ -5,8 +5,17 @@
 #include "secp256k1/musig2.hpp"
 #include "secp256k1/schnorr.hpp"
 #include "secp256k1/sha256.hpp"
+#include "secp256k1/ct/point.hpp"
+#include "secp256k1/ct/scalar.hpp"
+#include "secp256k1/ct/field.hpp"
+#include "secp256k1/ct/ops.hpp"
+#include "secp256k1/detail/secure_erase.hpp"
 #include <cstring>
 #include <algorithm>
+
+namespace {
+using secp256k1::detail::secure_erase;
+} // anonymous namespace
 
 namespace secp256k1 {
 
@@ -24,9 +33,11 @@ Point decompress_point(const std::array<uint8_t, 33>& compressed) {
         return Point::infinity();
     }
 
-    std::array<uint8_t, 32> x_bytes;
-    std::memcpy(x_bytes.data(), compressed.data() + 1, 32);
-    auto x = FieldElement::from_bytes(x_bytes);
+    // Strict: reject x >= p
+    FieldElement x;
+    if (!FieldElement::parse_bytes_strict(compressed.data() + 1, x)) {
+        return Point::infinity();
+    }
 
     // y^2 = x^3 + 7
     auto x3 = x.square() * x;
@@ -105,8 +116,9 @@ MuSig2KeyAggCtx musig2_key_agg(const std::vector<std::array<uint8_t, 32>>& pubke
     // First, lift all x-only pubkeys to points
     Point Q = Point::infinity();
     for (std::size_t i = 0; i < n; ++i) {
-        // Lift x-only to point (even Y)
-        auto px = FieldElement::from_bytes(pubkeys[i]);
+        // Lift x-only to point (even Y) -- strict: reject x >= p
+        FieldElement px;
+        if (!FieldElement::parse_bytes_strict(pubkeys[i], px)) continue;
         auto x3 = px.square() * px;
         auto y2 = x3 + FieldElement::from_uint64(7);
 
@@ -181,9 +193,14 @@ std::pair<MuSig2SecNonce, MuSig2PubNonce> musig2_nonce_gen(
         sec.k2 = Scalar::from_bytes(k2_hash);
     }
 
-    // R1 = k1 * G, R2 = k2 * G
-    auto R1 = Point::generator().scalar_mul(sec.k1);
-    auto R2 = Point::generator().scalar_mul(sec.k2);
+    // Zeroize secret key material now that nonces are derived
+    secure_erase(sk_bytes.data(), sk_bytes.size());
+    secure_erase(aux_hash.data(), aux_hash.size());
+    secure_erase(t, sizeof(t));
+
+    // R1 = k1 * G, R2 = k2 * G (CT: nonces are secret, must use constant-time path)
+    auto R1 = ct::generator_mul(sec.k1);
+    auto R2 = ct::generator_mul(sec.k2);
     pub.R1 = R1.to_compressed();
     pub.R2 = R2.to_compressed();
 
@@ -278,25 +295,44 @@ Scalar musig2_partial_sign(
     // k = k1 + b * k2
     Scalar k = sec_nonce.k1 + session.b * sec_nonce.k2;
 
-    // Adjust k if R was negated
-    if (session.R_negated) {
-        k = k.negate();
+    // CT conditional negate k if R was negated (R_negated is public,
+    // but keep branchless for consistency and to avoid pipeline leaks).
+    {
+        std::uint64_t const mask = ct::bool_to_mask(session.R_negated);
+        Scalar const neg_k = k.negate();
+        k = ct::scalar_select(neg_k, k, mask);
     }
 
-    // Adjust secret key:
-    // 1) Negate if this signer's pubkey P_i = d*G has odd Y
-    //    (x-only pubkeys assume even Y, so effective d must match lift_x)
+    // Adjust secret key -- fully constant-time path:
+    // 1) Compute P_i = d*G using CT generator multiplication (the secret
+    //    key d is the sensitive input; fast::scalar_mul is variable-time).
     Scalar d = secret_key;
-    auto Pi = Point::generator().scalar_mul(d);
-    if (!has_even_y(Pi)) {
-        d = d.negate();
+    auto Pi = ct::generator_mul(d);
+
+    // 2) CT negate d if P_i has odd Y (x-only pubkeys assume even Y).
+    //    Point::has_even_y() uses fast FieldElement::inverse() (SafeGCD,
+    //    variable-time). Since Pi depends on the secret key d, the Z
+    //    coordinate is secret-dependent. Use CT field inverse instead.
+    {
+        FieldElement z_inv = ct::field_inv(Pi.z_raw());
+        FieldElement z_inv2 = z_inv.square();
+        FieldElement y_aff = Pi.y_raw() * z_inv2 * z_inv;
+        // y_aff is fully reduced -- LSB gives parity (0 = even, 1 = odd)
+        bool const odd_y = (y_aff.limbs()[0] & 1) != 0;
+        std::uint64_t const mask = ct::bool_to_mask(odd_y);
+        Scalar const neg_d = d.negate();
+        d = ct::scalar_select(neg_d, d, mask);
     }
-    // 2) Negate if aggregate key Q was negated for even-Y
-    if (key_agg_ctx.Q_negated) {
-        d = d.negate();
+
+    // 3) CT negate d if aggregate key Q was negated for even-Y.
+    {
+        std::uint64_t const mask = ct::bool_to_mask(key_agg_ctx.Q_negated);
+        Scalar const neg_d = d.negate();
+        d = ct::scalar_select(neg_d, d, mask);
     }
 
     // s_i = k + e * a_i * d  (mod n)
+    // Scalar +/* are fixed-iteration multi-limb arithmetic -- CT by construction.
     return k + session.e * key_agg_ctx.key_coefficients[signer_index] * d;
 }
 
@@ -325,12 +361,15 @@ bool musig2_partial_verify(
     }
 
     // Key contribution: e * a_i * P_i
-    // Lift pubkey
-    auto px = FieldElement::from_bytes(pubkey);
+    // Lift pubkey (strict: reject x >= p)
+    FieldElement px;
+    if (!FieldElement::parse_bytes_strict(pubkey, px)) return false;
     auto x3 = px.square() * px;
     auto y2 = x3 + FieldElement::from_uint64(7);
     // sqrt via optimized addition chain (~253 sqr + 13 mul)
     auto y = y2.sqrt();
+    // Validate sqrt: reject non-residue (x not on curve)
+    if (y.square() != y2) return false;
     // BIP-340: ensure even Y
     if (y.limbs()[0] & 1) y = y.negate();
 
@@ -341,14 +380,14 @@ bool musig2_partial_verify(
     auto eaP = Pi.scalar_mul(ea);
 
     auto expected = R_eff.add(eaP);
-    // Compare: sG == expected
-    // Both are in Jacobian; convert to affine and compare x,y
-    auto sG_x = sG.x().to_bytes();
-    auto exp_x = expected.x().to_bytes();
-    auto sG_y = sG.y().to_bytes();
-    auto exp_y = expected.y().to_bytes();
-
-    return sG_x == exp_x && sG_y == exp_y;
+    // Compare: sG == expected (Jacobian cross-multiplication, avoids 2 inversions)
+    // (X1,Y1,Z1) == (X2,Y2,Z2)  iff  X1*Z2^2 == X2*Z1^2  &&  Y1*Z2^3 == Y2*Z1^3
+    auto const z1sq = sG.z().square();
+    auto const z2sq = expected.z().square();
+    if (sG.X() * z2sq != expected.X() * z1sq) return false;
+    auto const z1cu = z1sq * sG.z();
+    auto const z2cu = z2sq * expected.z();
+    return sG.Y() * z2cu == expected.Y() * z1cu;
 }
 
 // -- Signature Aggregation ----------------------------------------------------

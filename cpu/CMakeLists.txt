@@ -71,6 +71,13 @@ set(SECP256K1_PGO_PROFILE_DIR "${CMAKE_BINARY_DIR}/pgo_profiles" CACHE PATH "Dir
 # x64 5x52 hand-tuned ASM for field mul/sqr (extern, non-inline, MULX-scheduled)
 option(SECP256K1_USE_ASM52_X64 "Use hand-tuned 5x52 MULX assembly for field mul/sqr (x64)" OFF)
 
+# Force 4x64 FieldElement for point arithmetic (FE52 storage kept, but ops route through 4x64 ADCX/ADOX)
+option(SECP256K1_USE_4X64_POINT_OPS "Force point ops through 4x64 FieldElement arithmetic (benchmark mode)" OFF)
+if(SECP256K1_USE_4X64_POINT_OPS)
+    add_compile_definitions(SECP256K1_USE_4X64_POINT_OPS=1)
+    message(STATUS "Secp256k1: Point ops forced to 4x64 FieldElement path (dual representation benchmark mode)")
+endif()
+
 if(SECP256K1_USE_ASM)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|X64" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
         # x64 Assembly (Windows/Linux/macOS)
@@ -295,14 +302,14 @@ if(NOT TARGET ${SECP256K1_LIB_NAME})
                 target_compile_options(${SECP256K1_LIB_NAME} PRIVATE
                     -fprofile-generate=${SECP256K1_PGO_PROFILE_DIR}
                 )
-                target_link_options(${SECP256K1_LIB_NAME} PRIVATE
+                target_link_options(${SECP256K1_LIB_NAME} INTERFACE
                     -fprofile-generate=${SECP256K1_PGO_PROFILE_DIR}
                 )
             else()  # GCC
                 target_compile_options(${SECP256K1_LIB_NAME} PRIVATE
                     -fprofile-generate -fprofile-dir=${SECP256K1_PGO_PROFILE_DIR}
                 )
-                target_link_options(${SECP256K1_LIB_NAME} PRIVATE
+                target_link_options(${SECP256K1_LIB_NAME} INTERFACE
                     -fprofile-generate
                 )
             endif()
@@ -516,6 +523,7 @@ if(SECP256K1_SANITIZER_BUILD)
     )
 else()
     # Production build: maximum performance
+    # Base flags (always applied for optimized builds)
     target_compile_options(${SECP256K1_LIB_NAME} PRIVATE
         -O3                      # Maximum optimization
         "SHELL:${ARCH_FLAGS}"    # Platform-specific architecture (SHELL: splits by whitespace)
@@ -524,13 +532,19 @@ else()
         -fno-trapping-math       # No FP exceptions
         -funroll-loops           # Aggressive loop unrolling
         -finline-functions       # Inline everything possible
-        -fomit-frame-pointer     # Remove frame pointers for speed
-        -fno-stack-protector     # Disable stack canaries (no security)
         $<$<PLATFORM_ID:Linux>:-fno-plt>  # No PLT (ELF/Linux only; skipped on macOS/Windows)
         -ftree-vectorize         # Auto-vectorization (AVX2/SSE/NEON)
         # Note: LTO is controlled separately by SECP256K1_USE_LTO option
         # Do NOT add -fno-lto here -- it would override the LTO setting
     )
+    # Speed-first flags: disable safety features for maximum throughput.
+    # Only applied when explicitly opted-in via -DSECP256K1_SPEED_FIRST=ON.
+    if(SECP256K1_SPEED_FIRST)
+        target_compile_options(${SECP256K1_LIB_NAME} PRIVATE
+            -fomit-frame-pointer     # Remove frame pointers for speed
+            -fno-stack-protector     # Disable stack canaries (no security)
+        )
+    endif()
 endif()
 # Propagate ARCH_FLAGS to consumers so their TU's also compile with -mcpu
 # (important for header-only / inline code and for ThinLTO codegen at link time)
@@ -627,85 +641,68 @@ endif()
     endif()
 endif()
 
+# =============================================================================
 # Benchmarks (only build if testing is enabled)
+# =============================================================================
+#
+# bench_unified   -- THE standard: full apple-to-apple vs libsecp256k1
+#                    (field, scalar, point, ECDSA, Schnorr, CT, batch)
+# bench_ct        -- CT layer overhead: fast:: vs ct:: comparison
+# bench_field_52  -- FE52 (5x52) vs FE64 (4x64) regression test
+# bench_field_26  -- FE26 (10x26) vs FE64 (4x64) -- 32-bit platform target
+#
+# All use benchmark_harness.hpp (RDTSC/chrono, IQR, thread pinning).
+# =============================================================================
 if(BUILD_TESTING)
-    add_executable(bench_scalar_mul bench/bench_scalar_mul.cpp)
-    target_link_libraries(bench_scalar_mul PRIVATE ${SECP256K1_LIB_NAME})
-
-    # JSF vs Shamir (GLV) microbenchmark
-    add_executable(bench_jsf_vs_shamir bench/bench_jsf_vs_shamir.cpp)
-    target_link_libraries(bench_jsf_vs_shamir PRIVATE ${SECP256K1_LIB_NAME})
-
-    # ECDSA-style multi-scalar microbenchmark (k1*G + k2*Q)
-    add_executable(bench_ecdsa_multiscalar bench/bench_ecdsa_multiscalar.cpp)
-    target_link_libraries(bench_ecdsa_multiscalar PRIVATE ${SECP256K1_LIB_NAME})
-
-    # GLV decomposition profiling (RDTSC cycle breakdown)
-    add_executable(bench_glv_decomp_profile bench/bench_glv_decomp_profile.cpp)
-    target_link_libraries(bench_glv_decomp_profile PRIVATE ${SECP256K1_LIB_NAME})
-
-    # Adaptive GLV threshold sweep benchmark
-    add_executable(bench_adaptive_glv bench/bench_adaptive_glv.cpp)
-    target_link_libraries(bench_adaptive_glv PRIVATE ${SECP256K1_LIB_NAME})
-
-    # Field mul kernel benchmark (BMI2 vs ASM)
-    add_executable(bench_field_mul_kernels bench/bench_field_mul_kernels.cpp)
-    target_link_libraries(bench_field_mul_kernels PRIVATE ${SECP256K1_LIB_NAME})
-
-    # Atomic operations micro-benchmark (Point Add/Double, Field ops, Inverse)
-    add_executable(bench_atomic_operations bench/bench_atomic_operations.cpp)
-    target_link_libraries(bench_atomic_operations PRIVATE ${SECP256K1_LIB_NAME})
-
     # CT (Constant-Time) layer benchmark -- fast:: vs ct:: overhead comparison
     add_executable(bench_ct bench/bench_ct.cpp)
     target_link_libraries(bench_ct PRIVATE ${SECP256K1_LIB_NAME})
 
-    # Field 5x52 vs 4x64 comparison benchmark (requires __uint128_t; skip on MSVC)
+    # Field 5x52 vs 4x64 comparison (requires __uint128_t; skip on MSVC)
     if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
         add_executable(bench_field_52 bench/bench_field_52.cpp)
         target_link_libraries(bench_field_52 PRIVATE ${SECP256K1_LIB_NAME})
     endif()
 
-    # Field 10x26 vs 4x64 comparison benchmark (32-bit platform target)
+    # Field 10x26 vs 4x64 comparison (32-bit / ESP32 target)
     add_executable(bench_field_26 bench/bench_field_26.cpp)
     target_link_libraries(bench_field_26 PRIVATE ${SECP256K1_LIB_NAME})
 
-    # Hornet Node benchmark (Bitcoin consensus full-suite, RDTSC, CT layer)
-    # libsecp_bench.c includes libsecp256k1 as single TU for apple-to-apple comparison
-    set(LIBSECP_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../_research_repos/secp256k1/src")
+    # Unified Apple-to-Apple Benchmark (cross-platform, single binary)
+    # Requires libsecp256k1 source for side-by-side comparison
+    # CI can override: -DLIBSECP_SRC_DIR=/path/to/secp256k1/src
+    if(NOT DEFINED LIBSECP_SRC_DIR)
+        set(LIBSECP_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../_research_repos/secp256k1/src")
+    endif()
+    # Normalize to forward-slashes (Windows backslash \a, \b etc. = CMake escape chars)
+    file(TO_CMAKE_PATH "${LIBSECP_SRC_DIR}" LIBSECP_SRC_DIR)
+    # Derive include root from src dir (one level up)
+    get_filename_component(_LIBSECP_ROOT "${LIBSECP_SRC_DIR}" DIRECTORY)
     if(EXISTS "${LIBSECP_SRC_DIR}/secp256k1.c")
-        add_executable(bench_hornet
-            bench/bench_hornet.cpp
-            bench/libsecp_bench.c
+        add_executable(bench_unified
+            bench/bench_unified.cpp
+            bench/libsecp_provider.c
             ${LIBSECP_SRC_DIR}/precomputed_ecmult.c
             ${LIBSECP_SRC_DIR}/precomputed_ecmult_gen.c
         )
-        target_include_directories(bench_hornet PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../_research_repos/secp256k1/include
+        target_include_directories(bench_unified PRIVATE
+            ${_LIBSECP_ROOT}/include
             ${LIBSECP_SRC_DIR}
         )
-        target_link_libraries(bench_hornet PRIVATE ${SECP256K1_LIB_NAME})
+        target_link_libraries(bench_unified PRIVATE ${SECP256K1_LIB_NAME})
+
+        # Optional: OpenSSL integration for multi-library comparison
+        find_package(OpenSSL QUIET)
+        if(OpenSSL_FOUND)
+            target_compile_definitions(bench_unified PRIVATE BENCH_HAS_OPENSSL)
+            target_link_libraries(bench_unified PRIVATE OpenSSL::Crypto)
+            message(STATUS "bench_unified: OpenSSL ${OPENSSL_VERSION} enabled for comparison")
+        else()
+            message(STATUS "bench_unified: OpenSSL not found -- OpenSSL comparison disabled")
+        endif()
     else()
-        message(STATUS "bench_hornet: skipped (libsecp256k1 source not found at ${LIBSECP_SRC_DIR})")
+        message(STATUS "bench_unified: skipped (libsecp256k1 source not found at ${LIBSECP_SRC_DIR})")
     endif()
-
-    # Comprehensive cross-platform benchmark (all operations for README performance table)
-    add_executable(bench_comprehensive bench/bench_comprehensive_riscv.cpp)
-    target_link_libraries(bench_comprehensive PRIVATE ${SECP256K1_LIB_NAME})
-
-    # Legacy alias for compatibility
-    add_executable(bench_comprehensive_riscv bench/bench_comprehensive_riscv.cpp)
-    target_link_libraries(bench_comprehensive_riscv PRIVATE ${SECP256K1_LIB_NAME})
-
-    # LTO compile options for benchmark sources (link flags auto-propagate via INTERFACE)
-    if(SECP256K1_USE_LTO AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        target_compile_options(bench_comprehensive PRIVATE -flto=thin)
-        target_compile_options(bench_comprehensive_riscv PRIVATE -flto=thin)
-        target_compile_options(bench_atomic_operations PRIVATE -flto=thin)
-    endif()
-
-    # NOTE: Benchmarks use default optimization (-O3 from CMAKE_CXX_FLAGS_RELEASE)
-    # Over-optimizing benchmark code can distort measurements (aggressive inlining, etc.)
 endif()
 
 # Tests -- unified test runner
@@ -854,6 +851,21 @@ if(BUILD_TESTING)
         target_link_options(test_point_edge_cases_standalone PRIVATE "LINKER:/STACK:8388608")
     endif()
     add_test(NAME point_edge_cases COMMAND test_point_edge_cases_standalone)
+
+    # -- CTest labels for core library tests --------------------------------
+    # Label all core tests so they can be run as a group:
+    #   ctest --test-dir <build> -L core
+    set(CORE_TESTS
+        selftest batch_add_affine hash_accel
+        field_26 exhaustive comprehensive
+        bip340_vectors bip340_strict bip32_vectors
+        rfc6979_vectors ecc_properties point_edge_cases
+    )
+    # field_52 only exists when __uint128_t is available (not plain MSVC)
+    if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+        list(APPEND CORE_TESTS field_52)
+    endif()
+    set_tests_properties(${CORE_TESTS} PROPERTIES LABELS "core")
 
     # -- Audit infrastructure lives in audit/ ------------------------------
     # All audit-specific targets (unified_audit_runner, standalone CT/fuzz/

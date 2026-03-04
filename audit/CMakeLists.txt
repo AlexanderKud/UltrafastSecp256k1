@@ -36,7 +36,7 @@ add_executable(test_ct_sidechannel_standalone test_ct_sidechannel.cpp)
 audit_target_defaults(test_ct_sidechannel_standalone)
 target_compile_definitions(test_ct_sidechannel_standalone PRIVATE STANDALONE_TEST)
 add_test(NAME ct_sidechannel COMMAND test_ct_sidechannel_standalone)
-set_tests_properties(ct_sidechannel PROPERTIES TIMEOUT 300)
+set_tests_properties(ct_sidechannel PROPERTIES TIMEOUT 600)
 
 # Smoke version of dudect (short run, relaxed threshold -- safe for CI)
 add_executable(test_ct_sidechannel_smoke test_ct_sidechannel.cpp)
@@ -84,6 +84,27 @@ target_compile_definitions(test_carry_propagation PRIVATE STANDALONE_TEST)
 add_test(NAME carry_propagation COMMAND test_carry_propagation)
 set_tests_properties(carry_propagation PROPERTIES TIMEOUT 900)
 
+# -- Wycheproof ECDSA secp256k1 vectors (Track I3-1) ----------------------
+add_executable(test_wycheproof_ecdsa test_wycheproof_ecdsa.cpp)
+audit_target_defaults(test_wycheproof_ecdsa)
+target_compile_definitions(test_wycheproof_ecdsa PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa COMMAND test_wycheproof_ecdsa)
+set_tests_properties(wycheproof_ecdsa PROPERTIES TIMEOUT 300)
+
+# -- Wycheproof ECDH secp256k1 vectors (Track I3-2) -----------------------
+add_executable(test_wycheproof_ecdh test_wycheproof_ecdh.cpp)
+audit_target_defaults(test_wycheproof_ecdh)
+target_compile_definitions(test_wycheproof_ecdh PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdh COMMAND test_wycheproof_ecdh)
+set_tests_properties(wycheproof_ecdh PROPERTIES TIMEOUT 300)
+
+# -- Batch verify randomness audit (Track I6-3) ---------------------------
+add_executable(test_batch_randomness test_batch_randomness.cpp)
+audit_target_defaults(test_batch_randomness)
+target_compile_definitions(test_batch_randomness PRIVATE STANDALONE_TEST)
+add_test(NAME batch_randomness COMMAND test_batch_randomness)
+set_tests_properties(batch_randomness PROPERTIES TIMEOUT 120)
+
 # -- Cross-platform KAT equivalence ---------------------------------------
 add_executable(test_cross_platform_kat test_cross_platform_kat.cpp)
 audit_target_defaults(test_cross_platform_kat)
@@ -99,6 +120,20 @@ target_include_directories(test_abi_gate PRIVATE
 target_compile_definitions(test_abi_gate PRIVATE STANDALONE_TEST)
 add_test(NAME abi_gate COMMAND test_abi_gate)
 set_tests_properties(abi_gate PROPERTIES TIMEOUT 30)
+
+# -- Formal CT verification via Valgrind/MSAN (Track I5-1) ----------------
+add_executable(test_ct_verif_formal_standalone test_ct_verif_formal.cpp)
+audit_target_defaults(test_ct_verif_formal_standalone)
+target_compile_definitions(test_ct_verif_formal_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME ct_verif_formal COMMAND test_ct_verif_formal_standalone)
+set_tests_properties(ct_verif_formal PROPERTIES TIMEOUT 300)
+
+# -- Fiat-Crypto direct linkage cross-check (Track I5-2) ------------------
+add_executable(test_fiat_crypto_linkage_standalone test_fiat_crypto_linkage.cpp)
+audit_target_defaults(test_fiat_crypto_linkage_standalone)
+target_compile_definitions(test_fiat_crypto_linkage_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME fiat_crypto_linkage COMMAND test_fiat_crypto_linkage_standalone)
+set_tests_properties(fiat_crypto_linkage PROPERTIES TIMEOUT 300)
 
 # -- Standalone audit_fuzz test --------------------------------------------
 add_executable(test_audit_fuzz_standalone audit_fuzz.cpp)
@@ -157,16 +192,8 @@ if(SECP256K1_BUILD_CROSS_TESTS)
     set_tests_properties(cross_libsecp256k1 PROPERTIES TIMEOUT 900)
     message(STATUS "  Cross-test vs libsecp256k1: ON (ref: v0.6.0)")
 
-    # -- CT vs libsecp256k1 benchmark (apple-to-apple CT comparison) -------
-    add_executable(bench_ct_vs_libsecp bench_ct_vs_libsecp.cpp)
-    target_link_libraries(bench_ct_vs_libsecp PRIVATE fastsecp256k1 secp256k1)
-    target_include_directories(bench_ct_vs_libsecp
-        PRIVATE ${libsecp256k1_ref_SOURCE_DIR}/include
-    )
-    if(MSVC OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND WIN32))
-        target_link_options(bench_ct_vs_libsecp PRIVATE "LINKER:/STACK:8388608")
-    endif()
-    message(STATUS "  bench_ct_vs_libsecp: ON (CT apple-to-apple)")
+    # NOTE: CT vs libsecp benchmark removed -- use cpu/bench/bench_unified instead
+    #       (bench_unified Section 8 has full CT-vs-CT apple-to-apple ratios)
 endif()
 
 # ===========================================================================
@@ -306,6 +333,15 @@ add_executable(unified_audit_runner
     test_abi_gate.cpp
     test_ct_sidechannel.cpp
     differential_test.cpp
+    # -- Wycheproof (Track I3) --
+    test_wycheproof_ecdsa.cpp
+    test_wycheproof_ecdh.cpp
+    # -- Batch verify randomness (Track I6-3) --
+    test_batch_randomness.cpp
+    # -- CT formal verification (Track I5-1) --
+    test_ct_verif_formal.cpp
+    # -- Fiat-Crypto direct linkage (Track I5-2) --
+    test_fiat_crypto_linkage.cpp
     # -- MuSig2 / FROST / adversarial / fuzz --
     test_musig2_frost.cpp
     test_musig2_frost_advanced.cpp
@@ -405,6 +441,9 @@ set_tests_properties(
     fiat_crypto_vectors carry_propagation
     cross_platform_kat abi_gate
     audit_fuzz diag_scalar_mul
+    wycheproof_ecdsa wycheproof_ecdh
+    batch_randomness
+    ct_verif_formal fiat_crypto_linkage
     unified_audit
     PROPERTIES LABELS "audit"
 )

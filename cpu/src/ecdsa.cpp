@@ -3,6 +3,8 @@
 #include "secp256k1/multiscalar.hpp"
 #include "secp256k1/config.hpp"  // SECP256K1_FAST_52BIT
 #include "secp256k1/field_52.hpp"
+#include "secp256k1/ct/point.hpp"  // ct::generator_mul for sign-then-verify
+#include "secp256k1/detail/secure_erase.hpp"
 #include <cstring>
 
 namespace secp256k1 {
@@ -73,6 +75,22 @@ ECDSASignature ECDSASignature::from_compact(const std::array<uint8_t, 64>& data)
     return from_compact(data.data());
 }
 
+bool ECDSASignature::parse_compact_strict(const uint8_t* data64,
+                                           ECDSASignature& out) noexcept {
+    // Strict: reject r >= n or r == 0; reject s >= n or s == 0
+    Scalar r_val, s_val;
+    if (!Scalar::parse_bytes_strict_nonzero(data64, r_val)) return false;
+    if (!Scalar::parse_bytes_strict_nonzero(data64 + 32, s_val)) return false;
+    out.r = r_val;
+    out.s = s_val;
+    return true;
+}
+
+bool ECDSASignature::parse_compact_strict(const std::array<uint8_t, 64>& data,
+                                           ECDSASignature& out) noexcept {
+    return parse_compact_strict(data.data(), out);
+}
+
 ECDSASignature ECDSASignature::normalize() const {
     if (is_low_s()) return *this;
     return {r, s.negate()};
@@ -95,6 +113,8 @@ bool ECDSASignature::is_low_s() const {
 // no per-byte finalize() padding. Saves ~4 compress calls via midstate reuse.
 
 namespace {
+
+using secp256k1::detail::secure_erase;
 
 // -- SHA-256 IV ---------------------------------------------------------------
 static constexpr std::uint32_t SHA256_IV[8] = {
@@ -212,6 +232,44 @@ struct HMAC_Ctx {
 
         state_to_bytes(st, out);
     }
+
+    // HMAC for longer messages (119 < msg_len <= 183): 3 inner compress + 1 outer
+    // Used by hedged RFC 6979: V(32) + byte(1) + x(32) + h1(32) + extra(32) = 129
+    void compute_three_block(const std::uint8_t* msg, std::size_t msg_len,
+                             std::uint8_t out[32]) const noexcept {
+        std::uint32_t st[8];
+        alignas(16) std::uint8_t block[64];
+
+        // Inner block 1: msg[0..63]
+        std::memcpy(st, inner_mid, 32);
+        detail::sha256_compress_dispatch(msg, st);
+
+        // Inner block 2: msg[64..127]
+        detail::sha256_compress_dispatch(msg + 64, st);
+
+        // Inner block 3: msg[128..] + padding
+        std::size_t const rem = msg_len - 128;
+        std::memcpy(block, msg + 128, rem);
+        block[rem] = 0x80;
+        std::memset(block + rem + 1, 0, 55 - rem);
+        write_be_len(block, static_cast<uint64_t>(64 + msg_len) * 8);
+        detail::sha256_compress_dispatch(block, st);
+
+        // Serialize inner
+        std::uint8_t ihash[32];
+        state_to_bytes(st, ihash);
+
+        // Outer
+        std::memcpy(st, outer_mid, 32);
+        std::memcpy(block, ihash, 32);
+        block[32] = 0x80;
+        std::memset(block + 33, 0, 23);
+        block[56] = 0; block[57] = 0; block[58] = 0; block[59] = 0;
+        block[60] = 0; block[61] = 0; block[62] = 0x03; block[63] = 0x00;
+        detail::sha256_compress_dispatch(block, st);
+
+        state_to_bytes(st, out);
+    }
 };
 
 } // namespace
@@ -269,6 +327,11 @@ Scalar rfc6979_nonce(const Scalar& private_key,
         // from_bytes() does.  The retry is only for the degenerate k==0.
         auto candidate = Scalar::from_bytes(t);
         if (!candidate.is_zero()) {
+            // Zeroize HMAC state and private key copy before returning
+            secure_erase(V, sizeof(V));
+            secure_erase(K, sizeof(K));
+            secure_erase(x_bytes.data(), x_bytes.size());
+            secure_erase(buf97, sizeof(buf97));
             return candidate;
         }
 
@@ -281,10 +344,91 @@ Scalar rfc6979_nonce(const Scalar& private_key,
         hmac.compute_short(V, 32, V);
     }
 
-    return Scalar::zero(); // should never reach
+    // Should never reach -- zeroize anyway
+    secure_erase(V, sizeof(V));
+    secure_erase(K, sizeof(K));
+    secure_erase(x_bytes.data(), x_bytes.size());
+    secure_erase(buf97, sizeof(buf97));
+    return Scalar::zero();
+}
+
+// -- Hedged RFC 6979 ----------------------------------------------------------
+// RFC 6979 Section 3.6 "Additional Data" variant: appends extra entropy to the
+// HMAC-DRBG steps d and f. This hedges against HMAC-SHA256 weakness / fault
+// injection while maintaining RFC 6979 determinism as fallback.
+// When aux_rand is all-zeros, behavior differs from standard rfc6979_nonce
+// (different HMAC input length), but nonce is still safe and deterministic.
+
+Scalar rfc6979_nonce_hedged(const Scalar& private_key,
+                            const std::array<uint8_t, 32>& msg_hash,
+                            const std::array<uint8_t, 32>& aux_rand) {
+    auto x_bytes = private_key.to_bytes();
+
+    alignas(16) uint8_t V[32];
+    std::memset(V, 0x01, 32);
+    alignas(16) uint8_t K[32];
+    std::memset(K, 0x00, 32);
+
+    // Buffer for 129-byte messages: V(32) + byte(1) + x(32) + h1(32) + extra(32)
+    alignas(16) uint8_t buf129[129];
+
+    HMAC_Ctx hmac;
+    hmac.init_key32(K);
+
+    // Step d: K = HMAC(K0, V || 0x00 || x || h1 || aux_rand)
+    std::memcpy(buf129, V, 32);
+    buf129[32] = 0x00;
+    std::memcpy(buf129 + 33, x_bytes.data(), 32);
+    std::memcpy(buf129 + 65, msg_hash.data(), 32);
+    std::memcpy(buf129 + 97, aux_rand.data(), 32);
+    hmac.compute_three_block(buf129, 129, K);
+
+    // Step e: V = HMAC(K1, V)
+    hmac.init_key32(K);
+    hmac.compute_short(V, 32, V);
+
+    // Step f: K = HMAC(K1, V || 0x01 || x || h1 || aux_rand)
+    std::memcpy(buf129, V, 32);
+    buf129[32] = 0x01;
+    std::memcpy(buf129 + 33, x_bytes.data(), 32);
+    std::memcpy(buf129 + 65, msg_hash.data(), 32);
+    std::memcpy(buf129 + 97, aux_rand.data(), 32);
+    hmac.compute_three_block(buf129, 129, K);
+
+    // Steps g+h: V = HMAC(K2, V), generate candidates
+    hmac.init_key32(K);
+    hmac.compute_short(V, 32, V);
+
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        hmac.compute_short(V, 32, V);
+        std::array<uint8_t, 32> t;
+        std::memcpy(t.data(), V, 32);
+        auto candidate = Scalar::from_bytes(t);
+        if (!candidate.is_zero()) {
+            secure_erase(V, sizeof(V));
+            secure_erase(K, sizeof(K));
+            secure_erase(x_bytes.data(), x_bytes.size());
+            secure_erase(buf129, sizeof(buf129));
+            return candidate;
+        }
+        uint8_t buf33[33];
+        std::memcpy(buf33, V, 32);
+        buf33[32] = 0x00;
+        hmac.compute_short(buf33, 33, K);
+        hmac.init_key32(K);
+        hmac.compute_short(V, 32, V);
+    }
+
+    secure_erase(V, sizeof(V));
+    secure_erase(K, sizeof(K));
+    secure_erase(x_bytes.data(), x_bytes.size());
+    secure_erase(buf129, sizeof(buf129));
+    return Scalar::zero();
 }
 
 // -- ECDSA Sign ---------------------------------------------------------------
+// Pure sign: no sign-then-verify countermeasure.
+// Use ecdsa_sign_verified() if fault attack resistance is needed.
 
 ECDSASignature ecdsa_sign(const std::array<uint8_t, 32>& msg_hash,
                           const Scalar& private_key) {
@@ -293,28 +437,108 @@ ECDSASignature ecdsa_sign(const std::array<uint8_t, 32>& msg_hash,
     // z = message hash interpreted as scalar
     auto z = Scalar::from_bytes(msg_hash);
 
-    // Generate deterministic nonce
+    // Generate deterministic nonce (V/K buffers zeroed inside rfc6979_nonce)
     auto k = rfc6979_nonce(private_key, msg_hash);
-    if (k.is_zero()) return {Scalar::zero(), Scalar::zero()};
+    ECDSASignature result{Scalar::zero(), Scalar::zero()};
 
-    // R = k * G
-    auto R = Point::generator().scalar_mul(k);
-    if (R.is_infinity()) return {Scalar::zero(), Scalar::zero()};
+    if (!k.is_zero()) {
+        // R = k * G
+        auto R = Point::generator().scalar_mul(k);
+        if (!R.is_infinity()) {
+            // r = R.x mod n
+            auto r_fe = R.x();
+            auto r_bytes = r_fe.to_bytes();
+            auto r = Scalar::from_bytes(r_bytes);
+            if (!r.is_zero()) {
+                // s = k^{-1} * (z + r * d) mod n
+                auto k_inv = k.inverse();
+                auto s = k_inv * (z + r * private_key);
+                if (!s.is_zero()) {
+                    // Normalize to low-S (BIP-62)
+                    result = ECDSASignature{r, s}.normalize();
+                }
+                secure_erase(&k_inv, sizeof(k_inv));
+            }
+        }
+    }
 
-    // r = R.x mod n
-    auto r_fe = R.x();
-    auto r_bytes = r_fe.to_bytes();
-    auto r = Scalar::from_bytes(r_bytes);
-    if (r.is_zero()) return {Scalar::zero(), Scalar::zero()};
+    // Zeroize sensitive scalar temporaries before returning
+    secure_erase(&k, sizeof(k));
+    secure_erase(&z, sizeof(z));
+    return result;
+}
 
-    // s = k^{-1} * (z + r * d) mod n
-    auto k_inv = k.inverse();
-    auto s = k_inv * (z + r * private_key);
-    if (s.is_zero()) return {Scalar::zero(), Scalar::zero()};
+// -- ECDSA Sign + Verify (fault attack countermeasure) ------------------------
+// Signs and then verifies the signature (FIPS 186-4 fault countermeasure).
+// A transient fault during signing could produce a corrupted (r,s) from which
+// the private key is recoverable via lattice attack. This variant verifies
+// the signature before releasing it.
 
-    // Normalize to low-S (BIP-62)
-    ECDSASignature const sig{r, s};
-    return sig.normalize();
+ECDSASignature ecdsa_sign_verified(const std::array<uint8_t, 32>& msg_hash,
+                                   const Scalar& private_key) {
+    auto result = ecdsa_sign(msg_hash, private_key);
+
+    if (!result.r.is_zero()) {
+        auto pk = Point::generator().scalar_mul(private_key);
+        if (!ecdsa_verify(msg_hash.data(), pk, result)) {
+            result = {Scalar::zero(), Scalar::zero()};
+        }
+    }
+
+    return result;
+}
+
+// -- ECDSA Sign (hedged, with extra entropy) ----------------------------------
+// RFC 6979 Section 3.6: aux_rand is mixed into the HMAC-DRBG as additional
+// data. The nonce is deterministic for a given (key, msg, aux_rand) triple.
+// Use 32 bytes of fresh CSPRNG randomness for maximum defense-in-depth.
+
+ECDSASignature ecdsa_sign_hedged(const std::array<uint8_t, 32>& msg_hash,
+                                  const Scalar& private_key,
+                                  const std::array<uint8_t, 32>& aux_rand) {
+    if (private_key.is_zero()) return {Scalar::zero(), Scalar::zero()};
+
+    auto z = Scalar::from_bytes(msg_hash);
+    auto k = rfc6979_nonce_hedged(private_key, msg_hash, aux_rand);
+    ECDSASignature result{Scalar::zero(), Scalar::zero()};
+
+    if (!k.is_zero()) {
+        auto R = Point::generator().scalar_mul(k);
+        if (!R.is_infinity()) {
+            auto r_fe = R.x();
+            auto r_bytes = r_fe.to_bytes();
+            auto r = Scalar::from_bytes(r_bytes);
+            if (!r.is_zero()) {
+                auto k_inv = k.inverse();
+                auto s = k_inv * (z + r * private_key);
+                if (!s.is_zero()) {
+                    result = ECDSASignature{r, s}.normalize();
+                }
+                secure_erase(&k_inv, sizeof(k_inv));
+            }
+        }
+    }
+
+    secure_erase(&k, sizeof(k));
+    secure_erase(&z, sizeof(z));
+    return result;
+}
+
+// -- ECDSA Sign Hedged + Verify (fault attack countermeasure) -----------------
+
+ECDSASignature ecdsa_sign_hedged_verified(const std::array<uint8_t, 32>& msg_hash,
+                                          const Scalar& private_key,
+                                          const std::array<uint8_t, 32>& aux_rand) {
+    auto result = ecdsa_sign_hedged(msg_hash, private_key, aux_rand);
+
+    if (!result.r.is_zero()) {
+        auto pk = Point::generator().scalar_mul(private_key);
+        if (!ecdsa_verify(msg_hash.data(), pk, result)) {
+            result = {Scalar::zero(), Scalar::zero()};
+        }
+    }
+
+    return result;
 }
 
 // -- ECDSA Verify -------------------------------------------------------------
@@ -348,6 +572,10 @@ bool ecdsa_verify(const uint8_t* msg_hash32,
     // Check: R'.x/R'.z^2 mod n == sig.r
     // Equivalent: sig.r * R'.z^2 == R'.x (mod p)
     // This saves ~3us by avoiding the field inversion in Point::x().
+    //
+    // Comparison uses negate+add+normalizes_to_zero_var (matches libsecp's
+    // gej_eq_x_var approach).  This avoids 4 full fe52_normalize_inline
+    // calls that the previous normalize()+normalize()+operator== path did.
 #if defined(SECP256K1_FAST_52BIT)
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -359,13 +587,18 @@ bool ecdsa_verify(const uint8_t* msg_hash32,
     // Since sig.r < n < p, the raw limbs are a valid field element -- no reduction needed.
     FE52 const r52 = FE52::from_4x64_limbs(sig.r.limbs().data());
     FE52 const z2 = R_prime.Z52().square();    // Z^2  [1S] mag=1
-    FE52 lhs = r52 * z2;                 // r*Z^2 [1M] mag=1
-    lhs.normalize();
+    FE52 const r_z2 = r52 * z2;               // r*Z^2 [1M] mag=1
 
-    FE52 rx = R_prime.X52();
-    rx.normalize();
-
-    if (lhs == rx) return true;
+    // Compare via subtract + normalizes_to_zero_var:
+    //   diff = r*Z^2 - X;  diff == 0 (mod p) iff sig.r matches
+    // R'.X magnitude: <= 23 after jac52_double, <= 7 after mixed add.
+    // negate(23) is a safe upper bound for all paths.
+    {
+        FE52 diff = R_prime.X52();                // mag <= 23
+        diff.negate_assign(23);                   // mag 24
+        diff.add_assign(r_z2);                    // mag 25
+        if (diff.normalizes_to_zero_var()) return true;
+    }
 
     // Rare case: x_R mod p in [n, p), so x_R mod n = x_R - n = sig.r
     // -> need to check (sig.r + n) * Z^2 == X.  Probability ~2^-128.
@@ -403,20 +636,13 @@ bool ecdsa_verify(const uint8_t* msg_hash32,
         rn[1] = static_cast<std::uint64_t>(acc);
         acc = static_cast<unsigned __int128>(rl[2]) + N_LIMBS[2] + static_cast<std::uint64_t>(acc >> 64);
         rn[2] = static_cast<std::uint64_t>(acc);
-        // rn[3] cannot overflow 64 bits: rl[3] < p-n limb3 == 0 (since
-        // r_less_than_pmn implies rl[3]==0), and N_LIMBS[3]==0xFFFF...FFFF,
-        // plus at most carry=1.  0 + 0xFFFF...FFFF + 1 == 2^64 wraps to 0
-        // with carry, but that carry propagates to a 5th limb we discard.
-        // The result sig.r + n < p is guaranteed by the r_less_than_pmn
-        // check, so the 256-bit value is valid (no 5th-limb overflow in
-        // the mathematical sum; the C wrap is benign since we only need
-        // the low 4 limbs of a value < p).
         rn[3] = rl[3] + N_LIMBS[3] + static_cast<std::uint64_t>(acc >> 64);
 
-        FE52 const r2_52 = FE52::from_4x64_limbs(rn);
-        FE52 lhs2 = r2_52 * z2;
-        lhs2.normalize();
-        if (lhs2 == rx) return true;
+        FE52 const r2_z2 = FE52::from_4x64_limbs(rn) * z2;   // (r+n)*Z^2
+        FE52 diff2 = R_prime.X52();
+        diff2.negate_assign(23);
+        diff2.add_assign(r2_z2);
+        if (diff2.normalizes_to_zero_var()) return true;
     }
 
     return false;

@@ -3,6 +3,11 @@
 // ============================================================================
 // Reference: Bernstein et al. "Faster batch forgery identification" (2012)
 //
+// GLV note: GLV-decomposition was evaluated but found counterproductive
+// for Pippenger: doubling point count (2N) increases scatter/aggregate
+// cost more than the saved window-doublings (ceil(128/c) vs ceil(256/c)).
+// Individual scalar_mul already uses GLV internally.
+//
 // Bucket method for computing sum(s_i * P_i):
 //   For each window of c bits, scatter points into 2^c buckets by digit,
 //   aggregate buckets bottom-up (running sum trick), then combine windows.
@@ -140,11 +145,13 @@ Point pippenger_msm(const std::vector<Scalar>& scalars,
 }
 
 // -- Unified MSM (auto-select) ------------------------------------------------
-// Strauss <= 128 points, Pippenger > 128
+// Strauss <= 64 points, Pippenger > 64
+// Pippenger crossover is ~33 points; using 64 for safety margin.
+// N=64 Schnorr batch -> 128 points in MSM -> Pippenger path.
 Point msm(const Scalar* scalars,
           const Point* points,
           std::size_t n) {
-    if (n <= 128) {
+    if (n <= 64) {
         return multi_scalar_mul(scalars, points, n);
     }
     return pippenger_msm(scalars, points, n);

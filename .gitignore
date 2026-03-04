@@ -106,11 +106,6 @@ bindings/nodejs/node_modules/
 bindings/ruby/*.gem
 bindings/csharp/**/bin/
 bindings/csharp/**/obj/
-test_errors.txt
-test_f52.txt
-test_f52_err.txt
-test_output.txt
-benchmark-*.txt
 
 # Removed submodule (bitcoin-core/secp256k1 reference copy)
 cpu/secp256k1/
@@ -136,8 +131,18 @@ audit_full_dump*.txt
 local-ci-output/
 test_asm_check.*
 test_inline_check.*
+test_half.*
+test_half2.*
+point_asm.s
+dudect_err.txt
+dudect_out.txt
+build_ci_output.txt
 STACKER_NEWS_POST.md
 *.pdb
+
+# Build output logs committed by accident
+audit/audit_results.txt
+audit/test_ct_sidechannel_results.txt
 
 # ESP32 build artifacts and logs
 tests/esp32_audit/build*/

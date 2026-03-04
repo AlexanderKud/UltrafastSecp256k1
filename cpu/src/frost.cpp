@@ -5,6 +5,7 @@
 #include "secp256k1/frost.hpp"
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/schnorr.hpp"
+#include "secp256k1/ct/point.hpp"
 #include <algorithm>
 #include <cstring>
 
@@ -146,7 +147,7 @@ frost_keygen_begin(ParticipantId participant_id,
     commitment.from = participant_id;
     commitment.coeffs.resize(threshold);
     for (std::uint32_t j = 0; j < threshold; ++j) {
-        commitment.coeffs[j] = Point::generator().scalar_mul(coeffs[j]);
+        commitment.coeffs[j] = ct::generator_mul(coeffs[j]);
     }
 
     // Shares: f_i(j) for j = 1..n
@@ -208,7 +209,7 @@ frost_keygen_finalize(ParticipantId participant_id,
     pkg.signing_share = signing_share;
 
     // Verification share: Y_i = s_i * G
-    pkg.verification_share = Point::generator().scalar_mul(signing_share);
+    pkg.verification_share = ct::generator_mul(signing_share);
 
     // Group public key: Y = Sum A_{j,0} (sum of constant terms)
     Point group_key = Point::infinity();
@@ -233,8 +234,8 @@ frost_sign_nonce_gen(ParticipantId participant_id,
 
     FrostNonceCommitment commitment;
     commitment.id = participant_id;
-    commitment.hiding_point = Point::generator().scalar_mul(nonce.hiding_nonce);
-    commitment.binding_point = Point::generator().scalar_mul(nonce.binding_nonce);
+    commitment.hiding_point = ct::generator_mul(nonce.hiding_nonce);
+    commitment.binding_point = ct::generator_mul(nonce.binding_nonce);
 
     return {nonce, commitment};
 }
@@ -316,14 +317,14 @@ bool frost_verify_partial(const FrostPartialSig& partial_sig,
     // Collect signer IDs
     std::vector<ParticipantId> signer_ids;
     signer_ids.reserve(nonce_commitments.size());
-for (const auto& nc : nonce_commitments) {
+    for (const auto& nc : nonce_commitments) {
         signer_ids.push_back(nc.id);
     }
 
     // Compute binding factors
     std::vector<Scalar> binding_factors;
     binding_factors.reserve(nonce_commitments.size());
-for (const auto& nc : nonce_commitments) {
+    for (const auto& nc : nonce_commitments) {
         binding_factors.push_back(
             compute_binding_factor(group_public_key, nc.id, nonce_commitments, msg));
     }
@@ -376,7 +377,7 @@ frost_aggregate(const std::vector<FrostPartialSig>& partial_sigs,
     // Compute binding factors
     std::vector<Scalar> binding_factors;
     binding_factors.reserve(nonce_commitments.size());
-for (const auto& nc : nonce_commitments) {
+    for (const auto& nc : nonce_commitments) {
         binding_factors.push_back(
             compute_binding_factor(group_public_key, nc.id, nonce_commitments, msg));
     }

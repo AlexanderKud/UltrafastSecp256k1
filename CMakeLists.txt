@@ -9,7 +9,7 @@ string(STRIP "${_version_raw}" UFSECP_VERSION)
 project(UltrafastSecp256k1
     VERSION ${UFSECP_VERSION}
     DESCRIPTION "Ultra high-performance secp256k1 elliptic curve cryptography library"
-    LANGUAGES CXX
+    LANGUAGES CXX C
 )
 
 # Project metadata
@@ -36,7 +36,6 @@ option(SECP256K1_BUILD_OPENCL "Build OpenCL support" OFF)
 option(SECP256K1_BUILD_METAL "Build Apple Metal GPU support" OFF)
 option(SECP256K1_BUILD_TESTS "Build test suite" ON)
 option(SECP256K1_BUILD_BENCH "Build benchmarks" ON)
-option(SECP256K1_BUILD_BENCH_COMPARE "Build apples-to-apples UF vs libsecp256k1 comparison bench" OFF)
 option(SECP256K1_BUILD_EXAMPLES "Build example programs" ON)
 option(SECP256K1_USE_ASM "Enable assembly optimizations (x64/RISC-V)" ON)
 
@@ -51,9 +50,20 @@ option(SECP256K1_BUILD_SHARED "Build shared library" OFF)
 # Bitcoin strict mode (default ON): public API rejects non-canonical inputs
 option(UFSECP_BITCOIN_STRICT "Enforce BIP-340 strict encoding in public API (reject r>=p, s>=n)" ON)
 
+# CT enforcement: deprecate non-CT signing functions at compile time
+option(SECP256K1_REQUIRE_CT "Deprecate non-CT sign functions (compile warnings on fast:: signing)" OFF)
+
+# Warning policy: promote warnings to errors (recommended for CI)
+option(SECP256K1_WERROR "Treat compiler warnings as errors (-Werror / /WX)" OFF)
+
 # Global compile definitions
 if(SECP256K1_SPEED_FIRST)
     add_compile_definitions(SECP256K1_FAST_NO_SECURITY_CHECKS=1)
+endif()
+
+if(SECP256K1_REQUIRE_CT)
+    add_compile_definitions(SECP256K1_REQUIRE_CT=1)
+    message(STATUS "secp256k1-fast: CT enforcement enabled -- non-CT sign functions are deprecated")
 endif()
 
 if(UFSECP_BITCOIN_STRICT)
@@ -89,10 +99,23 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         $<$<COMPILE_LANGUAGE:C,CXX>:-Wextra>
         $<$<COMPILE_LANGUAGE:C,CXX>:-Wpedantic>
         $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-unused-parameter>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wconversion>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wshadow>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wformat=2>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-Wundef>
         $<$<COMPILE_LANGUAGE:C,CXX>:${MARCH_FLAG}>
         $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:-O3>
         $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:-DNDEBUG>
     )
+    if(SECP256K1_WERROR)
+        add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-Werror>)
+    endif()
+    # GCC warns about unsigned __int128 under -Wpedantic (ISO C++ extension).
+    # This project fundamentally requires __int128 for 64-bit ECC arithmetic.
+    # Clang treats __int128 as a built-in type and does not warn.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-Wno-pedantic>)
+    endif()
 elseif(MSVC)
     add_compile_options(
         /W4
@@ -100,6 +123,9 @@ elseif(MSVC)
         $<$<CONFIG:Release>:/O2>
         $<$<CONFIG:Release>:/GL>
     )
+    if(SECP256K1_WERROR)
+        add_compile_options(/WX)
+    endif()
 endif()
 
 # Subdirectories
@@ -195,11 +221,8 @@ if(SECP256K1_BUILD_CPU AND BUILD_TESTING)
     add_subdirectory(audit)
 endif()
 
-# -- Apples-to-apples comparison benchmark (UF vs libsecp256k1) ------------
-# Enable with: cmake -DSECP256K1_BUILD_BENCH_COMPARE=ON ...
-if(SECP256K1_BUILD_CPU AND SECP256K1_BUILD_BENCH_COMPARE)
-    add_subdirectory(bench)
-endif()
+# NOTE: bench_compare removed -- use cpu/bench/bench_unified instead
+#       (bench_unified has full apple-to-apple in a single binary, no FetchContent)
 
 # -- Cross-library differential test -----------------------------------------
 # Moved to audit/CMakeLists.txt -- enable with -DSECP256K1_BUILD_CROSS_TESTS=ON
@@ -326,7 +349,7 @@ message(STATUS "    OpenCL:         ${SECP256K1_BUILD_OPENCL}")
 message(STATUS "    Metal:          ${SECP256K1_BUILD_METAL}")
 message(STATUS "    Tests:          ${SECP256K1_BUILD_TESTS}")
 message(STATUS "    Benchmarks:     ${SECP256K1_BUILD_BENCH}")
-message(STATUS "    Bench Compare:  ${SECP256K1_BUILD_BENCH_COMPARE}")
+
 message(STATUS "    Examples:       ${SECP256K1_BUILD_EXAMPLES}")
 message(STATUS "")
 message(STATUS "  Optimizations:")

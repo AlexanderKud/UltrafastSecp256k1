@@ -39,7 +39,7 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CXX_COMPILER=g++-13 \
-            -DCMAKE_CXX_FLAGS="-Werror -Wall -Wextra -Wpedantic -Wconversion -Wshadow" \
+            -DSECP256K1_WERROR=ON \
             -DSECP256K1_BUILD_TESTS=ON
 
       - name: Build (zero warnings required)
@@ -83,6 +83,76 @@ jobs:
         # selftest/unified_audit (standalone tests cover the same modules).
         run: ctest --test-dir build --output-on-failure -j"$(nproc)" -E "^(ct_sidechannel|selftest|unified_audit)" --timeout 900
 
+  # ── Memory Sanitizer (uninitialized reads) ──────────────────────────────
+  msan:
+    name: MSan
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-17 lld-17 ninja-build
+
+      - name: Configure with MSan
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang-17 \
+            -DCMAKE_CXX_COMPILER=clang++-17 \
+            -DCMAKE_CXX_FLAGS="-fsanitize=memory -fno-omit-frame-pointer -fsanitize-memory-track-origins=2" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=memory" \
+            -DSECP256K1_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test under MSan
+        env:
+          MSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build --output-on-failure -j"$(nproc)" -E "^(ct_sidechannel|selftest|unified_audit)" --timeout 900
+
+  # ── Thread Sanitizer (data races) ───────────────────────────────────────
+  tsan:
+    name: TSan
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-17 lld-17 ninja-build
+
+      - name: Configure with TSan
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang-17 \
+            -DCMAKE_CXX_COMPILER=clang++-17 \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
+            -DSECP256K1_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test under TSan
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ctest --test-dir build --output-on-failure -j"$(nproc)" -E "^(ct_sidechannel|selftest|unified_audit)" --timeout 900
+
   # ── Valgrind memcheck ───────────────────────────────────────────────────
   valgrind:
     name: Valgrind Memcheck
@@ -116,9 +186,8 @@ jobs:
             -E "^ct_sidechannel" \
             --overwrite MemoryCheckCommand=/usr/bin/valgrind \
             --overwrite "MemoryCheckCommandOptions=--leak-check=full --error-exitcode=1 --show-leak-kinds=definite,indirect,possible --errors-for-leak-kinds=definite,indirect,possible --suppressions=${{ github.workspace }}/valgrind.supp" \
-            -T MemCheck || true
-          # Check for real errors in memcheck output (ignore "still reachable")
-          # NB: use -q (quiet) instead of -l | head -1 to preserve exit status
+            -T MemCheck
+          # Check for real errors in memcheck output
           if grep -q 'ERROR SUMMARY: [1-9]' build/Testing/Temporary/MemoryChecker.*.log 2>/dev/null; then
             echo "::error::Valgrind found memory errors"
             cat build/Testing/Temporary/MemoryChecker.*.log
@@ -160,12 +229,19 @@ jobs:
 
       - name: Run dudect timing analysis (5 min timeout)
         run: |
+          EXIT=0
           timeout 300 ./build/cpu/test_ct_sidechannel_standalone 2>&1 | tee dudect_smoke.log || EXIT=$?
-          if [ "${EXIT:-0}" -eq 124 ]; then
-            echo "::warning::dudect timed out (expected for CI smoke run)"
-          elif [ "${EXIT:-0}" -ne 0 ]; then
-            echo "::warning::dudect reported timing variance (common on shared CI runners, verify locally)"
+          if [ "$EXIT" -eq 124 ]; then
+            echo "dudect reached timeout limit (expected for CI smoke run -- advisory only)"
+          elif [ "$EXIT" -ne 0 ]; then
+            echo "::warning::dudect reported timing variance (common on shared CI runners -- verify locally)"
+            echo "dudect exit code: $EXIT (advisory -- not blocking CI)"
+          else
+            echo "dudect: PASS (no timing leakage detected)"
           fi
+          # dudect is statistical and unreliable on shared CI runners.
+          # This is intentionally advisory. Deterministic CT checks (ct-verif,
+          # valgrind-ct) are the blocking gates.
           exit 0
 
       - name: Upload dudect results

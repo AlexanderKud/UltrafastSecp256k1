@@ -6,11 +6,16 @@
 #if defined(__SIZEOF_INT128__) && !defined(__EMSCRIPTEN__)
 #include "secp256k1/field_52.hpp"
 #endif
+// Inline 4x64 ADCX/ADOX field operations for hot-loop point ops
+#if (defined(__x86_64__) || defined(_M_X64)) && defined(__ADX__) && defined(__BMI2__)
+#include "secp256k1/field_4x64_inline.hpp"
+#endif
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 namespace secp256k1::fast {
 namespace {
@@ -18,73 +23,70 @@ namespace {
 // ESP32/STM32 local wNAF helpers (when precompute.hpp not included)
 #if defined(SECP256K1_PLATFORM_ESP32) || defined(ESP_PLATFORM) || defined(SECP256K1_PLATFORM_STM32)
 // Simple wNAF computation for ESP32 (inline, no heap allocation)
+// -- Optimized wNAF computation (word-at-a-time bit extraction) ---------------
+// Port of libsecp256k1's secp256k1_ecmult_wnaf approach:
+//   - Reads scalar limbs directly (no to_bytes serialization roundtrip)
+//   - Extracts W bits at once via word-level access (no multi-word shift/sub)
+//   - Skips zero-bit positions for free (continue loop)
+// For W=15 on a 128-bit scalar: ~9 non-zero digits out of ~129 positions.
+// Old code: 128+ iterations of 4-limb shift + multi-word arithmetic per bit.
+// New code: ~129 iterations of 1 bit-test + ~9 word-extractions total.
+// Saves ~800-1200ns per verify (4 wNAF computations).
 static void compute_wnaf_into(const Scalar& scalar, unsigned window_width,
                                int32_t* out, std::size_t out_capacity,
                                std::size_t& out_len) {
-    // Get scalar as bytes (big-endian)
-    auto bytes = scalar.to_bytes();
+    // Read scalar limbs directly -- 4x64-bit little-endian.
+    // No need for to_bytes() -> manual big-to-little endian conversion.
+    const auto& sl = scalar.limbs();
 
-    // Convert to limbs (little-endian)
-    uint64_t limbs[4] = {0};
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 8; j++) {
-            limbs[i] |= static_cast<uint64_t>(bytes[31 - i*8 - j]) << (j*8);
+    const int w = static_cast<int>(window_width);
+    const int len = static_cast<int>(out_capacity);
+
+    // Extract `count` bits starting at bit position `pos` from 4x64 LE limbs.
+    // count must be in [1, 31].  Handles cross-limb boundary reads.
+    // Positions beyond 255 return 0 (scalar is 256 bits).
+    auto get_bits = [&](int pos, int count) -> std::uint32_t {
+        int const limb_idx = pos >> 6;          // pos / 64
+        int const bit_off  = pos & 63;          // pos % 64
+        std::uint64_t val = 0;
+        if (limb_idx < 4) {
+            val = sl[static_cast<std::size_t>(limb_idx)] >> bit_off;
+            if (bit_off + count > 64 && limb_idx + 1 < 4) {
+                val |= sl[static_cast<std::size_t>(limb_idx + 1)] << (64 - bit_off);
+            }
         }
-    }
+        return static_cast<std::uint32_t>(val) & ((1u << count) - 1);
+    };
 
-    const int64_t width = 1 << window_width;     // 2^w
-    const int64_t half_width = width >> 1;       // 2^(w-1)
-    const uint64_t mask = static_cast<uint64_t>(width - 1);  // 2^w - 1
+    // Zero-fill output array (only the used portion)
+    std::memset(out, 0, out_capacity * sizeof(int32_t));
 
-    out_len = 0;
+    int carry = 0;
+    int last_set_bit = -1;
+    int bit = 0;
 
-    // Process until all bits consumed
-    int bit_pos = 0;
-    while (bit_pos < 256 || (limbs[0] | limbs[1] | limbs[2] | limbs[3]) != 0) {
-        if (limbs[0] & 1) {
-            // Current bit is set - compute wNAF digit
-            int64_t digit = static_cast<int64_t>(limbs[0] & mask);
-            if (digit >= half_width) {
-                digit -= width;
-            }
-            out[out_len++] = static_cast<int32_t>(digit);
-
-            // Subtract digit from scalar (handling negative digits as addition)
-            if (digit > 0) {
-                // Subtract positive digit
-                uint64_t borrow = static_cast<uint64_t>(digit);
-                for (int i = 0; i < 4 && borrow; i++) {
-                    if (limbs[i] >= borrow) {
-                        limbs[i] -= borrow;
-                        borrow = 0;
-                    } else {
-                        uint64_t old = limbs[i];
-                        limbs[i] -= borrow;  // wraps
-                        borrow = 1;
-                    }
-                }
-            } else if (digit < 0) {
-                // Add absolute value of negative digit
-                uint64_t carry = static_cast<uint64_t>(-digit);
-                for (int i = 0; i < 4 && carry; i++) {
-                    uint64_t sum = limbs[i] + carry;
-                    carry = (sum < limbs[i]) ? 1 : 0;
-                    limbs[i] = sum;
-                }
-            }
-        } else {
-            out[out_len++] = 0;
+    while (bit < len) {
+        // Fast check: is current bit == carry?  If so, skip (output stays 0).
+        std::uint32_t const b = get_bits(bit, 1);
+        if (b == static_cast<std::uint32_t>(carry)) {
+            ++bit;
+            continue;
         }
 
-        // Right-shift scalar by 1
-        limbs[0] = (limbs[0] >> 1) | (limbs[1] << 63);
-        limbs[1] = (limbs[1] >> 1) | (limbs[2] << 63);
-        limbs[2] = (limbs[2] >> 1) | (limbs[3] << 63);
-        limbs[3] >>= 1;
+        // Non-zero digit: extract W bits at once.
+        int now = w;
+        if (now > len - bit) now = len - bit;
 
-        bit_pos++;
-        if (out_len >= out_capacity - 1) break;
+        int word = static_cast<int>(get_bits(bit, now)) + carry;
+        carry = word >> (w - 1);
+        word -= carry << w;
+
+        out[bit] = static_cast<int32_t>(word);
+        last_set_bit = bit;
+        bit += now;   // skip ahead by window width (all these positions are 0)
     }
+
+    out_len = (last_set_bit >= 0) ? static_cast<std::size_t>(last_set_bit + 1) : 0;
 }
 
 static std::vector<int32_t> compute_wnaf(const Scalar& scalar, unsigned window_bits) {
@@ -476,106 +478,344 @@ static inline Point from_jac52(const JacobianPoint52& j) {
 #endif
 }
 
+// ============================================================================
+// 4x64 <-> 5x52 Dual Representation Helpers
+// ============================================================================
+// When SECP256K1_USE_4X64_POINT_OPS is defined, point arithmetic routes
+// through 4x64 FieldElement ops (ADCX/ADOX asm) instead of 5x52.
+// Storage stays FE52 -- only the compute path changes.
+// Conversion cost: ~1ns per field element (5 shifts), negligible vs 100+ ns per point op.
+#if defined(SECP256K1_USE_4X64_POINT_OPS) && defined(SECP256K1_FAST_52BIT)
+
+// FE52 Point members -> 4x64 JacobianPoint (normalize + pack)
+static inline JacobianPoint point_to_jac4x64(const FieldElement52& x,
+                                               const FieldElement52& y,
+                                               const FieldElement52& z,
+                                               bool inf) noexcept {
+    return {x.to_fe(), y.to_fe(), z.to_fe(), inf};
+}
+
+// 4x64 JacobianPoint -> FE52 members (unpack + shift)
+static inline void jac4x64_to_fe52(const JacobianPoint& j,
+                                    FieldElement52& ox, FieldElement52& oy,
+                                    FieldElement52& oz, bool& oinf) noexcept {
+    ox = FieldElement52::from_fe(j.x);
+    oy = FieldElement52::from_fe(j.y);
+    oz = FieldElement52::from_fe(j.z);
+    oinf = j.infinity;
+}
+
+// 4x64 AffinePoint from FE52
+static inline AffinePoint fe52_to_affine4x64(const FieldElement52& x,
+                                              const FieldElement52& y) noexcept {
+    return {x.to_fe(), y.to_fe()};
+}
+
+#endif // SECP256K1_USE_4X64_POINT_OPS && SECP256K1_FAST_52BIT
+
 // -- Point Doubling (5x52) ----------------------------------------------------
-// Formula: dbl-2009-l (a=0 specialization)
-// Cost: 2M + 5S + ~11A (additions near-free in 5x52)
+// Formula: libsecp256k1 gej_double (a=0 specialization)
+// L = (3/2)*X^2, S = Y^2, T = -X*S, X3 = L^2+2T, Y3 = -(L*(X3+T)+S^2), Z3 = Y*Z
+// Cost: 3M + 4S + 8 cheap ops (half, mul_int, add, negate)
+// Saves ~11 cheap ops vs dbl-2009-l (2M+5S+19 cheap) per doubling.
 SECP256K1_HOT_FUNCTION SECP256K1_NOINLINE
 static JacobianPoint52 jac52_double(const JacobianPoint52& p) noexcept {
     if (SECP256K1_UNLIKELY(p.infinity)) {
         return {FieldElement52::zero(), FieldElement52::one(), FieldElement52::zero(), true};
     }
-    // Magnitudes after mul/sqr = 1.  Safe bounds for uint128 accumulation:
-    //   5 x m1 x m2 x 2^104 < 2^128  ==>  m1*m2 < 3,355,443
-    //   max per-limb addition: mag x 2^52 < 2^64  ==>  mag < 4096
-    //
-    // Output magnitudes (no normalization): x<=23, y<=10, z<=2
+    // Z3 = Y1 * Z1 (1M)
+    FieldElement52 const z3 = p.y * p.z;    // mag 1
 
-    const FieldElement52 A = p.x.square();                    // mag 1
-    const FieldElement52 B = p.y.square();                    // mag 1
-    const FieldElement52 C = B.square();                      // mag 1
+    // S = Y1^2 (1S)
+    FieldElement52 s = p.y.square();         // mag 1
 
-    const FieldElement52 xpb = p.x + B;                      // mag <=24
-    const FieldElement52 xpb_sq = xpb.square();              // mag 1  (24^2*5 = 2880 < 3.3M [ok])
-    const FieldElement52 negA = A.negate(1);                  // mag 2
-    const FieldElement52 negC = C.negate(1);                  // mag 2
-    const FieldElement52 D_half = xpb_sq + negA + negC;       // mag 5
-    const FieldElement52 D = D_half + D_half;                 // mag 10
+    // L = (3/2)*X1^2 (1S + mul_int + half)
+    FieldElement52 l = p.x.square();         // mag 1
+    l.mul_int_assign(3);                     // mag 3
+    l.half_assign();                         // mag 2 (parity correct: 3*n[0]&1 == n[0]&1)
 
-    const FieldElement52 E = A + A + A;                       // mag 3
-    const FieldElement52 F = E.square();                      // mag 1  (3^2*5 = 45 < 3.3M [ok])
+    // T = -S * X1 (1N + 1M)
+    FieldElement52 t = s.negate(1);          // mag 2
+    t.mul_assign(p.x);                       // mag 1
 
-    const FieldElement52 negD2 = D.negate(10);                // mag 11
-    const FieldElement52 x3 = F + negD2 + negD2;              // mag 23  (23*2^52 < 2^57 < 2^64 [ok])
+    // X3 = L^2 + 2T (1S + 2A)
+    FieldElement52 x3 = l.square();          // mag 1
+    x3.add_assign(t);                        // mag 2
+    x3.add_assign(t);                        // mag 3
 
-    const FieldElement52 negX3 = x3.negate(23);               // mag 24
-    const FieldElement52 dx = D + negX3;                      // mag 34  (34*2^52 < 2^58 < 2^64 [ok])
-    FieldElement52 y3 = E * dx;                               // mag 1  (3*34 = 102 < 3.3M [ok])
-    const FieldElement52 C2 = C + C;                          // mag 2
-    const FieldElement52 C4 = C2 + C2;                        // mag 4
-    const FieldElement52 C8 = C4 + C4;                        // mag 8
-    const FieldElement52 negC8 = C8.negate(8);                // mag 9
-    y3 = y3 + negC8;                                          // mag 10
+    // S' = S^2 (1S) -- S was Y^2, so S' = Y^4
+    s.square_inplace();                      // mag 1
 
-    FieldElement52 z3 = p.y * p.z;                            // mag 1  (10*5 = 50 < 3.3M [ok])
-    z3 = z3 + z3;                                             // mag 2
+    // T' = T + X3
+    t.add_assign(x3);                        // mag 4
+
+    // Y3 = -(L*(X3+T) + S^2) (1M + 1A + 1N)
+    FieldElement52 y3 = t * l;               // mag 1
+    y3.add_assign(s);                        // mag 2
+    y3.negate_assign(2);                     // mag 3
 
     return {x3, y3, z3, false};
 }
 
+// -- 4x64 Inline ASM Point Doubling ------------------------------------------
+// Performs point doubling entirely in 4x64 representation using inline
+// MULX+ADCX/ADOX assembly. Uses the same 3M+4S libsecp formula as the
+// 5x52 path but with hand-scheduled instructions and lower register pressure.
+//
+// Advantages:
+//   - 20 MULX per field_mul (vs 30 for 5x52): 33% fewer multiplications
+//   - 14 MULX per field_sqr (vs 20 for 5x52): 30% fewer multiplications
+//   - 4 limbs per element (vs 5): lower register pressure in hot loops
+//   - ADCX/ADOX dual carry chains: no dependency stalls
+//
+// This function operates on raw uint64_t[4] arrays (no struct overhead).
+// Used by the hot loop path when SECP256K1_HYBRID_4X64_ACTIVE is set.
+// ---------------------------------------------------------------------------
+#if defined(SECP256K1_HYBRID_4X64_ACTIVE) && (defined(__ADX__) && defined(__BMI2__))
+
+// NOTE: These functions are currently unused -- they are scaffolding for an
+// upcoming 4x64-only scalar_mul path. Suppress -Wunused-function.
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wrestrict"
+#endif
+#endif
+
+[[maybe_unused]] __attribute__((noinline))
+static void jac_double_4x64_inplace(
+    std::uint64_t* __restrict__ X,
+    std::uint64_t* __restrict__ Y,
+    std::uint64_t* __restrict__ Z) noexcept
+{
+    using namespace secp256k1::fast::fe4x64;
+
+    alignas(32) std::uint64_t z3[4], s[4], l[4], t[4];
+
+    // Z3 = Y * Z (1M)
+    mul(z3, Y, Z);
+
+    // S = Y^2 (1S)
+    sqr(s, Y);
+
+    // L = (3/2) * X^2 (1S + mul_int(3) + half)
+    sqr(l, X);
+    mul_int(l, l, 3);
+    half(l, l);
+
+    // T = -S * X (negate + 1M)
+    negate(t, s);
+    mul(t, t, X);
+
+    // X3 = L^2 + 2T (1S + 2 add)
+    sqr(X, l);
+    add(X, X, t);
+    add(X, X, t);
+
+    // S' = S^2 (1S)
+    sqr(s, s);
+
+    // T' = T + X3 (add)
+    add(t, t, X);
+
+    // Y3 = -(L*(X3+T) + S^2) (1M + add + negate)
+    mul(Y, t, l);
+    add(Y, Y, s);
+    negate(Y, Y);
+
+    // Write Z3
+    copy(Z, z3);
+}
+
+// -- 4x64 Mixed Addition: Jacobian + Affine -> Jacobian (in-place) ---------
+// Formula: madd-2007-bl (a=0 specialization)
+// Cost: 7M + 4S + ~12A (additions near-free with branchless mod-p)
+// Qx, Qy are raw uint64_t[4] affine coordinates (e.g. AffinePointCompact.x/y).
+[[maybe_unused]] __attribute__((noinline))
+static void jac_add_mixed_4x64_inplace(
+    std::uint64_t* __restrict__ X,
+    std::uint64_t* __restrict__ Y,
+    std::uint64_t* __restrict__ Z,
+    bool& infinity,
+    const std::uint64_t* __restrict__ Qx,
+    const std::uint64_t* __restrict__ Qy) noexcept
+{
+    using namespace secp256k1::fast::fe4x64;
+
+    if (SECP256K1_UNLIKELY(infinity)) {
+        copy(X, Qx); copy(Y, Qy);
+        Z[0] = 1; Z[1] = 0; Z[2] = 0; Z[3] = 0;
+        infinity = false;
+        return;
+    }
+
+    alignas(32) std::uint64_t z1z1[4], u2[4], s2[4], h[4], hh[4], i_reg[4], j[4];
+    alignas(32) std::uint64_t r_val[4], v[4], x3[4], y3[4], z3[4], t1[4];
+
+    // Z1Z1 = Z^2 (1S)
+    sqr(z1z1, Z);
+    // U2 = Qx * Z1Z1 (1M)
+    mul(u2, Qx, z1z1);
+    // S2 = Qy * Z * Z1Z1 (2M)
+    mul(t1, Z, z1z1);
+    mul(s2, Qy, t1);
+    // H = U2 - X1
+    sub(h, u2, X);
+    // HH = H^2 (1S)
+    sqr(hh, h);
+    // I = 4*HH (2 add)
+    add(i_reg, hh, hh);
+    add(i_reg, i_reg, i_reg);
+    // J = H * I (1M)
+    mul(j, h, i_reg);
+    // r = 2*(S2 - Y) (sub + add)
+    sub(r_val, s2, Y);
+    add(r_val, r_val, r_val);
+    // V = X * I (1M)
+    mul(v, X, i_reg);
+    // X3 = r^2 - J - 2V (1S + subs)
+    sqr(x3, r_val);
+    sub(x3, x3, j);
+    sub(x3, x3, v);
+    sub(x3, x3, v);
+    // Y3 = r*(V-X3) - 2*Y*J (2M + sub)
+    sub(t1, v, x3);
+    mul(y3, r_val, t1);
+    mul(t1, Y, j);
+    add(t1, t1, t1);
+    sub(y3, y3, t1);
+    // Z3 = (Z+H)^2 - Z1Z1 - HH (1S + add + subs)
+    add(z3, Z, h);
+    sqr(z3, z3);
+    sub(z3, z3, z1z1);
+    sub(z3, z3, hh);
+
+    copy(X, x3);
+    copy(Y, y3);
+    copy(Z, z3);
+    infinity = false;
+}
+
+// -- 4x64 Add-Zinv: Jacobian + Affine-in-Z-frame -> Jacobian (in-place) ---
+// Like mixed addition but the affine point lives in a different Z-frame.
+// bzinv = inverse of the shared Z, used to scale the affine coordinates.
+// Cost: 9M + 3S + ~8A
+[[maybe_unused]] __attribute__((noinline))
+static void jac_add_zinv_4x64_inplace(
+    std::uint64_t* __restrict__ X,
+    std::uint64_t* __restrict__ Y,
+    std::uint64_t* __restrict__ Z,
+    bool& infinity,
+    const std::uint64_t* __restrict__ Qx,
+    const std::uint64_t* __restrict__ Qy,
+    const std::uint64_t* __restrict__ bzinv) noexcept
+{
+    using namespace secp256k1::fast::fe4x64;
+
+    if (SECP256K1_UNLIKELY(infinity)) {
+        alignas(32) std::uint64_t zi2[4], zi3[4];
+        sqr(zi2, bzinv);
+        mul(zi3, zi2, bzinv);
+        mul(X, Qx, zi2);
+        mul(Y, Qy, zi3);
+        Z[0] = 1; Z[1] = 0; Z[2] = 0; Z[3] = 0;
+        infinity = false;
+        return;
+    }
+
+    alignas(32) std::uint64_t az[4], az2[4], u2[4], s2[4], h[4];
+    alignas(32) std::uint64_t hh[4], h3[4], v[4], r_val[4], x3[4], y3[4], z3[4], t1[4];
+
+    // az = Z * bzinv (1M)
+    mul(az, Z, bzinv);
+    // az2 = az^2 (1S)
+    sqr(az2, az);
+    // U2 = Qx * az2 (1M)
+    mul(u2, Qx, az2);
+    // S2 = Qy * az^3 (2M: Qy*az2, then *az)
+    mul(s2, Qy, az2);
+    mul(s2, s2, az);
+    // H = U2 - X
+    sub(h, u2, X);
+    // Z3 = Z * H (1M, uses ORIGINAL Z -- not az)
+    mul(z3, Z, h);
+    // HH = H^2 (1S)
+    sqr(hh, h);
+    // H3 = H * HH = H^3 (1M)
+    mul(h3, h, hh);
+    // V = X * HH (1M)
+    mul(v, X, hh);
+    // r = S2 - Y
+    sub(r_val, s2, Y);
+    // X3 = r^2 - H3 - 2V (1S + subs)
+    sqr(x3, r_val);
+    sub(x3, x3, h3);
+    sub(x3, x3, v);
+    sub(x3, x3, v);
+    // Y3 = r*(V-X3) - Y*H3 (2M + sub)
+    sub(t1, v, x3);
+    mul(y3, r_val, t1);
+    mul(t1, Y, h3);
+    sub(y3, y3, t1);
+
+    copy(X, x3);
+    copy(Y, y3);
+    copy(Z, z3);
+    infinity = false;
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
+#endif // SECP256K1_HYBRID_4X64_ACTIVE && ADX && BMI2
+
 // -- In-Place Point Doubling (5x52) ----------------------------------------
 // Same formula as jac52_double but overwrites the input point in-place.
 // Eliminates the 128-byte return value copy on every call.
+// Formula: libsecp256k1 gej_double (3M+4S+8 cheap, a=0)
+// L = (3/2)*X^2, S = Y^2, T = -X*S, X3 = L^2+2T, Y3 = -(L*(X3+T)+S^2), Z3 = Y*Z
 SECP256K1_HOT_FUNCTION __attribute__((always_inline))
 static inline void jac52_double_inplace(JacobianPoint52& p) noexcept {
     // Branchless infinity propagation (like libsecp's secp256k1_gej_double):
     // On secp256k1 (a=0), 2Q = infinity iff Q = infinity (no order-2 points).
     // If p.infinity == true, the formula runs on garbage X/Y/Z but p.infinity
     // stays true, so consumers correctly ignore the garbage coordinates.
-    // This eliminates a branch from the hottest loop (~129 calls per verify).
 
-    // -- Z3 = 2*Y1*Z1 (must read p.y, p.z before they're reused as scratch) --
-    FieldElement52 z3 = p.y * p.z;                            // mag 1
-    z3.add_assign(z3);                                        // mag 2
+    // Z3 = Y1 * Z1 (1M) -- must read p.y, p.z before reuse
+    FieldElement52 z3 = p.y * p.z;          // mag 1
 
-    // -- A = X1^2, E = 3*A ----------------------------------------------
-    FieldElement52 A = p.x.square();                          // mag 1
-    FieldElement52 E = A + A + A;                             // mag 3
+    // S = Y1^2 (1S)
+    FieldElement52 s = p.y.square();         // mag 1
 
-    // -- B = Y1^2 (reuse p.y in-place; Y1 consumed above) --------------
-    p.y.square_inplace();                                     // p.y = B, mag 1
+    // L = (3/2)*X1^2 (1S + mul_int + half)
+    FieldElement52 l = p.x.square();         // mag 1
+    l.mul_int_assign(3);                     // mag 3
+    l.half_assign();                         // mag 2 (parity correct: 3*n[0]&1 == n[0]&1)
 
-    // -- C = B^2 = Y1^4 -------------------------------------------------
-    FieldElement52 C = p.y.square();                          // mag 1
+    // T = -S * X1 (1N + 1M)
+    FieldElement52 t = s.negate(1);          // mag 2
+    t.mul_assign(p.x);                       // mag 1
 
-    // -- D = 2*((X1+B)^2 - A - C) -- in-place on p.x -------------------
-    p.x.add_assign(p.y);                                      // p.x = X1+B, mag <=24
-    p.x.square_inplace();                                     // p.x = (X1+B)^2, mag 1
-    A.negate_assign(1);                                       // A = -A, mag 2 (positive A consumed -> E)
-    p.x.add_assign(A);                                        // p.x -= A, mag 3
-    A = C; A.negate_assign(1);                                // reuse A = -C, mag 2
-    p.x.add_assign(A);                                        // p.x = D_half, mag 5
-    p.x.add_assign(p.x);                                     // p.x = D, mag 10
+    // X3 = L^2 + 2T (1S + 2A)
+    p.x = l.square();                        // mag 1
+    p.x.add_assign(t);                       // mag 2
+    p.x.add_assign(t);                       // mag 3
 
-    // -- X3 = E^2 - 2*D -- reuse A for E^2, p.y for -D ------------------
-    A = E.square();                                           // A = F = E^2, mag 1
-    p.y = p.x; p.y.negate_assign(10);                        // p.y = -D, mag 11
-    A.add_assign(p.y);                                        // A = F - D
-    A.add_assign(p.y);                                        // A = X3, mag 23
+    // S' = S^2 (1S)
+    s.square_inplace();                      // mag 1
 
-    // -- Y3 = E*(D - X3) - 8*C -- in-place chain ----------------------
-    p.y = A; p.y.negate_assign(23);                           // p.y = -X3, mag 24
-    p.x.add_assign(p.y);                                      // p.x = D - X3, mag 34
-    E.mul_assign(p.x);                                        // E = E*(D-X3), mag 1
-    C.add_assign(C);                                          // 2C, mag 2
-    C.add_assign(C);                                          // 4C, mag 4
-    C.add_assign(C);                                          // 8C, mag 8
-    C.negate_assign(8);                                       // -8C, mag 9
-    E.add_assign(C);                                          // Y3 = E*(D-X3) - 8C, mag 10
+    // T' = T + X3
+    t.add_assign(p.x);                       // mag 4
 
-    // -- Write back ---------------------------------------------------
-    p.x = A;                                                  // X3
-    p.y = E;                                                  // Y3
-    p.z = z3;                                                 // Z3
+    // Y3 = -(L*(X3+T) + S^2) (1M + 1A + 1N)
+    p.y = t * l;                             // mag 1
+    p.y.add_assign(s);                       // mag 2
+    p.y.negate_assign(2);                    // mag 3
+
+    // Write Z3
+    p.z = z3;
 }
 
 // -- Mixed Addition (5x52): Jacobian + Affine -> Jacobian ----------------------
@@ -598,7 +838,7 @@ static JacobianPoint52 jac52_add_mixed(const JacobianPoint52& p, const AffinePoi
     const FieldElement52 s2 = q.y * z1_z1z1;
 
     // H = U2 - X1 [sub via negate]
-    // p.x magnitude: <=23 (from jac52_double) or <=7 (from add_mixed). Use 23.
+    // p.x magnitude: <=3 (from dbl) or <=7 (from add_mixed). Use 23 (conservative).
     const FieldElement52 negX1 = p.x.negate(23);     // mag 24
     FieldElement52 const h = u2 + negX1;                   // mag 25
 
@@ -625,7 +865,7 @@ static JacobianPoint52 jac52_add_mixed(const JacobianPoint52& p, const AffinePoi
     const FieldElement52 j = h * I;                  // mag 1  (25*4 = 100 < 3.3M [ok])
 
     // r = 2*(S2 - Y1) [sub + double]
-    // p.y magnitude: <=10 (from dbl) or <=4 (from add_mixed). Use 10.
+    // p.y magnitude: <=3 (from dbl) or <=4 (from add_mixed). Use 10 (conservative).
     const FieldElement52 negY1 = p.y.negate(10);     // mag 11
     FieldElement52 r = s2 + negY1;             // mag 12
     r = r + r;                                 // mag 24
@@ -649,7 +889,7 @@ static JacobianPoint52 jac52_add_mixed(const JacobianPoint52& p, const AffinePoi
     y3 = y3 + negY1J2;                         // mag 4
 
     // Z3 = (Z1+H)^2 - Z1Z1 - HH [1S + sub]
-    // p.z magnitude: <=2 (from dbl) or <=5 (from add_mixed). Use 5.
+    // p.z magnitude: <=1 (from dbl) or <=5 (from add_mixed). Use 5.
     const FieldElement52 zh = p.z + h;               // mag 30  (5+25)
     const FieldElement52 zh_sq = zh.square();        // mag 1  (30^2*5 = 4500 < 3.3M [ok])
     const FieldElement52 negZ1Z1 = z1z1.negate(1);   // mag 2
@@ -661,10 +901,12 @@ static JacobianPoint52 jac52_add_mixed(const JacobianPoint52& p, const AffinePoi
 
 // -- In-Place Mixed Addition (5x52): Jacobian + Affine -> Jacobian -------------
 // Same formula as jac52_add_mixed but overwrites p in-place.
-// Compiler decides inlining: with merged streams (4 call sites), estimated
-// loop body ~2.5KB fits easily in L1 I-cache (32KB). libsecp uses the same
-// approach (static functions, no explicit NOINLINE).
-SECP256K1_HOT_FUNCTION
+// NOT force-inlined: the hot loop (dual_scalar_mul_gen_point) compiles to
+// ~75 KB with always_inline -- 2.3x the L1 I-cache (32 KB).  Making add
+// functions NOINLINE shrinks the loop body to ~3 KB.  The ~82 function calls
+// per verify cost ~400 ns, but eliminating I-cache pressure saves ~5000+ ns.
+// libsecp256k1 uses regular `inline` (not always_inline) for the same reason.
+SECP256K1_HOT_FUNCTION SECP256K1_NOINLINE
 static void jac52_add_mixed_inplace(JacobianPoint52& p, const AffinePoint52& q) noexcept {
     if (SECP256K1_UNLIKELY(p.infinity)) {
         p.x = q.x; p.y = q.y; p.z = FieldElement52::one(); p.infinity = false;
@@ -816,7 +1058,8 @@ static void jac52_add_mixed_inplace_zr(JacobianPoint52& p,
 // Cost: 9M + 3S + ~11A
 // Saves 1S per G/H lookup vs the previous approach (2M scale + 7M+4S mixed add).
 // Also avoids modifying the G/H table entry (no cache-line dirtying).
-SECP256K1_HOT_FUNCTION
+// NOT force-inlined: see jac52_add_mixed_inplace comment on I-cache pressure.
+SECP256K1_HOT_FUNCTION SECP256K1_NOINLINE
 static void jac52_add_zinv_inplace(JacobianPoint52& p,
                                     const AffinePoint52& b,
                                     const FieldElement52& bzinv) noexcept {
@@ -906,8 +1149,8 @@ static void jac52_add_zinv_inplace(JacobianPoint52& p,
 // -- In-Place Full Jacobian Addition (5x52): p += q --------------------------
 // Formula: add-2007-bl (a=0)
 // Cost: 12M + 5S + ~11A.  Eliminates 128-byte return copy.
-SECP256K1_HOT_FUNCTION __attribute__((always_inline))
-static inline void jac52_add_inplace(JacobianPoint52& p, const JacobianPoint52& q) noexcept {
+SECP256K1_HOT_FUNCTION SECP256K1_NOINLINE
+static void jac52_add_inplace(JacobianPoint52& p, const JacobianPoint52& q) noexcept {
     if (SECP256K1_UNLIKELY(p.infinity)) { p = q; return; }
     if (SECP256K1_UNLIKELY(q.infinity)) return;
 
@@ -1554,6 +1797,16 @@ std::array<uint8_t, 16> Point::x_second_half() const {
 
 Point Point::add(const Point& other) const {
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    // Dual representation: FE52 storage -> 4x64 compute -> FE52 storage
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    JacobianPoint const q = point_to_jac4x64(other.x_, other.y_, other.z_, other.infinity_);
+    JacobianPoint const r = jacobian_add(p, q);
+    Point result;
+    jac4x64_to_fe52(r, result.x_, result.y_, result.z_, result.infinity_);
+    result.is_generator_ = false;
+    return result;
+  #else
     JacobianPoint52 const p52{x_, y_, z_, infinity_};
     JacobianPoint52 const q52{other.x_, other.y_, other.z_, other.infinity_};
     JacobianPoint52 const r52 = jac52_add(p52, q52);
@@ -1562,6 +1815,7 @@ Point Point::add(const Point& other) const {
     result.infinity_ = r52.infinity;
     result.is_generator_ = false;
     return result;
+  #endif
 #else
     JacobianPoint p{x_, y_, z_, infinity_};
     JacobianPoint q{other.x_, other.y_, other.z_, other.infinity_};
@@ -1574,6 +1828,14 @@ Point Point::add(const Point& other) const {
 
 Point Point::dbl() const {
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    JacobianPoint const r = jacobian_double(p);
+    Point result;
+    jac4x64_to_fe52(r, result.x_, result.y_, result.z_, result.infinity_);
+    result.is_generator_ = false;
+    return result;
+  #else
     JacobianPoint52 const p52{x_, y_, z_, infinity_};
     JacobianPoint52 const r52 = jac52_double(p52);
     Point result;
@@ -1581,6 +1843,7 @@ Point Point::dbl() const {
     result.infinity_ = r52.infinity;
     result.is_generator_ = false;
     return result;
+  #endif
 #else
     JacobianPoint p{x_, y_, z_, infinity_};
     JacobianPoint r = jacobian_double(p);
@@ -1615,6 +1878,15 @@ Point Point::negate() const {
 
 Point Point::next() const {
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    AffinePoint const g{kGeneratorX, kGeneratorY};
+    JacobianPoint const r = jacobian_add_mixed(p, g);
+    Point result;
+    jac4x64_to_fe52(r, result.x_, result.y_, result.z_, result.infinity_);
+    result.is_generator_ = false;
+    return result;
+  #else
     static const FieldElement52 kGenX52 = FieldElement52::from_fe(kGeneratorX);
     static const FieldElement52 kGenY52 = FieldElement52::from_fe(kGeneratorY);
     JacobianPoint52 p52{x_, y_, z_, infinity_};
@@ -1625,11 +1897,15 @@ Point Point::next() const {
     result.infinity_ = p52.infinity;
     result.is_generator_ = false;
     return result;
+  #endif
 #else
+    // Fallback: 4x64 path (non-52-bit platforms / MSVC)
     JacobianPoint p{x_, y_, z_, infinity_};
-    AffinePoint g_affine{kGeneratorX, kGeneratorY};
-    JacobianPoint r = jacobian_add_mixed(p, g_affine);
-    Point result = from_jacobian_coords(r.x, r.y, r.z, r.infinity);
+    AffinePoint const g{kGeneratorX, kGeneratorY};
+    JacobianPoint const r = jacobian_add_mixed(p, g);
+    Point result;
+    result.x_ = r.x; result.y_ = r.y; result.z_ = r.z;
+    result.infinity_ = r.infinity;
     result.is_generator_ = false;
     return result;
 #endif
@@ -1637,6 +1913,15 @@ Point Point::next() const {
 
 Point Point::prev() const {
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    AffinePoint const ng{kGeneratorX, kNegGeneratorY};
+    JacobianPoint const r = jacobian_add_mixed(p, ng);
+    Point result;
+    jac4x64_to_fe52(r, result.x_, result.y_, result.z_, result.infinity_);
+    result.is_generator_ = false;
+    return result;
+  #else
     static const FieldElement52 kGenX52 = FieldElement52::from_fe(kGeneratorX);
     static const FieldElement52 kNegGenY52 = FieldElement52::from_fe(kNegGeneratorY);
     JacobianPoint52 p52{x_, y_, z_, infinity_};
@@ -1647,11 +1932,15 @@ Point Point::prev() const {
     result.infinity_ = p52.infinity;
     result.is_generator_ = false;
     return result;
+  #endif
 #else
+    // Fallback: 4x64 path (non-52-bit platforms / MSVC)
     JacobianPoint p{x_, y_, z_, infinity_};
-    AffinePoint neg_g_affine{kGeneratorX, kNegGeneratorY};
-    JacobianPoint r = jacobian_add_mixed(p, neg_g_affine);
-    Point result = from_jacobian_coords(r.x, r.y, r.z, r.infinity);
+    AffinePoint const ng{kGeneratorX, kNegGeneratorY};
+    JacobianPoint const r = jacobian_add_mixed(p, ng);
+    Point result;
+    result.x_ = r.x; result.y_ = r.y; result.z_ = r.z;
+    result.infinity_ = r.infinity;
     result.is_generator_ = false;
     return result;
 #endif
@@ -1664,6 +1953,13 @@ void Point::next_inplace() {
         return;
     }
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    AffinePoint const g{kGeneratorX, kGeneratorY};
+    jacobian_add_mixed_inplace(p, g);
+    jac4x64_to_fe52(p, x_, y_, z_, infinity_);
+    is_generator_ = false;
+  #else
     static const FieldElement52 kGenX52 = FieldElement52::from_fe(kGeneratorX);
     static const FieldElement52 kGenY52 = FieldElement52::from_fe(kGeneratorY);
     JacobianPoint52 p52{x_, y_, z_, infinity_};
@@ -1672,6 +1968,7 @@ void Point::next_inplace() {
     x_ = p52.x; y_ = p52.y; z_ = p52.z;
     infinity_ = p52.infinity;
     is_generator_ = false;
+  #endif
 #else
     // In-place: no return-value copy
     JacobianPoint self{x_, y_, z_, infinity_};
@@ -1690,6 +1987,13 @@ void Point::prev_inplace() {
         return;
     }
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    AffinePoint const ng{kGeneratorX, kNegGeneratorY};
+    jacobian_add_mixed_inplace(p, ng);
+    jac4x64_to_fe52(p, x_, y_, z_, infinity_);
+    is_generator_ = false;
+  #else
     static const FieldElement52 kGenX52 = FieldElement52::from_fe(kGeneratorX);
     static const FieldElement52 kNegGenY52 = FieldElement52::from_fe(kNegGeneratorY);
     JacobianPoint52 p52{x_, y_, z_, infinity_};
@@ -1698,6 +2002,7 @@ void Point::prev_inplace() {
     x_ = p52.x; y_ = p52.y; z_ = p52.z;
     infinity_ = p52.infinity;
     is_generator_ = false;
+  #endif
 #else
     // In-place: no return-value copy
     JacobianPoint self{x_, y_, z_, infinity_};
@@ -1713,6 +2018,22 @@ void Point::prev_inplace() {
 // Routes through 5x52 path on x64 for inlined field ops (zero call overhead)
 void Point::add_inplace(const Point& other) {
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    // Dual representation: FE52 storage -> 4x64 compute -> FE52 storage
+    if (!other.infinity_ && fe52_is_one_raw(other.z_)) {
+        JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+        AffinePoint const q = fe52_to_affine4x64(other.x_, other.y_);
+        jacobian_add_mixed_inplace(p, q);
+        jac4x64_to_fe52(p, x_, y_, z_, infinity_);
+        is_generator_ = false;
+        return;
+    }
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    JacobianPoint const q = point_to_jac4x64(other.x_, other.y_, other.z_, other.infinity_);
+    jacobian_add_inplace(p, q);
+    jac4x64_to_fe52(p, x_, y_, z_, infinity_);
+    is_generator_ = false;
+  #else
     // Fast path: if other is affine (z = 1), use mixed addition
     // Raw limb check -- no normalization, z_ from affine construction is already canonical {1,0,0,0,0}
     if (!other.infinity_ && fe52_is_one_raw(other.z_)) {
@@ -1733,22 +2054,11 @@ void Point::add_inplace(const Point& other) {
     x_ = p52.x; y_ = p52.y; z_ = p52.z;
     infinity_ = p52.infinity;
     is_generator_ = false;
+  #endif
 #else
-    // Fast path: if other is affine (z = 1), use mixed addition
-    // Raw limb check -- no temp allocation, z_ from affine construction is canonical {1,0,0,0}
-    if (!other.infinity_ && fe_is_one_raw(other.z_)) {
-        JacobianPoint p{x_, y_, z_, infinity_};
-        AffinePoint q{other.x_, other.y_};
-        jacobian_add_mixed_inplace(p, q);
-        x_ = p.x; y_ = p.y; z_ = p.z;
-        infinity_ = p.infinity;
-        is_generator_ = false;
-        return;
-    }
-
-    // General case: full Jacobian-Jacobian addition (in-place, no return copy)
+    // Fallback: 4x64 path (non-52-bit platforms)
     JacobianPoint p{x_, y_, z_, infinity_};
-    JacobianPoint q{other.x_, other.y_, other.z_, other.infinity_};
+    JacobianPoint const q{other.x_, other.y_, other.z_, other.infinity_};
     jacobian_add_inplace(p, q);
     x_ = p.x; y_ = p.y; z_ = p.z;
     infinity_ = p.infinity;
@@ -1759,6 +2069,14 @@ void Point::add_inplace(const Point& other) {
 // Mutable in-place subtraction: *this -= other (no allocation overhead)
 void Point::sub_inplace(const Point& other) {
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    JacobianPoint q = point_to_jac4x64(other.x_, other.y_, other.z_, other.infinity_);
+    q.y = FieldElement::zero() - q.y;
+    jacobian_add_inplace(p, q);
+    jac4x64_to_fe52(p, x_, y_, z_, infinity_);
+    is_generator_ = false;
+  #else
     // 5x52 path: negate other.y, then add in-place
     JacobianPoint52 p52{x_, y_, z_, infinity_};
     JacobianPoint52 q52{other.x_, other.y_, other.z_, other.infinity_};
@@ -1769,10 +2087,12 @@ void Point::sub_inplace(const Point& other) {
     x_ = p52.x; y_ = p52.y; z_ = p52.z;
     infinity_ = p52.infinity;
     is_generator_ = false;
+  #endif
 #else
-    // In-place: negate other.y, then add in-place (no return-value copy)
+    // Fallback: 4x64 path (non-52-bit platforms)
     JacobianPoint p{x_, y_, z_, infinity_};
-    JacobianPoint q{other.x_, FieldElement::zero() - other.y_, other.z_, other.infinity_};
+    JacobianPoint q{other.x_, other.y_, other.z_, other.infinity_};
+    q.y = FieldElement::zero() - q.y;
     jacobian_add_inplace(p, q);
     x_ = p.x; y_ = p.y; z_ = p.z;
     infinity_ = p.infinity;
@@ -1816,12 +2136,20 @@ void Point::dbl_inplace() {
     z_ = z3;
     is_generator_ = false;
 #elif defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    // Dual representation: FE52 storage -> 4x64 double -> FE52 storage
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    jacobian_double_inplace(p);
+    jac4x64_to_fe52(p, x_, y_, z_, infinity_);
+    is_generator_ = false;
+  #else
     // 5x52 path: direct FE52 members, no conversion needed
     if (SECP256K1_UNLIKELY(infinity_)) return;
     JacobianPoint52 p52{x_, y_, z_, infinity_};
     jac52_double_inplace(p52);
     x_ = p52.x; y_ = p52.y; z_ = p52.z;
     is_generator_ = false;
+  #endif
 #else
     // In-place: no return-value copy (eliminates 100B struct copy per call)
     JacobianPoint p{x_, y_, z_, infinity_};
@@ -1838,9 +2166,15 @@ void Point::dbl_inplace() {
 void Point::negate_inplace() {
     // Negation in Jacobian: (X, Y, Z) -> (X, -Y, Z)
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    FieldElement fy = y_.to_fe();
+    fy = FieldElement::zero() - fy;
+    y_ = FieldElement52::from_fe(fy);
+  #else
     y_.normalize_weak();
     y_.negate_assign(1);
     y_.normalize_weak();
+  #endif
 #else
     y_ = FieldElement::zero() - y_;
 #endif
@@ -1850,6 +2184,21 @@ void Point::negate_inplace() {
 // Routes through 5x52 path on x64 for inlined field ops
 void Point::add_mixed_inplace(const FieldElement& ax, const FieldElement& ay) {
 #if defined(SECP256K1_FAST_52BIT)
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    if (SECP256K1_UNLIKELY(infinity_)) {
+        x_ = FieldElement52::from_fe(ax);
+        y_ = FieldElement52::from_fe(ay);
+        z_ = FieldElement52::one();
+        infinity_ = false;
+        is_generator_ = false;
+        return;
+    }
+    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
+    AffinePoint const q{ax, ay};
+    jacobian_add_mixed_inplace(p, q);
+    jac4x64_to_fe52(p, x_, y_, z_, infinity_);
+    is_generator_ = false;
+  #else
     if (SECP256K1_UNLIKELY(infinity_)) {
         x_ = FieldElement52::from_fe(ax);
         y_ = FieldElement52::from_fe(ay);
@@ -1864,6 +2213,7 @@ void Point::add_mixed_inplace(const FieldElement& ax, const FieldElement& ay) {
     x_ = p52.x; y_ = p52.y; z_ = p52.z;
     infinity_ = p52.infinity;
     is_generator_ = false;
+  #endif
 #else
     if (SECP256K1_UNLIKELY(infinity_)) {
         // Convert affine to Jacobian: (x, y) -> (x, y, 1, false)
@@ -1926,6 +2276,27 @@ void Point::add_mixed_inplace(const FieldElement& ax, const FieldElement& ay) {
 }
 
 // Explicit mixed-sub with affine input: this -= (ax, ay) == this + (ax, -ay)
+
+#if defined(SECP256K1_FAST_52BIT)
+// FE52-native mixed-add: skips FE52->FE->FE52 roundtrip.
+// Used by effective-affine Strauss MSM for zero-conversion hot-loop adds.
+void Point::add_mixed52_inplace(const FieldElement52& ax, const FieldElement52& ay) {
+    if (SECP256K1_UNLIKELY(infinity_)) {
+        x_ = ax;
+        y_ = ay;
+        z_ = FieldElement52::one();
+        infinity_ = false;
+        is_generator_ = false;
+        return;
+    }
+    JacobianPoint52 p52{x_, y_, z_, infinity_};
+    AffinePoint52 const q52{ax, ay};
+    jac52_add_mixed_inplace(p52, q52);
+    x_ = p52.x; y_ = p52.y; z_ = p52.z;
+    infinity_ = p52.infinity;
+    is_generator_ = false;
+}
+#endif
 // OPTIMIZED: Inline implementation to avoid 6 FieldElement struct copies per call
 void Point::sub_mixed_inplace(const FieldElement& ax, const FieldElement& ay) {
     // Negate Y coordinate: subtract is add with negated Y
@@ -2232,7 +2603,71 @@ Point Point::scalar_mul(const Scalar& scalar) const {
     // -----------------------------------------------------------------
 
 #ifdef SECP256K1_FAST_52BIT
+  #if defined(SECP256K1_USE_4X64_POINT_OPS)
+    // ---------------------------------------------------------------
+    // 4x64 dual-representation path: GLV + Shamir with 4x64 field ops.
+    // Same algorithm as ESP32 path above; Point methods dispatch to
+    // jacobian_* (4x64) internally via the dual-representation helpers.
+    // ---------------------------------------------------------------
+    {
+        GLVDecomposition decomp = glv_decompose(scalar);
+        Point P_base = decomp.k1_neg ? this->negate() : *this;
+
+        constexpr unsigned glv_window = 5;
+        constexpr int glv_table_size = (1 << (glv_window - 2));  // 8
+
+        std::array<int32_t, 260> wnaf1_buf{}, wnaf2_buf{};
+        std::size_t wnaf1_len = 0, wnaf2_len = 0;
+        compute_wnaf_into(decomp.k1, glv_window,
+                          wnaf1_buf.data(), wnaf1_buf.size(), wnaf1_len);
+        compute_wnaf_into(decomp.k2, glv_window,
+                          wnaf2_buf.data(), wnaf2_buf.size(), wnaf2_len);
+
+        std::array<Point, glv_table_size> tbl_P, tbl_phiP;
+        std::array<Point, glv_table_size> neg_tbl_P, neg_tbl_phiP;
+
+        tbl_P[0] = P_base;
+        Point dbl_P = P_base;
+        dbl_P.dbl_inplace();
+        for (std::size_t i = 1; i < glv_table_size; i++) {
+            tbl_P[i] = tbl_P[i - 1];
+            tbl_P[i].add_inplace(dbl_P);
+        }
+        for (std::size_t i = 0; i < glv_table_size; i++) {
+            neg_tbl_P[i] = tbl_P[i];
+            neg_tbl_P[i].negate_inplace();
+        }
+
+        bool flip_phi = (decomp.k1_neg != decomp.k2_neg);
+        for (std::size_t i = 0; i < glv_table_size; i++) {
+            tbl_phiP[i] = apply_endomorphism(tbl_P[i]);
+            if (flip_phi) tbl_phiP[i].negate_inplace();
+        }
+        for (std::size_t i = 0; i < glv_table_size; i++) {
+            neg_tbl_phiP[i] = tbl_phiP[i];
+            neg_tbl_phiP[i].negate_inplace();
+        }
+
+        Point result = Point::infinity();
+        std::size_t max_len = (wnaf1_len > wnaf2_len) ? wnaf1_len : wnaf2_len;
+        for (int i = static_cast<int>(max_len) - 1; i >= 0; --i) {
+            result.dbl_inplace();
+            if (static_cast<std::size_t>(i) < wnaf1_len) {
+                int32_t d = wnaf1_buf[static_cast<std::size_t>(i)];
+                if (d > 0) result.add_inplace(tbl_P[(d - 1) / 2]);
+                else if (d < 0) result.add_inplace(neg_tbl_P[(-d - 1) / 2]);
+            }
+            if (static_cast<std::size_t>(i) < wnaf2_len) {
+                int32_t d = wnaf2_buf[static_cast<std::size_t>(i)];
+                if (d > 0) result.add_inplace(tbl_phiP[(d - 1) / 2]);
+                else if (d < 0) result.add_inplace(neg_tbl_phiP[(-d - 1) / 2]);
+            }
+        }
+        return result;
+    }
+  #else
     return scalar_mul_glv52(*this, scalar);
+  #endif
 #else
     // -----------------------------------------------------------------
     // Non-FE52 fallback: simple right-to-left binary double-and-add.
@@ -2544,6 +2979,12 @@ std::pair<std::array<uint8_t, 32>, bool> Point::x_bytes_and_parity() const {
 #if defined(SECP256K1_FAST_52BIT)
 SECP256K1_NOINLINE
 Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const Point& P) {
+#if defined(SECP256K1_USE_4X64_POINT_OPS)
+    // 4x64 path: use two separate scalar_muls (each already has GLV+Shamir 4x64)
+    auto aG = Point::generator().scalar_mul(a);
+    aG.add_inplace(P.scalar_mul(b));
+    return aG;
+#else
     // -- 128-bit arithmetic split of a --------------------------------
     const auto& a_limbs = a.limbs();
     Scalar const a_lo = Scalar::from_limbs({a_limbs[0], a_limbs[1], 0, 0});
@@ -2742,11 +3183,6 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
     if (len_b2 > max_len) max_len = len_b2;
 
     for (int i = static_cast<int>(max_len) - 1; i >= 0; --i) {
-        // -- SW prefetch for G/H table entries (512KB each, random access) ----
-        // Issue prefetch BEFORE the double (~88ns) so the cache line is ready
-        // by the time we need it.  P/phiP tables (8 entries = 640B) are always
-        // in L1, so no prefetch needed for those.
-        // Branchless index: use current digit to compute table offset.
         {
             int32_t const d_g = wnaf_a_lo[static_cast<std::size_t>(i)];
             if (d_g) {
@@ -2762,64 +3198,57 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
 
         jac52_double_inplace(result52);
 
-        // Stream 1: a_lo * G  (add_zinv: fold Z_shared into formula, 9M+3S)
-        // Merged if/else-if into single if(d!=0) with branchless abs.
-        // Halves call sites (better I-cache), eliminates sign branch mispredictions.
         {
             int32_t const d = wnaf_a_lo[static_cast<std::size_t>(i)];
             if (SECP256K1_UNLIKELY(d != 0)) {
-                int32_t const sign = d >> 31;                        // -1 if neg, 0 if pos
-                int32_t const abs_d = (d ^ sign) - sign;             // branchless abs
+                int32_t const sign = d >> 31;
+                int32_t const abs_d = (d ^ sign) - sign;
                 AffinePoint52 pt = gen_tables->tbl_G[static_cast<std::size_t>((abs_d - 1) >> 1)].to_affine52();
-                if (sign) pt.y.negate_assign(1);                     // conditional negate
+                pt.y.conditional_negate_assign(sign);
                 jac52_add_zinv_inplace(result52, pt, Z_shared);
             }
         }
 
-        // Stream 2: a_hi * H
         {
             int32_t const d = wnaf_a_hi[static_cast<std::size_t>(i)];
             if (SECP256K1_UNLIKELY(d != 0)) {
                 int32_t const sign = d >> 31;
                 int32_t const abs_d = (d ^ sign) - sign;
                 AffinePoint52 pt = gen_tables->tbl_H[static_cast<std::size_t>((abs_d - 1) >> 1)].to_affine52();
-                if (sign) pt.y.negate_assign(1);
+                pt.y.conditional_negate_assign(sign);
                 jac52_add_zinv_inplace(result52, pt, Z_shared);
             }
         }
 
-        // Stream 3: b1 * P
         {
             int32_t const d = wnaf_b1[static_cast<std::size_t>(i)];
             if (SECP256K1_UNLIKELY(d != 0)) {
                 int32_t const sign = d >> 31;
                 int32_t const abs_d = (d ^ sign) - sign;
                 AffinePoint52 pt = tbl_P[static_cast<std::size_t>((abs_d - 1) >> 1)];
-                if (sign) pt.y.negate_assign(1);
+                pt.y.conditional_negate_assign(sign);
                 jac52_add_mixed_inplace(result52, pt);
             }
         }
 
-        // Stream 4: b2 * psi(P)
         {
             int32_t const d = wnaf_b2[static_cast<std::size_t>(i)];
             if (SECP256K1_UNLIKELY(d != 0)) {
                 int32_t const sign = d >> 31;
                 int32_t const abs_d = (d ^ sign) - sign;
                 AffinePoint52 pt = tbl_phiP[static_cast<std::size_t>((abs_d - 1) >> 1)];
-                if (sign) pt.y.negate_assign(1);
+                pt.y.conditional_negate_assign(sign);
                 jac52_add_mixed_inplace(result52, pt);
             }
         }
     }
 
-    // Correct Z: main loop ran in Z_shared frame, so true secp256k1 Z
-    // is result52.z * Z_shared.  One multiplication (~13ns).
     if (!result52.infinity) {
         result52.z.mul_assign(Z_shared);
     }
 
     return from_jac52(result52);
+#endif // SECP256K1_USE_4X64_POINT_OPS
 }
 // DISABLED: ESP32/Embedded 4-stream GLV Strauss produces incorrect verify results.
 // Root cause: the 4-stream interleaved Shamir scan with GLV decomposition of BOTH

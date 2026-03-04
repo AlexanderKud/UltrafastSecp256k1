@@ -29,6 +29,9 @@
 #include "secp256k1/schnorr.hpp"
 #include "secp256k1/ecdh.hpp"
 #include "secp256k1/recovery.hpp"
+#include "secp256k1/ct/sign.hpp"
+#include "secp256k1/ct/point.hpp"
+#include "secp256k1/detail/secure_erase.hpp"
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/address.hpp"
 #include "secp256k1/bip32.hpp"
@@ -74,10 +77,21 @@ static ufsecp_error_t ctx_set_err(ufsecp_ctx* ctx, ufsecp_error_t err, const cha
  * Internal helpers (same pattern as existing c_api, but with error model)
  * =========================================================================== */
 
-static inline Scalar scalar_from_bytes(const uint8_t b[32]) {
+// All scalar parsing uses the strict variants below.
+// Message hashes (32-byte) are handled as raw byte arrays (no scalar reduction).
+
+// Strict parser for secret keys: rejects 0, values >= n. No reduction.
+static inline bool scalar_parse_strict_nonzero(const uint8_t b[32], Scalar& out) {
     std::array<uint8_t, 32> arr;
     std::memcpy(arr.data(), b, 32);
-    return Scalar::from_bytes(arr);
+    return Scalar::parse_bytes_strict_nonzero(arr, out);
+}
+
+// Strict parser for tweaks: rejects values >= n, allows 0. No reduction.
+static inline bool scalar_parse_strict(const uint8_t b[32], Scalar& out) {
+    std::array<uint8_t, 32> arr;
+    std::memcpy(arr.data(), b, 32);
+    return Scalar::parse_bytes_strict(arr, out);
 }
 
 static inline void scalar_to_bytes(const Scalar& s, uint8_t out[32]) {
@@ -124,6 +138,9 @@ static inline Point point_from_compressed(const uint8_t pub[33]) {
     for (int i = 0; i < 6; ++i) y = y.square();
     y = y * a;
     y = y.square().square();
+
+    // Verify sqrt: y^2 must equal y2 (reject if x has no valid y on curve)
+    if (y * y != y2) return Point::infinity();
 
     auto y_bytes = y.to_bytes();
     bool const y_is_odd = (y_bytes[31] & 1) != 0;
@@ -253,8 +270,13 @@ ufsecp_error_t ufsecp_seckey_verify(const ufsecp_ctx* ctx,
 ufsecp_error_t ufsecp_seckey_negate(ufsecp_ctx* ctx, uint8_t privkey[32]) {
     if (!ctx || !privkey) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
-    auto sk = scalar_from_bytes(privkey);
-    scalar_to_bytes(sk.negate(), privkey);
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
+    auto neg = sk.negate();
+    // negate of valid nonzero scalar is always nonzero
+    scalar_to_bytes(neg, privkey);
     return UFSECP_OK;
 }
 
@@ -262,12 +284,18 @@ ufsecp_error_t ufsecp_seckey_tweak_add(ufsecp_ctx* ctx, uint8_t privkey[32],
                                        const uint8_t tweak[32]) {
     if (!ctx || !privkey || !tweak) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
-    auto sk = scalar_from_bytes(privkey);
-    auto tw = scalar_from_bytes(tweak);
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
+    Scalar tw;
+    if (!scalar_parse_strict(tweak, tw)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "tweak >= n");
+    }
     auto result = sk + tw;
     if (result.is_zero()) {
         return ctx_set_err(ctx, UFSECP_ERR_ARITH, "tweak_add resulted in zero");
-}
+    }
     scalar_to_bytes(result, privkey);
     return UFSECP_OK;
 }
@@ -276,12 +304,19 @@ ufsecp_error_t ufsecp_seckey_tweak_mul(ufsecp_ctx* ctx, uint8_t privkey[32],
                                        const uint8_t tweak[32]) {
     if (!ctx || !privkey || !tweak) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
-    auto sk = scalar_from_bytes(privkey);
-    auto tw = scalar_from_bytes(tweak);
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
+    Scalar tw;
+    // tweak_mul: reject tweak==0 (result would be zero) and tweak >= n
+    if (!scalar_parse_strict_nonzero(tweak, tw)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "tweak is zero or >= n");
+    }
     auto result = sk * tw;
     if (result.is_zero()) {
         return ctx_set_err(ctx, UFSECP_ERR_ARITH, "tweak_mul resulted in zero");
-}
+    }
     scalar_to_bytes(result, privkey);
     return UFSECP_OK;
 }
@@ -296,12 +331,14 @@ ufsecp_error_t ufsecp_pubkey_create(ufsecp_ctx* ctx,
     if (!ctx || !privkey || !pubkey33_out) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
-    auto sk = scalar_from_bytes(privkey);
-    if (sk.is_zero()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "private key is zero");
-}
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
 
-    auto pk = Point::generator().scalar_mul(sk);
+    // CT path: private key is secret, use constant-time generator_mul
+    auto pk = secp256k1::ct::generator_mul(sk);
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
     if (pk.is_infinity()) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "pubkey at infinity");
 }
@@ -316,12 +353,14 @@ ufsecp_error_t ufsecp_pubkey_create_uncompressed(ufsecp_ctx* ctx,
     if (!ctx || !privkey || !pubkey65_out) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
-    auto sk = scalar_from_bytes(privkey);
-    if (sk.is_zero()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "private key is zero");
-}
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
 
-    auto pk = Point::generator().scalar_mul(sk);
+    // CT path: private key is secret, use constant-time generator_mul
+    auto pk = secp256k1::ct::generator_mul(sk);
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
     if (pk.is_infinity()) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "pubkey at infinity");
 }
@@ -349,8 +388,18 @@ ufsecp_error_t ufsecp_pubkey_parse(ufsecp_ctx* ctx,
         std::array<uint8_t, 32> x_bytes, y_bytes;
         std::memcpy(x_bytes.data(), input + 1, 32);
         std::memcpy(y_bytes.data(), input + 33, 32);
-        auto x = FE::from_bytes(x_bytes);
-        auto y = FE::from_bytes(y_bytes);
+        // Strict: reject x >= p or y >= p
+        FE x, y;
+        if (!FE::parse_bytes_strict(x_bytes, x) ||
+            !FE::parse_bytes_strict(y_bytes, y)) {
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "coordinate >= p");
+        }
+        // On-curve check: y^2 == x^3 + 7
+        auto lhs = y * y;
+        auto rhs = x * x * x + FE::from_uint64(7);
+        if (lhs != rhs) {
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "point not on curve");
+        }
         auto p = Point::from_affine(x, y);
         if (p.is_infinity()) {
             return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "point at infinity");
@@ -367,10 +416,10 @@ ufsecp_error_t ufsecp_pubkey_xonly(ufsecp_ctx* ctx,
     if (!ctx || !privkey || !xonly32_out) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
-    auto sk = scalar_from_bytes(privkey);
-    if (sk.is_zero()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "private key is zero");
-}
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
 
     auto xonly = secp256k1::schnorr_pubkey(sk);
     std::memcpy(xonly32_out, xonly.data(), 32);
@@ -390,13 +439,35 @@ ufsecp_error_t ufsecp_ecdsa_sign(ufsecp_ctx* ctx,
 
     std::array<uint8_t, 32> msg;
     std::memcpy(msg.data(), msg32, 32);
-    auto sk = scalar_from_bytes(privkey);
-    if (sk.is_zero()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "private key is zero");
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
+
+    auto sig = secp256k1::ct::ecdsa_sign(msg, sk);
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    // CT path returns already-normalized (low-S) signature
+    auto compact = sig.to_compact();
+    std::memcpy(sig64_out, compact.data(), 64);
+    return UFSECP_OK;
 }
 
-    auto sig = secp256k1::ecdsa_sign(msg, sk);
-    sig = sig.normalize();
+ufsecp_error_t ufsecp_ecdsa_sign_verified(ufsecp_ctx* ctx,
+                                          const uint8_t msg32[32],
+                                          const uint8_t privkey[32],
+                                          uint8_t sig64_out[64]) {
+    if (!ctx || !msg32 || !privkey || !sig64_out) return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+
+    std::array<uint8_t, 32> msg;
+    std::memcpy(msg.data(), msg32, 32);
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
+
+    auto sig = secp256k1::ct::ecdsa_sign_verified(msg, sk);
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
     auto compact = sig.to_compact();
     std::memcpy(sig64_out, compact.data(), 64);
     return UFSECP_OK;
@@ -414,12 +485,15 @@ ufsecp_error_t ufsecp_ecdsa_verify(ufsecp_ctx* ctx,
     std::array<uint8_t, 64> compact;
     std::memcpy(compact.data(), sig64, 64);
 
-    auto ecdsasig = secp256k1::ECDSASignature::from_compact(compact);
+    secp256k1::ECDSASignature ecdsasig;
+    if (!secp256k1::ECDSASignature::parse_compact_strict(compact, ecdsasig)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "non-canonical compact sig");
+    }
     auto pk = point_from_compressed(pubkey33);
 
     if (!secp256k1::ecdsa_verify(msg, pk, ecdsasig)) {
         return ctx_set_err(ctx, UFSECP_ERR_VERIFY_FAIL, "ECDSA verify failed");
-}
+    }
 
     return UFSECP_OK;
 }
@@ -432,7 +506,11 @@ ufsecp_error_t ufsecp_ecdsa_sig_to_der(ufsecp_ctx* ctx,
 
     std::array<uint8_t, 64> compact;
     std::memcpy(compact.data(), sig64, 64);
-    auto ecdsasig = secp256k1::ECDSASignature::from_compact(compact);
+
+    secp256k1::ECDSASignature ecdsasig;
+    if (!secp256k1::ECDSASignature::parse_compact_strict(compact, ecdsasig)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "non-canonical compact sig");
+    }
 
     auto [der, actual_len] = ecdsasig.to_der();
     if (*der_len < actual_len) {
@@ -450,54 +528,109 @@ ufsecp_error_t ufsecp_ecdsa_sig_from_der(ufsecp_ctx* ctx,
     if (!ctx || !der || !sig64_out) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
-    /* Minimal DER parser:
-     * 0x30 <total_len> 0x02 <r_len> <r_bytes...> 0x02 <s_len> <s_bytes...> */
-    if (der_len < 8 || der[0] != 0x30) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: missing SEQUENCE");
-}
+    /* Strict DER parser for ECDSA secp256k1 signatures.
+     * Format: 0x30 <total_len> 0x02 <r_len> <r_bytes...> 0x02 <s_len> <s_bytes...>
+     *
+     * Enforces:
+     * - Single-byte length encoding only (no long form)
+     * - No negative integers (high bit of first data byte must be 0)
+     * - No unnecessary leading zero padding
+     * - Exact total length (no trailing bytes)
+     * - r, s must be in [1, n-1] (canonical, nonzero)
+     * - Max total DER length: 72 bytes */
+
+    /* Max DER ECDSA sig: 2 + 2 + 33 + 2 + 33 = 72 */
+    if (der_len < 8 || der_len > 72 || der[0] != 0x30) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: missing/oversized SEQUENCE");
+    }
+
+    /* Reject long-form length encoding (bit 7 set = multi-byte length) */
+    if (der[1] & 0x80) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: long-form length");
+    }
 
     size_t const seq_len = der[1];
     if (seq_len + 2 != der_len) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: length mismatch");
-}
+    }
 
     size_t pos = 2;
+
+    /* --- Helper lambda: parse one INTEGER component strictly --- */
+    auto parse_int = [&](const char* name, const uint8_t*& out_ptr,
+                         size_t& out_len) -> ufsecp_error_t {
+        if (pos >= der_len || der[pos] != 0x02) {
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: missing INTEGER");
+        }
+        pos++;
+        if (pos >= der_len) {
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: truncated");
+        }
+        /* Reject long-form length for component */
+        if (der[pos] & 0x80) {
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: long-form int length");
+        }
+        size_t const int_len = der[pos++];
+        if (int_len == 0 || pos + int_len > der_len) {
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: int length out of bounds");
+        }
+        /* Reject negative: high bit set on first data byte means negative in DER */
+        if (der[pos] & 0x80) {
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: negative integer");
+        }
+        /* Reject unnecessary leading zero: 0x00 prefix only valid when next byte
+         * has high bit set (positive number needs padding to stay positive).
+         * If next byte has high bit clear, the 0x00 is superfluous padding.  */
+        if (int_len > 1 && der[pos] == 0x00 && !(der[pos + 1] & 0x80)) {
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: unnecessary leading zero");
+        }
+
+        out_ptr = der + pos;
+        out_len = int_len;
+        /* Strip valid leading zero pad (high bit of next byte is set) */
+        if (out_len > 0 && out_ptr[0] == 0x00) { out_ptr++; out_len--; }
+        pos += int_len;
+        (void)name;
+        return UFSECP_OK;
+    };
+
     /* Read R */
-    if (pos >= der_len || der[pos] != 0x02) { // lgtm[cpp/constant-comparison] // Defensive: pos always <= 2, der_len >= 8, but keep for safety
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: missing R INTEGER");
-}
-    pos++;
-    if (pos >= der_len) return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: truncated"); // lgtm[cpp/constant-comparison] // Defensive: pos always <= 3, der_len >= 8
-    size_t const r_len = der[pos++];
-    if (r_len == 0 || pos + r_len > der_len) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: R length");
-}
-    const uint8_t* r_ptr = der + pos;
-    size_t r_data_len = r_len;
-    if (r_data_len > 0 && r_ptr[0] == 0x00) { r_ptr++; r_data_len--; } // lgtm[cpp/constant-comparison] // Defensive: r_data_len always >= 1
-    pos += r_len;
+    const uint8_t* r_ptr = nullptr;
+    size_t r_data_len = 0;
+    {
+        auto rc = parse_int("R", r_ptr, r_data_len);
+        if (rc != UFSECP_OK) return rc;
+    }
 
     /* Read S */
-    if (pos >= der_len || der[pos] != 0x02) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: missing S INTEGER");
-}
-    pos++;
-    if (pos >= der_len) return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: truncated");
-    size_t const s_len = der[pos++];
-    if (s_len == 0 || pos + s_len > der_len) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: S length");
-}
-    const uint8_t* s_ptr = der + pos;
-    size_t s_data_len = s_len;
-    if (s_data_len > 0 && s_ptr[0] == 0x00) { s_ptr++; s_data_len--; } // lgtm[cpp/constant-comparison] // Defensive: s_data_len always >= 1
+    const uint8_t* s_ptr = nullptr;
+    size_t s_data_len = 0;
+    {
+        auto rc = parse_int("S", s_ptr, s_data_len);
+        if (rc != UFSECP_OK) return rc;
+    }
+
+    /* Reject trailing bytes after S (must consume entire SEQUENCE) */
+    if (pos != der_len) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: trailing bytes");
+    }
 
     if (r_data_len > 32 || s_data_len > 32) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: component > 32 bytes");
-}
+    }
 
+    /* Build compact sig64 (big-endian, right-aligned in 32-byte slots) */
     std::memset(sig64_out, 0, 64);
     std::memcpy(sig64_out + (32 - r_data_len), r_ptr, r_data_len);
     std::memcpy(sig64_out + 32 + (32 - s_data_len), s_ptr, s_data_len);
+
+    /* Range check: r and s must be in [1, n-1] (strict nonzero, no reduce) */
+    Scalar r_sc, s_sc;
+    if (!Scalar::parse_bytes_strict_nonzero(sig64_out, r_sc) ||
+        !Scalar::parse_bytes_strict_nonzero(sig64_out + 32, s_sc)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "bad DER: r or s out of range [1,n-1]");
+    }
+
     return UFSECP_OK;
 }
 
@@ -515,12 +648,16 @@ ufsecp_error_t ufsecp_ecdsa_sign_recoverable(ufsecp_ctx* ctx,
 
     std::array<uint8_t, 32> msg;
     std::memcpy(msg.data(), msg32, 32);
-    auto sk = scalar_from_bytes(privkey);
-    if (sk.is_zero()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "private key is zero");
-}
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
 
+    // NOTE: No ct::ecdsa_sign_recoverable exists yet. Using fast path with
+    // zeroization. Recovery signing is inherently non-CT due to recid computation.
+    // TODO: Implement ct::ecdsa_sign_recoverable when CT recovery is needed.
     auto rsig = secp256k1::ecdsa_sign_recoverable(msg, sk);
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
     auto normalized = rsig.sig.normalize();
     auto compact = normalized.to_compact();
     std::memcpy(sig64_out, compact.data(), 64);
@@ -536,16 +673,24 @@ ufsecp_error_t ufsecp_ecdsa_recover(ufsecp_ctx* ctx,
     if (!ctx || !msg32 || !sig64 || !pubkey33_out) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
+    if (recid < 0 || recid > 3) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "recid must be 0..3");
+    }
+
     std::array<uint8_t, 32> msg;
     std::memcpy(msg.data(), msg32, 32);
     std::array<uint8_t, 64> compact;
     std::memcpy(compact.data(), sig64, 64);
-    auto ecdsasig = secp256k1::ECDSASignature::from_compact(compact);
+
+    secp256k1::ECDSASignature ecdsasig;
+    if (!secp256k1::ECDSASignature::parse_compact_strict(compact, ecdsasig)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "non-canonical compact sig");
+    }
 
     auto [point, ok] = secp256k1::ecdsa_recover(msg, ecdsasig, recid);
     if (!ok) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "recovery failed");
-}
+        return ctx_set_err(ctx, UFSECP_ERR_VERIFY_FAIL, "recovery failed");
+    }
 
     point_to_compressed(point, pubkey33_out);
     return UFSECP_OK;
@@ -565,16 +710,47 @@ ufsecp_error_t ufsecp_schnorr_sign(ufsecp_ctx* ctx,
 }
     ctx_clear_err(ctx);
 
-    auto sk = scalar_from_bytes(privkey);
-    if (sk.is_zero()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "private key is zero");
-}
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
 
     std::array<uint8_t, 32> msg_arr, aux_arr;
     std::memcpy(msg_arr.data(), msg32, 32);
     std::memcpy(aux_arr.data(), aux_rand, 32);
 
-    auto sig = secp256k1::schnorr_sign(sk, msg_arr, aux_arr);
+    auto kp = secp256k1::ct::schnorr_keypair_create(sk);
+    auto sig = secp256k1::ct::schnorr_sign(kp, msg_arr, aux_arr);
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    secp256k1::detail::secure_erase(&kp.d, sizeof(kp.d));
+    auto bytes = sig.to_bytes();
+    std::memcpy(sig64_out, bytes.data(), 64);
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_schnorr_sign_verified(ufsecp_ctx* ctx,
+                                            const uint8_t msg32[32],
+                                            const uint8_t privkey[32],
+                                            const uint8_t aux_rand[32],
+                                            uint8_t sig64_out[64]) {
+    if (!ctx || !msg32 || !privkey || !aux_rand || !sig64_out) {
+        return UFSECP_ERR_NULL_ARG;
+    }
+    ctx_clear_err(ctx);
+
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
+
+    std::array<uint8_t, 32> msg_arr, aux_arr;
+    std::memcpy(msg_arr.data(), msg32, 32);
+    std::memcpy(aux_arr.data(), aux_rand, 32);
+
+    auto kp = secp256k1::ct::schnorr_keypair_create(sk);
+    auto sig = secp256k1::ct::schnorr_sign_verified(kp, msg_arr, aux_arr);
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    secp256k1::detail::secure_erase(&kp.d, sizeof(kp.d));
     auto bytes = sig.to_bytes();
     std::memcpy(sig64_out, bytes.data(), 64);
     return UFSECP_OK;
@@ -596,7 +772,7 @@ ufsecp_error_t ufsecp_schnorr_verify(ufsecp_ctx* ctx,
     // BIP-340 strict: reject pubkey x >= p
     FE pk_fe;
     if (!FE::parse_bytes_strict(pubkey_x, pk_fe)) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "Non-canonical pubkey (x>=p)");
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "Non-canonical pubkey (x>=p)");
     }
 
     std::array<uint8_t, 32> pk_arr, msg_arr;
@@ -621,8 +797,14 @@ ufsecp_error_t ufsecp_ecdh(ufsecp_ctx* ctx,
     if (!ctx || !privkey || !pubkey33 || !secret32_out) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
-    auto sk = scalar_from_bytes(privkey);
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
     auto pk = point_from_compressed(pubkey33);
+    if (pk.is_infinity()) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid or infinity pubkey");
+    }
     auto secret = secp256k1::ecdh_compute(sk, pk);
     std::memcpy(secret32_out, secret.data(), 32);
     return UFSECP_OK;
@@ -635,8 +817,14 @@ ufsecp_error_t ufsecp_ecdh_xonly(ufsecp_ctx* ctx,
     if (!ctx || !privkey || !pubkey33 || !secret32_out) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
-    auto sk = scalar_from_bytes(privkey);
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
     auto pk = point_from_compressed(pubkey33);
+    if (pk.is_infinity()) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid or infinity pubkey");
+    }
     auto secret = secp256k1::ecdh_compute_xonly(sk, pk);
     std::memcpy(secret32_out, secret.data(), 32);
     return UFSECP_OK;
@@ -649,8 +837,14 @@ ufsecp_error_t ufsecp_ecdh_raw(ufsecp_ctx* ctx,
     if (!ctx || !privkey || !pubkey33 || !secret32_out) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
-    auto sk = scalar_from_bytes(privkey);
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
     auto pk = point_from_compressed(pubkey33);
+    if (pk.is_infinity()) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid or infinity pubkey");
+    }
     auto secret = secp256k1::ecdh_compute_raw(sk, pk);
     std::memcpy(secret32_out, secret.data(), 32);
     return UFSECP_OK;
@@ -760,7 +954,10 @@ ufsecp_error_t ufsecp_wif_encode(ufsecp_ctx* ctx,
     if (!ctx || !privkey || !wif_out || !wif_len) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
-    auto sk = scalar_from_bytes(privkey);
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
     auto wif = secp256k1::wif_encode(sk, compressed != 0, to_network(network));
     if (wif.empty()) {
         return ctx_set_err(ctx, UFSECP_ERR_INTERNAL, "WIF encode failed");
@@ -935,7 +1132,10 @@ ufsecp_error_t ufsecp_taproot_tweak_seckey(ufsecp_ctx* ctx,
     if (!ctx || !privkey || !tweaked32_out) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
-    auto sk = scalar_from_bytes(privkey);
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
     size_t const mr_len = merkle_root ? 32 : 0;
 
     auto tweaked = secp256k1::taproot_tweak_privkey(sk, merkle_root, mr_len);

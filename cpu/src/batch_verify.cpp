@@ -46,7 +46,10 @@ Scalar batch_weight(const std::array<uint8_t, 32>& batch_seed, uint32_t index) {
 // Lift x-only key to point (same as in schnorr_verify)
 // Returns (success, point)
 std::pair<bool, Point> lift_x(const std::array<uint8_t, 32>& pubkey_x) {
-    auto px_fe = FieldElement::from_bytes(pubkey_x);
+    // Strict: reject x >= p
+    FieldElement px_fe;
+    if (!FieldElement::parse_bytes_strict(pubkey_x, px_fe))
+        return {false, Point::infinity()};
 
     // y^2 = x^3 + 7
     auto x3 = px_fe.square() * px_fe;
@@ -91,14 +94,14 @@ bool schnorr_batch_verify(const SchnorrBatchEntry* entries, std::size_t n) {
     }
     auto batch_seed = seed_ctx.finalize();
 
-    // Collect: scalars and points for multi_scalar_mul
-    // Layout: [G_coeff, P_0, ..., P_{n-1}, R_0, ..., R_{n-1}]
-    // Scalars: [sum(a_i*s_i), -a_0*e_0, ..., -a_{n-1}*e_{n-1}, -a_0, ..., -a_{n-1}]
+    // Collect: scalars and points for multi_scalar_mul (non-generator only)
+    // Layout: [P_0, ..., P_{n-1}, R_0, ..., R_{n-1}]
+    // Scalars: [-a_0*e_0, ..., -a_{n-1}*e_{n-1}, -a_0, ..., -a_{n-1}]
     std::vector<Scalar> scalars;
     std::vector<Point> points;
 
-    scalars.reserve(1 + 2 * n);
-    points.reserve(1 + 2 * n);
+    scalars.reserve(2 * n);
+    points.reserve(2 * n);
 
     // G coefficient: sum(a_i * s_i)
     Scalar g_coeff = Scalar::zero();
@@ -134,27 +137,34 @@ bool schnorr_batch_verify(const SchnorrBatchEntry* entries, std::size_t n) {
         g_coeff += weights[i] * entries[i].signature.s;
     }
 
-    // Build multi-scalar arrays
-    // First: G with coefficient sum(a_i*s_i)
-    scalars.push_back(g_coeff);
-    points.push_back(Point::generator());
+    // ---- Optimization: separate G coefficient from MSM ----
+    // G has a precomputed comb table (~6us via scalar_mul), while generic
+    // points cost ~25us each in MSM.  By computing g_coeff*G separately
+    // we avoid treating the generator as a generic point, gaining ~19us
+    // and keeping the remaining 2*n points in the MSM range for Strauss.
 
-    // Then: -a_i * e_i * P_i  for each signature
+    // Step 1: g_coeff * G  (uses precomputed comb table -- fast path)
+    auto G_term = Point::generator().scalar_mul(g_coeff);
+
+    // Step 2: Build MSM for non-generator points only (2*n points)
+    //   scalars: [-a_0*e_0, ..., -a_{n-1}*e_{n-1}, -a_0, ..., -a_{n-1}]
+    //   points:  [P_0, ..., P_{n-1}, R_0, ..., R_{n-1}]
     for (std::size_t i = 0; i < n; ++i) {
         scalars.push_back((weights[i] * challenges[i]).negate());
         points.push_back(pubkeys[i]);
     }
 
-    // Then: -a_i * R_i  for each signature
     for (std::size_t i = 0; i < n; ++i) {
         scalars.push_back(weights[i].negate());
         points.push_back(R_points[i]);
     }
 
-    // Verify: MSM should yield infinity
+    // Step 3: Compute MSM for P_i and R_i terms
     // msm() auto-selects Strauss (n<=128) or Pippenger (n>128)
-    // For n=500 Schnorr batch -> 1001 points -> Pippenger is 10x+ faster
-    auto result = msm(scalars, points);
+    auto rest = msm(scalars, points);
+
+    // Step 4: Verify g_coeff*G + rest = infinity
+    auto result = G_term.add(rest);
     return result.is_infinity();
 }
 
@@ -208,7 +218,7 @@ bool ecdsa_batch_verify(const ECDSABatchEntry* entries, std::size_t n) {
         s_inv[0] = inv;
     }
 
-    // ECDSA batch: per-signature Shamir trick + Montgomery batch inversion.
+    // ECDSA batch: dual_scalar_mul_gen_point + Montgomery batch inversion.
     //
     // Unlike Schnorr (where batch = single MSM -> infinity check), ECDSA
     // requires per-signature x-coordinate check: R'_i.x mod n == r_i.
@@ -216,10 +226,10 @@ bool ecdsa_batch_verify(const ECDSABatchEntry* entries, std::size_t n) {
     // standard ECDSA doesn't provide the y-parity (recovery flag), so
     // ~50% of attempts would pick wrong y and force fallback.
     //
-    // Shamir's trick (simultaneous u1*G + u2*Q, joint wNAF scan) gives
-    // ~2x speedup over naive separate muls. Combined with Montgomery
-    // batch inversion above (1 modular inverse instead of n), this is
-    // near-optimal for standard ECDSA without recovery parameter.
+    // dual_scalar_mul_gen_point uses 4-stream GLV Strauss with precomputed
+    // generator tables (shared doublings, affine-mixed adds, W_G=15).
+    // Combined with Montgomery batch inversion (1 inverse instead of n),
+    // this is near-optimal for standard ECDSA without recovery parameter.
 
     for (std::size_t i = 0; i < n; ++i) {
         if (entries[i].signature.r.is_zero() || entries[i].signature.s.is_zero()) {
@@ -230,14 +240,62 @@ bool ecdsa_batch_verify(const ECDSABatchEntry* entries, std::size_t n) {
         auto u1 = z * s_inv[i];
         auto u2 = entries[i].signature.r * s_inv[i];
 
-        // R' = u1*G + u2*Q via Shamir's trick (joint wNAF, ~2x individual)
-        auto R_prime = shamir_trick(u1, Point::generator(),
-                                    u2, entries[i].public_key);
+        // R' = u1*G + u2*Q via 4-stream GLV Strauss (precomp G tables, ~27us)
+        auto R_prime = Point::dual_scalar_mul_gen_point(u1, u2,
+                                                        entries[i].public_key);
         if (R_prime.is_infinity()) return false;
 
+        // Z^2-based x-coordinate check (avoids field inverse ~940ns).
+        // Check: R'.x / R'.z^2 mod n == sig.r
+        // Equivalent: sig.r * R'.z^2 == R'.x (mod p)
+#if defined(SECP256K1_FAST_52BIT)
+        using FE52 = fast::FieldElement52;
+        FE52 const r52 = FE52::from_4x64_limbs(entries[i].signature.r.limbs().data());
+        FE52 const z2 = R_prime.Z52().square();
+        FE52 const r_z2 = r52 * z2;
+
+        FE52 diff = R_prime.X52();
+        diff.negate_assign(23);
+        diff.add_assign(r_z2);
+        if (!diff.normalizes_to_zero_var()) {
+            // Rare case: x_R mod p in [n, p). Probability ~2^-128.
+            static constexpr std::uint64_t PMN_0 = 0x402da1732fc9bebfULL;
+            static constexpr std::uint64_t PMN_1 = 0x14551231950b75fcULL;
+            const auto& rl = entries[i].signature.r.limbs();
+            bool r_less_than_pmn = (rl[3] == 0 && rl[2] == 0);
+            if (r_less_than_pmn) {
+                if (rl[1] != PMN_1) r_less_than_pmn = (rl[1] < PMN_1);
+                else r_less_than_pmn = (rl[0] < PMN_0);
+            }
+            if (!r_less_than_pmn) return false;
+
+            static constexpr std::uint64_t N_LIMBS[4] = {
+                0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL,
+                0xFFFFFFFFFFFFFFFEULL, 0xFFFFFFFFFFFFFFFFULL
+            };
+            alignas(32) std::uint64_t rn[4];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+            unsigned __int128 acc = static_cast<unsigned __int128>(rl[0]) + N_LIMBS[0];
+            rn[0] = static_cast<std::uint64_t>(acc);
+            acc = static_cast<unsigned __int128>(rl[1]) + N_LIMBS[1] + static_cast<std::uint64_t>(acc >> 64);
+            rn[1] = static_cast<std::uint64_t>(acc);
+            acc = static_cast<unsigned __int128>(rl[2]) + N_LIMBS[2] + static_cast<std::uint64_t>(acc >> 64);
+            rn[2] = static_cast<std::uint64_t>(acc);
+            rn[3] = rl[3] + N_LIMBS[3] + static_cast<std::uint64_t>(acc >> 64);
+#pragma GCC diagnostic pop
+
+            FE52 const r2_z2 = FE52::from_4x64_limbs(rn) * z2;
+            FE52 diff2 = R_prime.X52();
+            diff2.negate_assign(23);
+            diff2.add_assign(r2_z2);
+            if (!diff2.normalizes_to_zero_var()) return false;
+        }
+#else
         auto v_bytes = R_prime.x().to_bytes();
         auto v = Scalar::from_bytes(v_bytes);
         if (v != entries[i].signature.r) return false;
+#endif
     }
 
     return true;

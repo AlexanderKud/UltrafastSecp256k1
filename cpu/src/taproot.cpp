@@ -1,6 +1,8 @@
 #include "secp256k1/taproot.hpp"
 #include "secp256k1/schnorr.hpp"
 #include "secp256k1/sha256.hpp"
+#include "secp256k1/ct/point.hpp"
+#include "secp256k1/ct/scalar.hpp"
 #include <cstring>
 #include <algorithm>
 
@@ -99,7 +101,10 @@ std::array<uint8_t, 32> taproot_branch_hash(
 
 // Helper: lift x-only key to point with even y
 static std::pair<Point, bool> lift_x_even(const std::array<uint8_t, 32>& x_bytes) {
-    auto px_fe = FieldElement::from_bytes(x_bytes);
+    // Strict: reject x >= p
+    FieldElement px_fe;
+    if (!FieldElement::parse_bytes_strict(x_bytes, px_fe))
+        return {Point::infinity(), false};
 
     // y^2 = x^3 + 7
     auto x3 = px_fe.square() * px_fe;
@@ -158,13 +163,14 @@ Scalar taproot_tweak_privkey(
 
     if (private_key.is_zero()) return Scalar::zero();
 
-    // P = d * G
-    auto P = Point::generator().scalar_mul(private_key);
-    auto P_uncomp = P.to_uncompressed();
-    bool const p_y_odd = (P_uncomp[64] & 1) != 0;
+    // P = d * G (CT)
+    auto P = ct::generator_mul(private_key);
+    auto [px_bytes, p_y_odd] = P.x_bytes_and_parity();
 
-    // If P has odd y, negate d
-    auto d = p_y_odd ? private_key.negate() : private_key;
+    // If P has odd y, negate d (CT branchless)
+    std::uint64_t const neg_mask = static_cast<std::uint64_t>(p_y_odd)
+                                 * UINT64_C(0xFFFFFFFFFFFFFFFF);
+    auto d = ct::scalar_cneg(private_key, neg_mask);
 
     // t = H_TapTweak(P.x || merkle_root)
     auto px = P.x().to_bytes();

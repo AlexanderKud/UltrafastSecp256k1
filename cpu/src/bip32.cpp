@@ -5,6 +5,7 @@
 #include "secp256k1/bip32.hpp"
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/sha512.hpp"
+#include "secp256k1/ct/point.hpp"
 #include <cstring>
 #include <cctype>
 
@@ -223,16 +224,24 @@ std::array<uint8_t, 20> hash160(const void* data, std::size_t len) {
 fast::Point ExtendedKey::public_key() const {
     if (is_private) {
         auto sk = Scalar::from_bytes(key);
-        return Point::generator().scalar_mul(sk);
+        return ct::generator_mul(sk);
     }
     // Public key: decompress from pub_prefix + key (x-coordinate)
     // y^2 = x^3 + 7, then pick y matching parity
-    auto x = fast::FieldElement::from_bytes(key);
+    // Strict: reject x >= p
+    fast::FieldElement x;
+    if (!fast::FieldElement::parse_bytes_strict(key, x)) {
+        return Point::infinity();
+    }
     auto x2 = x * x;
     auto x3 = x2 * x;
     auto seven = fast::FieldElement::from_uint64(7);
     auto y2 = x3 + seven;
     auto y = y2.sqrt();
+    // Verify sqrt: y^2 must equal y2 (reject if x not on curve)
+    if (y * y != y2) {
+        return Point::infinity();
+    }
     // Check parity: prefix 0x02 = even y, 0x03 = odd y
     auto y_bytes = y.to_bytes();
     bool const y_is_odd = (y_bytes[31] & 1) != 0;
@@ -333,10 +342,10 @@ std::pair<ExtendedKey, bool> ExtendedKey::derive_child(uint32_t index) const {
     std::memcpy(IL.data(), I.data(), 32);
     std::memcpy(IR.data(), I.data() + 32, 32);
 
-    auto il_scalar = Scalar::from_bytes(IL);
-    // Check IL is valid (less than curve order -- from_bytes handles mod n)
-    // But we need to check it wasn't zero after reduction when original was >= n
-    // from_bytes already reduces mod n, so just check non-zero
+    auto il_scalar = Scalar{};
+    // BIP-32: IL must be < curve order n; reject (skip to next index) if >= n
+    if (!Scalar::parse_bytes_strict(IL, il_scalar)) return {ExtendedKey{}, false};
+    // Also reject zero
     if (il_scalar.is_zero()) return {ExtendedKey{}, false};
 
     ExtendedKey child{};
