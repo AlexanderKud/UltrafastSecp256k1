@@ -982,7 +982,134 @@ static inline JacobianPoint52 jac52_negate(const JacobianPoint52& p) {
     return r;
 }
 
-// -- GLV + Shamir + 5x52 scalar multiplication (isolated stack frame) -----
+// -- GLV + Shamir helpers (shared by scalar_mul_glv52 / scalar_mul_with_plan_glv52 /
+//    dual_scalar_mul_gen_point) -----------------------------------------------
+
+// Builds odd-multiple table [1P, 3P, ..., (2T-1)P] in FE52 using the z-ratio
+// technique (zero field inversions).  All table entries share an implied
+// Z = globalz on the secp256k1 curve.
+// Returns false if a degenerate case (infinity) occurred during table building.
+static bool build_glv52_table_zr(
+    const JacobianPoint52& P52,
+    AffinePoint52* tbl,
+    int table_size,
+    FieldElement52& globalz)
+{
+    // d = 2*P (Jacobian)
+    JacobianPoint52 const d = jac52_double(P52);
+    FieldElement52 const C  = d.z;
+    FieldElement52 const C2 = C.square();
+    FieldElement52 const C3 = C2 * C;
+
+    // d as affine on iso curve (Z cancels in isomorphism)
+    AffinePoint52 const d_aff = {d.x, d.y};
+
+    // Transform P onto iso curve: (P.X*C^2, P.Y*C^3, P.Z)
+    JacobianPoint52 ai = {P52.x * C2, P52.y * C3, P52.z, false};
+    tbl[0].x = ai.x;
+    tbl[0].y = ai.y;
+
+    // Z-ratio array: zr[i] = Z_i / Z_{i-1} for the accumulator
+    constexpr int kMaxZr = 32;
+    FieldElement52 zr[kMaxZr];
+    zr[0] = C;  // first z-ratio is C (from iso mapping)
+
+    // Build rest using mixed adds on iso curve with z-ratio output
+    for (int i = 1; i < table_size; i++) {
+        jac52_add_mixed_inplace_zr(ai, d_aff, zr[i]);
+        if (SECP256K1_UNLIKELY(ai.infinity)) {
+            return false;
+        }
+        tbl[i].x = ai.x;
+        tbl[i].y = ai.y;
+    }
+
+    // globalz = final_Z * C (maps from iso curve back to secp256k1)
+    globalz = ai.z * C;
+
+    // Backward sweep: rescale table entries so all share implied Z = Z_last.
+    // zs accumulates the product zr[n-1] * ... * zr[i+1] = Z_last / Z_i.
+    // Each entry is scaled: x *= zs^2, y *= zs^3.
+    {
+        FieldElement52 zs = zr[table_size - 1];
+        for (int idx = table_size - 2; idx >= 0; --idx) {
+            if (idx != table_size - 2) {
+                zs.mul_assign(zr[idx + 1]);
+            }
+            FieldElement52 const zs2 = zs.square();
+            FieldElement52 const zs3 = zs2 * zs;
+            tbl[idx].x.mul_assign(zs2);
+            tbl[idx].y.mul_assign(zs3);
+        }
+    }
+
+    // Normalize all entries to magnitude 1.
+    for (int i = 0; i < table_size; ++i) {
+        tbl[i].x.normalize_weak();
+        tbl[i].y.normalize_weak();
+    }
+
+    return true;
+}
+
+// Derives phi(P) table: phi(x,y) = (beta*x, y) with optional Y negation.
+static void derive_phi52_table(
+    const AffinePoint52* tbl_P,
+    AffinePoint52* tbl_phiP,
+    int table_size,
+    bool flip_phi)
+{
+    static const FieldElement52 beta52 = FieldElement52::from_fe(
+        FieldElement::from_bytes(glv_constants::BETA));
+
+    for (int i = 0; i < table_size; i++) {
+        tbl_phiP[i].x = tbl_P[i].x * beta52;
+        if (flip_phi) {
+            tbl_phiP[i].y = tbl_P[i].y.negate(1);
+            tbl_phiP[i].y.normalize_weak();
+        } else {
+            tbl_phiP[i].y = tbl_P[i].y;
+        }
+    }
+}
+
+// wNAF digit application: lookup table entry, negate if negative, mixed-add.
+static inline void apply_wnaf_mixed52(
+    JacobianPoint52& result, const AffinePoint52* table, int32_t d)
+{
+    if (d > 0) {
+        jac52_add_mixed_inplace(result, table[static_cast<std::size_t>((d - 1) >> 1)]);
+    } else if (d < 0) {
+        AffinePoint52 pt = table[static_cast<std::size_t>((-d - 1) >> 1)];
+        pt.y.negate_assign(1);
+        jac52_add_mixed_inplace(result, pt);
+    }
+}
+
+// 2-stream Shamir's trick: single doubling chain with dual wNAF lookups.
+// Returns the accumulated Jacobian result (caller must apply globalz correction).
+static JacobianPoint52 shamir_2stream_glv52(
+    const AffinePoint52* tbl_P,
+    const AffinePoint52* tbl_phiP,
+    const int32_t* wnaf1, std::size_t wnaf1_len,
+    const int32_t* wnaf2, std::size_t wnaf2_len)
+{
+    JacobianPoint52 result52 = {
+        FieldElement52::zero(), FieldElement52::one(),
+        FieldElement52::zero(), true
+    };
+
+    const std::size_t max_len = (wnaf1_len > wnaf2_len) ? wnaf1_len : wnaf2_len;
+
+    for (int i = static_cast<int>(max_len) - 1; i >= 0; --i) {
+        jac52_double_inplace(result52);
+        apply_wnaf_mixed52(result52, tbl_P, wnaf1[static_cast<std::size_t>(i)]);
+        apply_wnaf_mixed52(result52, tbl_phiP, wnaf2[static_cast<std::size_t>(i)]);
+    }
+
+    return result52;
+}
+
 // -- 4x64 Fallback for scalar_mul when 5x52 batch inversion fails --------
 // Extracted to its own noinline function to keep the hot 5x52 path free
 // of try/catch overhead.  Called only when eff_z product is zero (~never
@@ -1055,135 +1182,25 @@ static Point scalar_mul_glv52(const Point& base, const Scalar& scalar) {
     while (wnaf2_len > 0 && wnaf2_buf[wnaf2_len - 1] == 0) --wnaf2_len;
 
     // -- Precompute odd multiples [1P, 3P, 5P, ..., 15P] in 5x52 ------
-    // Uses effective-affine technique (isomorphic curve) + z-ratio propagation.
-    // Instead of batch inversion (~1100 ns SafeGCD), we track Z-ratios from
-    // each mixed addition and do a backward sweep (only field multiplications).
-    // All table entries share an implied Z = globalz on the secp256k1 curve.
-    // The Shamir loop treats them as affine; a single Z *= globalz at the end
-    // corrects the result.
     std::array<AffinePoint52, glv_table_size> tbl_P;
     std::array<AffinePoint52, glv_table_size> tbl_phiP;
     FieldElement52 globalz;
 
-    {
-        // d = 2*P (Jacobian)
-        JacobianPoint52 const d = jac52_double(P52);
-        FieldElement52 const C  = d.z;              // C = d.Z
-        FieldElement52 const C2 = C.square();       // C^2
-        FieldElement52 const C3 = C2 * C;           // C^3
-
-        // d as affine on iso curve (Z cancels in isomorphism)
-        AffinePoint52 const d_aff = {d.x, d.y};
-
-        // Transform P onto iso curve: (P.X*C^2, P.Y*C^3, P.Z)
-        JacobianPoint52 ai = {P52.x * C2, P52.y * C3, P52.z, false};
-        tbl_P[0].x = ai.x;
-        tbl_P[0].y = ai.y;
-
-        // Z-ratio array: zr[i] = Z_i / Z_{i-1} for the accumulator
-        std::array<FieldElement52, glv_table_size> zr;
-        zr[0] = C;  // first z-ratio is C (from iso mapping)
-
-        // Build rest using mixed adds on iso curve with z-ratio output
-        for (std::size_t i = 1; i < glv_table_size; i++) {
-            jac52_add_mixed_inplace_zr(ai, d_aff, zr[i]);
-            if (SECP256K1_UNLIKELY(ai.infinity)) {
-                return scalar_mul_fallback_4x64(base, scalar);
-            }
-            tbl_P[i].x = ai.x;
-            tbl_P[i].y = ai.y;
-        }
-
-        // globalz = final_Z * C (maps from iso curve back to secp256k1)
-        globalz = ai.z * C;
-
-        // Backward sweep: rescale table entries so all share implied Z = Z_last.
-        // zs accumulates the product zr[n-1] * ... * zr[i+1] = Z_last / Z_i.
-        // Each entry is scaled: x *= zs^2, y *= zs^3.
-        {
-            FieldElement52 zs = zr[glv_table_size - 1];
-
-            for (int idx = glv_table_size - 2; idx >= 0; --idx) {
-                if (idx != glv_table_size - 2)
-                    zs.mul_assign(zr[static_cast<std::size_t>(idx) + 1]);
-                FieldElement52 const zs2 = zs.square();
-                FieldElement52 const zs3 = zs2 * zs;
-                tbl_P[static_cast<std::size_t>(idx)].x.mul_assign(zs2);
-                tbl_P[static_cast<std::size_t>(idx)].y.mul_assign(zs3);
-            }
-        }
-
-        // Normalize all entries to magnitude 1.
-        // Swept entries (0..n-2) already have magnitude 1 from mul_assign,
-        // but the last entry (n-1) was never swept and retains raw magnitude
-        // from the mixed add (~7 for x, ~4 for y).
-        // negate(1) in the phi derivation and Shamir loop requires magnitude 1.
-        for (std::size_t i = 0; i < static_cast<std::size_t>(glv_table_size); ++i) {
-            tbl_P[i].x.normalize_weak();
-            tbl_P[i].y.normalize_weak();
-        }
+    if (!build_glv52_table_zr(P52, tbl_P.data(), glv_table_size, globalz)) {
+        return scalar_mul_fallback_4x64(base, scalar);
     }
 
-    // -- Derive phi(P) table: phi(x,y) = (beta*x, y) -----------------------
-    static const FieldElement52 beta52 = FieldElement52::from_fe(
-        FieldElement::from_bytes(glv_constants::BETA));
-
+    // -- Derive phi(P) table + Shamir's trick -------------------------
     const bool flip_phi = (decomp.k1_neg != decomp.k2_neg);
-    for (std::size_t i = 0; i < glv_table_size; i++) {
-        tbl_phiP[i].x = tbl_P[i].x * beta52;
-        if (flip_phi) {
-            tbl_phiP[i].y = tbl_P[i].y.negate(1);
-            tbl_phiP[i].y.normalize_weak();
-        } else {
-            tbl_phiP[i].y = tbl_P[i].y;
-        }
-    }
+    derive_phi52_table(tbl_P.data(), tbl_phiP.data(), glv_table_size, flip_phi);
 
-    // -- Pre-negation eliminated: negate Y on-the-fly in hot loop.
-    // P tables are small (8 entries x 80 bytes = 640 bytes) so cache impact
-    // is trivial, but this removes setup cost and simplifies the code.
+    JacobianPoint52 result52 = shamir_2stream_glv52(
+        tbl_P.data(), tbl_phiP.data(),
+        wnaf1_buf.data(), wnaf1_len, wnaf2_buf.data(), wnaf2_len);
 
-    // -- Shamir's trick -- single doubling chain, dual lookups ---------
-    JacobianPoint52 result52 = {
-        FieldElement52::zero(), FieldElement52::one(),
-        FieldElement52::zero(), true
-    };
-
-    const std::size_t max_len = (wnaf1_len > wnaf2_len) ? wnaf1_len : wnaf2_len;
-
-    for (int i = static_cast<int>(max_len) - 1; i >= 0; --i) {
-        jac52_double_inplace(result52);
-
-        // k1 contribution (wnaf bufs are zero-init; d==0 is a no-op)
-        {
-            int32_t const d = wnaf1_buf[static_cast<std::size_t>(i)];
-            if (d > 0) {
-                jac52_add_mixed_inplace(result52, tbl_P[static_cast<std::size_t>((d - 1) >> 1)]);
-            } else if (d < 0) {
-                AffinePoint52 pt = tbl_P[static_cast<std::size_t>((-d - 1) >> 1)];
-                pt.y.negate_assign(1);
-                jac52_add_mixed_inplace(result52, pt);
-            }
-        }
-
-        // k2 contribution
-        {
-            int32_t const d = wnaf2_buf[static_cast<std::size_t>(i)];
-            if (d > 0) {
-                jac52_add_mixed_inplace(result52, tbl_phiP[static_cast<std::size_t>((d - 1) >> 1)]);
-            } else if (d < 0) {
-                AffinePoint52 pt = tbl_phiP[static_cast<std::size_t>((-d - 1) >> 1)];
-                pt.y.negate_assign(1);
-                jac52_add_mixed_inplace(result52, pt);
-            }
-        }
-    }
-
-    // -- Final Z correction: all table entries had implied Z = globalz.
-    // The Shamir loop treated them as affine (Z=1), so the accumulated
-    // result's Z is off by a factor of globalz.  One multiplication fixes it.
-    if (!result52.infinity)
+    if (!result52.infinity) {
         result52.z.mul_assign(globalz);
+    }
 
     return from_jac52(result52);
 }
@@ -1664,66 +1681,39 @@ Point Point::negate() const {
 #endif
 }
 
-Point Point::next() const {
+// -- Shared helper: add generator-like affine point (parameterized by Y) ------
+static Point add_gen_mixed(const Point& self,
+                           const FieldElement& gen_y_4x64) {
 #if defined(SECP256K1_FAST_52BIT)
   #if defined(SECP256K1_USE_4X64_POINT_OPS)
-    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
-    AffinePoint const g{kGeneratorX, kGeneratorY};
+    JacobianPoint p = point_to_jac4x64(self.X52(), self.Y52(), self.Z52(), self.is_infinity());
+    AffinePoint const g{kGeneratorX, gen_y_4x64};
     JacobianPoint const r = jacobian_add_mixed(p, g);
-    Point result;
-    jac4x64_to_fe52(r, result.x_, result.y_, result.z_, result.infinity_);
-    result.is_generator_ = false;
-    return result;
+    return Point::from_jacobian52(
+        FieldElement52::from_fe(r.x), FieldElement52::from_fe(r.y),
+        FieldElement52::from_fe(r.z), r.infinity);
   #else
     static const FieldElement52 kGenX52 = FieldElement52::from_fe(kGeneratorX);
-    static const FieldElement52 kGenY52 = FieldElement52::from_fe(kGeneratorY);
-    JacobianPoint52 p52{x_, y_, z_, infinity_};
-    AffinePoint52 const g52{kGenX52, kGenY52};
+    FieldElement52 const gen_y_52 = FieldElement52::from_fe(gen_y_4x64);
+    JacobianPoint52 p52{self.X52(), self.Y52(), self.Z52(), self.is_infinity()};
+    AffinePoint52 const g52{kGenX52, gen_y_52};
     jac52_add_mixed_inplace(p52, g52);
-    return Point(p52.x, p52.y, p52.z, p52.infinity, false);
-    #endif
+    return Point::from_jacobian52(p52.x, p52.y, p52.z, p52.infinity);
+  #endif
 #else
-    // Fallback: 4x64 path (non-52-bit platforms / MSVC)
-    JacobianPoint p{x_, y_, z_, infinity_};
-    AffinePoint const g{kGeneratorX, kGeneratorY};
+    JacobianPoint p{self.X(), self.Y(), self.z(), self.is_infinity()};
+    AffinePoint const g{kGeneratorX, gen_y_4x64};
     JacobianPoint const r = jacobian_add_mixed(p, g);
-    Point result;
-    result.x_ = r.x; result.y_ = r.y; result.z_ = r.z;
-    result.infinity_ = r.infinity;
-    result.is_generator_ = false;
-    return result;
+    return Point::from_jacobian_coords(r.x, r.y, r.z, r.infinity);
 #endif
 }
 
+Point Point::next() const {
+    return add_gen_mixed(*this, kGeneratorY);
+}
+
 Point Point::prev() const {
-#if defined(SECP256K1_FAST_52BIT)
-  #if defined(SECP256K1_USE_4X64_POINT_OPS)
-    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
-    AffinePoint const ng{kGeneratorX, kNegGeneratorY};
-    JacobianPoint const r = jacobian_add_mixed(p, ng);
-    Point result;
-    jac4x64_to_fe52(r, result.x_, result.y_, result.z_, result.infinity_);
-    result.is_generator_ = false;
-    return result;
-  #else
-    static const FieldElement52 kGenX52 = FieldElement52::from_fe(kGeneratorX);
-    static const FieldElement52 kNegGenY52 = FieldElement52::from_fe(kNegGeneratorY);
-    JacobianPoint52 p52{x_, y_, z_, infinity_};
-    AffinePoint52 const ng52{kGenX52, kNegGenY52};
-    jac52_add_mixed_inplace(p52, ng52);
-    return Point(p52.x, p52.y, p52.z, p52.infinity, false);
-    #endif
-#else
-    // Fallback: 4x64 path (non-52-bit platforms / MSVC)
-    JacobianPoint p{x_, y_, z_, infinity_};
-    AffinePoint const ng{kGeneratorX, kNegGeneratorY};
-    JacobianPoint const r = jacobian_add_mixed(p, ng);
-    Point result;
-    result.x_ = r.x; result.y_ = r.y; result.z_ = r.z;
-    result.infinity_ = r.infinity;
-    result.is_generator_ = false;
-    return result;
-#endif
+    return add_gen_mixed(*this, kNegGeneratorY);
 }
 
 // Mutable in-place addition: *this += G (no allocation overhead)
@@ -1733,32 +1723,7 @@ void Point::next_inplace() {
         *this = Point::generator();
         return;
     }
-#if defined(SECP256K1_FAST_52BIT)
-  #if defined(SECP256K1_USE_4X64_POINT_OPS)
-    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
-    AffinePoint const g{kGeneratorX, kGeneratorY};
-    jacobian_add_mixed_inplace(p, g);
-    jac4x64_to_fe52(p, x_, y_, z_, infinity_);
-    is_generator_ = false;
-  #else
-    static const FieldElement52 kGenX52 = FieldElement52::from_fe(kGeneratorX);
-    static const FieldElement52 kGenY52 = FieldElement52::from_fe(kGeneratorY);
-    JacobianPoint52 p52{x_, y_, z_, infinity_};
-    AffinePoint52 const g52{kGenX52, kGenY52};
-    jac52_add_mixed_inplace(p52, g52);
-    x_ = p52.x; y_ = p52.y; z_ = p52.z;
-    infinity_ = p52.infinity;
-    is_generator_ = false;
-  #endif
-#else
-    // In-place: no return-value copy
-    JacobianPoint self{x_, y_, z_, infinity_};
-    AffinePoint g{kGeneratorX, kGeneratorY};
-    jacobian_add_mixed_inplace(self, g);
-    x_ = self.x; y_ = self.y; z_ = self.z;
-    infinity_ = self.infinity;
-    is_generator_ = false;
-#endif
+    *this = add_gen_mixed(*this, kGeneratorY);
 }
 
 // Mutable in-place subtraction: *this -= G (no allocation overhead)
@@ -1768,32 +1733,7 @@ void Point::prev_inplace() {
         *this = Point::generator().negate();
         return;
     }
-#if defined(SECP256K1_FAST_52BIT)
-  #if defined(SECP256K1_USE_4X64_POINT_OPS)
-    JacobianPoint p = point_to_jac4x64(x_, y_, z_, infinity_);
-    AffinePoint const ng{kGeneratorX, kNegGeneratorY};
-    jacobian_add_mixed_inplace(p, ng);
-    jac4x64_to_fe52(p, x_, y_, z_, infinity_);
-    is_generator_ = false;
-  #else
-    static const FieldElement52 kGenX52 = FieldElement52::from_fe(kGeneratorX);
-    static const FieldElement52 kNegGenY52 = FieldElement52::from_fe(kNegGeneratorY);
-    JacobianPoint52 p52{x_, y_, z_, infinity_};
-    AffinePoint52 const ng52{kGenX52, kNegGenY52};
-    jac52_add_mixed_inplace(p52, ng52);
-    x_ = p52.x; y_ = p52.y; z_ = p52.z;
-    infinity_ = p52.infinity;
-    is_generator_ = false;
-  #endif
-#else
-    // In-place: no return-value copy
-    JacobianPoint self{x_, y_, z_, infinity_};
-    AffinePoint neg_g{kGeneratorX, kNegGeneratorY};
-    jacobian_add_mixed_inplace(self, neg_g);
-    x_ = self.x; y_ = self.y; z_ = self.z;
-    infinity_ = self.infinity;
-    is_generator_ = false;
-#endif
+    *this = add_gen_mixed(*this, kNegGeneratorY);
 }
 
 // Mutable in-place addition: *this += other (no allocation overhead)
@@ -2676,129 +2616,26 @@ static Point scalar_mul_with_plan_glv52(const Point& base, const KPlan& plan) {
     while (wnaf2_len > 0 && wnaf2_buf[wnaf2_len - 1] == 0) --wnaf2_len;
 
     // -- Precompute odd multiples [1P, 3P, ..., (2T-1)P] in 5x52 -----
-    // Uses z-ratio technique: no field inversion needed.
-    // Build table on isomorphic curve where 2P is affine,
-    // track Z-ratios from each mixed addition, then backward sweep.
-    // All table entries share an implied Z = globalz on secp256k1.
     std::array<AffinePoint52, kMaxGlvTableSize> tbl_P;
     std::array<AffinePoint52, kMaxGlvTableSize> tbl_phiP;
     FieldElement52 globalz;
 
-    {
-        // d = 2*P (Jacobian)
-        JacobianPoint52 const d = jac52_double(P52);
-        FieldElement52 const C  = d.z;              // C = d.Z
-        FieldElement52 const C2 = C.square();       // C^2
-        FieldElement52 const C3 = C2 * C;           // C^3
-
-        // d as affine on iso curve (Z cancels in isomorphism)
-        AffinePoint52 const d_aff = {d.x, d.y};
-
-        // Transform P onto iso curve: (P.X*C^2, P.Y*C^3, P.Z)
-        JacobianPoint52 ai = {P52.x * C2, P52.y * C3, P52.z, false};
-        tbl_P[0].x = ai.x;
-        tbl_P[0].y = ai.y;
-
-        // Z-ratio array: zr[i] = Z_i / Z_{i-1} for the accumulator
-        std::array<FieldElement52, kMaxGlvTableSize> zr;
-        zr[0] = C;  // first z-ratio is C (from iso mapping)
-
-        // Build rest using mixed adds on iso curve with z-ratio output
-        for (int i = 1; i < glv_table_size; i++) {
-            jac52_add_mixed_inplace_zr(ai, d_aff, zr[static_cast<std::size_t>(i)]);
-            if (SECP256K1_UNLIKELY(ai.infinity)) {
-                return base.scalar_mul_precomputed_wnaf(plan.wnaf1, plan.wnaf2,
-                                                         plan.neg1, plan.neg2);
-            }
-            tbl_P[static_cast<std::size_t>(i)].x = ai.x;
-            tbl_P[static_cast<std::size_t>(i)].y = ai.y;
-        }
-
-        // globalz = final_Z * C (maps from iso curve back to secp256k1)
-        globalz = ai.z * C;
-
-        // Backward sweep: rescale table entries so all share implied Z = Z_last.
-        {
-            FieldElement52 zs = zr[static_cast<std::size_t>(glv_table_size - 1)];
-
-            for (int idx = glv_table_size - 2; idx >= 0; --idx) {
-                if (idx != glv_table_size - 2)
-                    zs.mul_assign(zr[static_cast<std::size_t>(idx) + 1]);
-                FieldElement52 const zs2 = zs.square();
-                FieldElement52 const zs3 = zs2 * zs;
-                tbl_P[static_cast<std::size_t>(idx)].x.mul_assign(zs2);
-                tbl_P[static_cast<std::size_t>(idx)].y.mul_assign(zs3);
-            }
-        }
-
-        // Normalize all entries to magnitude 1
-        for (int i = 0; i < glv_table_size; i++) {
-            tbl_P[static_cast<std::size_t>(i)].x.normalize_weak();
-            tbl_P[static_cast<std::size_t>(i)].y.normalize_weak();
-        }
+    if (!build_glv52_table_zr(P52, tbl_P.data(), glv_table_size, globalz)) {
+        return base.scalar_mul_precomputed_wnaf(plan.wnaf1, plan.wnaf2,
+                                                 plan.neg1, plan.neg2);
     }
 
-    // -- Derive phi(P) table: phi(x,y) = (beta*x, y) -----------------
-    static const FieldElement52 beta52 = FieldElement52::from_fe(
-        FieldElement::from_bytes(glv_constants::BETA));
-
+    // -- Derive phi(P) table + Shamir's trick -------------------------
     const bool flip_phi = (plan.neg1 != plan.neg2);
-    for (int i = 0; i < glv_table_size; i++) {
-        tbl_phiP[static_cast<std::size_t>(i)].x =
-            tbl_P[static_cast<std::size_t>(i)].x * beta52;
-        if (flip_phi) {
-            tbl_phiP[static_cast<std::size_t>(i)].y =
-                tbl_P[static_cast<std::size_t>(i)].y.negate(1);
-            tbl_phiP[static_cast<std::size_t>(i)].y.normalize_weak();
-        } else {
-            tbl_phiP[static_cast<std::size_t>(i)].y =
-                tbl_P[static_cast<std::size_t>(i)].y;
-        }
-    }
+    derive_phi52_table(tbl_P.data(), tbl_phiP.data(), glv_table_size, flip_phi);
 
-    // -- Shamir's trick -- single doubling chain, dual lookups ---------
-    JacobianPoint52 result52 = {
-        FieldElement52::zero(), FieldElement52::one(),
-        FieldElement52::zero(), true
-    };
+    JacobianPoint52 result52 = shamir_2stream_glv52(
+        tbl_P.data(), tbl_phiP.data(),
+        wnaf1_buf.data(), wnaf1_len, wnaf2_buf.data(), wnaf2_len);
 
-    const std::size_t max_len = (wnaf1_len > wnaf2_len) ? wnaf1_len : wnaf2_len;
-
-    for (int i = static_cast<int>(max_len) - 1; i >= 0; --i) {
-        jac52_double_inplace(result52);
-
-        // k1 contribution
-        {
-            int32_t const d = wnaf1_buf[static_cast<std::size_t>(i)];
-            if (d > 0) {
-                jac52_add_mixed_inplace(
-                    result52, tbl_P[static_cast<std::size_t>((d - 1) >> 1)]);
-            } else if (d < 0) {
-                AffinePoint52 pt = tbl_P[static_cast<std::size_t>((-d - 1) >> 1)];
-                pt.y.negate_assign(1);
-                jac52_add_mixed_inplace(result52, pt);
-            }
-        }
-
-        // k2 contribution
-        {
-            int32_t const d = wnaf2_buf[static_cast<std::size_t>(i)];
-            if (d > 0) {
-                jac52_add_mixed_inplace(
-                    result52, tbl_phiP[static_cast<std::size_t>((d - 1) >> 1)]);
-            } else if (d < 0) {
-                AffinePoint52 pt = tbl_phiP[static_cast<std::size_t>((-d - 1) >> 1)];
-                pt.y.negate_assign(1);
-                jac52_add_mixed_inplace(result52, pt);
-            }
-        }
-    }
-
-    // Final Z correction: all table entries had implied Z = globalz.
-    // The Shamir loop treated them as affine (Z=1), so the accumulated
-    // result's Z is off by a factor of globalz.
-    if (!result52.infinity)
+    if (!result52.infinity) {
         result52.z.mul_assign(globalz);
+    }
 
     return from_jac52(result52);
 }
@@ -3051,27 +2888,21 @@ std::array<uint8_t, 32> Point::x_only_bytes() const {
 #endif
 }
 
-// -- Batch normalize: Montgomery trick for N points ---------------------------
-// 1 inversion + 3(N-1) multiplications instead of N inversions.
-void Point::batch_normalize(const Point* points, size_t n,
-                            FieldElement* out_x, FieldElement* out_y) {
-    if (n == 0) return;
-    constexpr size_t kMaxAllocElems =
-        static_cast<size_t>(std::numeric_limits<std::ptrdiff_t>::max()) / sizeof(FieldElement);
-    if (SECP256K1_UNLIKELY(n > kMaxAllocElems)) return;
-
-    // Accumulate products of Z values (Montgomery's trick)
-    // partials[i] = Z[0] * Z[1] * ... * Z[i]
-    // We allocate on the stack for small N, heap for large N.
+// -- Shared Montgomery batch Z-inversion core ---------------------------------
+// Computes individual Z^(-1) values for N points using Montgomery's trick:
+// 1 field inversion + 2(N-1) multiplications.
+// out_z_inv: caller-owned array of FieldElement, size >= n.
+// For infinity points, out_z_inv[i] is left undefined (caller must check).
+static void batch_z_inv(const Point* points, size_t n,
+                        FieldElement* out_z_inv) {
+    // Internal partials buffer (only needed within this function)
     constexpr size_t STACK_LIMIT = 256;
     FieldElement stack_partials[STACK_LIMIT];
     std::unique_ptr<FieldElement[]> heap_partials;
-    FieldElement* partials = nullptr;
-    if (n <= STACK_LIMIT) {
-        partials = stack_partials;
-    } else {
-        std::ptrdiff_t const signed_n = static_cast<std::ptrdiff_t>(n);
-        heap_partials = std::make_unique<FieldElement[]>(static_cast<size_t>(signed_n));
+    FieldElement* partials = stack_partials;
+    if (n > STACK_LIMIT) {
+        heap_partials = std::make_unique<FieldElement[]>(
+            static_cast<size_t>(static_cast<std::ptrdiff_t>(n)));
         partials = heap_partials.get();
     }
 
@@ -3081,11 +2912,7 @@ void Point::batch_normalize(const Point* points, size_t n,
         if (points[i].is_infinity()) {
             partials[i] = running; // skip infinity, don't multiply
         } else {
-#if defined(SECP256K1_FAST_52BIT)
-            const FieldElement z_fe = points[i].z_.to_fe();
-#else
-            const auto z_fe = points[i].z_;
-#endif
+            FieldElement const z_fe = points[i].z();
             partials[i] = running;
             running *= z_fe;
         }
@@ -3097,29 +2924,50 @@ void Point::batch_normalize(const Point* points, size_t n,
     // Backward pass: recover individual Z^(-1) values
     for (size_t i = n; i-- > 0; ) {
         if (points[i].is_infinity()) {
+            continue;
+        }
+        FieldElement const z_fe = points[i].z();
+        out_z_inv[i] = partials[i] * inv;
+        inv *= z_fe;
+    }
+}
+
+// -- Batch normalize: Montgomery trick for N points ---------------------------
+// 1 inversion + 3(N-1) multiplications instead of N inversions.
+void Point::batch_normalize(const Point* points, size_t n,
+                            FieldElement* out_x, FieldElement* out_y) {
+    if (n == 0) return;
+    constexpr size_t kMaxAllocElems =
+        static_cast<size_t>(std::numeric_limits<std::ptrdiff_t>::max()) / sizeof(FieldElement);
+    if (SECP256K1_UNLIKELY(n > kMaxAllocElems)) return;
+
+    constexpr size_t STACK_LIMIT = 256;
+    FieldElement stack_z_inv[STACK_LIMIT];
+    std::unique_ptr<FieldElement[]> heap_z_inv;
+    FieldElement* z_inv = stack_z_inv;
+    if (n > STACK_LIMIT) {
+        heap_z_inv = std::make_unique<FieldElement[]>(
+            static_cast<size_t>(static_cast<std::ptrdiff_t>(n)));
+        z_inv = heap_z_inv.get();
+    }
+
+    batch_z_inv(points, n, z_inv);
+
+    // Compute affine: x_aff = X * Z^(-2), y_aff = Y * Z^(-3)
+    for (size_t i = 0; i < n; ++i) {
+        if (points[i].is_infinity()) {
             out_x[i] = FieldElement::zero();
             out_y[i] = FieldElement::zero();
             continue;
         }
-#if defined(SECP256K1_FAST_52BIT)
-        FieldElement z_fe = points[i].z_.to_fe();
-#else
-        FieldElement z_fe = points[i].z_;
-#endif
-        // z_inv_i = partials[i] * inv  (partials[i] = product of Z[0..i-1])
-        FieldElement const z_inv_i = partials[i] * inv;
-        // Update inv for next iteration: inv *= Z[i]
-        inv *= z_fe;
-
-        // Compute affine: x_aff = X * Z^(-2), y_aff = Y * Z^(-3)
-        FieldElement z_inv2 = z_inv_i;
+        FieldElement z_inv2 = z_inv[i];
         z_inv2.square_inplace();
 #if defined(SECP256K1_FAST_52BIT)
         out_x[i] = points[i].x_.to_fe() * z_inv2;
-        out_y[i] = points[i].y_.to_fe() * z_inv2 * z_inv_i;
+        out_y[i] = points[i].y_.to_fe() * z_inv2 * z_inv[i];
 #else
         out_x[i] = points[i].x_ * z_inv2;
-        out_y[i] = points[i].y_ * z_inv2 * z_inv_i;
+        out_y[i] = points[i].y_ * z_inv2 * z_inv[i];
 #endif
     }
 }
@@ -3140,7 +2988,7 @@ void Point::batch_to_compressed(const Point* points, size_t n,
     if (n <= STACK_LIMIT) {
         aff_x = stack_x; aff_y = stack_y;
     } else {
-        std::ptrdiff_t const signed_n = static_cast<std::ptrdiff_t>(n);
+        auto const signed_n = static_cast<std::ptrdiff_t>(n);
         heap_x = std::make_unique<FieldElement[]>(static_cast<size_t>(signed_n));
         heap_y = std::make_unique<FieldElement[]>(static_cast<size_t>(signed_n));
         aff_x = heap_x.get(); aff_y = heap_y.get();
@@ -3161,6 +3009,8 @@ void Point::batch_to_compressed(const Point* points, size_t n,
 }
 
 // -- Batch x_only_bytes: extract N x-coordinates with ONE inversion -----------
+// Uses batch_z_inv for the Montgomery trick, then computes only x = X*Z^(-2)
+// (skips the Y*Z^(-3) multiply that batch_normalize does -- ~33% fewer muls).
 void Point::batch_x_only_bytes(const Point* points, size_t n,
                                std::array<uint8_t, 32>* out) {
     if (n == 0) return;
@@ -3168,56 +3018,26 @@ void Point::batch_x_only_bytes(const Point* points, size_t n,
         static_cast<size_t>(std::numeric_limits<std::ptrdiff_t>::max()) / sizeof(FieldElement);
     if (SECP256K1_UNLIKELY(n > kMaxAllocElems)) return;
 
-    // Montgomery batch inversion (same trick, but only need x = X*Z^(-2))
     constexpr size_t STACK_LIMIT = 256;
-    FieldElement stack_partials[STACK_LIMIT];
-    std::unique_ptr<FieldElement[]> heap_partials;
-    FieldElement* partials = nullptr;
-    if (n <= STACK_LIMIT) {
-        partials = stack_partials;
-    } else {
-        std::ptrdiff_t const signed_n = static_cast<std::ptrdiff_t>(n);
-        heap_partials = std::make_unique<FieldElement[]>(static_cast<size_t>(signed_n));
-        partials = heap_partials.get();
+    FieldElement stack_z_inv[STACK_LIMIT];
+    std::unique_ptr<FieldElement[]> heap_z_inv;
+    FieldElement* z_inv = stack_z_inv;
+    if (n > STACK_LIMIT) {
+        heap_z_inv = std::make_unique<FieldElement[]>(
+            static_cast<size_t>(static_cast<std::ptrdiff_t>(n)));
+        z_inv = heap_z_inv.get();
     }
 
-    FieldElement running = FieldElement::one();
+    batch_z_inv(points, n, z_inv);
+
     for (size_t i = 0; i < n; ++i) {
-        if (points[i].is_infinity()) {
-            partials[i] = running;
-        } else {
-#if defined(SECP256K1_FAST_52BIT)
-            FieldElement z_fe = points[i].z_.to_fe();
-#else
-            FieldElement z_fe = points[i].z_;
-#endif
-            partials[i] = running;
-            running *= z_fe;
-        }
-    }
-
-    FieldElement inv = running.inverse();
-
-    for (size_t i = n; i-- > 0; ) {
         if (points[i].is_infinity()) {
             out[i].fill(0);
             continue;
         }
-#if defined(SECP256K1_FAST_52BIT)
-        FieldElement z_fe = points[i].z_.to_fe();
-#else
-        FieldElement z_fe = points[i].z_;
-#endif
-        FieldElement const z_inv_i = partials[i] * inv;
-        inv *= z_fe;
-
-        FieldElement z_inv2 = z_inv_i;
+        FieldElement z_inv2 = z_inv[i];
         z_inv2.square_inplace();
-#if defined(SECP256K1_FAST_52BIT)
-        FieldElement const x_aff = points[i].x_.to_fe() * z_inv2;
-#else
-        FieldElement const x_aff = points[i].x_ * z_inv2;
-#endif
+        FieldElement const x_aff = points[i].X() * z_inv2;
         out[i] = x_aff.to_bytes();
     }
 }
@@ -3347,61 +3167,19 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
     FieldElement52 Z_shared;
 
     // -- Z-ratio table construction (0 inversions) -------------------
-    // Instead of batch-inverting all Z coordinates (~2us), collect z-ratios
-    // during the iso-curve additions and use a backward sweep to express
-    // all entries at a common shared Z.  The main loop works in this
-    // "Z_shared frame" (G/H entries are scaled into the frame), and
-    // result52.z is multiplied by Z_shared before returning.
-    {
-        JacobianPoint52 const d = jac52_double(P52);
-        FieldElement52 const C  = d.z;
-        FieldElement52 const C2 = C.square();
-        FieldElement52 const C3 = C2 * C;
-        AffinePoint52 const d_aff = {d.x, d.y};
-
-        // Build table on iso curve, collecting z-ratios from each addition.
-        JacobianPoint52 ai = {P52.x * C2, P52.y * C3, P52.z, false};
-        tbl_P[0] = {ai.x, ai.y};  // pseudo-affine: Jacobian X,Y with Z implicit
-
-        std::array<FieldElement52, P_TABLE_SIZE> zr;  // z-ratios [1..n-1]
-        for (std::size_t i = 1; i < static_cast<std::size_t>(P_TABLE_SIZE); i++) {
-            jac52_add_mixed_inplace_zr(ai, d_aff, zr[i]);
-            tbl_P[i] = {ai.x, ai.y};
-        }
-
-        // Backward sweep (a la libsecp256k1 table_set_globalz):
-        // Scale entries 0..n-2 so all share Z of the last point on iso curve.
-        // Cost: (n-2) muls + (n-1)*(1S+2M) = 20M+7S for n=8.
-        tbl_P[P_TABLE_SIZE - 1].y.normalize_weak();
-        FieldElement52 zs = zr[P_TABLE_SIZE - 1];
-        for (int j = static_cast<int>(P_TABLE_SIZE) - 2; j >= 0; --j) {
-            if (j != static_cast<int>(P_TABLE_SIZE) - 2) {
-                zs.mul_assign(zr[static_cast<std::size_t>(j) + 1]);
-            }
-            FieldElement52 const zs2 = zs.square();
-            FieldElement52 const zs3 = zs2 * zs;
-            tbl_P[static_cast<std::size_t>(j)].x.mul_assign(zs2);
-            tbl_P[static_cast<std::size_t>(j)].y.mul_assign(zs3);
-        }
-
-        // Z_shared = ai.z * C: effective Z on secp256k1 for all pseudo-affine entries.
-        Z_shared = ai.z * C;
+    // build_glv52_table_zr handles: iso-curve mapping, z-ratio collection,
+    // backward sweep, and normalization.  All entries share Z = Z_shared.
+    if (!build_glv52_table_zr(P52, tbl_P.data(), P_TABLE_SIZE, Z_shared)) {
+        // Degenerate case (~2^-256): infinity during table building.
+        // Fallback to separate scalar multiplications.
+        auto aG = Point::generator().scalar_mul(a);
+        aG.add_inplace(P.scalar_mul(b));
+        return aG;
     }
 
     // psi(P) table
-    static const FieldElement52 beta52 = FieldElement52::from_fe(
-        FieldElement::from_bytes(glv_constants::BETA));
-
     const bool flip_phi_b = (decomp_b.k1_neg != decomp_b.k2_neg);
-    for (std::size_t i = 0; i < static_cast<std::size_t>(P_TABLE_SIZE); i++) {
-        tbl_phiP[i].x = tbl_P[i].x * beta52;
-        if (flip_phi_b) {
-            tbl_phiP[i].y = tbl_P[i].y.negate(1);
-            tbl_phiP[i].y.normalize_weak();
-        } else {
-            tbl_phiP[i].y = tbl_P[i].y;
-        }
-    }
+    derive_phi52_table(tbl_P.data(), tbl_phiP.data(), P_TABLE_SIZE, flip_phi_b);
 
     // neg tables removed -- negate Y on-the-fly in hot loop
 
@@ -3483,33 +3261,8 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
             }
         }
 
-        {
-            int const d = wnaf_b1[static_cast<std::size_t>(i)];
-            if (SECP256K1_UNLIKELY(d != 0)) {
-                AffinePoint52 pt;
-                if (d > 0) {
-                    pt = tbl_P[static_cast<std::size_t>((d - 1) >> 1)];
-                } else {
-                    pt = tbl_P[static_cast<std::size_t>((-d - 1) >> 1)];
-                    pt.y.negate_assign(1);
-                }
-                jac52_add_mixed_inplace(result52, pt);
-            }
-        }
-
-        {
-            int const d = wnaf_b2[static_cast<std::size_t>(i)];
-            if (SECP256K1_UNLIKELY(d != 0)) {
-                AffinePoint52 pt;
-                if (d > 0) {
-                    pt = tbl_phiP[static_cast<std::size_t>((d - 1) >> 1)];
-                } else {
-                    pt = tbl_phiP[static_cast<std::size_t>((-d - 1) >> 1)];
-                    pt.y.negate_assign(1);
-                }
-                jac52_add_mixed_inplace(result52, pt);
-            }
-        }
+        apply_wnaf_mixed52(result52, tbl_P.data(), wnaf_b1[static_cast<std::size_t>(i)]);
+        apply_wnaf_mixed52(result52, tbl_phiP.data(), wnaf_b2[static_cast<std::size_t>(i)]);
     }
 
     if (!result52.infinity) {

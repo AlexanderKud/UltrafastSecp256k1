@@ -70,6 +70,21 @@ if(UFSECP_BITCOIN_STRICT)
     add_compile_definitions(UFSECP_BITCOIN_STRICT=1)
 endif()
 
+# GLV window width override (4-7). Empty = platform default (5 on x86/ARM/RISC-V, 4 on ESP32/WASM).
+set(SECP256K1_GLV_WINDOW_WIDTH "" CACHE STRING "GLV window width (4-7, empty = platform default)")
+if(SECP256K1_GLV_WINDOW_WIDTH)
+    if(NOT SECP256K1_GLV_WINDOW_WIDTH MATCHES "^[0-9]+$")
+        message(FATAL_ERROR
+            "SECP256K1_GLV_WINDOW_WIDTH must be an integer in [4,7]. Got: '${SECP256K1_GLV_WINDOW_WIDTH}'")
+    endif()
+    if(SECP256K1_GLV_WINDOW_WIDTH LESS 4 OR SECP256K1_GLV_WINDOW_WIDTH GREATER 7)
+        message(FATAL_ERROR
+            "SECP256K1_GLV_WINDOW_WIDTH out of range [4,7]. Got: ${SECP256K1_GLV_WINDOW_WIDTH}")
+    endif()
+    add_compile_definitions(SECP256K1_GLV_WINDOW_WIDTH=${SECP256K1_GLV_WINDOW_WIDTH})
+    message(STATUS "secp256k1-fast: GLV window width override: ${SECP256K1_GLV_WINDOW_WIDTH}")
+endif()
+
 # Resolve effective target architecture (handles macOS cross-compilation).
 # On macOS, CMAKE_SYSTEM_PROCESSOR reflects the HOST, not the TARGET when
 # cross-compiling via CMAKE_OSX_ARCHITECTURES (e.g. ARM64 host -> x86_64 target).
@@ -105,7 +120,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     if(SECP256K1_PLATFORM STREQUAL "riscv64")
         set(MARCH_FLAG "-march=rv64gc_zba_zbb")
     elseif(SECP256K1_PLATFORM STREQUAL "x86_64")
-        set(MARCH_FLAG "-march=native")
+        if(APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|X64")
+            # macOS cross-compilation (ARM64 host -> single-arch x86_64 target)
+            set(MARCH_FLAG "-march=x86-64-v3")
+        else()
+            set(MARCH_FLAG "-march=native")
+        endif()
     else()
         set(MARCH_FLAG "")
     endif()
