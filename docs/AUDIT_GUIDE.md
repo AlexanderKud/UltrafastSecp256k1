@@ -210,6 +210,55 @@ Full dudect analysis requires a dedicated, controlled environment.
 
 ---
 
+## GPU Backend Audit Runners
+
+In addition to the CPU `unified_audit_runner`, each GPU backend has its own
+audit runner that exercises GPU kernel correctness. These are separate from
+the CPU audit and test GPU-specific code paths.
+
+### OpenCL Audit Runner (27 modules, 8 sections)
+
+```bash
+# Build
+cmake --build build-linux --target opencl_audit_runner -j
+
+# Run
+./build-linux/opencl/opencl_audit_runner
+```
+
+Output: `ocl_audit_report.json` + `ocl_audit_report.txt`
+
+Requires an OpenCL-capable GPU (NVIDIA, AMD, Intel).
+
+### Metal Audit Runner (27 modules, 8 sections)
+
+```bash
+# Build (macOS only)
+cmake --build build-macos --target metal_audit_runner -j
+
+# Run
+./build-macos/metal/metal_audit_runner [--report-dir <dir>] [--metallib <path>]
+```
+
+Output: `mtl_audit_report.json` + `mtl_audit_report.txt`
+
+Requires Apple Silicon or discrete AMD GPU on macOS.
+
+### GPU Audit Module Layout (shared by OpenCL and Metal)
+
+| Section | Modules | Focus |
+|---------|---------|-------|
+| 1. Mathematical Invariants | 12 | Field add/sub/mul/sqr/inv/negate, gen_mul, scalar, point add/dbl, group order, batch inv |
+| 2. Signature Operations | 3 | ECDSA roundtrip, Schnorr roundtrip, ECDSA wrong key |
+| 3. Batch Operations | 2 | Batch scalar mul, batch J->A |
+| 4. Differential Testing | 1 | GPU vs host scalar mul comparison |
+| 5. Standard Test Vectors | 2 | RFC-6979 determinism, BIP-340 roundtrip |
+| 6. Protocol Security | 2 | ECDSA multi-key (10x), Schnorr multi-key (10x) |
+| 7. Fuzzing | 3 | Edge scalars, ECDSA zero key (advisory), Schnorr zero key (advisory) |
+| 8. Performance Smoke | 2 | ECDSA 50-iter stress, Schnorr 25-iter stress |
+
+---
+
 ## Files
 
 | File | Purpose |
@@ -221,3 +270,6 @@ Full dudect analysis requires a dedicated, controlled environment.
 | `tests/esp32_audit/` | ESP32-S3 port of the audit |
 | `docker/Dockerfile.ci` | CI container for automated auditing |
 | `.github/workflows/audit-report.yml` | GitHub Actions audit workflow |
+| `opencl/src/opencl_audit_runner.cpp` | OpenCL GPU audit runner (27 modules) |
+| `metal/src/metal_audit_runner.mm` | Metal GPU audit runner (27 modules) |
+| `metal/CMakeLists.txt` | Metal build config (incl. audit runner target) |

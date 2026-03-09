@@ -74,7 +74,9 @@
 |------|---------|-------|
 | `opencl/tests/test_opencl.cpp` | OpenCL | Kernel correctness |
 | `opencl/tests/opencl_extended_test.cpp` | OpenCL | Extended operations |
+| `opencl/src/opencl_audit_runner.cpp` | OpenCL | Unified GPU audit (27 modules, 8 sections) |
 | `metal/tests/test_metal_host.cpp` | Metal | Metal shader correctness |
+| `metal/src/metal_audit_runner.mm` | Metal | Unified GPU audit (27 modules, 8 sections) |
 
 ---
 

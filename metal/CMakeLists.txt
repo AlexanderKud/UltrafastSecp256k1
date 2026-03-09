@@ -116,6 +116,32 @@ target_compile_options(metal_secp256k1_bench_full PRIVATE
 )
 
 # -------------------------------------------------------------
+# Metal Unified Audit Runner (27 modules, 8 sections)
+# Mirrors OpenCL/CUDA audit runner format
+# -------------------------------------------------------------
+
+add_executable(metal_audit_runner
+    src/metal_audit_runner.mm
+)
+
+target_include_directories(metal_audit_runner PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+
+target_link_libraries(metal_audit_runner PRIVATE
+    ${METAL_FRAMEWORK}
+    ${FOUNDATION_FRAMEWORK}
+)
+
+target_compile_options(metal_audit_runner PRIVATE
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
+)
+
+target_compile_features(metal_audit_runner PRIVATE cxx_std_20)
+
+# -------------------------------------------------------------
 # Compile Metal Shaders -> .metallib
 # -------------------------------------------------------------
 
@@ -159,6 +185,7 @@ if(METAL_COMPILER)
     add_custom_target(metal_shaders ALL DEPENDS ${METAL_LIB})
     add_dependencies(metal_secp256k1_test metal_shaders)
     add_dependencies(metal_secp256k1_bench_full metal_shaders)
+    add_dependencies(metal_audit_runner metal_shaders)
 
     # Copy metallib to test binary directory
     add_custom_command(TARGET metal_secp256k1_test POST_BUILD
@@ -173,6 +200,12 @@ if(METAL_COMPILER)
             $<TARGET_FILE_DIR:metal_secp256k1_bench_full>/secp256k1_kernels.metallib
         COMMENT "[Metal] Copying metallib to bench binary directory"
     )
+    add_custom_command(TARGET metal_audit_runner POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${METAL_LIB}
+            $<TARGET_FILE_DIR:metal_audit_runner>/secp256k1_kernels.metallib
+        COMMENT "[Metal] Copying metallib to audit runner directory"
+    )
 else()
     message(WARNING "secp256k1-metal: 'xcrun' not found; shaders must be compiled at runtime")
 endif()
@@ -185,6 +218,8 @@ set(SHADER_FILES
     ${SHADER_DIR}/secp256k1_field.h
     ${SHADER_DIR}/secp256k1_point.h
     ${SHADER_DIR}/secp256k1_bloom.h
+    ${SHADER_DIR}/secp256k1_extended.h
+    ${SHADER_DIR}/secp256k1_hash160.h
     ${SHADER_DIR}/secp256k1_kernels.metal
 )
 
@@ -217,6 +252,21 @@ foreach(SHADER ${SHADER_FILES})
     )
 endforeach()
 
+# Also copy shader sources for audit runner (runtime compilation fallback)
+add_custom_command(TARGET metal_audit_runner POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_FILE_DIR:metal_audit_runner>/shaders
+)
+
+foreach(SHADER ${SHADER_FILES})
+    get_filename_component(SHADER_NAME ${SHADER} NAME)
+    add_custom_command(TARGET metal_audit_runner POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${SHADER}
+            $<TARGET_FILE_DIR:metal_audit_runner>/shaders/${SHADER_NAME}
+    )
+endforeach()
+
 # -------------------------------------------------------------
 # CTest integration
 # -------------------------------------------------------------
@@ -230,3 +280,6 @@ add_test(NAME secp256k1_metal_bench
 
 add_test(NAME secp256k1_metal_bench_full
          COMMAND metal_secp256k1_bench_full)
+
+add_test(NAME secp256k1_metal_audit
+         COMMAND metal_audit_runner --report-dir ${CMAKE_CURRENT_BINARY_DIR})
