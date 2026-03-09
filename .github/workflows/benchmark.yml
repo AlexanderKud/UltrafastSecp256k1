@@ -81,15 +81,15 @@ jobs:
 
     - name: Run benchmark suite
       run: |
-        mkdir -p benchmark_results
+        mkdir -p /tmp/benchmark_results
         
         # Run unified benchmark and capture output
-        ./build/bench/cpu/bench_unified 2>&1 | tee benchmark_results/raw_output.txt
+        ./build/bench/cpu/bench_unified 2>&1 | tee /tmp/benchmark_results/raw_output.txt
         
         # Parse output into benchmark.js-compatible JSON
         python3 .github/scripts/parse_benchmark.py \
-          benchmark_results/raw_output.txt \
-          benchmark_results/benchmark.json
+          /tmp/benchmark_results/raw_output.txt \
+          /tmp/benchmark_results/benchmark.json
 
     - name: Store benchmark result
       if: github.event_name == 'push'
@@ -97,7 +97,7 @@ jobs:
       with:
         name: 'UltrafastSecp256k1 Performance'
         tool: 'customSmallerIsBetter'
-        output-file-path: benchmark_results/benchmark.json
+        output-file-path: /tmp/benchmark_results/benchmark.json
         github-token: ${{ secrets.GITHUB_TOKEN }}
         auto-push: true
         alert-threshold: '150%'
@@ -111,7 +111,7 @@ jobs:
       run: |
         echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
-        cat benchmark_results/raw_output.txt | head -60 >> $GITHUB_STEP_SUMMARY
+        cat /tmp/benchmark_results/raw_output.txt | head -60 >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
 
   benchmark-windows:

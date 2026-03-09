@@ -80,11 +80,11 @@ jobs:
 
     - name: Run benchmark suite
       run: |
-        mkdir -p benchmark_results
-        ./build/bench-gate/cpu/bench_unified --quick 2>&1 | tee benchmark_results/raw_output.txt
+        mkdir -p /tmp/benchmark_results
+        ./build/bench-gate/cpu/bench_unified --quick 2>&1 | tee /tmp/benchmark_results/raw_output.txt
         python3 .github/scripts/parse_benchmark.py \
-          benchmark_results/raw_output.txt \
-          benchmark_results/benchmark.json
+          /tmp/benchmark_results/raw_output.txt \
+          /tmp/benchmark_results/benchmark.json
 
     - name: Store baseline + check regression (push to main/dev or manual dispatch)
       # Stores the result to gh-pages and FAILS the job if >50% regression.
@@ -97,7 +97,7 @@ jobs:
       with:
         name: 'Perf Regression Gate'
         tool: 'customSmallerIsBetter'
-        output-file-path: benchmark_results/benchmark.json
+        output-file-path: /tmp/benchmark_results/benchmark.json
         github-token: ${{ secrets.GITHUB_TOKEN }}
         auto-push: true
         alert-threshold: '200%'
@@ -115,7 +115,7 @@ jobs:
       with:
         name: 'Perf Regression Gate'
         tool: 'customSmallerIsBetter'
-        output-file-path: benchmark_results/benchmark.json
+        output-file-path: /tmp/benchmark_results/benchmark.json
         github-token: ${{ secrets.GITHUB_TOKEN }}
         auto-push: false
         alert-threshold: '200%'
@@ -136,5 +136,5 @@ jobs:
         fi
         echo "" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
-        head -50 benchmark_results/raw_output.txt >> $GITHUB_STEP_SUMMARY
+        head -50 /tmp/benchmark_results/raw_output.txt >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY

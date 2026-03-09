@@ -11,6 +11,8 @@
 
 #if defined(_MSC_VER)
     #include <intrin.h>
+#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+    #include <cpuid.h>
 #endif
 
 // External assembly functions
@@ -67,41 +69,35 @@ namespace secp256k1::fast {
 
 // Check CPU support for BMI2
 bool has_bmi2_support() {
-    #if defined(_MSC_VER) || (defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)))
+    #if defined(_MSC_VER)
         int cpuInfo[4];
-        #if defined(_MSC_VER)
-            __cpuidex(cpuInfo, 7, 0);
-        #else
-            __asm__ __volatile__(
-                "cpuid"
-                : "=a" (cpuInfo[0]), "=b" (cpuInfo[1]), "=c" (cpuInfo[2]), "=d" (cpuInfo[3])
-                : "a" (7), "c" (0)
-            );
-        #endif
-        // BMI2 is bit 8 of EBX
+        __cpuidex(cpuInfo, 7, 0);
         return (cpuInfo[1] & (1 << 8)) != 0;
+    #elif (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+        unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
+        if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+            return (ebx & (1u << 8)) != 0;
+        }
+        return false;
     #else
-        return false;  // Not x86/x64
+        return false;
     #endif
 }
 
 // Check CPU support for ADX (ADCX/ADOX)
 bool has_adx_support() {
-    #if defined(_MSC_VER) || (defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)))
+    #if defined(_MSC_VER)
         int cpuInfo[4];
-        #if defined(_MSC_VER)
-            __cpuidex(cpuInfo, 7, 0);
-        #else
-            __asm__ __volatile__(
-                "cpuid"
-                : "=a" (cpuInfo[0]), "=b" (cpuInfo[1]), "=c" (cpuInfo[2]), "=d" (cpuInfo[3])
-                : "a" (7), "c" (0)
-            );
-        #endif
-        // ADX is bit 19 of EBX (leaf 7, subleaf 0)
+        __cpuidex(cpuInfo, 7, 0);
         return (cpuInfo[1] & (1 << 19)) != 0;
+    #elif (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+        unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
+        if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+            return (ebx & (1u << 19)) != 0;
+        }
+        return false;
     #else
-        return false;  // Not x86/x64
+        return false;
     #endif
 }
 

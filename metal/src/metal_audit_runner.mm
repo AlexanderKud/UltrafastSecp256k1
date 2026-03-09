@@ -1185,8 +1185,11 @@ int main(int argc, char* argv[]) {
             namespace fs = std::filesystem;
             auto exe_dir = fs::path(argv[0]).parent_path();
             std::vector<std::string> metallib_candidates = {
+                (exe_dir / "secp256k1_kernels.metallib").string(),
                 (exe_dir / "secp256k1.metallib").string(),
+                (exe_dir / "../metal/secp256k1_kernels.metallib").string(),
                 (exe_dir / "../metal/secp256k1.metallib").string(),
+                "secp256k1_kernels.metallib",
                 "secp256k1.metallib",
             };
             for (auto& p : metallib_candidates) {
