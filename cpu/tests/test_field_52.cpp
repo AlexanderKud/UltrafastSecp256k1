@@ -344,6 +344,39 @@ void test_commutativity_associativity() {
     CHECK(dist_left == dist_right, "a*(b+c) == a*b + a*c");
 }
 
+// -- conditional_negate_assign ------------------------------------------------
+// sign_mask=0 keeps value unchanged, sign_mask=-1 negates.
+void test_conditional_negate_assign() {
+    (void)std::printf("  conditional_negate_assign...\n");
+
+    // Zero mask: value should remain unchanged
+    FieldElement const a64 = FieldElement::from_hex(
+        "79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798");
+    FieldElement52 a = FieldElement52::from_fe(a64);
+    FieldElement52 const orig = a;
+    a.conditional_negate_assign(0);
+    CHECK(a == orig, "cneg(0) keeps value unchanged");
+
+    // -1 mask: value should be negated (2P - a)
+    FieldElement52 b = FieldElement52::from_fe(a64);
+    b.conditional_negate_assign(-1);
+    // Negating twice should return to original
+    b.conditional_negate_assign(-1);
+    b.normalize();
+    FieldElement52 orig_norm = orig;
+    orig_norm.normalize();
+    CHECK(b == orig_norm, "cneg(-1) twice returns to original");
+
+    // Check that single negate gives -(a) mod p: a + (-a) == 0
+    FieldElement52 c = FieldElement52::from_fe(a64);
+    c.normalize();
+    FieldElement52 neg_c = c;
+    neg_c.conditional_negate_assign(-1);
+    FieldElement52 sum = c + neg_c;
+    sum.normalize();
+    CHECK(sum == FieldElement52::zero(), "a + cneg(-1,a) == 0");
+}
+
 } // anonymous namespace
 
 #ifdef STANDALONE_TEST
@@ -365,6 +398,7 @@ int test_field_52_main() {
     test_half();
     test_normalize_edge();
     test_commutativity_associativity();
+    test_conditional_negate_assign();
 
     (void)std::printf("\n=== Results: %d passed, %d failed ===\n",
                g_tests_passed, g_tests_failed);

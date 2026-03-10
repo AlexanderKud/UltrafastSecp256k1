@@ -23,6 +23,7 @@
 #include "secp256k1/ct/sign.hpp"
 #include "secp256k1/ecdsa.hpp"
 #include "secp256k1/schnorr.hpp"
+#include "secp256k1/private_key.hpp"
 #include <iostream>
 #include <iomanip>
 #include <cstring>
@@ -537,6 +538,87 @@ static void test_ct_schnorr_pubkey() {
     CHECK(ct_px == gx, "ct::schnorr_pubkey(1) == G.x");
 }
 
+// --- CT PrivateKey Overload Tests --------------------------------------------
+// Exercise the inline PrivateKey overloads in ct/sign.hpp so they are covered.
+
+static void test_ct_privatekey_ecdsa() {
+    // Create a PrivateKey via from_bytes (key = 1)
+    std::array<uint8_t, 32> raw{};
+    raw[31] = 0x01;
+    secp256k1::PrivateKey pk;
+    CHECK(secp256k1::PrivateKey::from_bytes(raw, pk),
+          "PrivateKey::from_bytes(1) succeeds");
+
+    std::array<uint8_t, 32> msg_hash{};
+    msg_hash[0] = 0x42; msg_hash[1] = 0xAB; msg_hash[31] = 0x01;
+
+    // ecdsa_sign(PrivateKey) vs ecdsa_sign(Scalar)
+    auto sig_pk = secp256k1::ct::ecdsa_sign(msg_hash, pk);
+    auto sig_sc = secp256k1::ct::ecdsa_sign(msg_hash, pk.scalar());
+    CHECK(sig_pk.r.to_bytes() == sig_sc.r.to_bytes(),
+          "ct::ecdsa_sign(PrivateKey).r == ct::ecdsa_sign(Scalar).r");
+    CHECK(sig_pk.s.to_bytes() == sig_sc.s.to_bytes(),
+          "ct::ecdsa_sign(PrivateKey).s == ct::ecdsa_sign(Scalar).s");
+
+    // ecdsa_sign_verified(PrivateKey) vs ecdsa_sign_verified(Scalar)
+    auto sig_v_pk = secp256k1::ct::ecdsa_sign_verified(msg_hash, pk);
+    auto sig_v_sc = secp256k1::ct::ecdsa_sign_verified(msg_hash, pk.scalar());
+    CHECK(sig_v_pk.r.to_bytes() == sig_v_sc.r.to_bytes(),
+          "ct::ecdsa_sign_verified(PrivateKey).r matches Scalar");
+    CHECK(sig_v_pk.s.to_bytes() == sig_v_sc.s.to_bytes(),
+          "ct::ecdsa_sign_verified(PrivateKey).s matches Scalar");
+}
+
+static void test_ct_privatekey_ecdsa_hedged() {
+    std::array<uint8_t, 32> raw{};
+    raw[31] = 0x03;
+    secp256k1::PrivateKey pk;
+    CHECK(secp256k1::PrivateKey::from_bytes(raw, pk),
+          "PrivateKey::from_bytes(3) succeeds");
+
+    std::array<uint8_t, 32> msg_hash{};
+    msg_hash[0] = 0xDE; msg_hash[1] = 0xAD;
+
+    std::array<uint8_t, 32> aux{};
+    aux[0] = 0x01;
+
+    // ecdsa_sign_hedged(PrivateKey) vs ecdsa_sign_hedged(Scalar)
+    auto sig_pk = secp256k1::ct::ecdsa_sign_hedged(msg_hash, pk, aux);
+    auto sig_sc = secp256k1::ct::ecdsa_sign_hedged(msg_hash, pk.scalar(), aux);
+    CHECK(sig_pk.r.to_bytes() == sig_sc.r.to_bytes(),
+          "ct::ecdsa_sign_hedged(PrivateKey).r matches Scalar");
+    CHECK(sig_pk.s.to_bytes() == sig_sc.s.to_bytes(),
+          "ct::ecdsa_sign_hedged(PrivateKey).s matches Scalar");
+
+    // ecdsa_sign_hedged_verified(PrivateKey) vs ecdsa_sign_hedged_verified(Scalar)
+    auto sig_hv_pk = secp256k1::ct::ecdsa_sign_hedged_verified(msg_hash, pk, aux);
+    auto sig_hv_sc = secp256k1::ct::ecdsa_sign_hedged_verified(msg_hash, pk.scalar(), aux);
+    CHECK(sig_hv_pk.r.to_bytes() == sig_hv_sc.r.to_bytes(),
+          "ct::ecdsa_sign_hedged_verified(PrivateKey).r matches Scalar");
+    CHECK(sig_hv_pk.s.to_bytes() == sig_hv_sc.s.to_bytes(),
+          "ct::ecdsa_sign_hedged_verified(PrivateKey).s matches Scalar");
+}
+
+static void test_ct_privatekey_schnorr() {
+    std::array<uint8_t, 32> raw{};
+    raw[31] = 0x02;
+    secp256k1::PrivateKey pk;
+    CHECK(secp256k1::PrivateKey::from_bytes(raw, pk),
+          "PrivateKey::from_bytes(2) succeeds");
+
+    // schnorr_pubkey(PrivateKey) vs schnorr_pubkey(Scalar)
+    auto px_pk = secp256k1::ct::schnorr_pubkey(pk);
+    auto px_sc = secp256k1::ct::schnorr_pubkey(pk.scalar());
+    CHECK(px_pk == px_sc,
+          "ct::schnorr_pubkey(PrivateKey) matches Scalar");
+
+    // schnorr_keypair_create(PrivateKey) vs schnorr_keypair_create(Scalar)
+    auto kp_pk = secp256k1::ct::schnorr_keypair_create(pk);
+    auto kp_sc = secp256k1::ct::schnorr_keypair_create(pk.scalar());
+    CHECK(kp_pk.px == kp_sc.px,
+          "ct::schnorr_keypair_create(PrivateKey).px matches Scalar");
+}
+
 // --- Main --------------------------------------------------------------------
 
 int test_ct_run() {
@@ -609,6 +691,12 @@ int test_ct_run() {
     test_ct_ecdsa_sign();
     test_ct_schnorr_sign();
     test_ct_schnorr_pubkey();
+
+    // CT PrivateKey overloads
+    std::cout << "--- CT PrivateKey Overloads ---\n";
+    test_ct_privatekey_ecdsa();
+    test_ct_privatekey_ecdsa_hedged();
+    test_ct_privatekey_schnorr();
 
     // Summary
     std::cout << "\n=== Results: " << g_pass << " passed, " << g_fail << " failed ===\n";
