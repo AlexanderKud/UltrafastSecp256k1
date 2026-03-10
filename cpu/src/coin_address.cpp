@@ -6,7 +6,9 @@
 // ============================================================================
 
 #include "secp256k1/coins/coin_address.hpp"
+#if defined(SECP256K1_BUILD_ETHEREUM)
 #include "secp256k1/coins/ethereum.hpp"
+#endif
 #include "secp256k1/address.hpp"
 
 namespace secp256k1::coins {
@@ -27,7 +29,11 @@ std::string coin_address(const fast::Point& pubkey,
             return coin_address_p2wpkh(pubkey, coin, testnet);
             
         case AddressEncoding::EIP55:
+#if defined(SECP256K1_BUILD_ETHEREUM)
             return ethereum_address(pubkey);
+#else
+            return "";  // Ethereum module not built
+#endif
             
         case AddressEncoding::BASE58CHECK:
         default:

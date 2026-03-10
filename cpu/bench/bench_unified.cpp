@@ -53,6 +53,12 @@
 #include "secp256k1/benchmark_harness.hpp"
 #include "secp256k1/glv.hpp"
 #include "secp256k1/batch_verify.hpp"
+#ifdef SECP256K1_BUILD_ETHEREUM
+#include "secp256k1/recovery.hpp"
+#include "secp256k1/coins/keccak256.hpp"
+#include "secp256k1/coins/ethereum.hpp"
+#include "secp256k1/coins/eth_signing.hpp"
+#endif
 #if defined(__SIZEOF_INT128__) && !defined(__EMSCRIPTEN__)
 #include "secp256k1/field_52.hpp"
 #endif
@@ -61,6 +67,9 @@
 #include "secp256k1.h"
 #include "secp256k1_extrakeys.h"
 #include "secp256k1_schnorrsig.h"
+#ifdef SECP256K1_BUILD_ETHEREUM
+#include "secp256k1_recovery.h"
+#endif
 
 // Thin wrappers from libsecp_provider.c exposing internal field ops
 extern "C" {
@@ -1587,6 +1596,98 @@ int main(int argc, char** argv) {
     printf("\n");
 
     // =====================================================================
+    //  SECTION 6.5: Ethereum Operations (conditional)
+    // =====================================================================
+
+#ifdef SECP256K1_BUILD_ETHEREUM
+    double u_keccak_32 = 0, u_eth_addr = 0, u_eip191 = 0;
+    double u_eth_sign = 0, u_sign_rec = 0, u_ecrecover = 0;
+    double u_personal_sign = 0, u_eip55 = 0;
+    {
+        using namespace secp256k1::coins;
+
+        print_header("ETHEREUM OPERATIONS");
+
+        // Keccak-256 (32-byte input, typical hash-of-hash)
+        idx = 0;
+        u_keccak_32 = bench_ns([&]() {
+            auto h = keccak256(msghashes[idx % POOL].data(), 32);
+            bench::DoNotOptimize(h); ++idx;
+        }, N_FIELD);
+        print_row("keccak256 (32B)", u_keccak_32);
+
+        // Ethereum address derivation from public key
+        idx = 0;
+        u_eth_addr = bench_ns([&]() {
+            auto addr = ethereum_address_bytes(pubkeys[idx % POOL]);
+            bench::DoNotOptimize(addr); ++idx;
+        }, N_POINT);
+        print_row("ethereum_address", u_eth_addr);
+
+        // EIP-191 personal message hash
+        idx = 0;
+        const char eth_msg[] = "I agree to the terms of service";
+        u_eip191 = bench_ns([&]() {
+            auto h = eip191_hash(reinterpret_cast<const uint8_t*>(eth_msg), sizeof(eth_msg) - 1);
+            bench::DoNotOptimize(h); ++idx;
+        }, N_SIGN);
+        print_row("eip191_hash", u_eip191);
+
+        // ECDSA sign with recovery (eth_sign_hash)
+        idx = 0;
+        u_eth_sign = bench_ns([&]() {
+            auto sig = eth_sign_hash(msghashes[idx % POOL], privkeys[idx % POOL], 1);
+            bench::DoNotOptimize(sig); ++idx;
+        }, N_SIGN);
+        print_row("eth_sign_hash", u_eth_sign);
+
+        // ECDSA recoverable sign (raw, no EIP encoding)
+        idx = 0;
+        u_sign_rec = bench_ns([&]() {
+            auto sig = ecdsa_sign_recoverable(msghashes[idx % POOL], privkeys[idx % POOL]);
+            bench::DoNotOptimize(sig); ++idx;
+        }, N_SIGN);
+        print_row("ecdsa_sign_recoverable", u_sign_rec);
+
+        // ecrecover (full pipeline: recover pubkey + derive address)
+        // Pre-sign for recovery pool
+        EthSignature eth_sigs[POOL];
+        for (int i = 0; i < POOL; ++i) {
+            eth_sigs[i] = eth_sign_hash(msghashes[i], privkeys[i], 1);
+        }
+
+        idx = 0;
+        u_ecrecover = bench_ns([&]() {
+            auto [addr, ok] = ecrecover(msghashes[idx % POOL], eth_sigs[idx % POOL]);
+            bench::DoNotOptimize(addr);
+            bench::DoNotOptimize(ok);
+            ++idx;
+        }, N_VERIFY);
+        print_row("ecrecover", u_ecrecover);
+
+        // eth_personal_sign (EIP-191 hash + sign with recovery)
+        idx = 0;
+        u_personal_sign = bench_ns([&]() {
+            auto sig = eth_personal_sign(reinterpret_cast<const uint8_t*>(eth_msg),
+                                         sizeof(eth_msg) - 1, privkeys[idx % POOL]);
+            bench::DoNotOptimize(sig); ++idx;
+        }, N_SIGN);
+        print_row("eth_personal_sign", u_personal_sign);
+
+        // EIP-55 checksummed address (string output)
+        idx = 0;
+        u_eip55 = bench_ns([&]() {
+            auto addr = ethereum_address(pubkeys[idx % POOL]);
+            bench::DoNotOptimize(addr); ++idx;
+        }, N_POINT);
+        print_row("ethereum_address_eip55", u_eip55);
+
+        print_sep();
+        printf("\n");
+    }
+#endif // SECP256K1_BUILD_ETHEREUM
+
+    // =====================================================================
     //  SECTION 7: libsecp256k1 (bitcoin-core) -- SAME harness, pool, timer
     // =====================================================================
 
@@ -1669,6 +1770,38 @@ int main(int argc, char** argv) {
                                                  &ls_pubkeys[idx % POOL]);
         (void)ok; ++idx;
     }, N_VERIFY);
+
+#ifdef SECP256K1_BUILD_ETHEREUM
+    // ECDSA Sign Recoverable (libsecp)
+    secp256k1_ecdsa_recoverable_signature ls_rec_sigs[POOL];
+    idx = 0;
+    const double ls_sign_rec = bench_ns([&]() {
+        secp256k1_ecdsa_sign_recoverable(ls_ctx, &ls_rec_sigs[idx % POOL],
+                                         ls_msgs[idx % POOL],
+                                         ls_seckeys[idx % POOL],
+                                         NULL, NULL);
+        bench::DoNotOptimize(ls_rec_sigs[idx % POOL]); ++idx;
+    }, N_SIGN);
+
+    // Pre-sign all recovery sigs for the recover benchmark
+    for (int i = 0; i < POOL; ++i) {
+        secp256k1_ecdsa_sign_recoverable(ls_ctx, &ls_rec_sigs[i],
+                                         ls_msgs[i], ls_seckeys[i],
+                                         NULL, NULL);
+    }
+
+    // ECDSA Recover (libsecp)
+    idx = 0;
+    const double ls_recover = bench_ns([&]() {
+        secp256k1_pubkey pk;
+        secp256k1_ecdsa_recover(ls_ctx, &pk, &ls_rec_sigs[idx % POOL],
+                                ls_msgs[idx % POOL]);
+        bench::DoNotOptimize(pk); ++idx;
+    }, N_VERIFY);
+#else
+    const double ls_sign_rec = 0.0;
+    const double ls_recover  = 0.0;
+#endif // SECP256K1_BUILD_ETHEREUM
 
     // Schnorr Keypair Create
     idx = 0;
@@ -2152,6 +2285,17 @@ int main(int argc, char** argv) {
     print_row_3col("Schnorr Verify",      u_schnorr_verify_raw, ls_schnorr_verify);
     print_sep_3col();
     printf("\n");
+
+#ifdef SECP256K1_BUILD_ETHEREUM
+    // ---- Ethereum / Recovery Operations ----
+    print_header_3col("ETHEREUM / RECOVERY");
+    print_row_3col("sign_recoverable",    u_sign_rec,         ls_sign_rec);
+    print_row_3col("ecrecover",           u_ecrecover,        ls_recover);
+    print_row_3col("eth_sign_hash",       u_eth_sign,         ls_sign_rec);
+    print_row_3col("eth_personal_sign",   u_personal_sign,    ls_sign_rec);
+    print_sep_3col();
+    printf("\n");
+#endif
 
     // --- OpenSSL ratios (only if measured) ---
 #ifdef BENCH_HAS_OPENSSL

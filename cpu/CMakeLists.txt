@@ -41,10 +41,8 @@ set(SECP256K1_SOURCES
     src/frost.cpp         # FROST threshold signatures (t-of-n)
     src/adaptor.cpp       # Adaptor signatures (Schnorr + ECDSA)
     src/address.cpp       # Address generation + BIP-352 Silent Payments
-    # Coins layer -- multi-coin infrastructure
-    src/keccak256.cpp     # Keccak-256 hash (Ethereum address derivation)
+    # Coins layer -- core infrastructure (always built)
     src/coin_address.cpp  # Unified per-coin address generation
-    src/ethereum.cpp      # Ethereum EIP-55 checksummed addresses
     src/coin_hd.cpp       # BIP-44 coin-type HD derivation
     # Advanced algorithms -- Pippenger MSM + Comb generator multiplication
     src/pippenger.cpp        # Pippenger bucket method MSM (n > 128)
@@ -235,6 +233,18 @@ if(SECP256K1_USE_ASM)
 else()
     set(SECP256K1_HAS_ASM FALSE)
     add_compile_definitions(SECP256K1_NO_ASM=1)
+endif()
+
+# Ethereum module sources (conditional: -DSECP256K1_BUILD_ETHEREUM=ON/OFF)
+if(SECP256K1_BUILD_ETHEREUM)
+    list(APPEND SECP256K1_SOURCES
+        src/keccak256.cpp     # Keccak-256 hash (Ethereum-compatible, 0x01 padding)
+        src/ethereum.cpp      # Ethereum EIP-55 checksummed addresses
+        src/eth_signing.cpp   # EIP-191, EIP-155, ecrecover
+    )
+    message(STATUS "Secp256k1: Ethereum module: ON (Keccak-256, EIP-55, EIP-191/155, ecrecover)")
+else()
+    message(STATUS "Secp256k1: Ethereum module: OFF (Bitcoin-only build)")
 endif()
 
 if(NOT TARGET ${SECP256K1_LIB_NAME})
@@ -870,6 +880,20 @@ if(BUILD_TESTING)
     target_compile_definitions(test_edge_cases_standalone PRIVATE STANDALONE_TEST)
     add_test(NAME edge_cases COMMAND test_edge_cases_standalone)
 
+    # -- Ethereum signing layer tests (conditional) ---------------------------
+    if(SECP256K1_BUILD_ETHEREUM)
+        # Add to run_selftest sources
+        target_sources(run_selftest PRIVATE tests/test_ethereum.cpp)
+
+        # Standalone Ethereum test
+        add_executable(test_ethereum_standalone
+            tests/test_ethereum.cpp
+        )
+        target_link_libraries(test_ethereum_standalone PRIVATE ${SECP256K1_LIB_NAME})
+        target_compile_definitions(test_ethereum_standalone PRIVATE STANDALONE_TEST)
+        add_test(NAME ethereum COMMAND test_ethereum_standalone)
+    endif()
+
     # -- CTest labels for core library tests --------------------------------
     # Label all core tests so they can be run as a group:
     #   ctest --test-dir <build> -L core
@@ -882,6 +906,9 @@ if(BUILD_TESTING)
     # field_52 only exists when __uint128_t is available (not plain MSVC)
     if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
         list(APPEND CORE_TESTS field_52)
+    endif()
+    if(SECP256K1_BUILD_ETHEREUM)
+        list(APPEND CORE_TESTS ethereum)
     endif()
     set_tests_properties(${CORE_TESTS} PROPERTIES LABELS "core")
 

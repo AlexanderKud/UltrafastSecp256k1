@@ -19,8 +19,10 @@
 
 #include "secp256k1/context.hpp"
 #include "secp256k1/coins/coin_params.hpp"
+#ifdef SECP256K1_BUILD_ETHEREUM
 #include "secp256k1/coins/keccak256.hpp"
 #include "secp256k1/coins/ethereum.hpp"
+#endif
 #include "secp256k1/coins/coin_address.hpp"
 #include "secp256k1/coins/coin_hd.hpp"
 #include "secp256k1/point.hpp"
@@ -155,6 +157,7 @@ static void test_coin_params_bitcoin() {
     PASS();
 }
 
+#ifdef SECP256K1_BUILD_ETHEREUM
 static void test_coin_params_ethereum() {
     TEST("CoinParams: Ethereum values");
     const auto& eth = secp256k1::coins::Ethereum;
@@ -164,6 +167,7 @@ static void test_coin_params_ethereum() {
               static_cast<int>(secp256k1::coins::AddressHash::KECCAK256), "hash algo");
     PASS();
 }
+#endif
 
 static void test_coin_params_lookup() {
     TEST("CoinParams: find_by_ticker + find_by_coin_type");
@@ -187,6 +191,7 @@ static void test_coin_params_lookup() {
 // 3. Keccak-256 Tests
 // ============================================================================
 
+#ifdef SECP256K1_BUILD_ETHEREUM
 static void test_keccak256_empty() {
     TEST("Keccak-256: empty string");
     
@@ -284,6 +289,7 @@ static void test_ethereum_eip55_case_sensitivity() {
     
     PASS();
 }
+#endif // SECP256K1_BUILD_ETHEREUM
 
 // ============================================================================
 // 5. Coin Address Tests
@@ -339,6 +345,7 @@ static void test_dogecoin_address() {
     PASS();
 }
 
+#ifdef SECP256K1_BUILD_ETHEREUM
 static void test_ethereum_coin_address() {
     TEST("Ethereum: coin_address returns EIP-55");
     
@@ -351,6 +358,7 @@ static void test_ethereum_coin_address() {
     
     PASS();
 }
+#endif
 
 static void test_dash_address() {
     TEST("Dash: P2PKH address starts with X");
@@ -419,6 +427,7 @@ static void test_bip44_path_bitcoin() {
     PASS();
 }
 
+#ifdef SECP256K1_BUILD_ETHEREUM
 static void test_bip44_path_ethereum() {
     TEST("BIP-44: Ethereum path m/44'/60'/0'/0/0");
     
@@ -429,6 +438,7 @@ static void test_bip44_path_ethereum() {
     
     PASS();
 }
+#endif
 
 static void test_bip44_best_purpose() {
     TEST("BIP-44: best_purpose selection");
@@ -483,6 +493,7 @@ static void test_bip44_seed_to_address() {
     PASS();
 }
 
+#ifdef SECP256K1_BUILD_ETHEREUM
 static void test_bip44_seed_to_eth_address() {
     TEST("BIP-44: seed -> Ethereum address");
     
@@ -498,6 +509,7 @@ static void test_bip44_seed_to_eth_address() {
     
     PASS();
 }
+#endif // SECP256K1_BUILD_ETHEREUM
 
 // ============================================================================
 // 8. Custom Generator + Coin Derivation Tests
@@ -556,17 +568,20 @@ static void test_full_pipeline_multi_coin() {
     auto btc_addr = secp256k1::coins::coin_address(pubkey, secp256k1::coins::Bitcoin);
     auto ltc_addr = secp256k1::coins::coin_address(pubkey, secp256k1::coins::Litecoin);
     auto doge_addr = secp256k1::coins::coin_address(pubkey, secp256k1::coins::Dogecoin);
-    auto eth_addr = secp256k1::coins::coin_address(pubkey, secp256k1::coins::Ethereum);
     
     // All should be non-empty and different
     ASSERT_TRUE(!btc_addr.empty(), "BTC address empty");
     ASSERT_TRUE(!ltc_addr.empty(), "LTC address empty");
     ASSERT_TRUE(!doge_addr.empty(), "DOGE address empty");
+
+#ifdef SECP256K1_BUILD_ETHEREUM
+    auto eth_addr = secp256k1::coins::coin_address(pubkey, secp256k1::coins::Ethereum);
     ASSERT_TRUE(!eth_addr.empty(), "ETH address empty");
+    ASSERT_TRUE(btc_addr != eth_addr, "BTC != ETH");
+#endif
     
     ASSERT_TRUE(btc_addr != ltc_addr, "BTC != LTC");
     ASSERT_TRUE(btc_addr != doge_addr, "BTC != DOGE");
-    ASSERT_TRUE(btc_addr != eth_addr, "BTC != ETH");
     ASSERT_TRUE(ltc_addr != doge_addr, "LTC != DOGE");
     
     PASS();
@@ -588,9 +603,12 @@ int test_coins_run() {
     printf("\n[CoinParams]\n");
     test_coin_params_count();
     test_coin_params_bitcoin();
+#ifdef SECP256K1_BUILD_ETHEREUM
     test_coin_params_ethereum();
+#endif
     test_coin_params_lookup();
     
+#ifdef SECP256K1_BUILD_ETHEREUM
     printf("\n[Keccak-256]\n");
     test_keccak256_empty();
     test_keccak256_abc();
@@ -600,13 +618,16 @@ int test_coins_run() {
     test_ethereum_address_format();
     test_ethereum_eip55_checksum();
     test_ethereum_eip55_case_sensitivity();
+#endif
     
     printf("\n[Coin Addresses]\n");
     test_bitcoin_p2pkh_address();
     test_bitcoin_p2wpkh_address();
     test_litecoin_address();
     test_dogecoin_address();
+#ifdef SECP256K1_BUILD_ETHEREUM
     test_ethereum_coin_address();
+#endif
     test_dash_address();
     test_no_segwit_returns_empty();
     
@@ -616,11 +637,15 @@ int test_coins_run() {
     
     printf("\n[BIP-44 HD]\n");
     test_bip44_path_bitcoin();
+#ifdef SECP256K1_BUILD_ETHEREUM
     test_bip44_path_ethereum();
+#endif
     test_bip44_best_purpose();
     test_bip44_key_derivation();
     test_bip44_seed_to_address();
+#ifdef SECP256K1_BUILD_ETHEREUM
     test_bip44_seed_to_eth_address();
+#endif
     
     printf("\n[Custom Generator]\n");
     test_custom_generator_coin_derive();

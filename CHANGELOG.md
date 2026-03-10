@@ -5,6 +5,38 @@ All notable changes to UltrafastSecp256k1 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.22.0] - 2026-03-10
+
+> **Minor release: v3.21.1 -> v3.22.0** | Modular Ethereum layer | ABI extension (backward compatible)
+> New feature: full Ethereum signing/recovery support with conditional build
+
+### Added
+
+- **Modular Ethereum layer** -- EIP-191, EIP-155, ecrecover, personal_sign with conditional
+  CMake option `SECP256K1_BUILD_ETHEREUM` (default ON). Bitcoin-only builds exclude all
+  Ethereum code via `-DSECP256K1_BUILD_ETHEREUM=OFF`. (#144)
+- **eth_signing.hpp/.cpp** -- `eip191_hash()`, `eth_personal_sign()`, `eth_sign_hash()`,
+  `ecrecover()`, `eth_personal_verify()` with EIP-155 chain ID encoding (v = 35+2*chainId+recid).
+- **C ABI Ethereum functions** -- 6 new `ufsecp_*` functions: `ufsecp_keccak256`,
+  `ufsecp_eth_address`, `ufsecp_eth_address_checksummed`, `ufsecp_eth_personal_hash`,
+  `ufsecp_eth_sign`, `ufsecp_eth_ecrecover`. All guarded by `#ifdef SECP256K1_BUILD_ETHEREUM`.
+- **Ethereum test suite** -- 32 tests across 7 groups (EIP-155 encoding, EIP-191 hash,
+  eth_sign_hash, ecrecover, personal_sign+verify, multi-chain, Keccak-256 vectors).
+  Registered as standalone target + `run_selftest` module.
+- **Ethereum benchmarks** -- 8 benchmarks in `bench_unified` Section 6.5: keccak256, ethereum_address,
+  eip191_hash, eth_sign_hash, ecdsa_sign_recoverable, ecrecover, eth_personal_sign, eip55_checksum.
+- **libsecp256k1 recovery comparison** -- enabled `ENABLE_MODULE_RECOVERY=1` in libsecp_provider;
+  added sign_recoverable + recover benchmarks with 3-column apple-to-apple comparison rows.
+- **Ethereum audit module** -- registered in `unified_audit_runner` under `protocol_security` section
+  with conditional compilation guard.
+
+### Changed
+
+- **coin_address.cpp** -- EIP-55 dispatch wrapped with `#ifdef SECP256K1_BUILD_ETHEREUM` guard;
+  returns empty string when Ethereum module not built.
+- **test_coins.cpp** -- All Ethereum-specific tests (Keccak-256, EIP-55, BIP-44 Ethereum paths)
+  wrapped with `#ifdef SECP256K1_BUILD_ETHEREUM` for clean Bitcoin-only builds.
+
 ## [3.21.1] - 2026-03-09
 
 > **Patch release: v3.21.0 -> v3.21.1** | Bug fixes, CI hardening, Metal audit | ABI compatible

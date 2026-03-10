@@ -50,6 +50,10 @@ option(SECP256K1_BUILD_SHARED "Build shared library" OFF)
 # Bitcoin strict mode (default ON): public API rejects non-canonical inputs
 option(UFSECP_BITCOIN_STRICT "Enforce BIP-340 strict encoding in public API (reject r>=p, s>=n)" ON)
 
+# Ethereum module (default ON): Keccak-256, EIP-55, EIP-191, EIP-155, ecrecover
+# Set OFF to exclude Ethereum functionality (Bitcoin-only build)
+option(SECP256K1_BUILD_ETHEREUM "Build Ethereum module (Keccak, EIP-55/155/191, ecrecover)" ON)
+
 # CT enforcement: deprecate non-CT signing functions at compile time
 option(SECP256K1_REQUIRE_CT "Deprecate non-CT sign functions (compile warnings on fast:: signing)" OFF)
 
@@ -72,6 +76,13 @@ endif()
 
 if(UFSECP_BITCOIN_STRICT)
     add_compile_definitions(UFSECP_BITCOIN_STRICT=1)
+endif()
+
+if(SECP256K1_BUILD_ETHEREUM)
+    add_compile_definitions(SECP256K1_BUILD_ETHEREUM=1)
+    message(STATUS "secp256k1-fast: Ethereum module enabled (Keccak, EIP-55/155/191, ecrecover)")
+else()
+    message(STATUS "secp256k1-fast: Ethereum module disabled (Bitcoin-only build)")
 endif()
 
 # GLV window width override (4-7). Empty = platform default (5 on x86/ARM/RISC-V, 4 on ESP32/WASM).

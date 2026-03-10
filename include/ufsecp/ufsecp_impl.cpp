@@ -38,6 +38,12 @@
 #include "secp256k1/taproot.hpp"
 #include "secp256k1/init.hpp"
 
+#if defined(SECP256K1_BUILD_ETHEREUM)
+#include "secp256k1/coins/keccak256.hpp"
+#include "secp256k1/coins/ethereum.hpp"
+#include "secp256k1/coins/eth_signing.hpp"
+#endif
+
 using Scalar = secp256k1::fast::Scalar;
 using Point  = secp256k1::fast::Point;
 using FE     = secp256k1::fast::FieldElement;
@@ -1162,3 +1168,121 @@ ufsecp_error_t ufsecp_taproot_verify(ufsecp_ctx* ctx,
 
     return UFSECP_OK;
 }
+
+/* ===========================================================================
+ * Ethereum (conditional: SECP256K1_BUILD_ETHEREUM)
+ * =========================================================================== */
+
+#if defined(SECP256K1_BUILD_ETHEREUM)
+
+ufsecp_error_t ufsecp_keccak256(const uint8_t* data, size_t len,
+                                uint8_t digest32_out[32]) {
+    if (!data && len > 0) return UFSECP_ERR_NULL_ARG;
+    if (!digest32_out) return UFSECP_ERR_NULL_ARG;
+
+    auto hash = secp256k1::coins::keccak256(data, len);
+    std::memcpy(digest32_out, hash.data(), 32);
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_eth_address(ufsecp_ctx* ctx,
+                                  const uint8_t pubkey33[33],
+                                  uint8_t addr20_out[20]) {
+    if (!ctx || !pubkey33 || !addr20_out) return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+
+    Point pk = point_from_compressed(pubkey33);
+    if (pk.is_infinity()) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid compressed pubkey");
+    }
+
+    auto addr = secp256k1::coins::ethereum_address_bytes(pk);
+    std::memcpy(addr20_out, addr.data(), 20);
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_eth_address_checksummed(ufsecp_ctx* ctx,
+                                              const uint8_t pubkey33[33],
+                                              char* addr_out, size_t* addr_len) {
+    if (!ctx || !pubkey33 || !addr_out || !addr_len) return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+
+    if (*addr_len < 43) {
+        return ctx_set_err(ctx, UFSECP_ERR_BUF_TOO_SMALL, "need >= 43 bytes for ETH address");
+    }
+
+    Point pk = point_from_compressed(pubkey33);
+    if (pk.is_infinity()) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid compressed pubkey");
+    }
+
+    std::string addr_str = secp256k1::coins::ethereum_address(pk);
+    std::memcpy(addr_out, addr_str.c_str(), addr_str.size());
+    addr_out[addr_str.size()] = '\0';
+    *addr_len = addr_str.size();
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_eth_personal_hash(const uint8_t* msg, size_t msg_len,
+                                        uint8_t digest32_out[32]) {
+    if (!msg && msg_len > 0) return UFSECP_ERR_NULL_ARG;
+    if (!digest32_out) return UFSECP_ERR_NULL_ARG;
+
+    auto hash = secp256k1::coins::eip191_hash(msg, msg_len);
+    std::memcpy(digest32_out, hash.data(), 32);
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_eth_sign(ufsecp_ctx* ctx,
+                               const uint8_t msg32[32],
+                               const uint8_t privkey[32],
+                               uint8_t r_out[32],
+                               uint8_t s_out[32],
+                               uint64_t* v_out,
+                               uint64_t chain_id) {
+    if (!ctx || !msg32 || !privkey || !r_out || !s_out || !v_out) {
+        return UFSECP_ERR_NULL_ARG;
+    }
+    ctx_clear_err(ctx);
+
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
+
+    std::array<uint8_t, 32> hash;
+    std::memcpy(hash.data(), msg32, 32);
+
+    auto esig = secp256k1::coins::eth_sign_hash(hash, sk, chain_id);
+    std::memcpy(r_out, esig.r.data(), 32);
+    std::memcpy(s_out, esig.s.data(), 32);
+    *v_out = esig.v;
+
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_eth_ecrecover(ufsecp_ctx* ctx,
+                                    const uint8_t msg32[32],
+                                    const uint8_t r[32],
+                                    const uint8_t s[32],
+                                    uint64_t v,
+                                    uint8_t addr20_out[20]) {
+    if (!ctx || !msg32 || !r || !s || !addr20_out) return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+
+    std::array<uint8_t, 32> hash, r_arr, s_arr;
+    std::memcpy(hash.data(), msg32, 32);
+    std::memcpy(r_arr.data(), r, 32);
+    std::memcpy(s_arr.data(), s, 32);
+
+    auto [addr, ok] = secp256k1::coins::ecrecover(hash, r_arr, s_arr, v);
+    if (!ok) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "ecrecover failed");
+    }
+
+    std::memcpy(addr20_out, addr.data(), 20);
+    return UFSECP_OK;
+}
+
+#endif /* SECP256K1_BUILD_ETHEREUM */

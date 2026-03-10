@@ -155,6 +155,13 @@ int test_field_26_main();   // 10x26 lazy-reduction
 int diag_scalar_mul_run();
 
 // ============================================================================
+// Forward declarations -- Ethereum (conditional)
+// ============================================================================
+#ifdef SECP256K1_BUILD_ETHEREUM
+int test_ethereum_run();
+#endif
+
+// ============================================================================
 // Report section IDs -- 8 audit categories
 // ============================================================================
 //   1. math_invariants   -- Mathematical Invariants (Fp, Zn, Group Laws)
@@ -273,6 +280,9 @@ static const AuditModule ALL_MODULES[] = {
     { "musig2_frost_adv",  "MuSig2 + FROST advanced/adversar",           "protocol_security", test_musig2_frost_advanced_run, false },
     { "audit_integration", "Integration (ECDH/batch/cross-proto)",        "protocol_security", audit_integration_run, false },
     { "batch_randomness",  "Batch verify weight randomness audit",        "protocol_security", test_batch_randomness_run, false },
+#ifdef SECP256K1_BUILD_ETHEREUM
+    { "ethereum",          "Ethereum signing layer (EIP-191/155/ecrecover)","protocol_security", test_ethereum_run, false },
+#endif
 
     // ===================================================================
     // Section 7: ABI & Memory Safety (zeroization, hardening)

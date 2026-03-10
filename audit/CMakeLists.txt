@@ -370,6 +370,10 @@ add_executable(unified_audit_runner
 if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
     target_sources(unified_audit_runner PRIVATE ${CPU_TESTS_DIR}/test_field_52.cpp)
 endif()
+# Conditionally add Ethereum layer tests
+if(SECP256K1_BUILD_ETHEREUM)
+    target_sources(unified_audit_runner PRIVATE ${CPU_TESTS_DIR}/test_ethereum.cpp)
+endif()
 target_link_libraries(unified_audit_runner PRIVATE fastsecp256k1)
 target_include_directories(unified_audit_runner PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include

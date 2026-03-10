@@ -387,6 +387,66 @@ UFSECP_API ufsecp_error_t ufsecp_taproot_verify(
     const uint8_t internal_x[32],
     const uint8_t* merkle_root, size_t merkle_root_len);
 
+/* ===========================================================================
+ * Ethereum (conditional: SECP256K1_BUILD_ETHEREUM)
+ * =========================================================================== */
+
+#ifdef SECP256K1_BUILD_ETHEREUM
+
+/** Ethereum address size (20 bytes). */
+#define UFSECP_ETH_ADDR_LEN 20
+
+/** Keccak-256 hash (Ethereum variant, NOT SHA3-256).
+ *  Output: 32 bytes. */
+UFSECP_API ufsecp_error_t ufsecp_keccak256(const uint8_t* data, size_t len,
+                                           uint8_t digest32_out[32]);
+
+/** Derive Ethereum address (20 bytes) from compressed public key.
+ *  pubkey33: 33-byte compressed public key.
+ *  addr20_out: 20-byte Ethereum address. */
+UFSECP_API ufsecp_error_t ufsecp_eth_address(ufsecp_ctx* ctx,
+                                             const uint8_t pubkey33[33],
+                                             uint8_t addr20_out[20]);
+
+/** Derive EIP-55 checksummed Ethereum address string from compressed pubkey.
+ *  addr_out: buffer for "0x" + 40 hex chars + NUL (min 43 bytes).
+ *  addr_len: in = buffer size, out = strlen (excl. NUL). */
+UFSECP_API ufsecp_error_t ufsecp_eth_address_checksummed(
+    ufsecp_ctx* ctx,
+    const uint8_t pubkey33[33],
+    char* addr_out, size_t* addr_len);
+
+/** EIP-191 personal_sign: hash a message with Ethereum prefix.
+ *  Computes Keccak256("\x19Ethereum Signed Message:\n" + len(msg) + msg).
+ *  digest32_out: 32-byte hash. */
+UFSECP_API ufsecp_error_t ufsecp_eth_personal_hash(const uint8_t* msg, size_t msg_len,
+                                                   uint8_t digest32_out[32]);
+
+/** Sign message hash with ECDSA recovery (Ethereum v,r,s format).
+ *  msg32: 32-byte message hash (pre-hashed, e.g. output of personal_hash).
+ *  privkey: 32-byte private key.
+ *  r_out, s_out: 32 bytes each.
+ *  v_out: EIP-155 v value (27+recid for legacy, 35+2*chainId+recid). */
+UFSECP_API ufsecp_error_t ufsecp_eth_sign(ufsecp_ctx* ctx,
+                                          const uint8_t msg32[32],
+                                          const uint8_t privkey[32],
+                                          uint8_t r_out[32],
+                                          uint8_t s_out[32],
+                                          uint64_t* v_out,
+                                          uint64_t chain_id);
+
+/** ecrecover: recover 20-byte Ethereum address from ECDSA(v,r,s) + msg hash.
+ *  This is Ethereum's ecrecover precompile (address 0x01).
+ *  Returns UFSECP_OK if recovery succeeds. */
+UFSECP_API ufsecp_error_t ufsecp_eth_ecrecover(ufsecp_ctx* ctx,
+                                               const uint8_t msg32[32],
+                                               const uint8_t r[32],
+                                               const uint8_t s[32],
+                                               uint64_t v,
+                                               uint8_t addr20_out[20]);
+
+#endif /* SECP256K1_BUILD_ETHEREUM */
+
 #ifdef __cplusplus
 }
 
