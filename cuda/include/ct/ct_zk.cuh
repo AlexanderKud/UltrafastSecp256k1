@@ -25,14 +25,46 @@ namespace cuda {
 namespace ct {
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+// Format affine coordinates as 33-byte compressed point (no field_inv needed)
+__device__ inline void affine_to_compressed(
+    const FieldElement* x, const FieldElement* y, uint8_t out[33])
+{
+    uint8_t y_bytes[32];
+    secp256k1::cuda::field_to_bytes(y, y_bytes);
+    out[0] = (y_bytes[31] & 1) ? 0x03 : 0x02;
+    secp256k1::cuda::field_to_bytes(x, out + 1);
+}
+
+// Compress Jacobian point to 33 bytes (1x field_inv)
+__device__ inline void jac_to_compressed(
+    const JacobianPoint* p, uint8_t out[33])
+{
+    FieldElement ax, ay;
+    secp256k1::cuda::jacobian_to_affine(p, &ax, &ay);
+    affine_to_compressed(&ax, &ay, out);
+}
+
+// Precomputed generator G compressed form (02 || Gx)
+__constant__ const uint8_t G_COMPRESSED[33] = {
+    0x02,
+    0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC,
+    0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87, 0x0B, 0x07,
+    0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9,
+    0x59, 0xF2, 0x81, 0x5B, 0x16, 0xF8, 0x17, 0x98
+};
+
+// ============================================================================
 // Deterministic Nonce Derivation (CT)
 // ============================================================================
 // k = H("ZK/nonce" || (secret XOR H(aux)) || point_compressed || msg || aux)
-// The XOR hedging prevents nonce reuse if aux is randomized.
+// Takes pre-compressed point to avoid redundant field_inv.
 
 __device__ inline void ct_zk_derive_nonce(
     const Scalar* secret,
-    const JacobianPoint* point,
+    const uint8_t pt_comp[33],
     const uint8_t msg[32],
     const uint8_t aux[32],
     Scalar* k_out)
@@ -46,11 +78,6 @@ __device__ inline void ct_zk_derive_nonce(
     secp256k1::cuda::scalar_to_bytes(secret, sec_bytes);
     uint8_t masked[32];
     for (int i = 0; i < 32; ++i) masked[i] = sec_bytes[i] ^ aux_hash[i];
-
-    // Compress point
-    uint8_t pt_comp[33];
-    JacobianPoint pt_copy = *point;
-    secp256k1::cuda::point_to_compressed(&pt_copy, pt_comp);
 
     // buf = masked[32] || pt_comp[33] || msg[32] || aux[32] = 129 bytes
     uint8_t buf[32 + 33 + 32 + 32];
@@ -83,9 +110,14 @@ __device__ inline bool ct_knowledge_prove_device(
     const uint8_t aux[32],
     KnowledgeProofGPU* proof)
 {
-    // k = deterministic nonce
+    // Pre-compress pubkey and base ONCE (saves 1 field_inv vs compressing twice)
+    uint8_t p_comp[33], b_comp[33];
+    jac_to_compressed(pubkey, p_comp);
+    jac_to_compressed(base, b_comp);
+
+    // k = deterministic nonce (uses pre-compressed pubkey)
     Scalar k;
-    ct_zk_derive_nonce(secret, pubkey, msg, aux, &k);
+    ct_zk_derive_nonce(secret, p_comp, msg, aux, &k);
     if (secp256k1::cuda::scalar_is_zero(&k)) return false;
 
     // R = k * base (CT: k is secret)
@@ -106,12 +138,7 @@ __device__ inline bool ct_knowledge_prove_device(
     secp256k1::cuda::field_to_bytes(&rx_fe, proof->rx);
 
     // e = H("ZK/knowledge" || R.x || P_comp || B_comp || msg)
-    uint8_t p_comp[33], b_comp[33];
-    JacobianPoint pk_copy = *pubkey;
-    JacobianPoint base_copy = *base;
-    secp256k1::cuda::point_to_compressed(&pk_copy, p_comp);
-    secp256k1::cuda::point_to_compressed(&base_copy, b_comp);
-
+    // Reuse pre-compressed p_comp and b_comp (no extra field_inv)
     uint8_t buf[32 + 33 + 33 + 32]; // rx || P || B || msg
     for (int i = 0; i < 32; ++i) buf[i] = proof->rx[i];
     for (int i = 0; i < 33; ++i) buf[32 + i] = p_comp[i];
@@ -133,6 +160,7 @@ __device__ inline bool ct_knowledge_prove_device(
 }
 
 // Convenience: prove knowledge of secret for G (generator)
+// Uses precomputed G_COMPRESSED to avoid 1 field_inv for base compression
 __device__ inline bool ct_knowledge_prove_generator_device(
     const Scalar* secret,
     const JacobianPoint* pubkey,
@@ -140,6 +168,16 @@ __device__ inline bool ct_knowledge_prove_generator_device(
     const uint8_t aux[32],
     KnowledgeProofGPU* proof)
 {
+    // Pre-compress pubkey once
+    uint8_t p_comp[33];
+    jac_to_compressed(pubkey, p_comp);
+
+    // k = deterministic nonce (uses pre-compressed pubkey)
+    Scalar k;
+    ct_zk_derive_nonce(secret, p_comp, msg, aux, &k);
+    if (secp256k1::cuda::scalar_is_zero(&k)) return false;
+
+    // R = k * G (CT: k is secret)
     JacobianPoint G;
     for (int i = 0; i < 4; i++) {
         G.x.limbs[i] = GENERATOR_X[i];
@@ -147,7 +185,43 @@ __device__ inline bool ct_knowledge_prove_generator_device(
     }
     secp256k1::cuda::field_set_one(&G.z);
     G.infinity = false;
-    return ct_knowledge_prove_device(secret, pubkey, &G, msg, aux, proof);
+
+    JacobianPoint R;
+    ct_scalar_mul(&G, &k, &R);
+
+    // Convert R to affine, get Y parity
+    FieldElement rx_fe, ry_fe;
+    uint8_t r_y_parity;
+    ct_jacobian_to_affine(&R, &rx_fe, &ry_fe, &r_y_parity);
+
+    // CT conditional negate k if R has odd Y (BIP-340 style)
+    uint64_t odd_mask = bool_to_mask((uint64_t)r_y_parity);
+    Scalar k_eff;
+    scalar_cneg(&k_eff, &k, odd_mask);
+
+    // Store R.x in proof
+    secp256k1::cuda::field_to_bytes(&rx_fe, proof->rx);
+
+    // e = H("ZK/knowledge" || R.x || P_comp || G_comp || msg)
+    // Uses precomputed G_COMPRESSED -- no field_inv for G
+    uint8_t buf[32 + 33 + 33 + 32];
+    for (int i = 0; i < 32; ++i) buf[i] = proof->rx[i];
+    for (int i = 0; i < 33; ++i) buf[32 + i] = p_comp[i];
+    for (int i = 0; i < 33; ++i) buf[65 + i] = G_COMPRESSED[i];
+    for (int i = 0; i < 32; ++i) buf[98 + i] = msg[i];
+
+    uint8_t e_hash[32];
+    zk_tagged_hash_midstate(&ZK_KNOWLEDGE_MIDSTATE, buf, sizeof(buf), e_hash);
+
+    Scalar e;
+    secp256k1::cuda::scalar_from_bytes(e_hash, &e);
+
+    // s = k_eff + e * secret
+    Scalar e_sec;
+    scalar_mul(&e, secret, &e_sec);
+    scalar_add(&k_eff, &e_sec, &proof->s);
+
+    return true;
 }
 
 // Batch kernel: one thread proves one knowledge proof
@@ -209,13 +283,16 @@ __device__ inline bool ct_dleq_prove_device(
     const uint8_t aux[32],
     DLEQProofGPU* proof)
 {
-    // Derive nonce: use Q_compressed as msg input
-    uint8_t q_comp[33];
-    JacobianPoint q_copy = *Q;
-    secp256k1::cuda::point_to_compressed(&q_copy, q_comp);
+    // Pre-compress input points once (saves 2 field_inv vs compressing Q,P twice)
+    uint8_t q_comp[33], g_comp[33], h_comp[33], p_comp[33];
+    jac_to_compressed(Q, q_comp);
+    jac_to_compressed(G, g_comp);
+    jac_to_compressed(H, h_comp);
+    jac_to_compressed(P, p_comp);
 
+    // Derive nonce using pre-compressed P as pubkey, Q as msg
     Scalar k;
-    ct_zk_derive_nonce(secret, P, q_comp, aux, &k);
+    ct_zk_derive_nonce(secret, p_comp, q_comp, aux, &k);
     if (secp256k1::cuda::scalar_is_zero(&k)) return false;
 
     // R1 = k * G, R2 = k * H (CT: k is secret)
@@ -223,17 +300,13 @@ __device__ inline bool ct_dleq_prove_device(
     ct_scalar_mul(G, &k, &R1);
     ct_scalar_mul(H, &k, &R2);
 
-    // Serialize all 6 points for challenge
-    uint8_t g_comp[33], h_comp[33], p_comp[33];
+    // Compress R1, R2 (unavoidable -- fresh points)
     uint8_t r1_comp[33], r2_comp[33];
-    JacobianPoint g_copy = *G, h_copy = *H, p_copy = *P;
-    secp256k1::cuda::point_to_compressed(&g_copy, g_comp);
-    secp256k1::cuda::point_to_compressed(&h_copy, h_comp);
-    secp256k1::cuda::point_to_compressed(&p_copy, p_comp);
-    secp256k1::cuda::point_to_compressed(&R1, r1_comp);
-    secp256k1::cuda::point_to_compressed(&R2, r2_comp);
+    jac_to_compressed(&R1, r1_comp);
+    jac_to_compressed(&R2, r2_comp);
 
     // e = H("ZK/dleq" || G || H || P || Q || R1 || R2)
+    // Reuse pre-compressed g_comp, h_comp, p_comp, q_comp
     uint8_t buf[33 * 6];
     for (int i = 0; i < 33; ++i) {
         buf[i]       = g_comp[i];
