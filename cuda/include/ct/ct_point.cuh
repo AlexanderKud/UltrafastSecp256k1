@@ -236,9 +236,14 @@ void ct_point_add_mixed(const CTJacobianPoint* p, const CTAffinePoint* q,
     field_mul(&t, &n, &q_);
     field_negate(&q_, &q_);
 
-    // N = N^2 (reuse N)
+    // N = N^2  (Malt^4)
     FieldElement nn;
     field_sqr(&n, &nn);
+
+    // BJ degenerate fix: zero nn when M=0 (mirror CPU fe52_cmov)
+    uint64_t keep = ~m_is_zero;
+    nn.limbs[0] &= keep; nn.limbs[1] &= keep;
+    nn.limbs[2] &= keep; nn.limbs[3] &= keep;
 
     // X3 = Ralt^2 + Q_
     FieldElement x3;
@@ -249,7 +254,7 @@ void ct_point_add_mixed(const CTJacobianPoint* p, const CTAffinePoint* q,
     FieldElement z3;
     field_mul(&malt, &p->z, &z3);
 
-    // Y3 = -(Ralt * (2*X3 + Q_) + N) / 2
+    // Y3 = -(Ralt * (2*X3 + Q_) + N) / 2  (Brier-Joye unified)
     FieldElement x3_2, y3_tmp, y3;
     field_add(&x3, &x3, &x3_2);
     field_add(&x3_2, &q_, &y3_tmp);
@@ -341,6 +346,11 @@ void ct_point_add(const CTJacobianPoint* p, const CTJacobianPoint* q,
     FieldElement nn;
     field_sqr(&n, &nn);
 
+    // BJ degenerate fix: zero nn when M=0 (mirror CPU fe52_cmov)
+    uint64_t keep = ~m_is_zero;
+    nn.limbs[0] &= keep; nn.limbs[1] &= keep;
+    nn.limbs[2] &= keep; nn.limbs[3] &= keep;
+
     FieldElement x3;
     field_sqr(&ralt, &x3);
     field_add(&x3, &q_, &x3);
@@ -383,7 +393,7 @@ void ct_point_neg(const CTJacobianPoint* p, CTJacobianPoint* r) {
 // Inverts N field elements using only 1 field_inv + 3*(N-1) field_mul.
 // inputs[i] and outputs[i] may alias.
 
-__device__ inline
+__device__ __noinline__
 void ct_batch_field_inv(const FieldElement* inputs, FieldElement* outputs, int count) {
     using namespace secp256k1::cuda;
 
@@ -413,7 +423,7 @@ void ct_batch_field_inv(const FieldElement* inputs, FieldElement* outputs, int c
 // Uses CT complete addition, 16-entry table [0P..15P], CT table lookups.
 // Cost: ~132 doublings + ~66 mixed additions (vs 128 dbl + 256 add bit-by-bit)
 
-__device__ inline
+__device__ __noinline__
 void ct_scalar_mul(const JacobianPoint* p_in, const Scalar* k,
                    JacobianPoint* r_out) {
     using namespace secp256k1::cuda;

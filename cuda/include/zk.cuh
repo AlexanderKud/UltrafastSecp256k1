@@ -499,6 +499,384 @@ __global__ void range_proof_poly_batch_kernel(
 //   3. cudaMemcpy to device global g_pedersen_H
 // This avoids device-side SHA-256 generator computation.
 
+// ============================================================================
+// 4. Full Bulletproof Range Proof (verify + prove structs)
+// ============================================================================
+
+static constexpr int BP_BITS = 64;
+static constexpr int BP_LOG2 = 6;
+
+// Bulletproof generator vectors -- set by bulletproof_init_kernel()
+__device__ AffinePoint g_bulletproof_G[64];
+__device__ AffinePoint g_bulletproof_H[64];
+
+// Runtime-computed midstates for "Bulletproof/ip" and "Bulletproof/gen"
+__device__ ZKTagMidstate g_bp_ip_midstate;
+__device__ ZKTagMidstate g_bp_gen_midstate;
+__device__ bool g_bulletproof_init_done = false;
+
+// Full range proof structure (GPU-compatible POD)
+struct RangeProofGPU {
+    AffinePoint A, S;           // vector commitments
+    AffinePoint T1, T2;        // polynomial commitments
+    Scalar tau_x, mu, t_hat;   // blinding, aggregate blinding, poly eval
+    Scalar a, b;               // final IPA scalars
+    AffinePoint L[6], R[6];   // inner product argument rounds
+};
+
+// -- Bulletproof init kernel --------------------------------------------------
+// Computes tagged hash midstates + 128 generator points on device.
+// Launch once with <<<1, 1>>> before any Bulletproof operations.
+
+__global__ void bulletproof_init_kernel() {
+    if (threadIdx.x != 0) return;
+
+    // Compute "Bulletproof/ip" midstate (14 bytes)
+    {
+        const uint8_t tag[] = { 'B','u','l','l','e','t','p','r','o','o','f','/','i','p' };
+        uint8_t tag_hash[32];
+        sha256_hash(tag, 14, tag_hash);
+        SHA256Ctx ctx;
+        sha256_init(&ctx);
+        sha256_update(&ctx, tag_hash, 32);
+        sha256_update(&ctx, tag_hash, 32);
+        for (int i = 0; i < 8; i++) g_bp_ip_midstate.h[i] = ctx.h[i];
+    }
+
+    // Compute "Bulletproof/gen" midstate (15 bytes)
+    {
+        const uint8_t tag[] = { 'B','u','l','l','e','t','p','r','o','o','f','/','g','e','n' };
+        uint8_t tag_hash[32];
+        sha256_hash(tag, 15, tag_hash);
+        SHA256Ctx ctx;
+        sha256_init(&ctx);
+        sha256_update(&ctx, tag_hash, 32);
+        sha256_update(&ctx, tag_hash, 32);
+        for (int i = 0; i < 8; i++) g_bp_gen_midstate.h[i] = ctx.h[i];
+    }
+
+    // Compute generator vectors with try-and-increment
+    for (int i = 0; i < 64; i++) {
+        uint8_t buf[5];
+        buf[1] = (uint8_t)(i & 0xFF);
+        buf[2] = (uint8_t)((i >> 8) & 0xFF);
+        buf[3] = (uint8_t)((i >> 16) & 0xFF);
+        buf[4] = (uint8_t)((i >> 24) & 0xFF);
+
+        // G_i = lift_x(H("Bulletproof/gen" || "G" || LE32(i)))
+        buf[0] = 'G';
+        uint8_t hash[32];
+        zk_tagged_hash_midstate(&g_bp_gen_midstate, buf, 5, hash);
+        FieldElement x;
+        field_from_bytes(hash, &x);
+        hash_to_point_increment(&x, &g_bulletproof_G[i]);
+
+        // H_i = lift_x(H("Bulletproof/gen" || "H" || LE32(i)))
+        buf[0] = 'H';
+        zk_tagged_hash_midstate(&g_bp_gen_midstate, buf, 5, hash);
+        field_from_bytes(hash, &x);
+        hash_to_point_increment(&x, &g_bulletproof_H[i]);
+    }
+
+    g_bulletproof_init_done = true;
+}
+
+// ============================================================================
+// 5. Full Bulletproof Verify Device Function
+// ============================================================================
+// Verifies polynomial commitment + inner product argument in a single function.
+
+__device__ inline bool range_verify_full_device(
+    const RangeProofGPU* proof,
+    const AffinePoint* commitment,
+    const AffinePoint* H_gen)
+{
+    // ---- Fiat-Shamir: recompute y, z, x ----
+    uint8_t a_comp[33], s_comp[33], v_comp[33];
+    affine_to_compressed(&proof->A.x, &proof->A.y, a_comp);
+    affine_to_compressed(&proof->S.x, &proof->S.y, s_comp);
+    affine_to_compressed(&commitment->x, &commitment->y, v_comp);
+
+    uint8_t fs_buf[33 + 33 + 33];
+    for (int i = 0; i < 33; ++i) {
+        fs_buf[i]      = a_comp[i];
+        fs_buf[33 + i] = s_comp[i];
+        fs_buf[66 + i] = v_comp[i];
+    }
+
+    uint8_t y_hash[32], z_hash[32];
+    zk_tagged_hash_midstate(&ZK_BULLETPROOF_Y_MIDSTATE, fs_buf, sizeof(fs_buf), y_hash);
+    zk_tagged_hash_midstate(&ZK_BULLETPROOF_Z_MIDSTATE, fs_buf, sizeof(fs_buf), z_hash);
+
+    Scalar y, z;
+    scalar_from_bytes(y_hash, &y);
+    scalar_from_bytes(z_hash, &z);
+
+    uint8_t t1_comp[33], t2_comp[33];
+    affine_to_compressed(&proof->T1.x, &proof->T1.y, t1_comp);
+    affine_to_compressed(&proof->T2.x, &proof->T2.y, t2_comp);
+
+    uint8_t x_buf[33 + 33 + 32 + 32];
+    for (int i = 0; i < 33; ++i) { x_buf[i] = t1_comp[i]; x_buf[33 + i] = t2_comp[i]; }
+    scalar_to_bytes(&y, x_buf + 66);
+    scalar_to_bytes(&z, x_buf + 98);
+
+    uint8_t x_hash[32];
+    zk_tagged_hash_midstate(&ZK_BULLETPROOF_X_MIDSTATE, x_buf, sizeof(x_buf), x_hash);
+    Scalar x;
+    scalar_from_bytes(x_hash, &x);
+
+    // ---- Compute delta(y,z) ----
+    Scalar z2, z3, x2;
+    scalar_mul_mod_n(&z, &z, &z2);
+    scalar_mul_mod_n(&z2, &z, &z3);
+    scalar_mul_mod_n(&x, &x, &x2);
+
+    Scalar sum_y;
+    sum_y.limbs[0] = 1; sum_y.limbs[1] = 0; sum_y.limbs[2] = 0; sum_y.limbs[3] = 0;
+    Scalar y_pow = y;
+    for (int i = 1; i < BP_BITS; ++i) {
+        scalar_add(&sum_y, &y_pow, &sum_y);
+        scalar_mul_mod_n(&y_pow, &y, &y_pow);
+    }
+
+    Scalar sum_2;
+    sum_2.limbs[0] = 0xFFFFFFFFFFFFFFFFULL;
+    sum_2.limbs[1] = 0; sum_2.limbs[2] = 0; sum_2.limbs[3] = 0;
+
+    Scalar z_minus_z2, term1, term2, delta;
+    scalar_sub(&z, &z2, &z_minus_z2);
+    scalar_mul_mod_n(&z_minus_z2, &sum_y, &term1);
+    scalar_mul_mod_n(&z3, &sum_2, &term2);
+    scalar_sub(&term1, &term2, &delta);
+
+    // ---- Polynomial check ----
+    // (t_hat - delta)*H + tau_x*G - z^2*V - x*T1 - x^2*T2 == 0
+    Scalar t_hat_minus_delta;
+    scalar_sub(&proof->t_hat, &delta, &t_hat_minus_delta);
+
+    JacobianPoint H_jac;
+    H_jac.x = H_gen->x; H_jac.y = H_gen->y; H_jac.z = FIELD_ONE; H_jac.infinity = false;
+
+    JacobianPoint tH, tauG, LHS;
+    scalar_mul(&H_jac, &proof->t_hat, &tH);
+    scalar_mul_generator_const(&proof->tau_x, &tauG);
+    jacobian_add(&tH, &tauG, &LHS);
+
+    JacobianPoint V_jac;
+    V_jac.x = commitment->x; V_jac.y = commitment->y; V_jac.z = FIELD_ONE; V_jac.infinity = false;
+    JacobianPoint z2V, deltaH, xT1, x2T2;
+    scalar_mul(&V_jac, &z2, &z2V);
+    scalar_mul(&H_jac, &delta, &deltaH);
+
+    JacobianPoint T1_jac;
+    T1_jac.x = proof->T1.x; T1_jac.y = proof->T1.y; T1_jac.z = FIELD_ONE; T1_jac.infinity = false;
+    scalar_mul(&T1_jac, &x, &xT1);
+
+    JacobianPoint T2_jac;
+    T2_jac.x = proof->T2.x; T2_jac.y = proof->T2.y; T2_jac.z = FIELD_ONE; T2_jac.infinity = false;
+    scalar_mul(&T2_jac, &x2, &x2T2);
+
+    JacobianPoint RHS;
+    jacobian_add(&z2V, &deltaH, &RHS);
+    jacobian_add(&RHS, &xT1, &RHS);
+    jacobian_add(&RHS, &x2T2, &RHS);
+
+    // Compare LHS == RHS via cross-multiply
+    {
+        FieldElement z1sq, z2sq, z1cu, z2cu;
+        field_sqr(&LHS.z, &z1sq);
+        field_sqr(&RHS.z, &z2sq);
+        field_mul(&z1sq, &LHS.z, &z1cu);
+        field_mul(&z2sq, &RHS.z, &z2cu);
+
+        FieldElement lx, rx_val, ly, ry;
+        field_mul(&LHS.x, &z2sq, &lx);
+        field_mul(&RHS.x, &z1sq, &rx_val);
+        field_mul(&LHS.y, &z2cu, &ly);
+        field_mul(&RHS.y, &z1cu, &ry);
+
+        FieldElement dx, dy;
+        field_sub(&lx, &rx_val, &dx);
+        field_sub(&ly, &ry, &dy);
+        uint64_t acc = dx.limbs[0] | dx.limbs[1] | dx.limbs[2] | dx.limbs[3]
+                     | dy.limbs[0] | dy.limbs[1] | dy.limbs[2] | dy.limbs[3];
+        if (acc != 0) return false;
+    }
+
+    // ---- Inner Product Argument verification ----
+    // Reconstruct challenges from L, R pairs
+    Scalar x_rounds[BP_LOG2];
+    for (int round = 0; round < BP_LOG2; ++round) {
+        uint8_t l_comp[33], r_comp[33];
+        affine_to_compressed(&proof->L[round].x, &proof->L[round].y, l_comp);
+        affine_to_compressed(&proof->R[round].x, &proof->R[round].y, r_comp);
+        uint8_t ip_buf[33 + 33];
+        for (int i = 0; i < 33; ++i) { ip_buf[i] = l_comp[i]; ip_buf[33 + i] = r_comp[i]; }
+        uint8_t xr_hash[32];
+        zk_tagged_hash_midstate(&g_bp_ip_midstate, ip_buf, sizeof(ip_buf), xr_hash);
+        scalar_from_bytes(xr_hash, &x_rounds[round]);
+    }
+
+    // Compute x_inv_rounds via batch inversion
+    Scalar x_inv_rounds[BP_LOG2];
+    {
+        Scalar acc[BP_LOG2];
+        acc[0] = x_rounds[0];
+        for (int j = 1; j < BP_LOG2; ++j) scalar_mul_mod_n(&acc[j-1], &x_rounds[j], &acc[j]);
+        Scalar inv_acc;
+        scalar_inverse(&acc[BP_LOG2 - 1], &inv_acc);
+        for (int j = BP_LOG2 - 1; j >= 1; --j) {
+            scalar_mul_mod_n(&inv_acc, &acc[j-1], &x_inv_rounds[j]);
+            scalar_mul_mod_n(&inv_acc, &x_rounds[j], &inv_acc);
+        }
+        x_inv_rounds[0] = inv_acc;
+    }
+
+    // Compute y_inv and y_inv powers
+    Scalar y_inv;
+    scalar_inverse(&y, &y_inv);
+    Scalar y_inv_powers[BP_BITS];
+    y_inv_powers[0].limbs[0] = 1; y_inv_powers[0].limbs[1] = 0;
+    y_inv_powers[0].limbs[2] = 0; y_inv_powers[0].limbs[3] = 0;
+    for (int i = 1; i < BP_BITS; ++i)
+        scalar_mul_mod_n(&y_inv_powers[i-1], &y_inv, &y_inv_powers[i]);
+
+    // Compute s_coeff[i] = product tree of x_rounds / x_inv_rounds
+    Scalar s_coeff[BP_BITS];
+    s_coeff[0].limbs[0] = 1; s_coeff[0].limbs[1] = 0;
+    s_coeff[0].limbs[2] = 0; s_coeff[0].limbs[3] = 0;
+    for (int j = 0; j < BP_LOG2; ++j)
+        scalar_mul_mod_n(&s_coeff[0], &x_inv_rounds[j], &s_coeff[0]);
+    for (int i = 1; i < BP_BITS; ++i) {
+        s_coeff[i].limbs[0] = 1; s_coeff[i].limbs[1] = 0;
+        s_coeff[i].limbs[2] = 0; s_coeff[i].limbs[3] = 0;
+        for (int jj = 0; jj < BP_LOG2; ++jj) {
+            if ((i >> (BP_LOG2 - 1 - jj)) & 1)
+                scalar_mul_mod_n(&s_coeff[i], &x_rounds[jj], &s_coeff[i]);
+            else
+                scalar_mul_mod_n(&s_coeff[i], &x_inv_rounds[jj], &s_coeff[i]);
+        }
+    }
+
+    // Batch inversion of s_coeff for s_inv
+    Scalar s_inv[BP_BITS];
+    {
+        Scalar acc[BP_BITS];
+        acc[0] = s_coeff[0];
+        for (int i = 1; i < BP_BITS; ++i) scalar_mul_mod_n(&acc[i-1], &s_coeff[i], &acc[i]);
+        Scalar inv_acc;
+        scalar_inverse(&acc[BP_BITS - 1], &inv_acc);
+        for (int i = BP_BITS - 1; i >= 1; --i) {
+            scalar_mul_mod_n(&inv_acc, &acc[i-1], &s_inv[i]);
+            scalar_mul_mod_n(&inv_acc, &s_coeff[i], &inv_acc);
+        }
+        s_inv[0] = inv_acc;
+    }
+
+    // Two powers: 2^i
+    Scalar two_powers[BP_BITS];
+    two_powers[0].limbs[0] = 1; two_powers[0].limbs[1] = 0;
+    two_powers[0].limbs[2] = 0; two_powers[0].limbs[3] = 0;
+    for (int i = 1; i < BP_BITS; ++i)
+        scalar_add(&two_powers[i-1], &two_powers[i-1], &two_powers[i]);
+
+    // Build merged MSM: P_check
+    // P = A + x*S + sum(g_i*G_i) + sum(h_i*H_i) - mu*G + (t_hat-a*b)*U + sum(x_j^2*L_j + x_j^{-2}*R_j)
+    Scalar neg_z;
+    scalar_negate(&z, &neg_z);
+    Scalar ab;
+    scalar_mul_mod_n(&proof->a, &proof->b, &ab);
+
+    // Start accumulator at identity
+    JacobianPoint msm_acc;
+    msm_acc.infinity = true;
+    msm_acc.z = FIELD_ONE;
+
+    // A (coefficient 1)
+    {
+        JacobianPoint A_jac;
+        A_jac.x = proof->A.x; A_jac.y = proof->A.y; A_jac.z = FIELD_ONE; A_jac.infinity = false;
+        jacobian_add(&msm_acc, &A_jac, &msm_acc);
+    }
+
+    // x * S
+    {
+        JacobianPoint S_jac, xS;
+        S_jac.x = proof->S.x; S_jac.y = proof->S.y; S_jac.z = FIELD_ONE; S_jac.infinity = false;
+        scalar_mul(&S_jac, &x, &xS);
+        jacobian_add(&msm_acc, &xS, &msm_acc);
+    }
+
+    // G_i and H_i contributions
+    for (int i = 0; i < BP_BITS; ++i) {
+        // G_i: (-z - a*s_i)
+        Scalar a_si, g_coeff;
+        scalar_mul_mod_n(&proof->a, &s_coeff[i], &a_si);
+        scalar_sub(&neg_z, &a_si, &g_coeff);
+
+        JacobianPoint Gi_jac, g_term;
+        Gi_jac.x = g_bulletproof_G[i].x; Gi_jac.y = g_bulletproof_G[i].y;
+        Gi_jac.z = FIELD_ONE; Gi_jac.infinity = false;
+        scalar_mul(&Gi_jac, &g_coeff, &g_term);
+        jacobian_add(&msm_acc, &g_term, &msm_acc);
+
+        // H_i: (z + z2*2^i*y_inv^i) - b*s_inv[i]*y_inv^i
+        Scalar z2_2i, z2_2i_yi, h_pcheck;
+        scalar_mul_mod_n(&z2, &two_powers[i], &z2_2i);
+        scalar_mul_mod_n(&z2_2i, &y_inv_powers[i], &z2_2i_yi);
+        scalar_add(&z, &z2_2i_yi, &h_pcheck);
+
+        Scalar b_si, b_si_yi, h_coeff;
+        scalar_mul_mod_n(&proof->b, &s_inv[i], &b_si);
+        scalar_mul_mod_n(&b_si, &y_inv_powers[i], &b_si_yi);
+        scalar_sub(&h_pcheck, &b_si_yi, &h_coeff);
+
+        JacobianPoint Hi_jac, h_term;
+        Hi_jac.x = g_bulletproof_H[i].x; Hi_jac.y = g_bulletproof_H[i].y;
+        Hi_jac.z = FIELD_ONE; Hi_jac.infinity = false;
+        scalar_mul(&Hi_jac, &h_coeff, &h_term);
+        jacobian_add(&msm_acc, &h_term, &msm_acc);
+    }
+
+    // -mu * G
+    {
+        Scalar neg_mu;
+        scalar_negate(&proof->mu, &neg_mu);
+        JacobianPoint muG;
+        scalar_mul_generator_const(&neg_mu, &muG);
+        jacobian_add(&msm_acc, &muG, &msm_acc);
+    }
+
+    // (t_hat - a*b) * U (H_ped)
+    {
+        Scalar t_ab;
+        scalar_sub(&proof->t_hat, &ab, &t_ab);
+        JacobianPoint tU;
+        scalar_mul(&H_jac, &t_ab, &tU);
+        jacobian_add(&msm_acc, &tU, &msm_acc);
+    }
+
+    // L_j and R_j contributions
+    for (int j = 0; j < BP_LOG2; ++j) {
+        Scalar xj2, xj_inv2;
+        scalar_mul_mod_n(&x_rounds[j], &x_rounds[j], &xj2);
+        scalar_mul_mod_n(&x_inv_rounds[j], &x_inv_rounds[j], &xj_inv2);
+
+        JacobianPoint Lj, Rj, lterm, rterm;
+        Lj.x = proof->L[j].x; Lj.y = proof->L[j].y; Lj.z = FIELD_ONE; Lj.infinity = false;
+        Rj.x = proof->R[j].x; Rj.y = proof->R[j].y; Rj.z = FIELD_ONE; Rj.infinity = false;
+        scalar_mul(&Lj, &xj2, &lterm);
+        scalar_mul(&Rj, &xj_inv2, &rterm);
+        jacobian_add(&msm_acc, &lterm, &msm_acc);
+        jacobian_add(&msm_acc, &rterm, &msm_acc);
+    }
+
+    // Check: msm_acc should be identity (infinity)
+    if (msm_acc.infinity) return true;
+    return field_is_zero(&msm_acc.z);
+}
+
 } // namespace cuda
 } // namespace secp256k1
 

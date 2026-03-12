@@ -73,6 +73,21 @@ __device__ inline bool lift_x_even(const FieldElement* x, AffinePoint* out) {
     return true;
 }
 
+// -- hash_to_point_increment: try-and-increment for hash-to-curve -------------
+// Tries x, x+1, x+2, ... until lift_x_even succeeds.
+// Used for nothing-up-my-sleeve generator derivation (NOT for signature verification).
+
+__device__ inline bool hash_to_point_increment(const FieldElement* x_in, AffinePoint* out) {
+    FieldElement x = *x_in;
+    FieldElement one;
+    field_set_one(&one);
+    for (int attempt = 0; attempt < 256; ++attempt) {
+        if (lift_x_even(&x, out)) return true;
+        field_add(&x, &one, &x);
+    }
+    return false;
+}
+
 // -- Single commitment on device ----------------------------------------------
 
 __device__ inline void pedersen_commit_device(

@@ -218,3 +218,23 @@ endif()
 target_link_libraries(test_ct_smoke PRIVATE secp256k1_cuda_lib)
 add_test(NAME gpu_ct_smoke COMMAND test_ct_smoke)
 
+# ===== GPU ZK Benchmark =====
+set(_BENCH_ZK_SOURCES src/bench_zk.cu)
+if(_GPU_LANG STREQUAL "HIP")
+    set_source_files_properties(${_BENCH_ZK_SOURCES} PROPERTIES LANGUAGE HIP)
+    add_executable(bench_zk ${_BENCH_ZK_SOURCES})
+    target_compile_options(bench_zk PRIVATE
+        $<$<COMPILE_LANGUAGE:HIP>:-O3>
+        $<$<COMPILE_LANGUAGE:HIP>:-ffast-math>
+    )
+else()
+    add_executable(bench_zk ${_BENCH_ZK_SOURCES})
+    target_compile_options(bench_zk PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
+        $<$<COMPILE_LANGUAGE:CUDA>:-O3>
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xptxas=-O3>
+    )
+endif()
+target_link_libraries(bench_zk PRIVATE secp256k1_cuda_lib)
+

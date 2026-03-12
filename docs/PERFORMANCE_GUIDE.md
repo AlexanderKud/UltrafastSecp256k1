@@ -158,6 +158,8 @@ GPU is beneficial for **embarrassingly parallel** workloads:
 | 1 scalar mul | 25 us | 225 ns + launch overhead | Slower |
 | 1K scalar muls | 25 ms | 0.3 ms | 83x |
 | 1M scalar muls | 25 s | 0.25 s | 100x |
+| 4K ZK knowledge proofs | 99.7 ms | 1.08 ms | 92x |
+| 4K DLEQ proofs | 173.8 ms | 2.77 ms | 63x |
 
 **Rule of thumb**: GPU wins when batch size > 1,000 operations.
 
