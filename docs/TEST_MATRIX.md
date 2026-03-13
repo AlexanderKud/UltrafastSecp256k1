@@ -1,6 +1,6 @@
 # Test Coverage Matrix
 
-**UltrafastSecp256k1 v3.14.0** -- Comprehensive Test Map for Auditors
+**UltrafastSecp256k1 v3.22.0** -- Comprehensive Test Map for Auditors
 
 ---
 
@@ -8,7 +8,7 @@
 
 | Category | Tests | Status |
 |----------|-------|--------|
-| **CTest targets** | 20+ | [OK] All passing |
+| **CTest targets** | 41 | [OK] All passing |
 | **Audit suite checks** | 641,194 | [OK] 0 failures |
 | **Fuzz harnesses** | 3 | [OK] Active |
 | **Side-channel (dudect)** | 1 | [OK] Active |
@@ -46,6 +46,7 @@
 | `test_ecdsa_schnorr.cpp` | ECDSA (RFC 6979) + Schnorr (BIP-340) vectors | [OK] |
 | `test_ecdh_recovery_taproot.cpp` | ECDH, key recovery, Taproot | [OK] |
 | `test_bip32.cpp` | BIP-32 HD key derivation | [OK] |
+| `test_bip39.cpp` | BIP-39 mnemonic: PBKDF2, wordlist, entropy, validation, seed derivation (57 tests) | [OK] |
 | `test_coins.cpp` | 28-coin address dispatch + P2SH/P2SH-P2WPKH/CashAddr | [OK] |
 | `test_wallet.cpp` | Wallet API: key management, signing, address formats, recovery | [OK] |
 | `test_ethereum.cpp` | Ethereum signing: EIP-155, EIP-191, ecrecover, personal_sign | [OK] |
@@ -169,7 +170,7 @@
 |----------|-----------|----------|-------|
 | MuSig2 key aggregation | `test_musig2.cpp` | [OK] Basic | No extended vectors |
 | MuSig2 2-round sign | `test_musig2.cpp` | [OK] Basic | Limited edge cases |
-| FROST t-of-n | -- | [!] **Not tested** | Multi-party simulation needed |
+| FROST t-of-n | `test_v4_features.cpp` | [OK] Basic | Keygen, sign, aggregate, verify |
 | Adaptor signatures | `test_v4_features.cpp` | [OK] Basic | Limited vectors |
 | Pedersen commitments | `test_v4_features.cpp` | [OK] Basic | Limited vectors |
 | ZK Knowledge proof | `test_zk.cpp` | [OK] | Prove/verify, arbitrary base, serialization |
@@ -194,7 +195,6 @@
 
 | Gap | Impact | Blocked By |
 |-----|--------|------------|
-| **FROST protocol-level tests** | Cannot verify threshold signing correctness | Need multi-party simulation framework |
 | **Formal verification** | CT properties unverified mathematically | Fiat-Crypto/ct-verif integration needed |
 | **Cross-ABI tests** | Cannot verify FFI correctness across calling conventions | Need multi-compiler test matrix |
 
@@ -204,7 +204,6 @@
 |-----|--------|--------|
 | MuSig2 extended test vectors | Limited edge-case coverage | Reference impl vectors needed |
 | Multi-uarch timing tests | CT may break on specific CPUs | Need hardware test farm |
-| FROST nonce CT audit | Nonce handling may leak timing | Requires protocol-level CT analysis |
 | GPU vs CPU differential | GPU arithmetic may diverge | Partial coverage via OpenCL tests |
 
 ### Low Priority
@@ -272,4 +271,4 @@ clang++ -fsanitize=fuzzer,address -O2 -std=c++20 \
 
 ---
 
-*UltrafastSecp256k1 v3.14.0 -- Test Coverage Matrix*
+*UltrafastSecp256k1 v3.22.0 -- Test Coverage Matrix*

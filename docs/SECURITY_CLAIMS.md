@@ -1,6 +1,6 @@
 # Security Claims & API Contract
 
-**UltrafastSecp256k1 v3.21.0** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
+**UltrafastSecp256k1 v3.22.0** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
 ---
 
@@ -20,7 +20,7 @@ mathematical semantics. They differ **only** in execution profile:
 | **Nonce Erasure** | Not erased | Intermediate nonces erased (volatile fn-ptr) |
 | **Side-Channel** | Not resistant | Resistant (CPU backend) |
 
-### CT Overhead by Platform (v3.21.0)
+### CT Overhead by Platform (v3.22.0)
 
 Measured with `bench_unified` / `gpu_bench_unified` (signing operations; verify uses public inputs -- CT not needed):
 
@@ -213,10 +213,12 @@ cryptographic implementations, including libsecp256k1.
 | Scalar cond. swap | N/A (use std::swap) | `ct::scalar_cswap(a, b, mask)` |
 | Scalar cond. negate | `s.negate()` with if | `ct::scalar_cneg(a, mask)` |
 
-### GPU (CUDA) API
+### GPU (CUDA/OpenCL/Metal) API
 
-All GPU CT functions are in the `secp256k1::cuda::ct::` namespace.
-Headers: `cuda/include/ct/{ct_ops.cuh, ct_field.cuh, ct_scalar.cuh, ct_point.cuh, ct_sign.cuh}`
+All GPU CT functions are in the `secp256k1::cuda::ct::` namespace (CUDA),
+with equivalent kernels in OpenCL (`secp256k1_ct_sign.cl`, `secp256k1_ct_zk.cl`)
+and Metal (`secp256k1_ct_sign.metal`, `secp256k1_ct_zk.metal`).
+All three backends implement identical CT algorithms.
 
 | Operation | FAST (`secp256k1::cuda::`) | CT (`secp256k1::cuda::ct::`) |
 |-----------|---------------------------|------------------------------|
@@ -271,11 +273,13 @@ See [docs/CT_EMPIRICAL_REPORT.md](CT_EMPIRICAL_REPORT.md) for full methodology.
 
 > The CT guarantee applies to:
 > - **CPU**: `secp256k1::ct::` under `g++-13` / `clang-17+` at `-O2`, on **x86-64** and **ARM64**
-> - **GPU**: `secp256k1::cuda::ct::` under CUDA 12.0+ / nvcc, on **SM 7.5+** (Turing through Blackwell)
+> - **CUDA GPU**: `secp256k1::cuda::ct::` under CUDA 12.0+ / nvcc, on **SM 7.5+** (Turing through Blackwell)
+> - **OpenCL GPU**: CT kernels in `secp256k1_ct_sign.cl` / `secp256k1_ct_zk.cl`
+> - **Metal GPU**: CT shaders in `secp256k1_ct_sign.metal` / `secp256k1_ct_zk.metal`
 
-The GPU CT layer provides **algorithmic** constant-time guarantees (no secret-dependent
+All GPU CT layers provide **algorithmic** constant-time guarantees (no secret-dependent
 branches or memory access patterns). Hardware-level side-channel resistance on GPUs
-is limited by the SIMT execution model.
+is limited by the SIMT/SIMD execution model.
 
 **Explicitly NOT covered:**
 - Protocol internals of FROST and MuSig2 -- partial coverage only
@@ -319,6 +323,7 @@ Every release must answer: **"Did the CT scope change?"**
 
 | Release | CT Scope Changed? | Details |
 |---------|-------------------|---------|
+| v3.22.0 | **Yes** | OpenCL CT layer (secp256k1_ct_sign.cl, secp256k1_ct_zk.cl); Metal CT layer (secp256k1_ct_sign.metal, secp256k1_ct_zk.metal); full C ABI with 80+ functions; BIP-39, Ethereum, Pedersen, ZK, Adaptor, MuSig2, FROST |
 | v3.21.0 | **Yes** | GPU CT layer (5 headers); GPU CT audit modules in gpu_audit_runner; GPU CT benchmarks in gpu_bench_unified |
 | v3.16.0 | **Yes** | CT nonce erasure (volatile fn-ptr trick); MuSig2/FROST dudect added; ct-arm64 ARM64 native CI |
 | v3.15.0 | **Yes** | Branchless `scalar_window` on RISC-V; `value_barrier` after mask; RISC-V `is_zero_mask` asm |
@@ -365,4 +370,4 @@ Every release must answer: **"Did the CT scope change?"**
 
 ---
 
-*UltrafastSecp256k1 v3.21.0 -- Security Claims*
+*UltrafastSecp256k1 v3.22.0 -- Security Claims*

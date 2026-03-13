@@ -29,21 +29,43 @@ Complete API documentation for CPU, CUDA, and WASM implementations.
    - [Wallet Address Generation](#wallet-address-generation)
    - [Wallet Signing](#wallet-signing)
    - [Wallet Recovery](#wallet-recovery)
-5. [Message Signing API](#message-signing-api)
-6. [Zero-Knowledge Proof API](#zero-knowledge-proof-api)
+5. [BIP-39 Mnemonic Seed Phrases](#bip-39-mnemonic-seed-phrases)
+6. [Message Signing API](#message-signing-api)
+7. [Zero-Knowledge Proof API](#zero-knowledge-proof-api)
    - [Knowledge Proof (Schnorr Sigma)](#knowledge-proof-schnorr-sigma)
    - [DLEQ Proof (Discrete Log Equality)](#dleq-proof-discrete-log-equality)
    - [Bulletproof Range Proof](#bulletproof-range-proof)
    - [Batch Operations](#zk-batch-operations)
-7. [CUDA API](#cuda-api)
+8. [CUDA API](#cuda-api)
    - [Data Structures](#cuda-data-structures)
    - [Field Operations](#cuda-field-operations)
    - [Point Operations](#cuda-point-operations)
    - [Batch Operations](#cuda-batch-operations)
    - [Signature Operations](#cuda-signature-operations)
-8. [WASM API](#wasm-api)
-9. [Performance Tips](#performance-tips)
-10. [Examples](#examples)
+9. [WASM API](#wasm-api)
+10. [C ABI (ufsecp)](#c-abi-ufsecp)
+    - [Context Lifecycle](#c-abi-context-lifecycle)
+    - [Private Key Operations](#c-abi-private-key-operations)
+    - [Public Key Operations](#c-abi-public-key-operations)
+    - [ECDSA](#c-abi-ecdsa)
+    - [Schnorr / BIP-340](#c-abi-schnorr)
+    - [ECDH](#c-abi-ecdh)
+    - [Hashing](#c-abi-hashing)
+    - [Addresses and WIF](#c-abi-addresses)
+    - [BIP-32 HD Keys](#c-abi-bip32)
+    - [Taproot / BIP-341](#c-abi-taproot)
+    - [BIP-39 Mnemonics](#c-abi-bip39)
+    - [Batch Verification](#c-abi-batch)
+    - [Multi-Scalar Multiplication](#c-abi-msm)
+    - [MuSig2 / BIP-327](#c-abi-musig2)
+    - [FROST Threshold Signatures](#c-abi-frost)
+    - [Adaptor Signatures](#c-abi-adaptor)
+    - [Pedersen Commitments](#c-abi-pedersen)
+    - [Zero-Knowledge Proofs](#c-abi-zk)
+    - [Multi-Coin Wallet](#c-abi-multicoin)
+    - [Ethereum](#c-abi-ethereum)
+11. [Performance Tips](#performance-tips)
+12. [Examples](#examples)
 
 ---
 
@@ -941,6 +963,110 @@ recover_address(const CoinParams& coin,
 
 ---
 
+## BIP-39 Mnemonic Seed Phrases
+
+**Namespace:** `secp256k1`
+
+**Header:**
+```cpp
+#include <secp256k1/bip39.hpp>
+```
+
+BIP-39 mnemonic code for generating deterministic keys. Converts entropy to
+human-readable word sequences and derives 512-bit seeds compatible with BIP-32.
+
+### Mnemonic Generation
+
+```cpp
+// Generate mnemonic from OS CSPRNG entropy (12 words = 16 bytes)
+auto [mnemonic, ok] = secp256k1::bip39_generate(16);
+
+// Generate from explicit entropy (24 words = 32 bytes)
+uint8_t entropy[32] = { /* ... */ };
+auto [mnemonic24, ok2] = secp256k1::bip39_generate(32, entropy);
+```
+
+```cpp
+std::pair<std::string, bool>
+bip39_generate(std::size_t entropy_bytes,
+               const std::uint8_t* entropy_in = nullptr);
+```
+
+**Parameters:**
+| Parameter | Description |
+|-----------|-------------|
+| `entropy_bytes` | 16 (12 words), 20 (15), 24 (18), 28 (21), or 32 (24 words) |
+| `entropy_in` | Optional explicit entropy; `nullptr` = use OS CSPRNG |
+
+**Returns:** `{mnemonic_string, success}`
+
+### Mnemonic Validation
+
+```cpp
+bool valid = secp256k1::bip39_validate("abandon abandon ... about");
+```
+
+```cpp
+bool bip39_validate(const std::string& mnemonic);
+```
+
+Validates word count (12/15/18/21/24), word membership in BIP-39 English wordlist,
+and SHA-256 checksum.
+
+### Seed Derivation
+
+```cpp
+auto [seed, ok] = secp256k1::bip39_mnemonic_to_seed(mnemonic, "my passphrase");
+// seed is std::array<uint8_t, 64> -- pass to bip32_master_key()
+```
+
+```cpp
+std::pair<std::array<std::uint8_t, 64>, bool>
+bip39_mnemonic_to_seed(const std::string& mnemonic,
+                       const std::string& passphrase = "");
+```
+
+Uses PBKDF2-HMAC-SHA512 with 2048 iterations. Salt = `"mnemonic" + passphrase`.
+
+### Mnemonic to Entropy
+
+```cpp
+auto [ent, ok] = secp256k1::bip39_mnemonic_to_entropy("abandon abandon ... about");
+// ent.data = raw entropy bytes, ent.length = byte count (16-32)
+```
+
+```cpp
+struct Bip39Entropy {
+    std::array<std::uint8_t, 32> data{};
+    std::size_t length = 0;
+};
+
+std::pair<Bip39Entropy, bool>
+bip39_mnemonic_to_entropy(const std::string& mnemonic);
+```
+
+### PBKDF2-HMAC-SHA512
+
+```cpp
+void pbkdf2_hmac_sha512(const std::uint8_t* password, std::size_t password_len,
+                         const std::uint8_t* salt, std::size_t salt_len,
+                         std::uint32_t iterations,
+                         std::uint8_t* output, std::size_t output_len);
+```
+
+Exposed for direct use and testing. Used internally by `bip39_mnemonic_to_seed()`.
+
+### Wordlist Access
+
+```cpp
+const char* const* words = secp256k1::bip39_wordlist_english();
+// words[0] == "abandon", words[2047] == "zoo"
+```
+
+Returns pointer to the 2048-word sorted English BIP-39 wordlist.
+
+---
+
 ## Message Signing API
 
 **Namespace:** `secp256k1::coins`
@@ -1695,6 +1821,319 @@ See [wasm/README.md](../wasm/README.md) for detailed build and usage instruction
 
 ---
 
+## C ABI (ufsecp)
+
+The stable C ABI is defined in `include/ufsecp/ufsecp.h`. All functions follow these rules:
+
+- **Opaque context**: `ufsecp_ctx*` -- one per thread, or externally synchronised
+- **Every function returns `ufsecp_error_t`** (0 = OK)
+- **All I/O is `uint8_t[]`** with fixed sizes -- no internal types leak
+- **Dual-layer CT**: signing/nonce/key-tweak always use the CT layer; verify/point-arith use the fast layer. No opt-in flag.
+- **Caller owns all buffers** -- library never allocates on behalf of caller (except `ctx_create`/`ctx_clone`)
+
+### Error Codes
+
+| Code | Name | Value |
+|------|------|-------|
+| `UFSECP_OK` | Success | 0 |
+| `UFSECP_ERR_NULL_ARG` | NULL pointer argument | 1 |
+| `UFSECP_ERR_BAD_KEY` | Invalid private key | 2 |
+| `UFSECP_ERR_BAD_PUBKEY` | Invalid public key | 3 |
+| `UFSECP_ERR_BAD_SIG` | Invalid signature | 4 |
+| `UFSECP_ERR_BAD_INPUT` | Invalid input data | 5 |
+| `UFSECP_ERR_VERIFY_FAIL` | Verification failed | 6 |
+| `UFSECP_ERR_ARITH` | Arithmetic error | 7 |
+| `UFSECP_ERR_SELFTEST` | Self-test failure | 8 |
+| `UFSECP_ERR_INTERNAL` | Internal error | 9 |
+| `UFSECP_ERR_BUF_TOO_SMALL` | Output buffer too small | 10 |
+
+### Size Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `UFSECP_PRIVKEY_LEN` | 32 | Private key |
+| `UFSECP_PUBKEY_COMPRESSED_LEN` | 33 | Compressed public key |
+| `UFSECP_PUBKEY_UNCOMPRESSED_LEN` | 65 | Uncompressed public key |
+| `UFSECP_PUBKEY_XONLY_LEN` | 32 | x-only public key (BIP-340) |
+| `UFSECP_SIG_COMPACT_LEN` | 64 | Compact R\|\|S / r\|\|s |
+| `UFSECP_SIG_DER_MAX_LEN` | 72 | Maximum DER-encoded ECDSA sig |
+| `UFSECP_HASH_LEN` | 32 | SHA-256 / Keccak-256 digest |
+| `UFSECP_HASH160_LEN` | 20 | RIPEMD160(SHA256) digest |
+| `UFSECP_SHARED_SECRET_LEN` | 32 | ECDH shared secret |
+| `UFSECP_BIP32_SERIALIZED_LEN` | 78 | BIP-32 extended key |
+
+<a id="c-abi-context-lifecycle"></a>
+### Context Lifecycle
+
+```c
+// Create context (runs self-test on first call)
+ufsecp_ctx* ctx = NULL;
+ufsecp_error_t err = ufsecp_ctx_create(&ctx);
+
+// Clone context (deep copy, for multi-thread use)
+ufsecp_ctx* ctx2 = NULL;
+ufsecp_ctx_clone(ctx, &ctx2);
+
+// Error inspection
+ufsecp_error_t last = ufsecp_last_error(ctx);
+const char* msg = ufsecp_last_error_msg(ctx);
+
+// FFI layout assertion
+size_t sz = ufsecp_ctx_size();
+
+// Destroy (NULL-safe)
+ufsecp_ctx_destroy(ctx);
+```
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_ctx_create` | `(ufsecp_ctx** ctx_out) -> error_t` | Create new context |
+| `ufsecp_ctx_clone` | `(const ctx*, ufsecp_ctx** ctx_out) -> error_t` | Deep copy context |
+| `ufsecp_ctx_destroy` | `(ctx*) -> void` | Free context (NULL-safe) |
+| `ufsecp_last_error` | `(const ctx*) -> error_t` | Last error code |
+| `ufsecp_last_error_msg` | `(const ctx*) -> const char*` | Last error message |
+| `ufsecp_ctx_size` | `(void) -> size_t` | Compiled ctx struct size |
+
+<a id="c-abi-private-key-operations"></a>
+### Private Key Operations
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_seckey_verify` | `(ctx, privkey[32]) -> error_t` | Validate private key (non-zero, < n) |
+| `ufsecp_seckey_negate` | `(ctx, privkey[32]) -> error_t` | Negate in-place: key <- -key mod n |
+| `ufsecp_seckey_tweak_add` | `(ctx, privkey[32], tweak[32]) -> error_t` | key <- (key + tweak) mod n |
+| `ufsecp_seckey_tweak_mul` | `(ctx, privkey[32], tweak[32]) -> error_t` | key <- (key * tweak) mod n |
+
+<a id="c-abi-public-key-operations"></a>
+### Public Key Operations
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_pubkey_create` | `(ctx, privkey[32], pubkey33_out[33]) -> error_t` | Compressed pubkey from privkey |
+| `ufsecp_pubkey_create_uncompressed` | `(ctx, privkey[32], pubkey65_out[65]) -> error_t` | Uncompressed pubkey from privkey |
+| `ufsecp_pubkey_parse` | `(ctx, input, input_len, pubkey33_out[33]) -> error_t` | Parse 33 or 65 bytes to compressed |
+| `ufsecp_pubkey_xonly` | `(ctx, privkey[32], xonly32_out[32]) -> error_t` | x-only pubkey (BIP-340) |
+| `ufsecp_pubkey_add` | `(ctx, a33[33], b33[33], out33[33]) -> error_t` | Point addition: out = a + b |
+| `ufsecp_pubkey_negate` | `(ctx, pubkey33[33], out33[33]) -> error_t` | Point negation: out = -P |
+| `ufsecp_pubkey_tweak_add` | `(ctx, pubkey33[33], tweak[32], out33[33]) -> error_t` | out = P + tweak*G |
+| `ufsecp_pubkey_tweak_mul` | `(ctx, pubkey33[33], tweak[32], out33[33]) -> error_t` | out = tweak * P |
+| `ufsecp_pubkey_combine` | `(ctx, pubkeys, n, out33[33]) -> error_t` | Sum N compressed pubkeys |
+
+<a id="c-abi-ecdsa"></a>
+### ECDSA
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_ecdsa_sign` | `(ctx, msg32[32], privkey[32], sig64_out[64]) -> error_t` | Sign (RFC 6979, low-S) |
+| `ufsecp_ecdsa_sign_verified` | `(ctx, msg32[32], privkey[32], sig64_out[64]) -> error_t` | Sign + verify (fault resistance) |
+| `ufsecp_ecdsa_verify` | `(ctx, msg32[32], sig64[64], pubkey33[33]) -> error_t` | Verify compact signature |
+| `ufsecp_ecdsa_sig_to_der` | `(ctx, sig64[64], der_out, der_len*) -> error_t` | Compact to DER encoding |
+| `ufsecp_ecdsa_sig_from_der` | `(ctx, der, der_len, sig64_out[64]) -> error_t` | DER to compact encoding |
+| `ufsecp_ecdsa_sign_recoverable` | `(ctx, msg32, privkey, sig64_out, recid_out*) -> error_t` | Sign with recovery id (0-3) |
+| `ufsecp_ecdsa_recover` | `(ctx, msg32, sig64, recid, pubkey33_out[33]) -> error_t` | Recover pubkey from recoverable sig |
+
+<a id="c-abi-schnorr"></a>
+### Schnorr / BIP-340
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_schnorr_sign` | `(ctx, msg32, privkey, aux_rand[32], sig64_out) -> error_t` | BIP-340 sign (aux_rand=zeros for deterministic) |
+| `ufsecp_schnorr_sign_verified` | `(ctx, msg32, privkey, aux_rand, sig64_out) -> error_t` | Sign + verify (fault resistance) |
+| `ufsecp_schnorr_verify` | `(ctx, msg32, sig64, pubkey_x[32]) -> error_t` | Verify BIP-340 signature |
+
+<a id="c-abi-ecdh"></a>
+### ECDH
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_ecdh` | `(ctx, privkey, pubkey33, secret32_out) -> error_t` | SHA256(compressed shared point) |
+| `ufsecp_ecdh_xonly` | `(ctx, privkey, pubkey33, secret32_out) -> error_t` | SHA256(x-coordinate) |
+| `ufsecp_ecdh_raw` | `(ctx, privkey, pubkey33, secret32_out) -> error_t` | Raw x-coordinate (no hash) |
+
+<a id="c-abi-hashing"></a>
+### Hashing
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_sha256` | `(data, len, digest32_out) -> error_t` | SHA-256 (HW-accel when available) |
+| `ufsecp_sha512` | `(data, len, digest64_out) -> error_t` | SHA-512 |
+| `ufsecp_hash160` | `(data, len, digest20_out) -> error_t` | RIPEMD160(SHA256) |
+| `ufsecp_tagged_hash` | `(tag, data, len, digest32_out) -> error_t` | BIP-340 tagged hash |
+
+<a id="c-abi-addresses"></a>
+### Addresses and WIF
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_addr_p2pkh` | `(ctx, pubkey33, network, addr_out, addr_len*) -> error_t` | P2PKH (Base58) |
+| `ufsecp_addr_p2wpkh` | `(ctx, pubkey33, network, addr_out, addr_len*) -> error_t` | P2WPKH (Bech32, SegWit v0) |
+| `ufsecp_addr_p2tr` | `(ctx, internal_key_x[32], network, addr_out, addr_len*) -> error_t` | P2TR (Bech32m, Taproot) |
+| `ufsecp_wif_encode` | `(ctx, privkey, compressed, network, wif_out, wif_len*) -> error_t` | Private key to WIF |
+| `ufsecp_wif_decode` | `(ctx, wif, privkey32_out, compressed_out*, network_out*) -> error_t` | WIF to private key |
+
+Network constants: `UFSECP_NET_MAINNET` (0), `UFSECP_NET_TESTNET` (1).
+
+<a id="c-abi-bip32"></a>
+### BIP-32 HD Keys
+
+Opaque key type: `ufsecp_bip32_key` (82 bytes, contains 78-byte serialised key + metadata).
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_bip32_master` | `(ctx, seed, seed_len, key_out*) -> error_t` | Master key from seed (16-64 bytes) |
+| `ufsecp_bip32_derive` | `(ctx, parent*, index, child_out*) -> error_t` | Single child derivation (>=0x80000000 = hardened) |
+| `ufsecp_bip32_derive_path` | `(ctx, master*, path_str, key_out*) -> error_t` | Full path, e.g. "m/44'/0'/0'/0/0" |
+| `ufsecp_bip32_privkey` | `(ctx, key*, privkey32_out) -> error_t` | Extract 32-byte private key |
+| `ufsecp_bip32_pubkey` | `(ctx, key*, pubkey33_out) -> error_t` | Extract 33-byte compressed public key |
+
+<a id="c-abi-taproot"></a>
+### Taproot / BIP-341
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_taproot_output_key` | `(ctx, internal_x[32], merkle_root, output_x_out[32], parity_out*) -> error_t` | Derive Taproot output key |
+| `ufsecp_taproot_tweak_seckey` | `(ctx, privkey[32], merkle_root, tweaked32_out[32]) -> error_t` | Tweak privkey for key-path spend |
+| `ufsecp_taproot_verify` | `(ctx, output_x, parity, internal_x, merkle_root, len) -> error_t` | Verify Taproot commitment |
+
+<a id="c-abi-bip39"></a>
+### BIP-39 Mnemonics
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_bip39_generate` | `(ctx, entropy_bytes, entropy_in, mnemonic_out, mnemonic_len*) -> error_t` | Generate mnemonic (12/15/18/21/24 words) |
+| `ufsecp_bip39_validate` | `(ctx, mnemonic) -> error_t` | Validate mnemonic (checksum + wordlist) |
+| `ufsecp_bip39_to_seed` | `(ctx, mnemonic, passphrase, seed64_out) -> error_t` | Mnemonic to 64-byte seed (PBKDF2) |
+| `ufsecp_bip39_to_entropy` | `(ctx, mnemonic, entropy_out, entropy_len*) -> error_t` | Mnemonic back to raw entropy |
+
+Entropy sizes: 16 (12 words), 20 (15), 24 (18), 28 (21), 32 (24 words). Pass `entropy_in=NULL` for random.
+
+<a id="c-abi-batch"></a>
+### Batch Verification
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_schnorr_batch_verify` | `(ctx, entries, n) -> error_t` | Verify N Schnorr sigs. Entry: 32 xonly + 32 msg + 64 sig = 128 bytes |
+| `ufsecp_ecdsa_batch_verify` | `(ctx, entries, n) -> error_t` | Verify N ECDSA sigs. Entry: 32 msg + 33 pubkey + 64 sig = 129 bytes |
+| `ufsecp_schnorr_batch_identify_invalid` | `(ctx, entries, n, invalid_out, invalid_count*) -> error_t` | Find indices of invalid Schnorr sigs |
+| `ufsecp_ecdsa_batch_identify_invalid` | `(ctx, entries, n, invalid_out, invalid_count*) -> error_t` | Find indices of invalid ECDSA sigs |
+
+<a id="c-abi-msm"></a>
+### Multi-Scalar Multiplication
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_shamir_trick` | `(ctx, a[32], P33[33], b[32], Q33[33], out33[33]) -> error_t` | Compute a*P + b*Q |
+| `ufsecp_multi_scalar_mul` | `(ctx, scalars, points, n, out33[33]) -> error_t` | Compute sum(scalars[i] * points[i]) |
+
+Scalars: 32-byte big-endian, contiguous. Points: 33-byte compressed, contiguous.
+
+<a id="c-abi-musig2"></a>
+### MuSig2 / BIP-327
+
+Size constants: `UFSECP_MUSIG2_PUBNONCE_LEN` (66), `UFSECP_MUSIG2_AGGNONCE_LEN` (66), `UFSECP_MUSIG2_KEYAGG_LEN` (165), `UFSECP_MUSIG2_SESSION_LEN` (165), `UFSECP_MUSIG2_SECNONCE_LEN` (64).
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_musig2_key_agg` | `(ctx, pubkeys, n, keyagg_out, agg_pubkey32_out) -> error_t` | Aggregate x-only pubkeys |
+| `ufsecp_musig2_nonce_gen` | `(ctx, privkey, pubkey32, agg_pubkey32, msg32, extra_in, secnonce_out, pubnonce_out) -> error_t` | Generate nonce pair |
+| `ufsecp_musig2_nonce_agg` | `(ctx, pubnonces, n, aggnonce_out) -> error_t` | Aggregate public nonces |
+| `ufsecp_musig2_start_sign_session` | `(ctx, aggnonce, keyagg, msg32, session_out) -> error_t` | Start signing session |
+| `ufsecp_musig2_partial_sign` | `(ctx, secnonce, privkey, keyagg, session, signer_idx, partial_sig32_out) -> error_t` | Produce partial signature |
+| `ufsecp_musig2_partial_verify` | `(ctx, partial_sig32, pubnonce, pubkey32, keyagg, session, signer_idx) -> error_t` | Verify partial signature |
+| `ufsecp_musig2_partial_sig_agg` | `(ctx, partial_sigs, n, session, sig64_out) -> error_t` | Aggregate partials to final BIP-340 sig |
+
+<a id="c-abi-frost"></a>
+### FROST Threshold Signatures
+
+Size constants: `UFSECP_FROST_SHARE_LEN` (36), `UFSECP_FROST_KEYPKG_LEN` (141), `UFSECP_FROST_NONCE_LEN` (64), `UFSECP_FROST_NONCE_COMMIT_LEN` (70).
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_frost_keygen_begin` | `(ctx, id, threshold, n, seed, commits_out, commits_len*, shares_out, shares_len*) -> error_t` | Key generation phase 1 |
+| `ufsecp_frost_keygen_finalize` | `(ctx, id, all_commits, commits_len, shares, shares_len, t, n, keypkg_out) -> error_t` | Key generation phase 2 |
+| `ufsecp_frost_sign_nonce_gen` | `(ctx, id, nonce_seed, nonce_out, nonce_commit_out) -> error_t` | Generate signing nonce |
+| `ufsecp_frost_sign` | `(ctx, keypkg, nonce, msg32, nonce_commits, n_signers, partial_sig_out[36]) -> error_t` | Produce partial signature |
+| `ufsecp_frost_verify_partial` | `(ctx, partial_sig[36], verification_share33[33], nonce_commits, n_signers, msg32, group_pubkey32) -> error_t` | Verify partial signature |
+| `ufsecp_frost_aggregate` | `(ctx, partial_sigs, n, nonce_commits, n_signers, group_pubkey32, msg32, sig64_out) -> error_t` | Aggregate to final Schnorr sig |
+
+<a id="c-abi-adaptor"></a>
+### Adaptor Signatures
+
+Size constants: `UFSECP_SCHNORR_ADAPTOR_SIG_LEN` (97), `UFSECP_ECDSA_ADAPTOR_SIG_LEN` (130).
+
+**Schnorr Adaptor:**
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_schnorr_adaptor_sign` | `(ctx, privkey, msg32, adaptor33, aux_rand, pre_sig_out[97]) -> error_t` | Pre-sign |
+| `ufsecp_schnorr_adaptor_verify` | `(ctx, pre_sig[97], pubkey_x, msg32, adaptor33) -> error_t` | Verify pre-signature |
+| `ufsecp_schnorr_adaptor_adapt` | `(ctx, pre_sig[97], secret[32], sig64_out) -> error_t` | Adapt to valid signature |
+| `ufsecp_schnorr_adaptor_extract` | `(ctx, pre_sig[97], sig64, secret32_out) -> error_t` | Extract adaptor secret |
+
+**ECDSA Adaptor:**
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_ecdsa_adaptor_sign` | `(ctx, privkey, msg32, adaptor33, pre_sig_out[130]) -> error_t` | Pre-sign |
+| `ufsecp_ecdsa_adaptor_verify` | `(ctx, pre_sig[130], pubkey33, msg32, adaptor33) -> error_t` | Verify pre-signature |
+| `ufsecp_ecdsa_adaptor_adapt` | `(ctx, pre_sig[130], secret[32], sig64_out) -> error_t` | Adapt to valid signature |
+| `ufsecp_ecdsa_adaptor_extract` | `(ctx, pre_sig[130], sig64, secret32_out) -> error_t` | Extract adaptor secret |
+
+<a id="c-abi-pedersen"></a>
+### Pedersen Commitments
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_pedersen_commit` | `(ctx, value[32], blinding[32], commitment33_out) -> error_t` | C = value*H + blinding*G |
+| `ufsecp_pedersen_verify` | `(ctx, commitment33, value[32], blinding[32]) -> error_t` | Verify commitment |
+| `ufsecp_pedersen_verify_sum` | `(ctx, pos, n_pos, neg, n_neg) -> error_t` | Verify balance: sum(pos) == sum(neg) |
+| `ufsecp_pedersen_blind_sum` | `(ctx, blinds_in, n_in, blinds_out, n_out, sum32_out) -> error_t` | Compute blinding factor sum |
+| `ufsecp_pedersen_switch_commit` | `(ctx, value, blinding, switch_blind, commitment33_out) -> error_t` | Switch commitment (3-gen) |
+
+<a id="c-abi-zk"></a>
+### Zero-Knowledge Proofs
+
+Size constants: `UFSECP_ZK_KNOWLEDGE_PROOF_LEN` (64), `UFSECP_ZK_DLEQ_PROOF_LEN` (64), `UFSECP_ZK_RANGE_PROOF_MAX_LEN` (675).
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_zk_knowledge_prove` | `(ctx, secret, pubkey33, msg32, aux_rand, proof_out[64]) -> error_t` | Prove knowledge of discrete log |
+| `ufsecp_zk_knowledge_verify` | `(ctx, proof[64], pubkey33, msg32) -> error_t` | Verify knowledge proof |
+| `ufsecp_zk_dleq_prove` | `(ctx, secret, G33, H33, P33, Q33, aux_rand, proof_out[64]) -> error_t` | Prove DLEQ: logG(P) == logH(Q) |
+| `ufsecp_zk_dleq_verify` | `(ctx, proof[64], G33, H33, P33, Q33) -> error_t` | Verify DLEQ proof |
+| `ufsecp_zk_range_prove` | `(ctx, value, blinding, commitment33, aux_rand, proof_out, proof_len*) -> error_t` | Bulletproof range proof |
+| `ufsecp_zk_range_verify` | `(ctx, commitment33, proof, proof_len) -> error_t` | Verify Bulletproof range proof |
+
+<a id="c-abi-multicoin"></a>
+### Multi-Coin Wallet
+
+Coin type constants (BIP-44): `UFSECP_COIN_BITCOIN` (0), `UFSECP_COIN_LITECOIN` (2), `UFSECP_COIN_DOGECOIN` (3), `UFSECP_COIN_DASH` (5), `UFSECP_COIN_ETHEREUM` (60), `UFSECP_COIN_BITCOIN_CASH` (145), `UFSECP_COIN_TRON` (195).
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_coin_address` | `(ctx, pubkey33, coin_type, testnet, addr_out, addr_len*) -> error_t` | Default address for any coin |
+| `ufsecp_coin_derive_from_seed` | `(ctx, seed, seed_len, coin_type, account, change, index, testnet, privkey_out, pubkey_out, addr_out, addr_len*) -> error_t` | Full derivation from seed |
+| `ufsecp_coin_wif_encode` | `(ctx, privkey, coin_type, testnet, wif_out, wif_len*) -> error_t` | WIF for any coin |
+| `ufsecp_btc_message_sign` | `(ctx, msg, msg_len, privkey, base64_out, base64_len*) -> error_t` | Bitcoin message sign (BIP-137) |
+| `ufsecp_btc_message_verify` | `(ctx, msg, msg_len, pubkey33, base64_sig) -> error_t` | Bitcoin message verify |
+| `ufsecp_btc_message_hash` | `(msg, msg_len, digest32_out) -> error_t` | Bitcoin message hash |
+
+<a id="c-abi-ethereum"></a>
+### Ethereum
+
+Available when built with `-DSECP256K1_BUILD_ETHEREUM=ON` (default ON).
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_keccak256` | `(data, len, digest32_out) -> error_t` | Keccak-256 hash |
+| `ufsecp_eth_address` | `(ctx, pubkey33, addr20_out) -> error_t` | 20-byte Ethereum address |
+| `ufsecp_eth_address_checksummed` | `(ctx, pubkey33, addr_out, addr_len*) -> error_t` | EIP-55 checksummed address string |
+| `ufsecp_eth_personal_hash` | `(msg, msg_len, digest32_out) -> error_t` | EIP-191 personal_sign hash |
+| `ufsecp_eth_sign` | `(ctx, msg32, privkey, r_out, s_out, v_out*, chain_id) -> error_t` | ECDSA with recovery (EIP-155 v) |
+| `ufsecp_eth_ecrecover` | `(ctx, msg32, r, s, v, addr20_out) -> error_t` | Recover address from v,r,s |
+
+---
+
 ## Performance Tips
 
 ### CPU
@@ -1859,7 +2298,7 @@ int main() {
 
 ## Version
 
-UltrafastSecp256k1 v3.6.0
+UltrafastSecp256k1 v3.22.0
 
 For more information, see the [README](../README.md) or [GitHub repository](https://github.com/shrec/UltrafastSecp256k1).
 

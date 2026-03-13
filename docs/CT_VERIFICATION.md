@@ -1,15 +1,17 @@
 # Constant-Time Verification
 
-**UltrafastSecp256k1 v3.21.0** -- CT Layer Methodology & Audit Status
+**UltrafastSecp256k1 v3.22.0** -- CT Layer Methodology & Audit Status
 
 ---
 
 ## Overview
 
-The constant-time (CT) layer provides side-channel resistant operations for secret key material. It is available on **both CPU and GPU backends**:
+The constant-time (CT) layer provides side-channel resistant operations for secret key material. It is available on **all backends**:
 
 - **CPU**: `secp256k1::ct::` namespace (headers in `cpu/include/secp256k1/ct/`)
-- **GPU**: `secp256k1::cuda::ct::` namespace (headers in `cuda/include/ct/`)
+- **CUDA GPU**: `secp256k1::cuda::ct::` namespace (headers in `cuda/include/ct/`)
+- **OpenCL GPU**: CT kernels in `opencl/kernels/` (`secp256k1_ct_sign.cl`, `secp256k1_ct_zk.cl`)
+- **Metal GPU**: CT shaders in `metal/shaders/` (`secp256k1_ct_sign.metal`, `secp256k1_ct_zk.metal`)
 
 The FAST layer (`secp256k1::fast::` on CPU, `secp256k1::cuda::` on GPU) is explicitly variable-time for maximum throughput on public data.
 
@@ -106,6 +108,33 @@ operations use the fast path since all inputs are public.
 
 **Test coverage:** `test_ct_smoke.cu` tests 8-9 verify CT knowledge prove + verify and
 CT DLEQ prove + verify round-trips on GPU. All 9/9 tests pass.
+
+### OpenCL CT Layer
+
+```
+opencl/kernels/
++-- secp256k1_ct_sign.cl    -- CT ECDSA sign, CT Schnorr sign, CT keypair create
++-- secp256k1_ct_zk.cl      -- CT ZK proving: knowledge proof, DLEQ proof
+```
+
+The OpenCL CT layer mirrors the CUDA CT implementation with OpenCL-native barriers:
+- `value_barrier()` via inline OpenCL `asm volatile` or volatile loads
+- Branchless masks and conditional moves on all secret-dependent paths
+- CT scalar multiplication with fixed iteration count (GLV + signed-digit)
+- Audited via `opencl_audit_runner` (27 modules including CT sections)
+
+### Metal CT Layer
+
+```
+metal/shaders/
++-- secp256k1_ct_sign.metal -- CT ECDSA sign, CT Schnorr sign, CT keypair create
++-- secp256k1_ct_zk.metal   -- CT ZK proving: knowledge proof, DLEQ proof
+```
+
+The Metal CT layer uses Metal Shading Language (MSL) with:
+- `value_barrier()` via threadgroup memory fence pattern
+- Identical algorithms to CUDA/OpenCL CT layers
+- Audited via `metal_audit_runner` (27 modules including CT sections)
 
 ---
 
@@ -311,13 +340,14 @@ CT properties verified on one CPU may not hold on another:
 
 ### 4. GPU CT Guarantees
 
-The GPU CT layer (`secp256k1::cuda::ct::`) provides **algorithmic** constant-time
+The GPU CT layers (CUDA `secp256k1::cuda::ct::`, OpenCL `secp256k1_ct_sign.cl`/`secp256k1_ct_zk.cl`,
+Metal `secp256k1_ct_sign.metal`/`secp256k1_ct_zk.metal`) provide **algorithmic** constant-time
 guarantees: no secret-dependent branches, no secret-dependent memory access patterns,
-fixed iteration counts.
+fixed iteration counts. All three GPU backends implement identical CT algorithms.
 
 **What GPU CT protects against:**
 - Software-level timing attacks from co-located GPU workloads
-- Branch divergence leaking scalar bits within a warp
+- Branch divergence leaking scalar bits within a warp/wavefront/threadgroup
 - Memory access pattern analysis via GPU profiling tools
 
 **What GPU CT does NOT protect against:**
@@ -326,8 +356,10 @@ fixed iteration counts.
 - Driver-level scheduling observation
 - Physical side-channels requiring oscilloscope-level measurements
 
-The GPU CT layer is tested via `test_ct_smoke` (7 functional tests) and integrated
-into the GPU audit runner (Section S6: CT Analysis). See the GPU audit section below.
+The GPU CT layers are tested via:
+- **CUDA**: `test_ct_smoke` (9 functional tests) + GPU audit runner (Section S6: CT Analysis)
+- **OpenCL**: `opencl_audit_runner` (27 modules including CT signing + CT ZK sections)
+- **Metal**: `metal_audit_runner` (27 modules including CT signing + CT ZK sections)
 
 ### 5. Experimental Protocols
 

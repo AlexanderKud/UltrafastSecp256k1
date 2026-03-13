@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **BIP-39 Mnemonic Seed Phrases** (`bip39.hpp`/`bip39.cpp`) -- entropy-to-mnemonic conversion
+  (12/15/18/21/24 words), mnemonic validation (word count, membership, checksum), seed derivation
+  via PBKDF2-HMAC-SHA512 (2048 rounds), mnemonic-to-entropy roundtrip. OS CSPRNG entropy source.
+  2048-word English wordlist from official BIP-39 specification. 57 tests across 8 test functions.
+  Registered in `run_selftest` (module 10/25) and `unified_audit_runner` (protocol_security).
 - **Zero-Knowledge Proof Layer** (`zk.hpp`/`zk.cpp`) -- non-interactive Schnorr knowledge proofs,
   DLEQ (discrete log equality) proofs, and Bulletproof range proofs (64-bit). All proving
   operations use CT layer (constant-time); verification uses FAST layer (public data).
