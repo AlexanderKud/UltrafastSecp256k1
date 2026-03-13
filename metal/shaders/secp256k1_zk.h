@@ -110,7 +110,7 @@ inline bool zk_knowledge_prove(thread const Scalar256 &secret,
     Scalar256 k_eff;
     if (ry_bytes[31] & 1) {
         k_eff = scalar_negate(k);
-        R_aff.y = field_neg(R_aff.y);
+        R_aff.y = field_negate(R_aff.y);
     } else {
         k_eff = k;
     }
@@ -285,8 +285,8 @@ inline bool zk_dleq_verify(thread const ZKDLEQProof &proof,
     JacobianPoint eQ = scalar_mul(Q_aff, proof.e);
 
     // Negate eP and eQ
-    eP.y = field_neg(eP.y);
-    eQ.y = field_neg(eQ.y);
+    eP.y = field_negate(eP.y);
+    eQ.y = field_negate(eQ.y);
 
     AffinePoint eP_aff = jacobian_to_affine(eP);
     AffinePoint eQ_aff = jacobian_to_affine(eQ);
@@ -697,4 +697,139 @@ inline bool range_verify_full(thread const RangeProofGPU &proof,
     for (int i = 0; i < 32; i++)
         if (z_bytes[i] != 0) return false;
     return true;
+}
+
+// =============================================================================
+// 4. Bulletproof Polynomial Check (fast partial verification)
+// =============================================================================
+// Verifies the polynomial commitment part only (no IPA).
+// Checks: t_hat * H + tau_x * G == z^2 * V + delta * H + x * T1 + x^2 * T2
+// Ported from CUDA range_proof_poly_check_device (zk.cuh).
+
+struct RangeProofPolyGPU {
+    AffinePoint A;       // vector commitment A
+    AffinePoint S;       // vector commitment S
+    AffinePoint T1;      // polynomial commitment T1
+    AffinePoint T2;      // polynomial commitment T2
+    Scalar256 tau_x;     // blinding for polynomial eval
+    Scalar256 t_hat;     // polynomial evaluation
+};
+
+inline bool range_proof_poly_check(thread const RangeProofPolyGPU &proof,
+                                    thread const AffinePoint &commitment,
+                                    thread const AffinePoint &H_gen)
+{
+    // Serialize A, S, V
+    uchar a_comp[33], s_comp[33], v_comp[33];
+    affine_to_compressed(proof.A, a_comp);
+    affine_to_compressed(proof.S, s_comp);
+    affine_to_compressed(commitment, v_comp);
+
+    uchar fs_buf[99];
+    for (int i = 0; i < 33; ++i) {
+        fs_buf[i]      = a_comp[i];
+        fs_buf[33 + i] = s_comp[i];
+        fs_buf[66 + i] = v_comp[i];
+    }
+
+    uchar y_hash[32], z_hash[32];
+    zk_tagged_hash_midstate(ZK_BULLETPROOF_Y_MIDSTATE, fs_buf, 99, y_hash);
+    zk_tagged_hash_midstate(ZK_BULLETPROOF_Z_MIDSTATE, fs_buf, 99, z_hash);
+
+    Scalar256 y = scalar_from_bytes(y_hash);
+    Scalar256 z = scalar_from_bytes(z_hash);
+
+    // Serialize T1, T2
+    uchar t1_comp[33], t2_comp[33];
+    affine_to_compressed(proof.T1, t1_comp);
+    affine_to_compressed(proof.T2, t2_comp);
+
+    uchar x_buf[130];
+    for (int i = 0; i < 33; ++i) { x_buf[i] = t1_comp[i]; x_buf[33 + i] = t2_comp[i]; }
+    scalar_to_bytes(y, x_buf + 66);
+    scalar_to_bytes(z, x_buf + 98);
+
+    uchar x_hash[32];
+    zk_tagged_hash_midstate(ZK_BULLETPROOF_X_MIDSTATE, x_buf, 130, x_hash);
+    Scalar256 x = scalar_from_bytes(x_hash);
+
+    // Compute delta(y,z) = (z - z^2) * sum(y^i) - z^3 * sum(2^i)
+    Scalar256 z2 = scalar_mul_mod_n(z, z);
+    Scalar256 z3 = scalar_mul_mod_n(z2, z);
+
+    // sum(y^i) for i in [0, 64)
+    Scalar256 sum_y;
+    for (int i = 0; i < 8; i++) sum_y.limbs[i] = 0;
+    sum_y.limbs[0] = 1;
+    Scalar256 y_pow = y;
+    for (int i = 1; i < 64; ++i) {
+        sum_y = scalar_add_mod_n(sum_y, y_pow);
+        y_pow = scalar_mul_mod_n(y_pow, y);
+    }
+
+    // sum(2^i) for i in [0, 64) = 2^64 - 1
+    Scalar256 sum_2;
+    for (int i = 0; i < 8; i++) sum_2.limbs[i] = 0;
+    sum_2.limbs[0] = 0xFFFFFFFF;
+    sum_2.limbs[1] = 0xFFFFFFFF;
+
+    Scalar256 z_minus_z2 = scalar_sub_mod_n(z, z2);
+    Scalar256 term1 = scalar_mul_mod_n(z_minus_z2, sum_y);
+    Scalar256 term2 = scalar_mul_mod_n(z3, sum_2);
+    Scalar256 delta = scalar_sub_mod_n(term1, term2);
+
+    // LHS = t_hat * H + tau_x * G
+    JacobianPoint tH = scalar_mul(H_gen, proof.t_hat);
+    JacobianPoint tauG = scalar_mul_generator_windowed(proof.tau_x);
+    JacobianPoint LHS = jacobian_add(tH, tauG);
+
+    // RHS = z^2 * V + delta * H + x * T1 + x^2 * T2
+    Scalar256 x2 = scalar_mul_mod_n(x, x);
+
+    JacobianPoint z2V = scalar_mul(commitment, z2);
+    JacobianPoint deltaH = scalar_mul(H_gen, delta);
+    JacobianPoint xT1 = scalar_mul(proof.T1, x);
+    JacobianPoint x2T2 = scalar_mul(proof.T2, x2);
+
+    JacobianPoint tmp_rhs = jacobian_add(z2V, deltaH);
+    JacobianPoint RHS = jacobian_add(tmp_rhs, xT1);
+    tmp_rhs = jacobian_add(RHS, x2T2);
+
+    // Compare LHS == RHS via Jacobian cross-multiply (0 field_inv)
+    {
+        FieldElement z1sq = field_sqr(LHS.z);
+        FieldElement z2sq = field_sqr(tmp_rhs.z);
+        FieldElement z1cu = field_mul(z1sq, LHS.z);
+        FieldElement z2cu = field_mul(z2sq, tmp_rhs.z);
+
+        FieldElement lx = field_mul(LHS.x, z2sq);
+        FieldElement rx_cmp = field_mul(tmp_rhs.x, z1sq);
+        FieldElement ly = field_mul(LHS.y, z2cu);
+        FieldElement ry = field_mul(tmp_rhs.y, z1cu);
+
+        FieldElement dx = field_sub(lx, rx_cmp);
+        FieldElement dy = field_sub(ly, ry);
+
+        uchar dx_b[32], dy_b[32];
+        field_to_bytes(dx, dx_b);
+        field_to_bytes(dy, dy_b);
+        for (int i = 0; i < 32; i++)
+            if (dx_b[i] != 0 || dy_b[i] != 0) return false;
+        return true;
+    }
+}
+
+// =============================================================================
+// 5. Pedersen Commitments
+// =============================================================================
+// Batch Pedersen commitment generation: C_i = v_i * H + r_i * G
+// Ported from CUDA pedersen.cuh.
+
+inline JacobianPoint pedersen_commit(thread const Scalar256 &value,
+                                      thread const Scalar256 &blinding,
+                                      thread const AffinePoint &H)
+{
+    JacobianPoint vH = scalar_mul(H, value);
+    JacobianPoint rG = scalar_mul_generator_windowed(blinding);
+    return jacobian_add(vH, rG);
 }
