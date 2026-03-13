@@ -388,6 +388,13 @@ inline JacobianPoint scalar_mul(thread const AffinePoint &base,
     return r;
 }
 
+// Overload for device address space base points (e.g. buffer arrays)
+inline JacobianPoint scalar_mul(device const AffinePoint &base,
+                                 thread const Scalar256 &k) {
+    AffinePoint local_base = base;
+    return scalar_mul(local_base, k);
+}
+
 // =============================================================================
 // GLV Endomorphism: phi(x,y) = (beta*x, y) where beta^3 == 1 (mod p)
 // =============================================================================

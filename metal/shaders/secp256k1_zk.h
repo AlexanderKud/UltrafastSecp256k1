@@ -374,6 +374,15 @@ inline void zk_tagged_hash_midstate(thread const ZKTagMidstate &midstate,
     sha256_final(ctx, out);
 }
 
+// Overload for constant address space midstates (e.g. global constants)
+inline void zk_tagged_hash_midstate(constant const ZKTagMidstate &midstate,
+                                     thread const uchar* data, uint data_len,
+                                     thread uchar out[32]) {
+    ZKTagMidstate local_ms;
+    for (int i = 0; i < 8; i++) local_ms.h[i] = midstate.h[i];
+    zk_tagged_hash_midstate(local_ms, data, data_len, out);
+}
+
 // field_from_bytes: big-endian bytes -> 8x32-bit limbs
 inline FieldElement field_from_bytes(thread const uchar bytes[32]) {
     FieldElement r;

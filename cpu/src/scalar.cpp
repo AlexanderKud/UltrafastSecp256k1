@@ -28,7 +28,7 @@ constexpr limbs4 ONE{1ULL, 0ULL, 0ULL, 0ULL};
 
 // Barrett constant: mu = floor(2^512 / ORDER), 5 non-zero limbs
 // mu = 0x1_00000000_00000001_4551231950B75FC4_402DA1732FC9BEC0
-constexpr std::array<std::uint64_t, 5> BARRETT_MU{
+[[maybe_unused]] constexpr std::array<std::uint64_t, 5> BARRETT_MU{
     0x402DA1732FC9BEC0ULL,
     0x4551231950B75FC4ULL,
     0x0000000000000001ULL,
