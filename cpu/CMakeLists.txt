@@ -31,6 +31,7 @@ set(SECP256K1_SOURCES
     src/multiscalar.cpp  # Multi-scalar multiplication (Strauss/Shamir)
     src/batch_verify.cpp # Batch ECDSA/Schnorr verification
     src/bip32.cpp        # BIP-32 HD key derivation
+    src/bip39.cpp        # BIP-39 mnemonic seed phrases
     src/musig2.cpp       # MuSig2 multi-signatures (BIP-327)
     src/ecdh.cpp         # ECDH key exchange
     src/recovery.cpp     # ECDSA public key recovery
@@ -743,6 +744,7 @@ if(BUILD_TESTING)
         tests/test_multiscalar_batch.cpp
         tests/test_bip32.cpp
         tests/test_bip32_vectors.cpp
+        tests/test_bip39.cpp
         tests/test_musig2.cpp
         tests/test_ecdh_recovery_taproot.cpp
         tests/test_edge_cases.cpp
@@ -844,6 +846,14 @@ if(BUILD_TESTING)
     target_link_libraries(test_bip32_vectors_standalone PRIVATE ${SECP256K1_LIB_NAME})
     target_compile_definitions(test_bip32_vectors_standalone PRIVATE STANDALONE_TEST)
     add_test(NAME bip32_vectors COMMAND test_bip32_vectors_standalone)
+
+    # Standalone BIP-39 mnemonic seed phrase tests
+    add_executable(test_bip39_standalone
+        tests/test_bip39.cpp
+    )
+    target_link_libraries(test_bip39_standalone PRIVATE ${SECP256K1_LIB_NAME})
+    target_compile_definitions(test_bip39_standalone PRIVATE STANDALONE_TEST)
+    add_test(NAME bip39 COMMAND test_bip39_standalone)
 
     # Standalone RFC 6979 ECDSA test vectors
     add_executable(test_rfc6979_vectors_standalone

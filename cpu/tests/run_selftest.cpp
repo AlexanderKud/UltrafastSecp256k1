@@ -29,6 +29,7 @@ int test_ecdsa_schnorr_run();
 int test_multiscalar_batch_run();
 int test_bip32_run();
 int test_bip32_vectors_run();
+int test_bip39_run();
 int test_musig2_run();
 int test_ecdh_recovery_taproot_run();
 int test_edge_cases_run();
@@ -63,6 +64,7 @@ static const TestModule MODULES[] = {
     { "multi-scalar & batch verify",      test_multiscalar_batch_run },
     { "BIP-32 HD derivation",             test_bip32_run },
     { "BIP-32 official test vectors TV1-5", test_bip32_vectors_run },
+    { "BIP-39 mnemonic seed phrases",        test_bip39_run },
     { "MuSig2",                             test_musig2_run },
     { "ECDH + recovery + taproot",        test_ecdh_recovery_taproot_run },
     { "edge cases & coverage gaps",      test_edge_cases_run },

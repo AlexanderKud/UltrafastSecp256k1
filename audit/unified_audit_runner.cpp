@@ -71,6 +71,7 @@ int test_ecdsa_schnorr_run();
 int test_multiscalar_batch_run();
 int test_bip32_run();
 int test_bip32_vectors_run();
+int test_bip39_run();
 int test_musig2_run();
 int test_ecdh_recovery_taproot_run();
 int test_edge_cases_run();
@@ -272,6 +273,7 @@ static const AuditModule ALL_MODULES[] = {
     // ===================================================================
     { "ecdsa_schnorr",     "ECDSA + Schnorr",                             "protocol_security", test_ecdsa_schnorr_run, false },
     { "bip32",             "BIP-32 HD derivation",                        "protocol_security", test_bip32_run, false },
+    { "bip39",             "BIP-39 mnemonic seed phrases",                "protocol_security", test_bip39_run, false },
     { "musig2",            "MuSig2",                                       "protocol_security", test_musig2_run, false },
     { "ecdh_recovery",     "ECDH + recovery + taproot",                   "protocol_security", test_ecdh_recovery_taproot_run, false },
     { "v4_features",       "v4 (Pedersen/FROST/etc)",                     "protocol_security", test_v4_features_run, false },
