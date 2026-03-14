@@ -5,6 +5,7 @@
 #include "secp256k1/bip39_wordlist.hpp"
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/bip32.hpp"  // hmac_sha512
+#include "secp256k1/detail/secure_erase.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -155,7 +156,7 @@ bip39_generate(size_t entropy_bytes, const uint8_t* entropy_in) {
     }
 
     // Clear sensitive data
-    std::memset(entropy, 0, sizeof(entropy));
+    detail::secure_erase(entropy, sizeof(entropy));
 
     return {mnemonic, true};
 }
@@ -207,7 +208,7 @@ bool bip39_validate(const std::string& mnemonic) {
     uint8_t expected_cs = hash[0] >> (8 - checksum_bits);
     uint8_t actual_cs = checksum_byte >> (8 - checksum_bits);
 
-    std::memset(entropy, 0, sizeof(entropy));
+    detail::secure_erase(entropy, sizeof(entropy));
     return expected_cs == actual_cs;
 }
 
@@ -281,13 +282,13 @@ bip39_mnemonic_to_entropy(const std::string& mnemonic) {
     uint8_t actual_cs = checksum_byte >> (8 - checksum_bits);
 
     if (expected_cs != actual_cs) {
-        std::memset(entropy, 0, sizeof(entropy));
+        detail::secure_erase(entropy, sizeof(entropy));
         return {ent, false};
     }
 
     std::memcpy(ent.data.data(), entropy, entropy_bytes);
     ent.length = entropy_bytes;
-    std::memset(entropy, 0, sizeof(entropy));
+    detail::secure_erase(entropy, sizeof(entropy));
 
     return {ent, true};
 }

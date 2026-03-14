@@ -644,14 +644,14 @@ UFSECP_API ufsecp_error_t ufsecp_frost_verify_partial(
     const uint8_t verification_share33[33],
     const uint8_t* nonce_commits, size_t n_signers,
     const uint8_t msg32[32],
-    const uint8_t group_pubkey32[32]);
+    const uint8_t group_pubkey33[33]);
 
 /** Aggregate FROST partial signatures into final Schnorr signature. */
 UFSECP_API ufsecp_error_t ufsecp_frost_aggregate(
     ufsecp_ctx* ctx,
     const uint8_t* partial_sigs, size_t n,
     const uint8_t* nonce_commits, size_t n_signers,
-    const uint8_t group_pubkey32[32],
+    const uint8_t group_pubkey33[33],
     const uint8_t msg32[32],
     uint8_t sig64_out[64]);
 
