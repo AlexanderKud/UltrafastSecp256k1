@@ -129,3 +129,34 @@ jobs:
             -Dsonar.cfamily.compile-commands=${{ env.BUILD_WRAPPER_OUT_DIR }}/compile_commands.json
             -Dsonar.cfamily.llvm-cov.reportPath=build/sonar/llvm-cov-report.txt
             -Dsonar.host.url=https://sonarcloud.io
+
+      - name: Dump open bugs on new code (diagnostic)
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          # Wait for the CE task to finish processing the uploaded report
+          TASK_ID=$(grep ceTaskId .scannerwork/report-task.txt | cut -d= -f2)
+          echo "CE Task ID: $TASK_ID"
+          for i in $(seq 1 60); do
+            STATUS=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
+              "https://sonarcloud.io/api/ce/task?id=$TASK_ID" | jq -r '.task.status // "UNKNOWN"')
+            echo "  Attempt $i: status=$STATUS"
+            if [ "$STATUS" = "SUCCESS" ] || [ "$STATUS" = "FAILED" ]; then break; fi
+            sleep 5
+          done
+          echo "---"
+          echo "=== OPEN BUGS (all) on branch ${{ github.ref_name }} ==="
+          curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
+            "https://sonarcloud.io/api/issues/search?componentKeys=shrec_UltrafastSecp256k1&branch=${{ github.ref_name }}&types=BUG&statuses=OPEN,CONFIRMED,REOPENED&ps=50" \
+            | jq -r '.issues[]? | "\(.component):\(.line) [\(.rule)] \(.severity) -- \(.message)"' || echo "(query failed or empty)"
+          echo "---"
+          echo "=== OPEN BUGS with SE tag ==="
+          curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
+            "https://sonarcloud.io/api/issues/search?componentKeys=shrec_UltrafastSecp256k1&branch=${{ github.ref_name }}&types=BUG&statuses=OPEN,CONFIRMED,REOPENED&tags=symbolic-execution&ps=50" \
+            | jq -r '.issues[]? | "\(.component):\(.line) [\(.rule)] \(.severity) -- \(.message)"' || echo "(query failed or empty)"
+          echo "---"
+          echo "=== Quality Gate status ==="
+          curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
+            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=shrec_UltrafastSecp256k1&branch=${{ github.ref_name }}" \
+            | jq '.' || echo "(query failed)"
