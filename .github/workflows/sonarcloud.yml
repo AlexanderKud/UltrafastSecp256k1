@@ -119,30 +119,6 @@ jobs:
             echo "::warning::Coverage report is suspiciously small ($LINES lines)"
           fi
 
-      - name: Configure issue exclusions via API
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          # Set multicriteria issue exclusions server-side (belt+suspenders with sonar-project.properties)
-          ENTRIES='[
-            {"ruleKey":"cpp:S876","resourceKey":"**/*"},
-            {"ruleKey":"cpp:S3519","resourceKey":"**/sha256.hpp"},
-            {"ruleKey":"cpp:S3519","resourceKey":"**/point.cpp"},
-            {"ruleKey":"cpp:S3519","resourceKey":"**/sha512.hpp"},
-            {"ruleKey":"cpp:S2637","resourceKey":"**/ufsecp_impl.cpp"},
-            {"ruleKey":"cpp:S2259","resourceKey":"**/ufsecp_impl.cpp"}
-          ]'
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "https://sonarcloud.io/api/settings/set" \
-            -H "Authorization: Bearer $SONAR_TOKEN" \
-            -d "key=sonar.issue.ignore.multicriteria" \
-            -d "component=shrec_UltrafastSecp256k1" \
-            --data-urlencode "fieldValues=$ENTRIES")
-          echo "Settings API response: HTTP $HTTP_CODE"
-          if [ "$HTTP_CODE" != "204" ]; then
-            echo "::warning::Could not set server-side issue exclusions (HTTP $HTTP_CODE). Relying on sonar-project.properties."
-          fi
-
       - name: Run SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9 # v7.0.0
         env:
@@ -153,9 +129,8 @@ jobs:
             -Dsonar.cfamily.compile-commands=${{ env.BUILD_WRAPPER_OUT_DIR }}/compile_commands.json
             -Dsonar.cfamily.llvm-cov.reportPath=build/sonar/llvm-cov-report.txt
             -Dsonar.host.url=https://sonarcloud.io
-            -Dsonar.verbose=true
 
-      - name: Dump open bugs on new code (diagnostic)
+      - name: Quality Gate diagnostic
         if: always()
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -163,7 +138,6 @@ jobs:
           # Wait for the CE task to finish processing the uploaded report
           TASK_ID=$(grep ceTaskId .scannerwork/report-task.txt | cut -d= -f2)
           echo "CE Task ID: $TASK_ID"
-          ANALYSIS_ID=""
           for i in $(seq 1 60); do
             TASK_JSON=$(curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
               "https://sonarcloud.io/api/ce/task?id=$TASK_ID&additionalFields=warnings")
@@ -171,41 +145,14 @@ jobs:
             echo "  Attempt $i: status=$STATUS"
             if [ "$STATUS" = "SUCCESS" ] || [ "$STATUS" = "FAILED" ]; then
               ANALYSIS_ID=$(echo "$TASK_JSON" | jq -r '.task.analysisId // empty')
-              WARNINGS=$(echo "$TASK_JSON" | jq -r '.task.warnings[]? // empty')
-              if [ -n "$WARNINGS" ]; then
-                echo "CE Warnings: $WARNINGS"
+              echo "Analysis ID: $ANALYSIS_ID"
+              # Try quality gate by analysis ID
+              if [ -n "$ANALYSIS_ID" ]; then
+                curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
+                  "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$ANALYSIS_ID" \
+                  | jq '.' 2>/dev/null || echo "(quality gate query blocked by free plan)"
               fi
               break
             fi
             sleep 5
           done
-          echo "Analysis ID: $ANALYSIS_ID"
-          echo "---"
-
-          # Try quality gate by analysis ID (bypasses branch restriction)
-          if [ -n "$ANALYSIS_ID" ]; then
-            echo "=== Quality Gate by analysis ID ==="
-            curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
-              "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$ANALYSIS_ID" \
-              | jq '.' || echo "(query failed)"
-            echo "---"
-          fi
-
-          # Try to query issues (may fail on free plan for non-main branches)
-          echo "=== OPEN BUGS (all) on branch ${{ github.ref_name }} ==="
-          curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
-            "https://sonarcloud.io/api/issues/search?componentKeys=shrec_UltrafastSecp256k1&branch=${{ github.ref_name }}&types=BUG&statuses=OPEN,CONFIRMED,REOPENED&ps=50" \
-            | jq -r '.issues[]? | "\(.component):\(.line) [\(.rule)] \(.severity) -- \(.message)"' || echo "(query failed or empty)"
-          echo "---"
-          echo "=== OPEN BUGS with SE tag ==="
-          curl -s -H "Authorization: Bearer $SONAR_TOKEN" \
-            "https://sonarcloud.io/api/issues/search?componentKeys=shrec_UltrafastSecp256k1&branch=${{ github.ref_name }}&types=BUG&statuses=OPEN,CONFIRMED,REOPENED&tags=symbolic-execution&ps=50" \
-            | jq -r '.issues[]? | "\(.component):\(.line) [\(.rule)] \(.severity) -- \(.message)"' || echo "(query failed or empty)"
-
-          # Dump scanner-side verbose issue log (grep for SE issues from verbose output)
-          echo "---"
-          echo "=== Scanner work files ==="
-          ls -la .scannerwork/ 2>/dev/null || true
-          echo "---"
-          echo "=== report-task.txt ==="
-          cat .scannerwork/report-task.txt 2>/dev/null || true
