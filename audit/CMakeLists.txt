@@ -153,6 +153,19 @@ target_compile_definitions(test_adversarial_protocol_standalone PRIVATE UFSECP_B
 add_test(NAME adversarial_protocol COMMAND test_adversarial_protocol_standalone)
 set_tests_properties(adversarial_protocol PROPERTIES TIMEOUT 600)
 
+# -- ECIES regression + C ABI prefix enforcement ----------------------------
+add_executable(test_ecies_regression_standalone test_ecies_regression.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_ecies_regression_standalone)
+target_include_directories(test_ecies_regression_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_ecies_regression_standalone PRIVATE
+    UFSECP_BUILDING STANDALONE_ECIES_REGRESSION)
+add_test(NAME ecies_regression COMMAND test_ecies_regression_standalone)
+set_tests_properties(ecies_regression PROPERTIES TIMEOUT 120 LABELS "audit")
+
 # -- Diagnostic: ct::scalar_mul step-by-step comparison --------------------
 add_executable(diag_scalar_mul ${CPU_TESTS_DIR}/diag_scalar_mul.cpp)
 audit_target_defaults(diag_scalar_mul)
@@ -362,6 +375,7 @@ add_executable(unified_audit_runner
     test_musig2_bip327_vectors.cpp
     test_ffi_round_trip.cpp
     test_adversarial_protocol.cpp
+    test_ecies_regression.cpp
     audit_fuzz.cpp
     test_fuzz_parsers.cpp
     test_fuzz_address_bip32_ffi.cpp

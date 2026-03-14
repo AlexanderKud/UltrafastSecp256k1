@@ -2,9 +2,9 @@ name: Security Audit
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   schedule:
     # Weekly Monday 06:00 UTC — catch new CVEs
     - cron: '0 6 * * 1'
@@ -169,12 +169,12 @@ jobs:
         env:
           MSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
-          # MSan + no-ASM + Debug + origin-tracking makes precompute table
-          # build extremely slow; many tests timeout.  halt_on_error=1 will
-          # print real MSan errors in the log (visible for debugging).
-          # Tolerate CTest exit code since timeouts are expected.
+          # MSan + no-ASM + Debug + origin-tracking is slow.
+          # Exclude known-slow tests; generous timeout for the rest.
+          # halt_on_error=1 ensures MSan violations produce non-zero exit.
+          # No '|| true' -- this is a hard gate: any MSan error fails the job.
           ctest --test-dir build --output-on-failure -j"$(nproc)" \
-            -E "^(ct_sidechannel|selftest|unified_audit)" --timeout 3600 || true
+            -E "^(ct_sidechannel|selftest|unified_audit)" --timeout 7200
 
   # ── Thread Sanitizer (data races) ───────────────────────────────────────
   tsan:
