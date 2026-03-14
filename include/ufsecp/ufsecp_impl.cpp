@@ -518,6 +518,8 @@ ufsecp_error_t ufsecp_ecdsa_verify(ufsecp_ctx* ctx,
         return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "non-canonical compact sig");
     }
     auto pk = point_from_compressed(pubkey33);
+    if (pk.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid public key");
 
     if (!secp256k1::ecdsa_verify(msg, pk, ecdsasig)) {
         return ctx_set_err(ctx, UFSECP_ERR_VERIFY_FAIL, "ECDSA verify failed");
@@ -1048,12 +1050,12 @@ static secp256k1::ExtendedKey extkey_from_uf(const ufsecp_bip32_key* k) {
     ek.child_number = (uint32_t(k->data[9]) << 24)  | (uint32_t(k->data[10]) << 16) |
                       (uint32_t(k->data[11]) << 8)   | uint32_t(k->data[12]);
     std::memcpy(ek.chain_code.data(), k->data + 13, 32);
+    std::memcpy(ek.key.data(), k->data + 46, 32);
     if (k->is_private) {
-        std::memcpy(ek.key.data(), k->data + 46, 32);
         ek.is_private = true;
     } else {
-        std::memcpy(ek.key.data(), k->data + 46, 32);
         ek.is_private = false;
+        ek.pub_prefix = k->data[45];
     }
     return ek;
 }
@@ -2075,6 +2077,8 @@ ufsecp_error_t ufsecp_schnorr_adaptor_verify(
     ctx_clear_err(ctx);
     secp256k1::SchnorrAdaptorSig as;
     as.R_hat = point_from_compressed(pre_sig);
+    if (as.R_hat.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor R_hat");
     Scalar shat;
     if (!scalar_parse_strict(pre_sig + 33, shat))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig scalar");
@@ -2104,6 +2108,8 @@ ufsecp_error_t ufsecp_schnorr_adaptor_adapt(
     ctx_clear_err(ctx);
     secp256k1::SchnorrAdaptorSig as;
     as.R_hat = point_from_compressed(pre_sig);
+    if (as.R_hat.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor R_hat");
     Scalar shat;
     if (!scalar_parse_strict(pre_sig + 33, shat))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig scalar");
@@ -2128,13 +2134,16 @@ ufsecp_error_t ufsecp_schnorr_adaptor_extract(
     ctx_clear_err(ctx);
     secp256k1::SchnorrAdaptorSig as;
     as.R_hat = point_from_compressed(pre_sig);
+    if (as.R_hat.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor R_hat");
     Scalar shat;
     if (!scalar_parse_strict(pre_sig + 33, shat))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig scalar");
     as.s_hat = shat;
     as.needs_negation = (pre_sig[65] != 0);
     secp256k1::SchnorrSignature sig;
-    secp256k1::SchnorrSignature::parse_strict(sig64, sig);
+    if (!secp256k1::SchnorrSignature::parse_strict(sig64, sig))
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid schnorr signature");
     auto [secret, ok] = secp256k1::schnorr_adaptor_extract(as, sig);
     if (!ok)
         return ctx_set_err(ctx, UFSECP_ERR_INTERNAL, "adaptor extract failed");
@@ -2184,6 +2193,8 @@ ufsecp_error_t ufsecp_ecdsa_adaptor_verify(
     ctx_clear_err(ctx);
     secp256k1::ECDSAAdaptorSig as;
     as.R_hat = point_from_compressed(pre_sig);
+    if (as.R_hat.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor R_hat");
     Scalar shat;
     if (!scalar_parse_strict(pre_sig + 33, shat))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig scalar");
@@ -2212,6 +2223,8 @@ ufsecp_error_t ufsecp_ecdsa_adaptor_adapt(
     ctx_clear_err(ctx);
     secp256k1::ECDSAAdaptorSig as;
     as.R_hat = point_from_compressed(pre_sig);
+    if (as.R_hat.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor R_hat");
     Scalar shat;
     if (!scalar_parse_strict(pre_sig + 33, shat))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig scalar");
@@ -2237,6 +2250,8 @@ ufsecp_error_t ufsecp_ecdsa_adaptor_extract(
     ctx_clear_err(ctx);
     secp256k1::ECDSAAdaptorSig as;
     as.R_hat = point_from_compressed(pre_sig);
+    if (as.R_hat.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor R_hat");
     Scalar shat;
     if (!scalar_parse_strict(pre_sig + 33, shat))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig scalar");
@@ -2288,8 +2303,9 @@ ufsecp_error_t ufsecp_pedersen_verify(ufsecp_ctx* ctx,
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "value >= n");
     if (!scalar_parse_strict(blinding, b))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "blinding >= n");
-    if (!secp256k1::pedersen_verify(secp256k1::PedersenCommitment{point_from_compressed(commitment33)}, v, b))
+    if (!secp256k1::pedersen_verify(secp256k1::PedersenCommitment{point_from_compressed(commitment33)}, v, b)) {
         return ctx_set_err(ctx, UFSECP_ERR_VERIFY_FAIL, "Pedersen verify failed");
+    }
     return UFSECP_OK;
 }
 
@@ -2299,10 +2315,18 @@ ufsecp_error_t ufsecp_pedersen_verify_sum(ufsecp_ctx* ctx,
     if (!ctx || (!pos && n_pos > 0) || (!neg && n_neg > 0)) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
     std::vector<secp256k1::PedersenCommitment> pcs(n_pos), ncs(n_neg);
-    for (size_t i = 0; i < n_pos; ++i)
-        pcs[i] = secp256k1::PedersenCommitment{point_from_compressed(pos + i * 33)};
-    for (size_t i = 0; i < n_neg; ++i)
-        ncs[i] = secp256k1::PedersenCommitment{point_from_compressed(neg + i * 33)};
+    for (size_t i = 0; i < n_pos; ++i) {
+        auto p = point_from_compressed(pos + i * 33);
+        if (p.is_infinity())
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid positive commitment");
+        pcs[i] = secp256k1::PedersenCommitment{p};
+    }
+    for (size_t i = 0; i < n_neg; ++i) {
+        auto p = point_from_compressed(neg + i * 33);
+        if (p.is_infinity())
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid negative commitment");
+        ncs[i] = secp256k1::PedersenCommitment{p};
+    }
     if (!secp256k1::pedersen_verify_sum(pcs.data(), n_pos, ncs.data(), n_neg))
         return ctx_set_err(ctx, UFSECP_ERR_VERIFY_FAIL, "Pedersen sum verify failed");
     return UFSECP_OK;
@@ -2415,6 +2439,8 @@ ufsecp_error_t ufsecp_zk_dleq_prove(
     auto H = point_from_compressed(H33);
     auto P = point_from_compressed(P33);
     auto Q = point_from_compressed(Q33);
+    if (G.is_infinity() || H.is_infinity() || P.is_infinity() || Q.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid DLEQ point");
     std::array<uint8_t, 32> aux_arr;
     std::memcpy(aux_arr.data(), aux_rand, 32);
     auto proof = secp256k1::zk::dleq_prove(s, G, H, P, Q, aux_arr);
@@ -2435,6 +2461,8 @@ ufsecp_error_t ufsecp_zk_dleq_verify(
     auto H = point_from_compressed(H33);
     auto P = point_from_compressed(P33);
     auto Q = point_from_compressed(Q33);
+    if (G.is_infinity() || H.is_infinity() || P.is_infinity() || Q.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid DLEQ point");
     secp256k1::zk::DLEQProof dp;
     if (!secp256k1::zk::DLEQProof::deserialize(proof, dp))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid DLEQ proof");
@@ -2496,8 +2524,10 @@ ufsecp_error_t ufsecp_zk_range_verify(
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "range proof too short");
     secp256k1::zk::RangeProof rp;
     size_t off = 0;
+    bool point_ok = true;
     auto read_point = [&]() -> Point {
         auto p = point_from_compressed(proof + off);
+        if (p.is_infinity()) point_ok = false;
         off += 33;
         return p;
     };
@@ -2515,6 +2545,8 @@ ufsecp_error_t ufsecp_zk_range_verify(
     for (int i = 0; i < 6; ++i) rp.L[i] = read_point();
     for (int i = 0; i < 6; ++i) rp.R[i] = read_point();
     rp.a = read_scalar(); rp.b = read_scalar();
+    if (!point_ok)
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid point in range proof");
     if (!scalar_ok)
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid scalar in range proof");
     auto commit = secp256k1::PedersenCommitment{point_from_compressed(commitment33)};

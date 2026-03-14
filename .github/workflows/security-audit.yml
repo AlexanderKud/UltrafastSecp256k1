@@ -135,6 +135,29 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             clang-17 lld-17 ninja-build ccache libc++-17-dev libc++abi-17-dev
 
+      - name: Cache MSan-instrumented libc++
+        id: msan-libcxx-cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: /tmp/msan-libcxx
+          key: msan-libcxx-clang17-v1
+
+      - name: Build MSan-instrumented libc++
+        if: steps.msan-libcxx-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch llvmorg-17.0.6 \
+            https://github.com/llvm/llvm-project.git /tmp/llvm-project
+          cmake -G Ninja -S /tmp/llvm-project/runtimes -B /tmp/msan-libcxx-build \
+            -DCMAKE_C_COMPILER=clang-17 \
+            -DCMAKE_CXX_COMPILER=clang++-17 \
+            -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_USE_SANITIZER=MemoryWithOrigins
+          cmake --build /tmp/msan-libcxx-build -j"$(nproc)" -- cxx cxxabi
+          # Install to a persistent path for caching
+          DESTDIR=/tmp/msan-libcxx cmake --install /tmp/msan-libcxx-build --prefix /usr
+          rm -rf /tmp/llvm-project /tmp/msan-libcxx-build
+
       - name: Cache ccache
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
@@ -150,6 +173,8 @@ jobs:
           ccache -z
 
       - name: Configure with MSan
+        env:
+          MSAN_LIBCXX: /tmp/msan-libcxx/usr
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
@@ -158,8 +183,8 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DSECP256K1_MARCH=x86-64-v3 \
-            -DCMAKE_CXX_FLAGS="-fsanitize=memory -fno-omit-frame-pointer -fsanitize-memory-track-origins=2 -stdlib=libc++" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=memory -stdlib=libc++ -lc++abi" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=memory -fno-omit-frame-pointer -fsanitize-memory-track-origins=2 -stdlib=libc++ -nostdinc++ -isystem ${MSAN_LIBCXX}/include/c++/v1" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=memory -stdlib=libc++ -L${MSAN_LIBCXX}/lib -lc++abi -Wl,-rpath,${MSAN_LIBCXX}/lib" \
             -DSECP256K1_USE_ASM=OFF \
             -DSECP256K1_BUILD_TESTS=ON
 
