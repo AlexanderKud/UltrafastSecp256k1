@@ -77,6 +77,10 @@ public class Example {
         int ufsecp_taproot_output_key(Pointer ctx, byte[] intX32, Pointer mr, byte[] outX32, IntByReference parity);
         int ufsecp_taproot_verify(Pointer ctx, byte[] outX32, int parity, byte[] intX32, Pointer mr, long mrLen);
 
+        // Pedersen
+        int ufsecp_pedersen_commit(Pointer ctx, byte[] value32, byte[] blinding32, byte[] commit33);
+        int ufsecp_pedersen_verify(Pointer ctx, byte[] commit33, byte[] value32, byte[] blinding32);
+
         // GPU
         int ufsecp_gpu_backend_count(int[] ids, int max);
         String ufsecp_gpu_backend_name(int bid);
@@ -248,6 +252,17 @@ public class Example {
         System.out.printf("  %-20s %s%n", "Output key:", hexs(outputX));
         System.out.printf("  %-20s %d%n", "Parity:", parity.getValue());
         vrc = lib.ufsecp_taproot_verify(ctx, outputX, parity.getValue(), xonly, null, 0);
+        System.out.printf("  %-20s %s%n", "Verify:", vrc == 0 ? "VALID" : "INVALID");
+        System.out.println();
+
+        // 10. Pedersen Commitment
+        System.out.println("[10] Pedersen Commitment");
+        byte[] pedValue = new byte[32]; pedValue[31] = 42;
+        byte[] pedBlinding = new byte[32]; pedBlinding[31] = 7;
+        byte[] pedCommit = new byte[33];
+        check(lib.ufsecp_pedersen_commit(ctx, pedValue, pedBlinding, pedCommit), "pedersen_commit");
+        System.out.printf("  %-20s %s%n", "Commitment:", hexs(pedCommit));
+        vrc = lib.ufsecp_pedersen_verify(ctx, pedCommit, pedValue, pedBlinding);
         System.out.printf("  %-20s %s%n", "Verify:", vrc == 0 ? "VALID" : "INVALID");
         System.out.println();
     }

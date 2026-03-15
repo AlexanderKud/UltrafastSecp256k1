@@ -196,6 +196,19 @@ func demoCPU(ctx *C.ufsecp_ctx) {
 	rc = C.ufsecp_taproot_verify(ctx, (*C.uint8_t)(&outputX[0]), parity, (*C.uint8_t)(&xonly[0]), nil, 0)
 	fmt.Printf("  Verify:             %s\n", boolStr(rc == 0, "VALID", "INVALID"))
 	fmt.Println()
+
+	// 10. Pedersen Commitment
+	fmt.Println("[10] Pedersen Commitment")
+	var pedValue [32]byte
+	pedValue[31] = 42
+	var pedBlinding [32]byte
+	pedBlinding[31] = 7
+	var pedCommit [33]byte
+	check(C.ufsecp_pedersen_commit(ctx, (*C.uint8_t)(&pedValue[0]), (*C.uint8_t)(&pedBlinding[0]), (*C.uint8_t)(&pedCommit[0])), "pedersen_commit")
+	fmt.Printf("  Commitment:         %s\n", hexs(pedCommit[:]))
+	rc = C.ufsecp_pedersen_verify(ctx, (*C.uint8_t)(&pedCommit[0]), (*C.uint8_t)(&pedValue[0]), (*C.uint8_t)(&pedBlinding[0]))
+	fmt.Printf("  Verify:             %s\n", boolStr(rc == 0, "VALID", "INVALID"))
+	fmt.Println()
 }
 
 func demoGPU(cpuCtx *C.ufsecp_ctx) {

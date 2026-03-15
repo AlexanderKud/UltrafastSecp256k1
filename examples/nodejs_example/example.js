@@ -2,7 +2,8 @@
  * UltrafastSecp256k1 -- Node.js Example (CPU + GPU)
  *
  * Demonstrates the ufsecp C ABI via koffi FFI: key ops, ECDSA, Schnorr,
- * ECDH, hashing, Bitcoin addresses, and GPU batch operations.
+ * ECDH, hashing, Bitcoin addresses, WIF, BIP-32, Taproot, Pedersen,
+ * and GPU batch operations.
  *
  * Requirements:
  *   npm install koffi
@@ -64,6 +65,20 @@ const addr_p2tr       = lib.func('int ufsecp_addr_p2tr(void *ctx, const uint8_t 
 
 // WIF
 const wif_encode      = lib.func('int ufsecp_wif_encode(void *ctx, const uint8_t *sk32, int comp, int net, uint8_t *wif, _Inout_ size_t *len)');
+
+// BIP-32
+const bip32_master    = lib.func('int ufsecp_bip32_master(void *ctx, const uint8_t *seed, size_t seed_len, uint8_t *key82)');
+const bip32_derive    = lib.func('int ufsecp_bip32_derive_path(void *ctx, const uint8_t *master82, const char *path, uint8_t *key82)');
+const bip32_privkey   = lib.func('int ufsecp_bip32_privkey(void *ctx, const uint8_t *key82, uint8_t *priv32)');
+const bip32_pubkey    = lib.func('int ufsecp_bip32_pubkey(void *ctx, const uint8_t *key82, uint8_t *pub33)');
+
+// Taproot
+const taproot_output  = lib.func('int ufsecp_taproot_output_key(void *ctx, const uint8_t *ix32, const uint8_t *mr, uint8_t *ox32, _Out_ int *parity)');
+const taproot_verify  = lib.func('int ufsecp_taproot_verify(void *ctx, const uint8_t *ox32, int parity, const uint8_t *ix32, const uint8_t *mr, size_t mr_len)');
+
+// Pedersen
+const pedersen_commit = lib.func('int ufsecp_pedersen_commit(void *ctx, const uint8_t *v32, const uint8_t *b32, uint8_t *c33)');
+const pedersen_verify = lib.func('int ufsecp_pedersen_verify(void *ctx, const uint8_t *c33, const uint8_t *v32, const uint8_t *b32)');
 
 // GPU
 const gpu_backend_count    = lib.func('uint32_t ufsecp_gpu_backend_count(_Out_ uint32_t *ids, uint32_t max)');
@@ -200,6 +215,43 @@ function demoCPU() {
     console.log(`  WIF:                ${wif}`);
     console.log();
 
+    // 8. BIP-32
+    console.log('[8] BIP-32 HD Key Derivation');
+    const seed = Buffer.alloc(64, 0x42);
+    const masterKey = Buffer.alloc(82);
+    check(bip32_master(ctx, seed, 64, masterKey), 'bip32_master');
+    const childKey = Buffer.alloc(82);
+    check(bip32_derive(ctx, masterKey, "m/44'/0'/0'/0/0", childKey), 'bip32_derive');
+    const childPriv = Buffer.alloc(32);
+    const childPub = Buffer.alloc(33);
+    check(bip32_privkey(ctx, childKey, childPriv), 'bip32_privkey');
+    check(bip32_pubkey(ctx, childKey, childPub), 'bip32_pubkey');
+    console.log(`  BIP-32 child priv:  ${hex(childPriv)}`);
+    console.log(`  BIP-32 child pub:   ${hex(childPub)}`);
+    console.log();
+
+    // 9. Taproot
+    console.log('[9] Taproot (BIP-341)');
+    const tapOut = Buffer.alloc(32);
+    const tapParity = [0];
+    check(taproot_output(ctx, xonly, null, tapOut, tapParity), 'taproot_output');
+    console.log(`  Output key:         ${hex(tapOut)}`);
+    console.log(`  Parity:             ${tapParity[0]}`);
+    const tapVrc = taproot_verify(ctx, tapOut, tapParity[0], xonly, null, 0);
+    console.log(`  Verify:             ${tapVrc === UFSECP_OK ? 'VALID' : 'INVALID'}`);
+    console.log();
+
+    // 10. Pedersen
+    console.log('[10] Pedersen Commitment');
+    const pedVal = Buffer.alloc(32); pedVal[31] = 42;
+    const pedBlind = Buffer.alloc(32); pedBlind[31] = 7;
+    const pedCommit = Buffer.alloc(33);
+    check(pedersen_commit(ctx, pedVal, pedBlind, pedCommit), 'pedersen_commit');
+    console.log(`  Commitment:         ${hex(pedCommit)}`);
+    const pvrc = pedersen_verify(ctx, pedCommit, pedVal, pedBlind);
+    console.log(`  Verify:             ${pvrc === UFSECP_OK ? 'VALID' : 'INVALID'}`);
+    console.log();
+
     ctx_destroy(ctx);
 }
 
@@ -208,8 +260,8 @@ function demoCPU() {
 function demoGPU() {
     console.log('=== GPU Operations ===\n');
 
-    // 8. Backend Discovery
-    console.log('[8] GPU Backend Discovery');
+    // 11. Backend Discovery
+    console.log('[11] GPU Backend Discovery');
     const bids = new Uint32Array(4);
     const nBackends = gpu_backend_count(bids, 4);
     console.log(`  Backends compiled:  ${nBackends}`);
@@ -240,8 +292,8 @@ function demoGPU() {
 
     const N = 4;
 
-    // 9. Batch Key Generation
-    console.log('\n[9] GPU Batch Key Generation (4 keys)');
+    // 12. Batch Key Generation
+    console.log('\n[12] GPU Batch Key Generation (4 keys)');
     const scalars = Buffer.alloc(N * 32);
     for (let i = 0; i < N; i++) scalars[i * 32 + 31] = i + 1;
 
@@ -255,8 +307,8 @@ function demoGPU() {
         console.log(`  gpu_generator_mul_batch: ${gpu_error_str(rc)}`);
     }
 
-    // 10. ECDSA Batch Verify
-    console.log('\n[10] GPU ECDSA Batch Verify');
+    // 13. ECDSA Batch Verify
+    console.log('\n[13] GPU ECDSA Batch Verify');
     const cpuCtx = createCtx();
     const msgs = Buffer.alloc(N * 32);
     const sigs = Buffer.alloc(N * 64);
@@ -287,8 +339,8 @@ function demoGPU() {
         console.log(`  gpu_ecdsa_verify_batch: ${gpu_error_str(rc)}`);
     }
 
-    // 11. Hash160 Batch
-    console.log('\n[11] GPU Hash160 Batch');
+    // 14. Hash160 Batch
+    console.log('\n[14] GPU Hash160 Batch');
     const hashes = Buffer.alloc(N * 20);
     rc = gpu_hash160(gpu, pubkeys, N, hashes);
     if (rc === UFSECP_OK) {
@@ -299,8 +351,8 @@ function demoGPU() {
         console.log(`  gpu_hash160_pubkey_batch: ${gpu_error_str(rc)}`);
     }
 
-    // 12. MSM
-    console.log('\n[12] GPU Multi-Scalar Multiplication');
+    // 15. MSM
+    console.log('\n[15] GPU Multi-Scalar Multiplication');
     const msmResult = Buffer.alloc(33);
     rc = gpu_msm(gpu, scalars, pubkeys, N, msmResult);
     if (rc === UFSECP_OK) {

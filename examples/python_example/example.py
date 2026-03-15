@@ -139,6 +139,28 @@ def demo_cpu():
         ok = ctx.taproot_verify(tap.output_key_x, tap.parity, xonly)
         print(f"  Verify:             {'VALID' if ok else 'INVALID'}")
 
+    # 10. Pedersen Commitment
+    section(10, "Pedersen Commitment")
+    lib_path = os.environ.get('UFSECP_LIB')
+    if not lib_path:
+        lib_path = os.path.join(SCRIPT_DIR, '..', '..', 'build-linux',
+                                'include', 'ufsecp', 'libufsecp.so')
+    _lib = ctypes.CDLL(lib_path)
+    _lib.ufsecp_pedersen_commit.argtypes = [c_void_p, POINTER(c_uint8), POINTER(c_uint8), POINTER(c_uint8)]
+    _lib.ufsecp_pedersen_commit.restype = c_int
+    _lib.ufsecp_pedersen_verify.argtypes = [c_void_p, POINTER(c_uint8), POINTER(c_uint8), POINTER(c_uint8)]
+    _lib.ufsecp_pedersen_verify.restype = c_int
+
+    with Ufsecp() as ctx:
+        value = (c_uint8 * 32)(*([0] * 31 + [42]))
+        blinding = (c_uint8 * 32)(*([0] * 31 + [7]))
+        commitment = (c_uint8 * 33)()
+        rc = _lib.ufsecp_pedersen_commit(ctx._ctx, value, blinding, commitment)
+        assert rc == 0, f"pedersen_commit failed: {rc}"
+        print(f"  Commitment:         {hexs(bytes(commitment))}")
+        rc = _lib.ufsecp_pedersen_verify(ctx._ctx, commitment, value, blinding)
+        print(f"  Verify:             {'VALID' if rc == 0 else 'INVALID'}")
+
     print()
 
 # ── GPU Examples ──────────────────────────────────────────────────────────

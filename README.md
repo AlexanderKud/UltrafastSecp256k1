@@ -75,6 +75,79 @@
 
 ---
 
+## Highlights
+
+- **GPU-accelerated secp256k1** -- full ECDSA + Schnorr sign/verify on CUDA, OpenCL, and Metal
+- **Zero-Knowledge cryptographic layer** -- Pedersen commitments, DLEQ proofs, Bulletproof range proofs
+- **Multi-language bindings** -- Python, Node.js, Rust, Go, C#, Java, Swift, PHP, Ruby, Dart
+- **Embedded device support** -- ESP32-S3, ESP32-P4, ESP32-C6, STM32 Cortex-M
+- **Zero-dependency C++20 core** -- no Boost, no OpenSSL, compiles anywhere
+- **Massively parallel workloads** -- batch signatures, key scanning, address generation at GPU scale
+
+## Performance
+
+**RTX 5060 Ti (CUDA 12, kernel throughput)**
+
+| Metric | Value |
+|--------|-------|
+| ECC operations (field/point) | ~2.3 B ops/sec |
+| ECDSA sign | 4.88 M sigs/sec |
+| ECDSA verify | 2.44 M verifies/sec |
+| Schnorr sign (BIP-340) | 3.66 M sigs/sec |
+| Schnorr verify (BIP-340) | 2.82 M verifies/sec |
+
+## Architecture
+
+```
++-------------------------------------------------------+
+|              Language Bindings (FFI)                   |
+|  Python | Node | Rust | Go | C# | Java | Swift | PHP |
++-------------------------------------------------------+
+                         |
+                  Bindings Layer
+                 (ctypes / koffi / cgo
+                  JNA / P/Invoke / FFI)
+                         |
++-------------------------------------------------------+
+|          UltrafastSecp256k1 Core (C++20)               |
+|                                                       |
+|  ECDSA | Schnorr | ECDH | MuSig2 | FROST | Pedersen  |
+|  Taproot | BIP-32 HD | Adaptor Sigs | ZK Proofs       |
+|  [FAST layer]              [CT layer]                 |
++-------------------------------------------------------+
+                         |
++--------+---------+---------+---------+----------------+
+|  CPU   |  CUDA   | OpenCL  |  Metal  |   Embedded     |
+| x86_64 | NVIDIA  | AMD/NV  |  Apple  | ESP32 / STM32  |
+| ARM64  | sm_50+  | any GPU | Silicon | RISC-V / WASM  |
+| RISC-V |         |         |         | Cortex-M       |
++--------+---------+---------+---------+----------------+
+```
+
+## Examples
+
+| Category | Description | Link |
+|----------|-------------|------|
+| **CPU** | Core ECC, ECDSA, Schnorr, BIP-32, Taproot, Pedersen | [examples/](examples/) |
+| **CUDA** | GPU signatures, batch operations, device management | [examples/](examples/) |
+| **OpenCL** | Cross-vendor GPU compute | [examples/](examples/) |
+| **Metal** | Apple Silicon GPU acceleration | [examples/](examples/) |
+| **Multi-language** | C, Python, Rust, Node.js, Go, Java binding examples | [examples/README.md](examples/README.md) |
+| **Embedded** | ESP32-S3, STM32 platform ports | [examples/esp32_test/](examples/esp32_test/) |
+
+## Use Cases
+
+- **Blockchain infrastructure** -- high-throughput transaction signing and validation
+- **Signature verification at scale** -- batch verify millions of signatures per second on GPU
+- **Cryptographic research** -- independent secp256k1 implementation with full source access
+- **Zero-knowledge pipelines** -- Pedersen commitments, Bulletproofs, DLEQ proofs
+- **Embedded cryptographic systems** -- hardware wallets, IoT devices, microcontrollers
+- **Key scanning & address generation** -- BIP-352 Silent Payments, vanity address mining
+
+> Star the repository if you find it useful!
+
+---
+
 ## [!] Security Notice
 
 **Production-Focused Engine -- Independently Unaudited**
@@ -876,6 +949,73 @@ All EVM chains (ETH, BNB, MATIC, AVAX, FTM, ARB, OP) share the same address form
 
 ## secp256k1 Architecture
 
+### Library Stack
+
+```
++----------------------------------------------------------+
+|           Language Bindings (FFI / C ABI)                 |
+|  Python | Node.js | Rust | Go | C# | Java | Swift | PHP |
++----------------------------------------------------------+
+                          |
+                   Bindings Layer
+                  (ctypes / koffi / cgo
+                   JNA / P/Invoke / FFI)
+                          |
++----------------------------------------------------------+
+|            UltrafastSecp256k1 Core (C++20)                |
+|                                                          |
+|  Field Arithmetic | Scalar Ops | Point Ops | GLV/Endomo  |
+|  ECDSA | Schnorr BIP-340 | ECDH | MuSig2 | FROST       |
+|  Pedersen | Taproot | BIP-32 HD | Adaptor Sigs | ZK      |
+|                                                          |
+|  [FAST layer]              [CT layer]                    |
+|  Variable-time             Constant-time                 |
+|  Max throughput            Side-channel safe              |
++----------------------------------------------------------+
+                          |
++----------+----------+----------+----------+--------------+
+|   CPU    |   CUDA   |  OpenCL  |  Metal   |  Embedded    |
+|          |          |          |          |              |
+| x86_64   | NVIDIA   | AMD/NVIDIA| Apple   | ESP32-S3     |
+| ARM64    | sm_50+   | any GPU  | Silicon | ESP32-C6     |
+| RISC-V   |          |          |          | STM32        |
+| WASM     |          |          |          | Cortex-M     |
++----------+----------+----------+----------+--------------+
+```
+
+### Hardware Compatibility
+
+| Platform | Architecture | Backend | Status |
+|----------|-------------|---------|--------|
+| **Desktop CPU** | x86_64 (Intel / AMD) | CPU | [OK] Stable |
+| **Desktop CPU** | ARM64 (Apple Silicon, Ampere) | CPU | [OK] Stable |
+| **Desktop CPU** | RISC-V RV64GC | CPU | [OK] Stable |
+| **Raspberry Pi** | ARM64 (BCM2710, Zero 2 W) | CPU | [..] Testing |
+| **NVIDIA GPU** | RTX / GTX / Tesla (sm_50+) | CUDA 12+ | [OK] Stable |
+| **AMD GPU** | RDNA / CDNA | OpenCL | [OK] Stable |
+| **AMD GPU** | RDNA / CDNA | ROCm/HIP | [!] Beta |
+| **Apple GPU** | Apple Silicon (M1/M2/M3/M4) | Metal | [OK] Stable |
+| **Any GPU** | OpenCL 1.2+ compatible | OpenCL | [!] Beta |
+| **ESP32-S3** | Xtensa LX7 @ 240 MHz | CPU | [OK] Tested |
+| **ESP32-P4** | RISC-V @ 400 MHz | CPU | [OK] Supported |
+| **ESP32-C6** | RISC-V (single-core) | CPU | [OK] Supported |
+| **STM32** | ARM Cortex-M3/M4 | CPU | [..] Experimental |
+| **WebAssembly** | WASM (Emscripten) | CPU | [OK] Stable |
+| **Android** | ARM64 (NDK r27c) | CPU | [OK] Stable |
+| **iOS** | ARM64 (Xcode) | CPU | [OK] Stable |
+
+### Embedded Targets
+
+| Target | MCU | Clock | Scalar x G | Flash | RAM |
+|--------|-----|-------|-----------|-------|-----|
+| ESP32-S3 | Xtensa LX7 (dual) | 240 MHz | 5.2 ms | ~120 KB | ~8 KB |
+| ESP32-PICO-D4 | Xtensa LX6 (dual) | 240 MHz | 6.2 ms | ~120 KB | ~8 KB |
+| ESP32-P4 | RISC-V | 400 MHz | ~3 ms | ~120 KB | ~8 KB |
+| ESP32-C6 | RISC-V (single) | 160 MHz | ~12 ms | ~120 KB | ~8 KB |
+| STM32F103 | Cortex-M3 | 72 MHz | 38 ms | ~100 KB | ~6 KB |
+
+### Source Directory
+
 ```
 UltrafastSecp256k1/
 +-- cpu/                 # CPU-optimized implementation
@@ -889,7 +1029,14 @@ UltrafastSecp256k1/
 +-- wasm/                # WebAssembly (Emscripten)
 +-- android/             # Android NDK (ARM64)
 +-- include/ufsecp/      # Stable C ABI
++-- bindings/            # Language bindings (Rust, Python, Node.js, Go, C#, Java, ...)
 +-- examples/
+|   +-- c_example/       # C API usage
+|   +-- rust_example/    # Rust FFI example
+|   +-- python_example/  # Python ctypes example
+|   +-- nodejs_example/  # Node.js koffi example
+|   +-- go_example/      # Go cgo example
+|   +-- java_example/    # Java JNA example
 |   +-- esp32_test/      # ESP32-S3 Xtensa LX7 port
 |   +-- stm32_test/      # STM32F103 ARM Cortex-M3 port
 +-- docs/                # Documentation
