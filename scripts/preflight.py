@@ -175,11 +175,36 @@ def check_freshness():
 # 4. Doc-Code Pairing Check (for git-changed files)
 # ---------------------------------------------------------------------------
 DOC_PAIRS = {
-    'include/ufsecp/ufsecp.h':    ['docs/API_REFERENCE.md', 'docs/USER_GUIDE.md'],
-    'include/ufsecp/ufsecp_impl.cpp': ['docs/API_REFERENCE.md'],
-    'CMakeLists.txt':             ['docs/BUILDING.md', 'README.md'],
-    'cpu/bench/bench_unified.cpp': ['docs/BENCHMARKS.md', 'docs/BENCHMARK_METHODOLOGY.md'],
-    'audit/unified_audit_runner.cpp': ['docs/TEST_MATRIX.md', 'docs/AUDIT_GUIDE.md'],
+    # Public API / C ABI
+    'include/ufsecp/ufsecp.h':         ['docs/API_REFERENCE.md', 'docs/USER_GUIDE.md'],
+    'include/ufsecp/ufsecp_impl.cpp':  ['docs/API_REFERENCE.md'],
+    # Build system
+    'CMakeLists.txt':                  ['docs/BUILDING.md', 'README.md'],
+    # Benchmark
+    'cpu/bench/bench_unified.cpp':     ['docs/BENCHMARKS.md', 'docs/BENCHMARK_METHODOLOGY.md'],
+    # Audit
+    'audit/unified_audit_runner.cpp':  ['docs/TEST_MATRIX.md', 'docs/AUDIT_GUIDE.md'],
+    # Protocol implementations
+    'cpu/src/musig2.cpp':              ['docs/API_REFERENCE.md'],
+    'cpu/src/frost.cpp':               ['docs/API_REFERENCE.md'],
+    'cpu/src/adaptor.cpp':             ['docs/API_REFERENCE.md'],
+    'cpu/src/silent_payments.cpp':     ['docs/API_REFERENCE.md'],
+    'cpu/src/ecies.cpp':               ['docs/API_REFERENCE.md'],
+    # CT layer
+    'cpu/src/ct_sign.cpp':             ['docs/CT_VERIFICATION.md', 'docs/SECURITY_CLAIMS.md'],
+    'cpu/src/ct_field.cpp':            ['docs/CT_VERIFICATION.md'],
+    'cpu/src/ct_scalar.cpp':           ['docs/CT_VERIFICATION.md'],
+    'cpu/src/ct_point.cpp':            ['docs/CT_VERIFICATION.md'],
+    # GPU backends
+    'cuda/secp256k1_cuda.cu':          ['docs/COMPATIBILITY.md'],
+    'opencl/secp256k1_opencl.cpp':     ['docs/COMPATIBILITY.md'],
+    'metal/secp256k1_metal.mm':        ['docs/COMPATIBILITY.md'],
+    # Core headers
+    'cpu/include/secp256k1/field.hpp': ['docs/API_REFERENCE.md'],
+    'cpu/include/secp256k1/scalar.hpp':['docs/API_REFERENCE.md'],
+    'cpu/include/secp256k1/point.hpp': ['docs/API_REFERENCE.md'],
+    # Release workflow
+    '.github/workflows/release.yml':   ['docs/LOCAL_CI.md'],
 }
 
 def check_doc_pairing(changed_files):

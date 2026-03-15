@@ -11,7 +11,7 @@
 //      rogue-key, transcript mutation, signer ordering, malicious aggregator,
 //      abort/restart lifecycle
 //   B. FROST adversarial: below-threshold, malformed commitment, bad coordinator,
-//      duplicate nonce, participant identity mismatch
+//      duplicate nonce, participant identity mismatch, stale commitment replay
 //   C. Silent Payments adversarial: wrong ordering, duplicate keys, bad keys
 //   D. ECDSA adaptor: full round-trip + adversarial (entirely missing before)
 //   E. Schnorr adaptor adversarial: invalid point, wrong point, transcript
@@ -1132,6 +1132,123 @@ static void test_frost_participant_identity_mismatch() {
         }
     } else {
         CHECK(true, "sign rejected duplicate participant IDs");
+    }
+
+    ufsecp_ctx_destroy(ctx);
+}
+
+// B.7: Stale commitment replay -- reuse old round's nonce commits in new round
+static void test_frost_stale_commitment_replay() {
+    (void)std::printf("  [B.7] FROST: stale commitment replay across rounds\n");
+
+    ufsecp_ctx* ctx = nullptr;
+    ufsecp_ctx_create(&ctx);
+
+    const uint32_t threshold = 2, n_parts = 3;
+    uint8_t seeds[3][32];
+    for (uint32_t i = 0; i < 3; ++i) {
+        std::memset(seeds[i], 0, 32);
+        seeds[i][31] = static_cast<uint8_t>(i + 60);
+    }
+    uint8_t commits_buf[3][512]; size_t commits_len[3];
+    uint8_t shares_buf[3][512];  size_t shares_len[3];
+    for (uint32_t i = 0; i < 3; ++i) {
+        commits_len[i] = sizeof(commits_buf[i]);
+        shares_len[i] = sizeof(shares_buf[i]);
+        ufsecp_frost_keygen_begin(ctx, i + 1, threshold, n_parts,
+                 seeds[i], commits_buf[i], &commits_len[i],
+                 shares_buf[i], &shares_len[i]);
+    }
+    uint8_t all_commits[2048]; size_t total_commits_len = 0;
+    for (uint32_t i = 0; i < 3; ++i) {
+        std::memcpy(all_commits + total_commits_len, commits_buf[i], commits_len[i]);
+        total_commits_len += commits_len[i];
+    }
+    uint8_t keypkgs[3][UFSECP_FROST_KEYPKG_LEN];
+    for (uint32_t i = 0; i < 3; ++i) {
+        uint8_t recv_shares[512]; size_t recv_len = 0;
+        for (uint32_t j = 0; j < 3; ++j) {
+            std::memcpy(recv_shares + recv_len,
+                        shares_buf[j] + i * UFSECP_FROST_SHARE_LEN,
+                        UFSECP_FROST_SHARE_LEN);
+            recv_len += UFSECP_FROST_SHARE_LEN;
+        }
+        ufsecp_frost_keygen_finalize(ctx, i + 1,
+                 all_commits, total_commits_len,
+                 recv_shares, recv_len,
+                 threshold, n_parts, keypkgs[i]);
+    }
+    uint8_t group_pub[32];
+    std::memcpy(group_pub, keypkgs[0], 32);
+    uint8_t msg32[32];
+    hex_to_bytes(MSG_HEX, msg32, 32);
+
+    // Round 1: generate nonces and sign normally (baseline)
+    uint8_t nonce_r1_1[UFSECP_FROST_NONCE_LEN], nc_r1_1[UFSECP_FROST_NONCE_COMMIT_LEN];
+    uint8_t nonce_r1_2[UFSECP_FROST_NONCE_LEN], nc_r1_2[UFSECP_FROST_NONCE_COMMIT_LEN];
+    uint8_t ns1[32] = {70}, ns2[32] = {71};
+    ufsecp_frost_sign_nonce_gen(ctx, 1, ns1, nonce_r1_1, nc_r1_1);
+    ufsecp_frost_sign_nonce_gen(ctx, 2, ns2, nonce_r1_2, nc_r1_2);
+
+    uint8_t ncommits_r1[2 * UFSECP_FROST_NONCE_COMMIT_LEN];
+    std::memcpy(ncommits_r1, nc_r1_1, UFSECP_FROST_NONCE_COMMIT_LEN);
+    std::memcpy(ncommits_r1 + UFSECP_FROST_NONCE_COMMIT_LEN, nc_r1_2, UFSECP_FROST_NONCE_COMMIT_LEN);
+
+    uint8_t psig_r1_1[36], psig_r1_2[36];
+    CHECK_OK(ufsecp_frost_sign(ctx, keypkgs[0], nonce_r1_1, msg32, ncommits_r1, 2, psig_r1_1),
+             "round 1 signer 1 should succeed");
+    CHECK_OK(ufsecp_frost_sign(ctx, keypkgs[1], nonce_r1_2, msg32, ncommits_r1, 2, psig_r1_2),
+             "round 1 signer 2 should succeed");
+
+    uint8_t psigs_r1[72];
+    std::memcpy(psigs_r1, psig_r1_1, 36);
+    std::memcpy(psigs_r1 + 36, psig_r1_2, 36);
+    uint8_t final_r1[64];
+    CHECK_OK(ufsecp_frost_aggregate(ctx, psigs_r1, 2, ncommits_r1, 2,
+                                     group_pub, msg32, final_r1),
+             "round 1 aggregate should succeed");
+    CHECK_OK(ufsecp_schnorr_verify(ctx, msg32, final_r1, group_pub),
+             "round 1 signature should verify");
+
+    // Round 2: NEW nonces for signer 2, but signer 1 replays round 1 stale commit
+    uint8_t nonce_r2_2[UFSECP_FROST_NONCE_LEN], nc_r2_2[UFSECP_FROST_NONCE_COMMIT_LEN];
+    ns2[0] = 72;
+    ufsecp_frost_sign_nonce_gen(ctx, 2, ns2, nonce_r2_2, nc_r2_2);
+
+    // Attack: use nc_r1_1 (stale round-1 commit) for signer 1 in round 2
+    uint8_t ncommits_stale[2 * UFSECP_FROST_NONCE_COMMIT_LEN];
+    std::memcpy(ncommits_stale, nc_r1_1, UFSECP_FROST_NONCE_COMMIT_LEN);  // STALE
+    std::memcpy(ncommits_stale + UFSECP_FROST_NONCE_COMMIT_LEN, nc_r2_2, UFSECP_FROST_NONCE_COMMIT_LEN);
+
+    // Signer 1 creates a FRESH nonce for round 2
+    uint8_t nonce_r2_1[UFSECP_FROST_NONCE_LEN], nc_r2_1[UFSECP_FROST_NONCE_COMMIT_LEN];
+    ns1[0] = 73;
+    ufsecp_frost_sign_nonce_gen(ctx, 1, ns1, nonce_r2_1, nc_r2_1);
+
+    // Signer 1 signs with fresh nonce but stale commit set -> binding mismatch
+    uint8_t psig_stale[36];
+    ufsecp_error_t rc = ufsecp_frost_sign(ctx, keypkgs[0], nonce_r2_1, msg32,
+                                           ncommits_stale, 2, psig_stale);
+    if (rc == UFSECP_OK) {
+        // Signer 2 signs with fresh nonce and same stale commit set
+        uint8_t psig_r2_2[36];
+        ufsecp_frost_sign(ctx, keypkgs[1], nonce_r2_2, msg32, ncommits_stale, 2, psig_r2_2);
+        uint8_t psigs_stale[72];
+        std::memcpy(psigs_stale, psig_stale, 36);
+        std::memcpy(psigs_stale + 36, psig_r2_2, 36);
+        uint8_t final_stale[64];
+        ufsecp_error_t arc = ufsecp_frost_aggregate(ctx, psigs_stale, 2,
+                                                     ncommits_stale, 2,
+                                                     group_pub, msg32, final_stale);
+        if (arc == UFSECP_OK) {
+            ufsecp_error_t vrc = ufsecp_schnorr_verify(ctx, msg32, final_stale, group_pub);
+            CHECK(vrc != UFSECP_OK,
+                  "sig with stale commitment replay must not verify");
+        } else {
+            CHECK(true, "aggregate rejected stale commitment replay");
+        }
+    } else {
+        CHECK(true, "sign rejected stale commitment (nonce/commit mismatch)");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -2483,6 +2600,98 @@ static void test_ffi_malformed_counts() {
     ufsecp_ctx_destroy(ctx);
 }
 
+// G.21: Invalid enum/flag values (network, compressed flags)
+static void test_ffi_invalid_enums() {
+    (void)std::printf("  [G.21] FFI hostile: invalid enum/flag values\n");
+
+    ufsecp_ctx* ctx = nullptr;
+    ufsecp_ctx_create(&ctx);
+
+    uint8_t priv[32];
+    hex_to_bytes(PRIVKEY1_HEX, priv, 32);
+    uint8_t pub33[33];
+    ufsecp_pubkey_create(ctx, priv, pub33);
+
+    char addr_buf[128];
+    size_t addr_len = sizeof(addr_buf);
+
+    // Invalid network codes for p2pkh_address
+    {
+        // network = -1 (negative)
+        ufsecp_error_t rc = ufsecp_p2pkh_address(ctx, pub33, -1, addr_buf, &addr_len);
+        CHECK(rc != UFSECP_OK || addr_len > 0,
+              "p2pkh with network=-1 did not crash");
+
+        // network = 999 (out of range)
+        addr_len = sizeof(addr_buf);
+        rc = ufsecp_p2pkh_address(ctx, pub33, 999, addr_buf, &addr_len);
+        CHECK(rc != UFSECP_OK || addr_len > 0,
+              "p2pkh with network=999 did not crash");
+    }
+
+    // Invalid network codes for p2wpkh_address
+    {
+        addr_len = sizeof(addr_buf);
+        ufsecp_error_t rc = ufsecp_p2wpkh_address(ctx, pub33, -1, addr_buf, &addr_len);
+        CHECK(rc != UFSECP_OK || addr_len > 0,
+              "p2wpkh with network=-1 did not crash");
+
+        addr_len = sizeof(addr_buf);
+        rc = ufsecp_p2wpkh_address(ctx, pub33, 999, addr_buf, &addr_len);
+        CHECK(rc != UFSECP_OK || addr_len > 0,
+              "p2wpkh with network=999 did not crash");
+    }
+
+    // Invalid network codes for p2tr_address
+    {
+        addr_len = sizeof(addr_buf);
+        ufsecp_error_t rc = ufsecp_p2tr_address(ctx, pub33, -1, addr_buf, &addr_len);
+        CHECK(rc != UFSECP_OK || addr_len > 0,
+              "p2tr with network=-1 did not crash");
+
+        addr_len = sizeof(addr_buf);
+        rc = ufsecp_p2tr_address(ctx, pub33, 999, addr_buf, &addr_len);
+        CHECK(rc != UFSECP_OK || addr_len > 0,
+              "p2tr with network=999 did not crash");
+    }
+
+    // Invalid compressed flag for WIF encode
+    {
+        addr_len = sizeof(addr_buf);
+        ufsecp_error_t rc = ufsecp_wif_encode(ctx, priv, 42, UFSECP_NET_MAINNET,
+                                               addr_buf, &addr_len);
+        CHECK(rc != UFSECP_OK || addr_len > 0,
+              "wif_encode with compressed=42 did not crash");
+    }
+
+    // WIF decode with junk string that looks like an invalid network
+    {
+        const char* junk_wif = "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ";
+        uint8_t out_key[32];
+        int comp_out = -1, net_out = -1;
+        ufsecp_error_t rc = ufsecp_wif_decode(ctx, junk_wif,
+                                               out_key, &comp_out, &net_out);
+        CHECK(rc != UFSECP_OK, "wif_decode with junk string rejects");
+    }
+
+    // INT32_MAX and INT32_MIN for network code
+    {
+        addr_len = sizeof(addr_buf);
+        ufsecp_error_t rc = ufsecp_p2pkh_address(ctx, pub33, 0x7FFFFFFF,
+                                                   addr_buf, &addr_len);
+        CHECK(rc != UFSECP_OK || addr_len > 0,
+              "p2pkh with INT32_MAX network did not crash");
+
+        addr_len = sizeof(addr_buf);
+        rc = ufsecp_p2pkh_address(ctx, pub33, static_cast<int>(0x80000000u),
+                                  addr_buf, &addr_len);
+        CHECK(rc != UFSECP_OK || addr_len > 0,
+              "p2pkh with INT32_MIN network did not crash");
+    }
+
+    ufsecp_ctx_destroy(ctx);
+}
+
 
 // ============================================================================
 // Entry Point
@@ -2511,6 +2720,7 @@ int test_adversarial_protocol_run() {
     test_frost_malicious_coordinator();
     test_frost_duplicate_nonce();
     test_frost_participant_identity_mismatch();
+    test_frost_stale_commitment_replay();
 
     // C. Silent Payments adversarial
     test_sp_multiple_outputs();
@@ -2558,6 +2768,7 @@ int test_adversarial_protocol_run() {
     test_ffi_undersized_buffers();
     test_ffi_overlapping_buffers();
     test_ffi_malformed_counts();
+    test_ffi_invalid_enums();
 #ifdef SECP256K1_BUILD_ETHEREUM
     test_hostile_ethereum();
 #endif
