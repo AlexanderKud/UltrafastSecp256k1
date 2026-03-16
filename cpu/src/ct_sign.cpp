@@ -9,6 +9,7 @@
 #include "secp256k1/ct/sign.hpp"
 #include "secp256k1/ct/point.hpp"
 #include "secp256k1/ct/scalar.hpp"
+#include "secp256k1/recovery.hpp"
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/tagged_hash.hpp"
 #include "secp256k1/config.hpp"
@@ -272,6 +273,83 @@ SchnorrSignature schnorr_sign_verified(const SchnorrKeypair& kp,
     }
 
     return sig;
+}
+
+// ============================================================================
+// CT ECDSA Sign with Recovery ID
+// ============================================================================
+// Uses ct::generator_mul() for R=k*G and ct::scalar_inverse() for k^{-1}.
+// Replaces the variable-time ::ecdsa_sign_recoverable() for all secret-key
+// signing paths (bitcoin_sign_message, Ethereum personal_sign, shim, ECIES).
+//
+// Recovery ID computation:
+//   bit 0 -- R.y parity via FieldElement::limbs()[0]&1 (no secret branch)
+//   bit 1 -- R.x >= n overflow via constant-time byte comparison
+
+RecoverableSignature ecdsa_sign_recoverable(
+    const std::array<uint8_t, 32>& msg_hash,
+    const Scalar& private_key) {
+
+    static const std::array<uint8_t, 32> ORDER_BYTES = {
+        0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFE,
+        0xBA,0xAE,0xDC,0xE6, 0xAF,0x48,0xA0,0x3B,
+        0xBF,0xD2,0x5E,0x8C, 0xD0,0x36,0x41,0x41
+    };
+
+    if (private_key.is_zero()) return {{Scalar::zero(), Scalar::zero()}, 0};
+
+    auto z = Scalar::from_bytes(msg_hash);
+
+    // Deterministic nonce (RFC 6979)
+    auto k = rfc6979_nonce(private_key, msg_hash);
+    if (k.is_zero()) return {{Scalar::zero(), Scalar::zero()}, 0};
+
+    // R = k * G  -- CT path (data-independent execution trace)
+    auto R = ct::generator_mul(k);
+    if (R.is_infinity()) return {{Scalar::zero(), Scalar::zero()}, 0};
+
+    // r = R.x mod n
+    auto r_fe = R.x();
+    auto r_bytes = r_fe.to_bytes();
+    auto r = Scalar::from_bytes(r_bytes);
+    if (r.is_zero()) return {{Scalar::zero(), Scalar::zero()}, 0};
+
+    // Recovery ID bit 0: parity of R.y
+    // Extract from normalized limbs[0] -- avoids full serialization and does
+    // not branch on the secret nonce.
+    int recid = 0;
+    if ((R.y().limbs()[0] & 1u) != 0) recid |= 1;
+
+    // Recovery ID bit 1: whether R.x >= n (R.x overflowed the curve order).
+    // Probability ~2^{-128}; byte-by-byte comparison of public r_bytes vs ORDER.
+    bool overflow = false;
+    for (std::size_t i = 0; i < 32; ++i) {
+        if (r_bytes[i] < ORDER_BYTES[i]) break;
+        if (r_bytes[i] > ORDER_BYTES[i]) { overflow = true; break; }
+    }
+    if (overflow) recid |= 2;
+
+    // s = k^{-1} * (z + r * d) mod n
+    // CT inverse: SafeGCD Bernstein-Yang divsteps-59, constant-time.
+    auto k_inv = ct::scalar_inverse(k);
+    auto s = k_inv * (z + r * private_key);
+    if (s.is_zero()) return {{Scalar::zero(), Scalar::zero()}, 0};
+
+    // CT low-S normalization (branchless).
+    ECDSASignature pre_sig{r, s};
+    bool const was_high = !pre_sig.is_low_s();
+    ECDSASignature sig = ct::ct_normalize_low_s(pre_sig);
+    // Negating s flips the R.y parity bit in the recovery ID.
+    if (was_high) recid ^= 1;
+
+    // Erase all stack buffers that held secret-derived material.
+    secure_erase(&k,     sizeof(k));
+    secure_erase(&k_inv, sizeof(k_inv));
+    secure_erase(&z,     sizeof(z));
+    secure_erase(&s,     sizeof(s));
+
+    return {sig, recid};
 }
 
 } // namespace secp256k1::ct

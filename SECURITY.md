@@ -160,6 +160,16 @@ The CT layer uses no secret-dependent branches or memory access patterns. It car
 
 **Important**: The default (non-CT) operations prioritize performance and are NOT constant-time. Use the `ct::` variants when processing secret keys or nonces.
 
+### Known Non-CT Exceptions (Q-Series)
+
+The following functions are documented exceptions where a `fast::` code path was historically used in a secret-key context. Each has been assigned a tracking ID; the fix status is noted.
+
+| ID | Function | Issue | Status |
+|----|----------|-------|--------|
+| Q-07 | `::ecdsa_sign_recoverable()` in `recovery.cpp` | Called by `bitcoin_sign_message()` and the libsecp256k1 shim -- uses `fast::scalar_mul(k)` and `fast::scalar_inverse(k)` on the secret nonce, leaking timing information about k. Affects Sparrow Wallet, ECIES, Ethereum `personal_sign`, and any caller using the recovery-ID signing path. | **Fixed** -- `bitcoin_sign_message()` and `secp256k1_ecdsa_sign_recoverable()` now call `ct::ecdsa_sign_recoverable()` (added in `ct_sign.cpp`), which uses `ct::generator_mul()` for R=k\*G and `ct::scalar_inverse()` for k^{-1}. The variable-time `::ecdsa_sign_recoverable()` remains available for public-data contexts (address search, batch verification) but must not be called with a secret key. |
+
+**Rule**: any function that accepts or derives a private key or secret nonce -- including message-signing wrappers -- must route through `ct::`. Filing a new exception requires an explicit SECURITY.md entry before the code ships.
+
 ### ECDSA & Schnorr
 
 - ECDSA: Deterministic nonces via RFC 6979 (no random nonce generation needed)
