@@ -75,7 +75,7 @@ See [[API Reference]] for the full CT API and [[Examples]] for usage patterns.
 
 - [GitHub Repository](https://github.com/shrec/UltrafastSecp256k1)
 - [Issue Tracker](https://github.com/shrec/UltrafastSecp256k1/issues)
-- [Discord](https://discord.gg/sUmW7cc5)
+- [Discord](https://discord.gg/E4BK8SeMYU)
 - [Live Benchmark Dashboard](https://shrec.github.io/UltrafastSecp256k1/dev/bench/)
 
 ## License
@@ -91,4 +91,3 @@ MIT -- See [LICENSE](https://github.com/shrec/UltrafastSecp256k1/blob/main/LICEN
 **Lightning Address:** `shrec@stacker.news`
 
 [![PayPal](https://img.shields.io/badge/PayPal-Donate-blue.svg?logo=paypal)](https://paypal.me/IChkheidze)
-
