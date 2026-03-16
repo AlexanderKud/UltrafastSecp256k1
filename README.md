@@ -23,7 +23,7 @@
 
 > **Benchmark reproducibility:** All numbers come from pinned compiler/driver/toolkit versions with exact commands and raw logs. See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) (methodology) and the [live dashboard](https://shrec.github.io/UltrafastSecp256k1/dev/bench/).
 
-**Quick links:** [Discord](https://discord.gg/sUmW7cc5) * [Benchmarks](docs/BENCHMARKS.md) * [Build Guide](docs/BUILDING.md) * [API Reference](docs/API_REFERENCE.md) * [Security Policy](SECURITY.md) * [Threat Model](THREAT_MODEL.md) * [Porting Guide](PORTING.md) * [**Sponsor**](https://github.com/sponsors/shrec)
+**Quick links:** [Discord](https://discord.gg/E4BK8SeMYU) * [Benchmarks](docs/BENCHMARKS.md) * [Build Guide](docs/BUILDING.md) * [API Reference](docs/API_REFERENCE.md) * [Security Policy](SECURITY.md) * [Threat Model](THREAT_MODEL.md) * [Porting Guide](PORTING.md) * [**Sponsor**](https://github.com/sponsors/shrec)
 
 ---
 
@@ -45,7 +45,7 @@
 [![Clang-Tidy](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/clang-tidy.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/clang-tidy.yml)
 [![SonarCloud](https://sonarcloud.io/api/project_badges/measure?project=shrec_UltrafastSecp256k1&metric=security_rating)](https://sonarcloud.io/summary/overall?id=shrec_UltrafastSecp256k1)
 [![codecov](https://codecov.io/gh/shrec/UltrafastSecp256k1/graph/badge.svg)](https://codecov.io/gh/shrec/UltrafastSecp256k1)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white)](https://discord.gg/sUmW7cc5)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white)](https://discord.gg/E4BK8SeMYU)
 
 **Supported Blockchains (secp256k1-based):**
 
@@ -220,7 +220,7 @@ Sponsorship helps sustain development of:
 | **Bitcoin Lightning** | `shrec@stacker.news` (any Lightning wallet) |
 | **PayPal** | [paypal.me/IChkheidze](https://paypal.me/IChkheidze) |
 | **Corporate / Foundation** | [payysoon@gmail.com](mailto:payysoon@gmail.com) |
-| **Discord** | [Join our server](https://discord.gg/sUmW7cc5) |
+| **Discord** | [Join our server](https://discord.gg/E4BK8SeMYU) |
 
 All sponsors will be acknowledged in the README, release notes, and project documentation.
 For corporate partnerships, audit co-funding, or grant applications -- please reach out via email.
