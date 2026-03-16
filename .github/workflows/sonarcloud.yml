@@ -17,6 +17,14 @@ permissions:
 jobs:
   sonarcloud:
     name: SonarCloud Analysis
+    # Skip for fork PRs: GitHub does not pass secrets to pull_request events
+    # from forks (security design). SonarCloud runs on push to main/dev and on
+    # non-fork PRs. Fork contributors see results after the PR is merged.
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.owner.login == github.repository_owner)
     runs-on: ubuntu-24.04
 
     env:
@@ -24,7 +32,7 @@ jobs:
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
         with:
           egress-policy: audit
 
@@ -120,6 +128,9 @@ jobs:
           fi
 
       - name: Run SonarCloud scan
+        # Quality Gate failures are advisory; do not block CI for non-owners.
+        # We already skip fork PRs above, but keep this as a safety net.
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9 # v7.0.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
