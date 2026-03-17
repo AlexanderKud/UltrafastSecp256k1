@@ -160,7 +160,7 @@ kernel void generator_mul_batch(
     AffinePoint gen = generator_affine();
     Scalar256 k = scalars[tid];
 
-    JacobianPoint jac = scalar_mul(gen, k);
+    JacobianPoint jac = scalar_mul_glv(gen, k);
     results[tid] = jacobian_to_affine(jac);
 }
 
