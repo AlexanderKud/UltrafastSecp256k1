@@ -330,6 +330,7 @@ All core arithmetic operations are tested on boundary values:
 | Message bit-flip | 1-bit change in msg -> verify fails | `audit_security.cpp` -> `test_message_bitflip()` |
 | Nonce determinism | Same (msg, sk) -> same nonce | `audit_security.cpp` -> `test_nonce_determinism()` |
 | Zeroization | Secret memory zeroed after use | `audit_security.cpp` -> `test_zeroization()` |
+| ABI fail-closed cleanup | Secret-bearing ABI locals are erased even when later public/session inputs are rejected | `test_adversarial_protocol.cpp` (invalid adaptor points, malformed FROST/MuSig2/silent-payment hostile inputs) + `test_ecies_regression.cpp` prefix rejection; code-path review in `ufsecp_impl.cpp` |
 | MuSig2 rogue-key | 0xFF / zero / duplicate xonly keys | `test_adversarial_protocol.cpp` A.4 |
 | MuSig2 transcript mutation | Corrupt keyagg blob between steps | `test_adversarial_protocol.cpp` A.5 |
 | MuSig2 signer ordering | Wrong signer index | `test_adversarial_protocol.cpp` A.6 |

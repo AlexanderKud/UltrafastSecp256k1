@@ -176,7 +176,7 @@
 | `ufsecp_bip32_derive` | Y | Y | Y (depth overflow) | - | Y | Y | Y (BIP-32) | Y |
 | `ufsecp_bip32_derive_path` | Y | Y | Y (bad path) | - | Y | Y | Y (BIP-32) | Y |
 | `ufsecp_bip32_privkey` | Y | Y | Y (xpub rejection) | - | N/A | - | - | N/A |
-| `ufsecp_bip32_pubkey` | Y | Y | - | - | N/A (public) | - | - | N/A |
+| `ufsecp_bip32_pubkey` | Y | Y | - | - | N/A (public) | - | - | Y |
 
 **Test files:** `audit/test_ffi_round_trip.cpp`, `audit/test_adversarial_protocol.cpp`, `audit/test_fuzz_address_bip32_ffi.cpp`
 **GPU:** CUDA (`cuda/include/bip32.cuh`), OpenCL (`opencl/kernels/secp256k1_bip32.cl`), Metal (`metal/shaders/secp256k1_bip32.h`)
