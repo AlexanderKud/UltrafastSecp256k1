@@ -147,13 +147,14 @@ bool schnorr_batch_verify_impl(const Entry* entries, std::size_t n,
     // ---- Large-batch path: randomized MSM ----
     // Compute batch seed = SHA256(all signature data)
     SHA256 seed_ctx;
+    std::uint8_t s_bytes[32];
     for (std::size_t i = 0; i < n; ++i) {
         auto const* const pubkey_x = pubkey_bytes(entries[i]);
         if (pubkey_x == nullptr) return false;
 
         seed_ctx.update(entries[i].signature.r.data(), 32);
-        auto s_bytes = entries[i].signature.s.to_bytes();
-        seed_ctx.update(s_bytes.data(), 32);
+        entries[i].signature.s.write_bytes(s_bytes);
+        seed_ctx.update(s_bytes, 32);
         seed_ctx.update(pubkey_x->data(), 32);
         seed_ctx.update(entries[i].message.data(), 32);
     }
