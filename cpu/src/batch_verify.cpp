@@ -47,6 +47,22 @@ Scalar batch_weight(const std::array<uint8_t, 32>& batch_seed, uint32_t index) {
     return Scalar::from_bytes(h);
 }
 
+struct SchnorrBatchScratch {
+    std::vector<Scalar> scalars;
+    std::vector<Point> points;
+};
+
+SchnorrBatchScratch& schnorr_batch_scratch(std::size_t n) {
+    static thread_local SchnorrBatchScratch scratch;
+    if (scratch.scalars.size() < n) {
+        scratch.scalars.resize(n);
+    }
+    if (scratch.points.size() < n) {
+        scratch.points.resize(n);
+    }
+    return scratch;
+}
+
 // Lift x-only key to point (same as in schnorr_verify)
 // Returns (success, point)
 std::pair<bool, Point> lift_x(const std::array<uint8_t, 32>& pubkey_x) {
@@ -143,8 +159,10 @@ bool schnorr_batch_verify_impl(const Entry* entries, std::size_t n,
     }
     auto batch_seed = seed_ctx.finalize();
 
-    std::vector<Scalar> scalars(2 * n);
-    std::vector<Point> points(2 * n);
+        std::size_t const msm_n = 2 * n;
+        auto& scratch = schnorr_batch_scratch(msm_n);
+        Scalar* const scalars = scratch.scalars.data();
+        Point* const points = scratch.points.data();
 
     Scalar g_coeff = Scalar::zero();
 
@@ -176,7 +194,7 @@ bool schnorr_batch_verify_impl(const Entry* entries, std::size_t n,
     }
 
     auto G_term = Point::generator().scalar_mul(g_coeff);
-    auto rest = msm(scalars, points);
+        auto rest = msm(scalars, points, msm_n);
     auto result = G_term.add(rest);
     return result.is_infinity();
 }
