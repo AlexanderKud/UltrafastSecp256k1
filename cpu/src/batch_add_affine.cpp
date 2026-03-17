@@ -346,9 +346,10 @@ std::vector<AffinePointCompact> precompute_point_multiples(
     // Start with Q as affine, convert to Jacobian for additions
     Point current = Point::from_affine(qx, qy);
 
-    std::vector<FieldElement> jac_x(count);
-    std::vector<FieldElement> jac_y(count);
-    std::vector<FieldElement> jac_z(count);
+    PrecomputeBuffers bufs;
+    FieldElement* jac_x = bufs.x(count);
+    FieldElement* jac_y = bufs.y(count);
+    FieldElement* jac_z = bufs.z(count);
 
     jac_x[0] = current.X();
     jac_y[0] = current.Y();
@@ -363,7 +364,7 @@ std::vector<AffinePointCompact> precompute_point_multiples(
     }
 
     // Batch inverse Z
-    fe_batch_inverse(jac_z.data(), count);
+    fe_batch_inverse(jac_z, count);
 
     // Convert to affine
     for (std::size_t i = 0; i < count; ++i) {
