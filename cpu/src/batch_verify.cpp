@@ -149,33 +149,24 @@ bool schnorr_batch_verify(const SchnorrBatchEntry* entries, std::size_t n) {
     // Collect: scalars and points for multi_scalar_mul (non-generator only)
     // Layout: [P_0, ..., P_{n-1}, R_0, ..., R_{n-1}]
     // Scalars: [-a_0*e_0, ..., -a_{n-1}*e_{n-1}, -a_0, ..., -a_{n-1}]
-    std::vector<Scalar> scalars;
-    std::vector<Point> points;
-
-    scalars.reserve(2 * n);
-    points.reserve(2 * n);
+    std::vector<Scalar> scalars(2 * n);
+    std::vector<Point> points(2 * n);
 
     // G coefficient: sum(a_i * s_i)
     Scalar g_coeff = Scalar::zero();
 
-    // First pass: compute challenges, lift points, accumulate G coefficient
-    std::vector<Scalar> weights(n);
-    std::vector<Point> pubkeys(n);
-    std::vector<Point> R_points(n);
-    std::vector<Scalar> challenges(n);
-
+    // Build the non-generator MSM inputs in one pass to avoid extra vectors
+    // and the second/third fill passes for weights/challenges/lifted points.
     for (std::size_t i = 0; i < n; ++i) {
-        weights[i] = batch_weight(batch_seed, static_cast<uint32_t>(i));
+        Scalar const weight = batch_weight(batch_seed, static_cast<uint32_t>(i));
 
         // Lift R from x-only
         auto [r_ok, R_pt] = lift_x(entries[i].signature.r);
         if (!r_ok) return false; // invalid R, batch fails
-        R_points[i] = R_pt;
 
         // Lift pubkey from x-only
         auto [p_ok, P_pt] = lift_x(entries[i].pubkey_x);
         if (!p_ok) return false;
-        pubkeys[i] = P_pt;
 
         // e_i = tagged_hash("BIP0340/challenge", R.x || pubkey_x || msg)
         // Uses precomputed midstate: avoids re-hashing tag on every iteration
@@ -186,10 +177,15 @@ bool schnorr_batch_verify(const SchnorrBatchEntry* entries, std::size_t n) {
         std::memcpy(challenge_input + 64, entries[i].message.data(), 32);
         auto e_hash = detail::cached_tagged_hash(
             detail::g_challenge_midstate, challenge_input, 96);
-        challenges[i] = Scalar::from_bytes(e_hash);
+        Scalar const challenge = Scalar::from_bytes(e_hash);
 
         // Accumulate G coefficient: sum(a_i * s_i)
-        g_coeff += weights[i] * entries[i].signature.s;
+        g_coeff += weight * entries[i].signature.s;
+
+        scalars[i] = (weight * challenge).negate();
+        points[i] = P_pt;
+        scalars[n + i] = weight.negate();
+        points[n + i] = R_pt;
     }
 
     // ---- Optimization: separate G coefficient from MSM ----
@@ -204,16 +200,6 @@ bool schnorr_batch_verify(const SchnorrBatchEntry* entries, std::size_t n) {
     // Step 2: Build MSM for non-generator points only (2*n points)
     //   scalars: [-a_0*e_0, ..., -a_{n-1}*e_{n-1}, -a_0, ..., -a_{n-1}]
     //   points:  [P_0, ..., P_{n-1}, R_0, ..., R_{n-1}]
-    for (std::size_t i = 0; i < n; ++i) {
-        scalars.push_back((weights[i] * challenges[i]).negate());
-        points.push_back(pubkeys[i]);
-    }
-
-    for (std::size_t i = 0; i < n; ++i) {
-        scalars.push_back(weights[i].negate());
-        points.push_back(R_points[i]);
-    }
-
     // Step 3: Compute MSM for P_i and R_i terms
     // msm() auto-selects Strauss (n<=128) or Pippenger (n>128)
     auto rest = msm(scalars, points);

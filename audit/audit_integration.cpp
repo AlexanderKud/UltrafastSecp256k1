@@ -166,6 +166,27 @@ static void test_schnorr_batch_verify() {
         CHECK(secp256k1::schnorr_batch_verify(single), "single entry -> true");
     }
 
+    // Edge case: a malformed x-only pubkey with the same simple xor fingerprint
+    // as a valid one must still be rejected, and must not affect later valid
+    // batches if batch setup logic starts memoizing x-only lifts.
+    {
+        auto const valid_result = secp256k1::schnorr_batch_verify(entries);
+        CHECK(valid_result, "batch baseline valid before cache-collision test");
+
+        auto colliding_bad = entries;
+        colliding_bad[0].pubkey_x[0] ^= 0x01;
+        colliding_bad[0].pubkey_x[31] ^= 0x01;
+
+        bool const bad_once = secp256k1::schnorr_batch_verify(colliding_bad);
+        CHECK(!bad_once, "colliding invalid x-only pubkey rejected");
+
+        bool const bad_twice = secp256k1::schnorr_batch_verify(colliding_bad);
+        CHECK(!bad_twice, "cached invalid colliding x-only pubkey still rejected");
+
+        bool const valid_again = secp256k1::schnorr_batch_verify(entries);
+        CHECK(valid_again, "cache collision does not poison later valid batch");
+    }
+
     printf("    %d checks\n\n", g_pass);
 }
 
