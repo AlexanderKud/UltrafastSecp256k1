@@ -35,17 +35,18 @@ constexpr std::size_t kSchnorrBatchIndividualCutoff = 96;
 // batch_seed: SHA256 over all signature data (binds to entire batch).
 // Returns a_i = SHA256(batch_seed || i) interpreted as scalar.
 // The first weight a_0 = 1 (optimization: skip one scalar_mul).
-Scalar batch_weight(const std::array<uint8_t, 32>& batch_seed, uint32_t index) {
+Scalar batch_weight(const SHA256& batch_weight_base, uint32_t index) {
     if (index == 0) return Scalar::one(); // optimization
 
-    uint8_t buf[36];
-    std::memcpy(buf, batch_seed.data(), 32);
-    buf[32] = static_cast<uint8_t>(index & 0xFF);
-    buf[33] = static_cast<uint8_t>((index >> 8) & 0xFF);
-    buf[34] = static_cast<uint8_t>((index >> 16) & 0xFF);
-    buf[35] = static_cast<uint8_t>((index >> 24) & 0xFF);
+    uint8_t index_bytes[4];
+    index_bytes[0] = static_cast<uint8_t>(index & 0xFF);
+    index_bytes[1] = static_cast<uint8_t>((index >> 8) & 0xFF);
+    index_bytes[2] = static_cast<uint8_t>((index >> 16) & 0xFF);
+    index_bytes[3] = static_cast<uint8_t>((index >> 24) & 0xFF);
 
-    auto h = SHA256::hash(buf, 36);
+    SHA256 ctx = batch_weight_base;
+    ctx.update(index_bytes, sizeof(index_bytes));
+    auto h = ctx.finalize();
     return Scalar::from_bytes(h);
 }
 
@@ -161,6 +162,8 @@ bool schnorr_batch_verify_impl(const Entry* entries, std::size_t n,
         seed_ctx.update(entries[i].message.data(), 32);
     }
     auto batch_seed = seed_ctx.finalize();
+    SHA256 batch_weight_base;
+    batch_weight_base.update(batch_seed.data(), batch_seed.size());
 
     std::size_t const msm_n = 2 * n;
     auto& scratch = schnorr_batch_scratch(msm_n);
@@ -170,7 +173,8 @@ bool schnorr_batch_verify_impl(const Entry* entries, std::size_t n,
     Scalar g_coeff = Scalar::zero();
 
     for (std::size_t i = 0; i < n; ++i) {
-        Scalar const weight = batch_weight(batch_seed, static_cast<uint32_t>(i));
+        Scalar const weight = batch_weight(batch_weight_base,
+                                           static_cast<uint32_t>(i));
 
         auto [r_ok, R_pt] = lift_x(entries[i].signature.r);
         if (!r_ok) return false;
