@@ -101,6 +101,23 @@ DB_PATH = SCRIPT_DIR / "source_graph.db"
 SCHEMA_VERSION = 5
 EXTRACTOR_VERSION = "2026.03.18.3"
 
+
+def _apply_project_dir(project_dir: str):
+    """Override SCRIPT_DIR / REPO_ROOT / DB_PATH to point at another project.
+
+    This lets a single canonical source_graph.py serve multiple projects,
+    each with its own source_graph.toml and source_graph.db.
+    The project_dir should be the directory containing source_graph.toml.
+    """
+    global SCRIPT_DIR, REPO_ROOT, DB_PATH
+    p = Path(project_dir).resolve()
+    if not p.is_dir():
+        print(f"[!] --project directory does not exist: {p}")
+        sys.exit(1)
+    SCRIPT_DIR = p
+    REPO_ROOT = p.parent
+    DB_PATH = p / "source_graph.db"
+
 # ---------- Config-driven project settings ----------
 # These are set by load_config() at startup, with fallback defaults.
 SOURCE_DIRS = []          # list of (label, Path, [extensions])
@@ -6382,6 +6399,787 @@ def _update_file_hashes(conn):
 
 
 # ============================================================
+# SYMBOL GRAPH VIEW — in-memory graph projection
+# ============================================================
+
+class SymbolId:
+    """Canonical identifier for a symbol node."""
+    __slots__ = ("name", "file", "start_line")
+
+    def __init__(self, name: str, file: str, start_line: int = 0):
+        self.name = name
+        self.file = file
+        self.start_line = start_line
+
+    def __hash__(self):
+        return hash((self.name, self.file))
+
+    def __eq__(self, other):
+        return isinstance(other, SymbolId) and self.name == other.name and self.file == other.file
+
+    def __repr__(self):
+        return f"{self.name}@{self.file}"
+
+    def key(self):
+        return (self.name, self.file)
+
+
+class SymbolNode:
+    """Aggregated metadata for a single symbol in the graph."""
+    __slots__ = (
+        "sid", "class_name", "project", "summary", "start_line", "end_line",
+        "tags", "hot_path", "ct_sensitive", "batchable", "gpu_candidate",
+        "risk_score", "gain_score", "audit_coverage_score",
+        "review_priority", "risk_level", "change_frequency",
+        "line_span", "loop_count", "branch_count",
+        "caller_count", "callee_count", "reasons",
+        # analysis_scores fields
+        "hotness_score", "complexity_score", "optimization_score",
+        "gpu_score", "ct_risk_score", "audit_gap_score",
+        "perf_priority", "overall_priority",
+    )
+
+    def __init__(self, sid: SymbolId):
+        self.sid = sid
+        self.class_name = None
+        self.project = None
+        self.summary = None
+        self.start_line = 0
+        self.end_line = 0
+        self.tags = ""
+        self.hot_path = 0
+        self.ct_sensitive = 0
+        self.batchable = 0
+        self.gpu_candidate = 0
+        self.risk_score = 0
+        self.gain_score = 0
+        self.audit_coverage_score = 0
+        self.review_priority = 0
+        self.risk_level = "low"
+        self.change_frequency = 0
+        self.line_span = 0
+        self.loop_count = 0
+        self.branch_count = 0
+        self.caller_count = 0
+        self.callee_count = 0
+        self.reasons = ""
+        self.hotness_score = 0
+        self.complexity_score = 0
+        self.optimization_score = 0
+        self.gpu_score = 0
+        self.ct_risk_score = 0
+        self.audit_gap_score = 0
+        self.perf_priority = 0
+        self.overall_priority = 0
+
+    def composite_score(self, mode: str) -> float:
+        """Compute a task-aware composite relevance score."""
+        if mode == "bugfix":
+            return (
+                self.risk_score * 3.0
+                + self.caller_count * 2.0
+                + self.change_frequency * 1.5
+                + self.branch_count * 1.0
+                + (10 if self.ct_sensitive else 0)
+                - self.audit_coverage_score * 0.5
+            )
+        elif mode == "optimize":
+            return (
+                self.gain_score * 3.0
+                + self.hotness_score * 2.5
+                + self.optimization_score * 2.0
+                + self.loop_count * 2.0
+                + self.caller_count * 1.5
+                + (8 if self.gpu_candidate else 0)
+                + (6 if self.batchable else 0)
+            )
+        elif mode == "audit":
+            return (
+                self.ct_risk_score * 3.0
+                + self.risk_score * 2.5
+                + self.audit_gap_score * 2.0
+                + (12 if self.ct_sensitive else 0)
+                - self.audit_coverage_score * 0.8
+                + self.change_frequency * 1.0
+            )
+        else:  # explore / generic
+            return (
+                self.review_priority * 2.0
+                + self.gain_score * 1.5
+                + self.risk_score * 1.0
+                + self.caller_count * 1.0
+            )
+
+    def to_manifest_dict(self):
+        """Return a machine-oriented dict for JSON output."""
+        return {
+            "symbol": self.sid.name,
+            "file": self.sid.file,
+            "line_range": [self.start_line, self.end_line],
+            "class": self.class_name,
+            "flags": {
+                "hot_path": bool(self.hot_path),
+                "ct_sensitive": bool(self.ct_sensitive),
+                "batchable": bool(self.batchable),
+                "gpu_candidate": bool(self.gpu_candidate),
+            },
+            "scores": {
+                "risk": self.risk_score,
+                "gain": self.gain_score,
+                "review_priority": self.review_priority,
+                "audit_coverage": self.audit_coverage_score,
+                "hotness": self.hotness_score,
+                "optimization": self.optimization_score,
+            },
+            "summary": self.summary or "",
+        }
+
+
+class SymbolEdge:
+    """A typed, weighted edge between two symbol nodes."""
+    __slots__ = ("source", "target", "edge_type", "confidence", "call_count", "weight")
+
+    def __init__(self, source: SymbolId, target: SymbolId, edge_type: str = "calls",
+                 confidence: int = 0, call_count: int = 1):
+        self.source = source
+        self.target = target
+        self.edge_type = edge_type
+        self.confidence = confidence
+        self.call_count = call_count
+        self.weight = confidence + call_count * 2
+
+    def to_dict(self):
+        return {
+            "source": repr(self.source),
+            "target": repr(self.target),
+            "type": self.edge_type,
+            "confidence": self.confidence,
+            "call_count": self.call_count,
+            "weight": self.weight,
+        }
+
+
+class SymbolGraphView:
+    """In-memory graph projection built from the SQLite relational tables.
+
+    Provides graph-oriented traversal (neighbors, shortest path, impact set)
+    while the underlying DB stays relational.  Cheap to build — all heavy
+    data stays in SQLite until explicitly pulled.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._nodes: dict[tuple, SymbolNode] = {}  # (name, file) -> SymbolNode
+        self._outgoing: dict[tuple, list[SymbolEdge]] = defaultdict(list)
+        self._incoming: dict[tuple, list[SymbolEdge]] = defaultdict(list)
+        self._loaded = False
+
+    # ------ lazy load ------
+
+    def _ensure_loaded(self):
+        if self._loaded:
+            return
+        self._load_nodes()
+        self._load_edges()
+        self._loaded = True
+
+    def _load_nodes(self):
+        for row in self._conn.execute(
+            "SELECT sm.symbol_name, sm.file_path, sm.project, sm.class_name, sm.summary,"
+            " sm.semantic_tags, sm.hot_path, sm.ct_sensitive, sm.batchable, sm.gpu_candidate,"
+            " sm.risk_level, sm.review_priority, sm.risk_score, sm.gain_score,"
+            " sm.audit_coverage_score, sm.change_frequency, sm.line_span, sm.loop_count,"
+            " sm.branch_count, sm.caller_count, sm.callee_count, sm.reasons,"
+            " COALESCE(a.hotness_score,0) AS hotness_score,"
+            " COALESCE(a.complexity_score,0) AS complexity_score,"
+            " COALESCE(a.optimization_score,0) AS optimization_score,"
+            " COALESCE(a.gpu_score,0) AS gpu_score,"
+            " COALESCE(a.ct_risk_score,0) AS ct_risk_score,"
+            " COALESCE(a.audit_gap_score,0) AS audit_gap_score,"
+            " COALESCE(a.perf_priority,0) AS perf_priority,"
+            " COALESCE(a.overall_priority,0) AS overall_priority"
+            " FROM symbol_metadata sm"
+            " LEFT JOIN analysis_scores a ON a.symbol_name = sm.symbol_name AND a.file_path = sm.file_path"
+        ).fetchall():
+            sid = SymbolId(row["symbol_name"], row["file_path"])
+            n = SymbolNode(sid)
+            n.class_name = row["class_name"]
+            n.project = row["project"]
+            n.summary = row["summary"]
+            n.tags = row["semantic_tags"] or ""
+            n.hot_path = row["hot_path"]
+            n.ct_sensitive = row["ct_sensitive"]
+            n.batchable = row["batchable"]
+            n.gpu_candidate = row["gpu_candidate"]
+            n.risk_level = row["risk_level"]
+            n.review_priority = row["review_priority"]
+            n.risk_score = row["risk_score"]
+            n.gain_score = row["gain_score"]
+            n.audit_coverage_score = row["audit_coverage_score"]
+            n.change_frequency = row["change_frequency"]
+            n.line_span = row["line_span"]
+            n.loop_count = row["loop_count"]
+            n.branch_count = row["branch_count"]
+            n.caller_count = row["caller_count"]
+            n.callee_count = row["callee_count"]
+            n.reasons = row["reasons"] or ""
+            n.hotness_score = row["hotness_score"]
+            n.complexity_score = row["complexity_score"]
+            n.optimization_score = row["optimization_score"]
+            n.gpu_score = row["gpu_score"]
+            n.ct_risk_score = row["ct_risk_score"]
+            n.audit_gap_score = row["audit_gap_score"]
+            n.perf_priority = row["perf_priority"]
+            n.overall_priority = row["overall_priority"]
+            # fill line range from function_index if present
+            fi = self._conn.execute(
+                "SELECT start_line, end_line FROM function_index WHERE function_name = ? AND file = ? LIMIT 1",
+                (row["symbol_name"], row["file_path"])
+            ).fetchone()
+            if fi:
+                n.start_line = fi["start_line"]
+                n.end_line = fi["end_line"]
+                sid.start_line = fi["start_line"]
+            self._nodes[sid.key()] = n
+
+    def _load_edges(self):
+        for row in self._conn.execute(
+            "SELECT caller_symbol, caller_file, callee_symbol, callee_file, confidence, call_count FROM call_edges"
+        ).fetchall():
+            src = SymbolId(row["caller_symbol"], row["caller_file"])
+            tgt = SymbolId(row["callee_symbol"], row["callee_file"])
+            edge = SymbolEdge(src, tgt, "calls", row["confidence"], row["call_count"])
+            self._outgoing[src.key()].append(edge)
+            self._incoming[tgt.key()].append(edge)
+        # Also load generic edges table
+        for row in self._conn.execute(
+            "SELECT source, target, edge_type, detail FROM edges"
+        ).fetchall():
+            src = SymbolId(row["source"], "")
+            tgt = SymbolId(row["target"], "")
+            edge = SymbolEdge(src, tgt, row["edge_type"] or "semantic")
+            self._outgoing[src.key()].append(edge)
+            self._incoming[tgt.key()].append(edge)
+
+    # ------ core graph API ------
+
+    def get_node(self, name: str, file: str) -> SymbolNode | None:
+        self._ensure_loaded()
+        return self._nodes.get((name, file))
+
+    def all_nodes(self):
+        self._ensure_loaded()
+        return self._nodes.values()
+
+    def get_outgoing(self, sid: SymbolId, edge_type: str | None = None) -> list[SymbolEdge]:
+        self._ensure_loaded()
+        edges = self._outgoing.get(sid.key(), [])
+        if edge_type:
+            return [e for e in edges if e.edge_type == edge_type]
+        return edges
+
+    def get_incoming(self, sid: SymbolId, edge_type: str | None = None) -> list[SymbolEdge]:
+        self._ensure_loaded()
+        edges = self._incoming.get(sid.key(), [])
+        if edge_type:
+            return [e for e in edges if e.edge_type == edge_type]
+        return edges
+
+    def get_neighbors(self, sid: SymbolId, depth: int = 1) -> set[tuple]:
+        """Return all neighbor keys within `depth` hops."""
+        self._ensure_loaded()
+        visited = set()
+        frontier = {sid.key()}
+        for _ in range(depth):
+            next_frontier = set()
+            for key in frontier:
+                if key in visited:
+                    continue
+                visited.add(key)
+                for e in self._outgoing.get(key, []):
+                    next_frontier.add(e.target.key())
+                for e in self._incoming.get(key, []):
+                    next_frontier.add(e.source.key())
+            frontier = next_frontier - visited
+        visited.update(frontier)
+        visited.discard(sid.key())
+        return visited
+
+    def rank_neighbors(self, sid: SymbolId, mode: str = "explore", depth: int = 1, limit: int = 12) -> list[SymbolNode]:
+        """Return neighbors ranked by task-aware composite score."""
+        neighbor_keys = self.get_neighbors(sid, depth)
+        nodes = [self._nodes[k] for k in neighbor_keys if k in self._nodes]
+        nodes.sort(key=lambda n: n.composite_score(mode), reverse=True)
+        return nodes[:limit]
+
+    def minimal_slice(self, seed_keys: list[tuple], budget: int = 40, mode: str = "explore") -> dict:
+        """Extract a minimal subgraph around seed symbols.
+
+        Returns a dict with nodes, edges, entrypoints, risky_paths, summaries.
+        """
+        self._ensure_loaded()
+        included_keys = set(seed_keys)
+        # 1-hop expansion from seeds
+        for key in list(seed_keys):
+            for e in self._outgoing.get(key, []):
+                included_keys.add(e.target.key())
+            for e in self._incoming.get(key, []):
+                included_keys.add(e.source.key())
+
+        # Score and trim to budget
+        scored = []
+        for key in included_keys:
+            node = self._nodes.get(key)
+            if node:
+                is_seed = key in seed_keys
+                score = node.composite_score(mode) + (100 if is_seed else 0)
+                scored.append((score, key, node))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        kept_keys = set()
+        for _, key, _ in scored[:budget]:
+            kept_keys.add(key)
+        # Always keep seeds
+        kept_keys.update(k for k in seed_keys if k in self._nodes)
+
+        # Collect edges between kept nodes
+        result_edges = []
+        for key in kept_keys:
+            for e in self._outgoing.get(key, []):
+                if e.target.key() in kept_keys:
+                    result_edges.append(e)
+
+        # Identify risky paths (nodes with high risk in the slice)
+        risky = [self._nodes[k] for k in kept_keys if k in self._nodes and self._nodes[k].risk_score >= 6]
+        risky.sort(key=lambda n: n.risk_score, reverse=True)
+
+        result_nodes = [self._nodes[k] for k in kept_keys if k in self._nodes]
+        result_nodes.sort(key=lambda n: n.composite_score(mode), reverse=True)
+
+        return {
+            "nodes": [n.to_manifest_dict() for n in result_nodes],
+            "edges": [e.to_dict() for e in result_edges],
+            "entrypoints": [repr(self._nodes[k].sid) for k in seed_keys if k in self._nodes],
+            "risky_paths": [{"symbol": n.sid.name, "file": n.sid.file, "risk": n.risk_score} for n in risky[:8]],
+            "summaries": {n.sid.name: n.summary or "" for n in result_nodes if n.summary},
+        }
+
+    def impact_set(self, changed_keys: list[tuple], radius: int = 2) -> list[SymbolNode]:
+        """Return all symbols transitively affected by changes to the given symbols."""
+        self._ensure_loaded()
+        affected = set()
+        frontier = set(changed_keys)
+        for _ in range(radius):
+            next_frontier = set()
+            for key in frontier:
+                if key in affected:
+                    continue
+                affected.add(key)
+                for e in self._incoming.get(key, []):
+                    next_frontier.add(e.source.key())
+            frontier = next_frontier - affected
+        affected.update(frontier)
+        for k in changed_keys:
+            affected.discard(k)
+        nodes = [self._nodes[k] for k in affected if k in self._nodes]
+        nodes.sort(key=lambda n: n.caller_count + n.risk_score, reverse=True)
+        return nodes
+
+    def find_seeds(self, term: str, limit: int = 8, core_only: bool = False) -> list[SymbolNode]:
+        """Find seed nodes matching a term, ranked by composite relevance."""
+        self._ensure_loaded()
+        term_lower = term.lower()
+        candidates = []
+        for key, node in self._nodes.items():
+            name_lower = node.sid.name.lower()
+            file_lower = node.sid.file.lower()
+            if term_lower in name_lower or term_lower in file_lower:
+                if core_only and not _is_core_file(node.sid.file):
+                    continue
+                # Proximity bonus: exact match > prefix > contains
+                if name_lower == term_lower:
+                    proximity = 100
+                elif name_lower.startswith(term_lower) or name_lower.endswith(term_lower):
+                    proximity = 50
+                else:
+                    proximity = 10
+                score = proximity + node.composite_score("explore")
+                candidates.append((score, node))
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return [n for _, n in candidates[:limit]]
+
+    def focus_manifest(self, term: str, budget: int = 24, core_only: bool = False, mode: str = "explore") -> dict:
+        """Generate a machine-oriented ranked manifest for an agent.
+
+        Pipeline: find seeds -> 1-hop expand -> rank -> assemble manifest.
+        """
+        seeds = self.find_seeds(term, limit=6, core_only=core_only)
+        if not seeds:
+            return {"target": term, "suspects": [], "hot_functions": [], "relevant_files": [],
+                    "risks": [], "constraints": [], "recommended_next_steps": []}
+
+        seed_keys = [s.sid.key() for s in seeds]
+        # 1-hop neighbors
+        all_neighbor_keys = set()
+        for key in seed_keys:
+            all_neighbor_keys.update(self.get_neighbors(SymbolId(*key), depth=1))
+        # Merge seeds + neighbors, score them
+        all_keys = set(seed_keys) | all_neighbor_keys
+        all_nodes_scored = []
+        for key in all_keys:
+            node = self._nodes.get(key)
+            if node:
+                is_seed = key in seed_keys
+                score = node.composite_score(mode) + (80 if is_seed else 0)
+                all_nodes_scored.append((score, node, is_seed))
+        all_nodes_scored.sort(key=lambda x: x[0], reverse=True)
+        top_nodes = all_nodes_scored[:budget]
+
+        suspects = [n.to_manifest_dict() for _, n, is_seed in top_nodes if is_seed]
+        hot_functions = [
+            n.to_manifest_dict() for _, n, _ in top_nodes
+            if n.hot_path or n.hotness_score >= 3
+        ][:8]
+
+        relevant_files = list(dict.fromkeys(n.sid.file for _, n, _ in top_nodes))[:12]
+
+        risks = []
+        for _, n, _ in top_nodes:
+            if n.risk_score >= 6:
+                risks.append({"symbol": n.sid.name, "file": n.sid.file, "risk_score": n.risk_score,
+                              "risk_level": n.risk_level, "ct_sensitive": bool(n.ct_sensitive)})
+        risks = risks[:8]
+
+        constraints = []
+        for _, n, _ in top_nodes:
+            if n.ct_sensitive:
+                constraints.append(f"Do not break constant-time behavior in {n.sid.name}")
+        # Deduplicate constraints
+        constraints = list(dict.fromkeys(constraints))[:6]
+
+        next_steps = []
+        if seeds:
+            top = seeds[0]
+            next_steps.append(f"slice {top.sid.name} {budget * 2}")
+            if mode == "bugfix":
+                next_steps.append(f"bundle bugfix {top.sid.name}")
+            elif mode == "optimize":
+                next_steps.append(f"bundle optimize {top.sid.name}")
+            elif mode == "audit":
+                next_steps.append(f"bundle audit {top.sid.name}")
+
+        return {
+            "target": term,
+            "mode": mode,
+            "suspects": suspects,
+            "hot_functions": hot_functions,
+            "relevant_files": relevant_files,
+            "risks": risks,
+            "constraints": constraints,
+            "recommended_next_steps": next_steps,
+        }
+
+    def slice_manifest(self, term: str, budget: int = 32, core_only: bool = False, mode: str = "explore") -> dict:
+        """Generate a strict minimal dependency cut for an agent.
+
+        Returns nodes, edges, entrypoints, risky_paths, summaries — all JSON-ready.
+        """
+        seeds = self.find_seeds(term, limit=4, core_only=core_only)
+        if not seeds:
+            return {"target": term, "nodes": [], "edges": [], "entrypoints": [],
+                    "risky_paths": [], "summaries": {}}
+        seed_keys = [s.sid.key() for s in seeds]
+        result = self.minimal_slice(seed_keys, budget=budget, mode=mode)
+        result["target"] = term
+        result["mode"] = mode
+
+        # Add function signatures for top nodes
+        sigs = []
+        for nd in result["nodes"][:12]:
+            row = self._conn.execute(
+                "SELECT signature FROM function_index WHERE function_name = ? AND file = ? LIMIT 1",
+                (nd["symbol"], nd["file"])
+            ).fetchone()
+            if row and row["signature"]:
+                sigs.append({"symbol": nd["symbol"], "file": nd["file"], "signature": row["signature"]})
+        result["signatures"] = sigs
+
+        # Add direct callers/callees for seeds
+        caller_callee = {"callers": [], "callees": []}
+        for key in seed_keys:
+            sid = SymbolId(*key)
+            for e in self.get_incoming(sid, "calls")[:6]:
+                caller_callee["callers"].append(e.to_dict())
+            for e in self.get_outgoing(sid, "calls")[:6]:
+                caller_callee["callees"].append(e.to_dict())
+        result["call_context"] = caller_callee
+
+        return result
+
+    def bundle_manifest(self, task_type: str, term: str, budget: int = 40, core_only: bool = False) -> dict:
+        """Assemble a task-shaped context pack as a structured manifest."""
+        seeds = self.find_seeds(term, limit=6, core_only=core_only)
+        if not seeds:
+            return {"task": task_type, "target": term, "sections": []}
+
+        seed_keys = [s.sid.key() for s in seeds]
+        sections = []
+
+        def add(title, items, max_items=20):
+            if items:
+                sections.append({"title": title, "items": items[:max_items]})
+
+        # Common: target functions with bodies
+        bodies = self._conn.execute(
+            "SELECT file, function_name, class_name, start_line, end_line, body, line_count "
+            "FROM function_bodies WHERE function_name LIKE ? OR class_name LIKE ? "
+            "ORDER BY line_count ASC LIMIT 8",
+            (f"%{term}%", f"%{term}%")
+        ).fetchall()
+        if bodies:
+            add("target_functions", [
+                {"symbol": _function_label(b["class_name"], b["function_name"]),
+                 "file": b["file"], "lines": [b["start_line"], b["end_line"]],
+                 "line_count": b["line_count"]}
+                for b in bodies
+            ])
+
+        # Common: function signatures
+        add("signatures", [
+            {"symbol": s.sid.name, "file": s.sid.file,
+             "signature": (self._conn.execute(
+                 "SELECT signature FROM function_index WHERE function_name = ? AND file = ? LIMIT 1",
+                 (s.sid.name, s.sid.file)).fetchone() or {"signature": None})["signature"]}
+            for s in seeds if (self._conn.execute(
+                "SELECT 1 FROM function_index WHERE function_name = ? AND file = ? LIMIT 1",
+                (s.sid.name, s.sid.file)).fetchone())
+        ])
+
+        # Common: relevant decisions
+        decs = self._conn.execute(
+            "SELECT decision, rationale, file, function_name FROM decisions "
+            "WHERE status = 'active' AND (decision LIKE ? OR file LIKE ? OR function_name LIKE ?) "
+            "ORDER BY created_at DESC LIMIT 5",
+            (f"%{term}%", f"%{term}%", f"%{term}%")
+        ).fetchall()
+        if decs:
+            add("decisions", [{"decision": d["decision"], "rationale": d["rationale"]} for d in decs])
+
+        # Callers/callees (always useful)
+        callers = []
+        callees = []
+        for key in seed_keys:
+            sid = SymbolId(*key)
+            callers.extend(e.to_dict() for e in self.get_incoming(sid, "calls")[:8])
+            callees.extend(e.to_dict() for e in self.get_outgoing(sid, "calls")[:8])
+        add("callers", callers)
+        add("callees", callees)
+
+        # Task-specific sections
+        if task_type == "bugfix":
+            # Top risks
+            risks = self._conn.execute(
+                "SELECT file, line, risk_type, severity, expression FROM crash_risks "
+                "WHERE file LIKE ? ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END LIMIT 10",
+                (f"%{term}%",)
+            ).fetchall()
+            null_risks = self._conn.execute(
+                "SELECT file, line, function_call, risk_type FROM null_risks WHERE file LIKE ? LIMIT 8",
+                (f"%{term}%",)
+            ).fetchall()
+            add("risks", [
+                {"file": r["file"], "line": r["line"], "type": r["risk_type"],
+                 "severity": r["severity"], "expr": r["expression"]} for r in risks
+            ] + [
+                {"file": n["file"], "line": n["line"], "type": "null",
+                 "severity": "medium", "expr": n["function_call"]} for n in null_risks
+            ])
+            # Recent changes
+            churn = self._conn.execute(
+                "SELECT file, recent_commit_count, churn_score, bugfix_commits FROM history_metrics "
+                "WHERE file LIKE ? ORDER BY churn_score DESC LIMIT 8",
+                (f"%{term}%",)
+            ).fetchall()
+            add("recent_churn", [
+                {"file": c["file"], "churn": c["churn_score"],
+                 "recent_commits": c["recent_commit_count"], "bugfixes": c["bugfix_commits"]}
+                for c in churn
+            ])
+
+        elif task_type == "optimize":
+            # Bottleneck queue
+            bots = self._conn.execute(
+                "SELECT symbol_name, file_path, overall_priority, perf_priority, hotness_score, gpu_score, summary "
+                "FROM v_bottleneck_queue WHERE symbol_name LIKE ? OR file_path LIKE ? "
+                "ORDER BY overall_priority DESC LIMIT 12",
+                (f"%{term}%", f"%{term}%")
+            ).fetchall()
+            add("bottlenecks", [
+                {"symbol": b["symbol_name"], "file": b["file_path"],
+                 "perf_priority": b["perf_priority"], "hotness": b["hotness_score"],
+                 "gpu_score": b["gpu_score"], "summary": b["summary"]}
+                for b in bots
+            ])
+            # GPU candidates in slice
+            gpu_nodes = [n for n in seeds if n.gpu_candidate or n.batchable]
+            add("gpu_candidates", [n.to_manifest_dict() for n in gpu_nodes])
+
+        elif task_type == "audit":
+            # Coverage gaps
+            coverage = self._conn.execute(
+                "SELECT file, coverage_score, unit_test_refs, crash_risk_count, null_risk_count "
+                "FROM audit_coverage WHERE file LIKE ? ORDER BY coverage_score ASC LIMIT 10",
+                (f"%{term}%",)
+            ).fetchall()
+            add("coverage_gaps", [
+                {"file": c["file"], "coverage": c["coverage_score"],
+                 "tests": c["unit_test_refs"], "crashes": c["crash_risk_count"],
+                 "nulls": c["null_risk_count"]}
+                for c in coverage
+            ])
+            # CT-sensitive symbols
+            ct = [n for n in seeds if n.ct_sensitive]
+            add("ct_sensitive_symbols", [n.to_manifest_dict() for n in ct])
+            # Unsafe patterns
+            casts = self._conn.execute(
+                "SELECT file, line, cast_expr FROM unsafe_casts WHERE file LIKE ? LIMIT 8",
+                (f"%{term}%",)
+            ).fetchall()
+            raw = self._conn.execute(
+                "SELECT file, line, member_type, member_name FROM raw_pointers WHERE file LIKE ? LIMIT 8",
+                (f"%{term}%",)
+            ).fetchall()
+            add("unsafe_patterns", [
+                {"file": c["file"], "line": c["line"], "type": "cast", "expr": c["cast_expr"]} for c in casts
+            ] + [
+                {"file": r["file"], "line": r["line"], "type": "raw_ptr",
+                 "expr": f"{r['member_type']} {r['member_name']}"} for r in raw
+            ])
+
+        # Negative context (what NOT to touch)
+        neg = []
+        for s in seeds:
+            if s.ct_sensitive:
+                neg.append(f"Preserve constant-time behavior in {s.sid.name}")
+        # Add global constraints from decisions table
+        global_constraints = self._conn.execute(
+            "SELECT decision FROM decisions WHERE status = 'active' AND tags LIKE '%constraint%' LIMIT 5"
+        ).fetchall()
+        for gc in global_constraints:
+            neg.append(gc["decision"])
+        if neg:
+            add("negative_context", neg[:8])
+
+        # Tests
+        tests = self._conn.execute(
+            "SELECT test_file, function_name, mapping_type FROM test_function_map "
+            "WHERE target_file LIKE ? OR function_name LIKE ? LIMIT 10",
+            (f"%{term}%", f"%{term}%")
+        ).fetchall()
+        add("related_tests", [
+            {"test": t["test_file"], "function": t["function_name"], "type": t["mapping_type"]}
+            for t in tests
+        ])
+
+        return {
+            "task": task_type,
+            "target": term,
+            "seed_count": len(seeds),
+            "sections": sections,
+        }
+
+    def pipeline_manifest(self, task_type: str, term: str, budget: int = 48,
+                          core_only: bool = False) -> dict:
+        """Single compound query: focus -> slice -> bundle in one call.
+
+        Chains progressively: broad discovery -> minimal dependency cut ->
+        task-shaped context pack.  Returns ONE combined JSON response so the
+        calling agent needs exactly one CLI invocation instead of three,
+        saving both tokens and rate-limit capacity.
+        """
+        mode = {"bugfix": "bugfix", "optimize": "optimize",
+                "audit": "audit"}.get(task_type, "explore")
+
+        # Phase 1: Focus — discover seeds and ranked suspects
+        focus = self.focus_manifest(term, budget=budget, core_only=core_only, mode=mode)
+        if not focus.get("suspects"):
+            return {"task": task_type, "target": term, "phases": {
+                "focus": focus, "slice": {}, "bundle": {}},
+                "summary": {"seed_count": 0, "files": [], "risks": []}}
+
+        # Phase 2: Slice — narrow to minimal dependency subgraph
+        # Use top suspect names as more precise slice targets
+        top_symbols = [s["symbol"] for s in focus["suspects"][:4]]
+        slice_term = top_symbols[0] if top_symbols else term
+        slice_budget = max(budget, 32)
+        slc = self.slice_manifest(slice_term, budget=slice_budget,
+                                  core_only=core_only, mode=mode)
+
+        # Phase 3: Bundle — task-shaped context with function bodies
+        bundle_budget = max(budget // 2, 24)
+        bndl = self.bundle_manifest(task_type, term, budget=bundle_budget,
+                                    core_only=core_only)
+
+        # Merge unique files across all phases
+        all_files = list(dict.fromkeys(
+            focus.get("relevant_files", []) +
+            [n["file"] for n in slc.get("nodes", [])] +
+            [item["file"] for sec in bndl.get("sections", [])
+             for item in (sec.get("items") or []) if isinstance(item, dict) and "file" in item]
+        ))
+
+        # Merge unique risks
+        seen_risk_keys = set()
+        merged_risks = []
+        for r in focus.get("risks", []) + slc.get("risky_paths", []):
+            key = (r.get("symbol", r.get("source", "")), r.get("file", ""))
+            if key not in seen_risk_keys:
+                seen_risk_keys.add(key)
+                merged_risks.append(r)
+
+        # Collect constraints and negative context from all phases
+        constraints = focus.get("constraints", [])
+        for sec in bndl.get("sections", []):
+            if sec.get("title") == "negative_context":
+                constraints.extend(sec.get("items", []))
+        constraints = list(dict.fromkeys(constraints))[:8]
+
+        # Compact summary for quick agent orientation
+        summary = {
+            "seed_count": len(focus.get("suspects", [])),
+            "slice_nodes": len(slc.get("nodes", [])),
+            "slice_edges": len(slc.get("edges", [])),
+            "bundle_sections": len(bndl.get("sections", [])),
+            "files": all_files[:16],
+            "risks": merged_risks[:10],
+            "constraints": constraints,
+            "top_suspects": [s["symbol"] for s in focus.get("suspects", [])[:6]],
+        }
+
+        return {
+            "task": task_type,
+            "target": term,
+            "mode": mode,
+            "phases": {
+                "focus": focus,
+                "slice": slc,
+                "bundle": bndl,
+            },
+            "summary": summary,
+        }
+
+
+# Cache for the graph view so repeated commands don't rebuild it
+_graph_view_cache = None
+
+def get_graph_view() -> SymbolGraphView:
+    """Return (and cache) the SymbolGraphView singleton."""
+    global _graph_view_cache
+    if _graph_view_cache is None:
+        _graph_view_cache = SymbolGraphView(get_conn())
+    return _graph_view_cache
+
+
+# ============================================================
 # QUERY COMMANDS
 # ============================================================
 
@@ -6573,16 +7371,25 @@ def _select_candidate_files(conn, term, limit=12, core_only=False):
 def _parse_compact_args(argv, default_budget):
     args = [arg for arg in argv if arg]
     core_only = False
+    json_mode = False
+    mode = "explore"
     filtered = []
-    for arg in args:
-        if arg == "--core":
+    i = 0
+    while i < len(args):
+        if args[i] == "--core":
             core_only = True
-            continue
-        filtered.append(arg)
+        elif args[i] == "--json":
+            json_mode = True
+        elif args[i] == "--mode" and i + 1 < len(args):
+            i += 1
+            mode = args[i]
+        else:
+            filtered.append(args[i])
+        i += 1
     budget = default_budget
     if filtered and filtered[-1].isdigit():
         budget = filtered.pop()
-    return " ".join(filtered), budget, core_only
+    return " ".join(filtered), budget, core_only, json_mode, mode
 
 
 def _sql_in(values):
@@ -7437,8 +8244,14 @@ def calls_cmd(term):
     print_table(rows, ["caller_symbol", "caller_file", "callee_symbol", "callee_file", "confidence", "call_count", "evidence"])
 
 
-def focus_cmd(term, budget=80, core_only=False):
+def focus_cmd(term, budget=80, core_only=False, json_mode=False, mode="explore"):
     """Compact ranked snapshot optimized for low-token agent context."""
+    if json_mode:
+        gv = get_graph_view()
+        manifest = gv.focus_manifest(term, budget=int(budget), core_only=core_only, mode=mode)
+        import json as _json
+        print(_json.dumps(manifest, indent=2))
+        return
     conn = get_conn()
     budget = _parse_budget_arg(budget, 80)
     candidate_files = _select_candidate_files(conn, term, limit=6, core_only=core_only)
@@ -7555,8 +8368,14 @@ def focus_cmd(term, budget=80, core_only=False):
         _print_compact_section(title, items)
 
 
-def slice_cmd(term, budget=120, core_only=False):
+def slice_cmd(term, budget=120, core_only=False, json_mode=False, mode="explore"):
     """Minimal implementation slice: entry files, hot symbols, neighbors, and tests."""
+    if json_mode:
+        gv = get_graph_view()
+        manifest = gv.slice_manifest(term, budget=int(budget), core_only=core_only, mode=mode)
+        import json as _json
+        print(_json.dumps(manifest, indent=2))
+        return
     conn = get_conn()
     budget = _parse_budget_arg(budget, 120)
     pattern = f"%{term}%"
@@ -8469,8 +9288,14 @@ def decisions_cmd(term=None):
     print(f"  ({len(rows)} decisions)")
 
 
-def bundle_cmd(task_type, term, max_lines=2000):
+def bundle_cmd(task_type, term, max_lines=2000, json_mode=False):
     """Assemble minimal context bundle for a task."""
+    if json_mode:
+        gv = get_graph_view()
+        manifest = gv.bundle_manifest(task_type, term, budget=max(max_lines // 50, 40))
+        import json as _json
+        print(_json.dumps(manifest, indent=2))
+        return
     conn = get_conn()
     sections = []
     line_budget = max_lines
@@ -8754,6 +9579,63 @@ def bundle_cmd(task_type, term, max_lines=2000):
         print(f"## {title}")
         print(content)
         print()
+
+
+def pipeline_cmd(task_type, term, budget=48, core_only=False, json_mode=True):
+    """Run focus -> slice -> bundle in a single call.
+
+    Usage: pipeline <task_type> <term> [budget] [--core] [--json]
+    task_type: bugfix | optimize | audit | explore
+    """
+    gv = get_graph_view()
+    manifest = gv.pipeline_manifest(task_type, term, budget=budget,
+                                    core_only=core_only)
+    if json_mode:
+        import json as _json
+        print(_json.dumps(manifest, indent=2))
+    else:
+        # Compact text fallback
+        s = manifest.get("summary", {})
+        print(f"Pipeline: {task_type} / {term}")
+        print(f"  Seeds:    {s.get('seed_count', 0)}")
+        print(f"  Slice:    {s.get('slice_nodes', 0)} nodes, {s.get('slice_edges', 0)} edges")
+        print(f"  Sections: {s.get('bundle_sections', 0)}")
+        print(f"  Files:    {len(s.get('files', []))}")
+        suspects = s.get("top_suspects", [])
+        if suspects:
+            print(f"  Top:      {', '.join(suspects[:6])}")
+        risks = s.get("risks", [])
+        if risks:
+            print(f"  Risks:    {len(risks)}")
+            for r in risks[:5]:
+                sym = r.get("symbol", r.get("source", "?"))
+                print(f"    - {sym} ({r.get('file', '?')})")
+        constraints = s.get("constraints", [])
+        if constraints:
+            print(f"  Constraints:")
+            for c in constraints[:4]:
+                print(f"    - {c}")
+
+        # Print phase details in text mode
+        phases = manifest.get("phases", {})
+
+        focus = phases.get("focus", {})
+        if focus.get("suspects"):
+            print(f"\n--- Focus ({len(focus['suspects'])} suspects) ---")
+            for su in focus["suspects"][:8]:
+                print(f"  {su['symbol']}  {su['file']}  score={su.get('composite_score', '?')}")
+
+        slc = phases.get("slice", {})
+        if slc.get("signatures"):
+            print(f"\n--- Slice ({len(slc.get('nodes', []))} nodes) ---")
+            for sig in slc["signatures"][:6]:
+                print(f"  {sig['symbol']}: {sig.get('signature', '?')}")
+
+        bndl = phases.get("bundle", {})
+        if bndl.get("sections"):
+            print(f"\n--- Bundle ({len(bndl['sections'])} sections) ---")
+            for sec in bndl["sections"]:
+                print(f"  [{sec['title']}] {len(sec.get('items', []))} items")
 
 
 def claudemd_cmd():
@@ -9069,6 +9951,18 @@ def export_config_cmd():
 # ============================================================
 
 def main():
+    # Handle --project <dir> before anything else — it redirects the tool
+    # to a different project's config/DB without copying source_graph.py.
+    if "--project" in sys.argv:
+        idx = sys.argv.index("--project")
+        if idx + 1 < len(sys.argv):
+            _apply_project_dir(sys.argv[idx + 1])
+            # Remove --project <dir> from argv so it doesn't confuse commands
+            del sys.argv[idx:idx + 2]
+        else:
+            print("[!] --project requires a directory argument")
+            sys.exit(1)
+
     load_config()
 
     if len(sys.argv) < 2:
@@ -9165,11 +10059,11 @@ def main():
     elif cmd == "calls" and len(sys.argv) > 2:
         calls_cmd(" ".join(sys.argv[2:]))
     elif cmd == "focus" and len(sys.argv) > 2:
-        term, budget, core_only = _parse_compact_args(sys.argv[2:], 80)
-        focus_cmd(term, budget, core_only=core_only)
+        term, budget, core_only, json_mode, mode = _parse_compact_args(sys.argv[2:], 80)
+        focus_cmd(term, budget, core_only=core_only, json_mode=json_mode, mode=mode)
     elif cmd == "slice" and len(sys.argv) > 2:
-        term, budget, core_only = _parse_compact_args(sys.argv[2:], 120)
-        slice_cmd(term, budget, core_only=core_only)
+        term, budget, core_only, json_mode, mode = _parse_compact_args(sys.argv[2:], 120)
+        slice_cmd(term, budget, core_only=core_only, json_mode=json_mode, mode=mode)
     elif cmd == "trace" and len(sys.argv) > 2:
         trace_cmd(" ".join(sys.argv[2:]))
     elif cmd == "impact" and len(sys.argv) > 2:
@@ -9198,11 +10092,22 @@ def main():
         decisions_cmd(sys.argv[2] if len(sys.argv) > 2 else None)
     elif cmd == "bundle" and len(sys.argv) > 3:
         max_l = 2000
+        json_mode = "--json" in sys.argv
         if "--max-lines" in sys.argv:
             idx = sys.argv.index("--max-lines")
             if idx + 1 < len(sys.argv):
                 max_l = int(sys.argv[idx + 1])
-        bundle_cmd(sys.argv[2], sys.argv[3], max_l)
+        bundle_cmd(sys.argv[2], sys.argv[3], max_l, json_mode=json_mode)
+    elif cmd == "pipeline" and len(sys.argv) > 3:
+        task_type = sys.argv[2]
+        # Filter --text before passing to _parse_compact_args (which doesn't know it)
+        raw_args = [a for a in sys.argv[3:] if a != "--text"]
+        term, budget, core_only, json_mode_flag, _ = _parse_compact_args(raw_args, 48)
+        # Pipeline defaults to JSON unless --text is explicitly given
+        json_mode = "--text" not in sys.argv
+        if json_mode_flag:
+            json_mode = True
+        pipeline_cmd(task_type, term, budget=int(budget), core_only=core_only, json_mode=json_mode)
     elif cmd == "claudemd":
         claudemd_cmd()
     elif cmd == "init":
