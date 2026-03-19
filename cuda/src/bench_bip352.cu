@@ -50,7 +50,7 @@ using CpuKPlan  = secp256k1::fast::KPlan;
 // ============================================================================
 // Configuration
 // ============================================================================
-static constexpr int BENCH_N       = 10000;
+static constexpr int BENCH_N       = 500000;
 static constexpr int BENCH_WARMUP  = 3;
 static constexpr int BENCH_PASSES  = 11;
 static constexpr int DETAIL_N      = 1000;
