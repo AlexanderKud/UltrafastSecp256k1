@@ -436,8 +436,9 @@ void sha256_compress(const std::uint8_t block[64], std::uint32_t state[8]) noexc
         uint32x4_t const msg = vld1q_u32(w + i);
         uint32x4_t const k = vld1q_u32(SHA256_K + i);
         uint32x4_t const wk = vaddq_u32(msg, k);
+        uint32x4_t const abcd_prev = abcd;
         abcd = vsha256hq_u32(abcd, efgh, wk);
-        efgh = vsha256h2q_u32(efgh, abcd, wk);
+        efgh = vsha256h2q_u32(efgh, abcd_prev, wk);
     }
 
     abcd = vaddq_u32(abcd, abcd_save);
