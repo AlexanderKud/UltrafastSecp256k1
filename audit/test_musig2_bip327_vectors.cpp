@@ -121,7 +121,7 @@ static void test_key_agg_known_keys() {
 
     // Aggregated key must be non-zero and differ from both individual keys
     bool nonzero = false;
-    for (int i = 0; i < 32; ++i) {
+    for (std::size_t i = 0; i < 32; ++i) {
         if (ctx.Q_x[i] != 0) { nonzero = true; break; }
     }
     CHECK(nonzero, "agg_key is nonzero");
@@ -292,9 +292,9 @@ static void test_3of3_signing_pinned() {
     std::vector<Scalar> psigs;
     for (int i = 0; i < 3; ++i) {
         auto psig = secp256k1::musig2_partial_sign(
-            sec_nonces[static_cast<size_t>(i)], sks[i], key_ctx, session, i);
+            sec_nonces[static_cast<size_t>(i)], sks[i], key_ctx, session, static_cast<std::size_t>(i));
         const bool v = secp256k1::musig2_partial_verify(
-            psig, pub_nonces[static_cast<size_t>(i)], pubkeys[i], key_ctx, session, i);
+            psig, pub_nonces[static_cast<size_t>(i)], pubkeys[i], key_ctx, session, static_cast<std::size_t>(i));
         char label[64];
         (void)std::snprintf(label, sizeof(label), "partial_sig[%d] verifies", i);
         CHECK(v, label);
@@ -512,7 +512,7 @@ static void test_signer_scaling() {
         std::vector<Scalar> psigs;
         for (int i = 0; i < n; ++i) {
             auto ps = secp256k1::musig2_partial_sign(
-                sec_nonces[static_cast<size_t>(i)], sks[i], key_ctx, session, i);
+                sec_nonces[static_cast<size_t>(i)], sks[i], key_ctx, session, static_cast<std::size_t>(i));
             psigs.push_back(ps);
         }
 

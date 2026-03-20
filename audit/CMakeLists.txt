@@ -543,6 +543,12 @@ set_tests_properties(
     unified_audit
     PROPERTIES LABELS "audit"
 )
+if(SECP256K1_BUILD_PROTOCOL_TESTS)
+    set_tests_properties(
+        musig2_frost musig2_frost_advanced frost_kat musig2_bip327_vectors
+        PROPERTIES LABELS "audit"
+    )
+endif()
 
 message(STATUS "  Audit test plan: audit/AUDIT_TEST_PLAN.md")
 message(STATUS "  Full audit script (Windows): audit/run_full_audit.ps1")
