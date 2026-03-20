@@ -190,19 +190,7 @@ __device__ inline bool knowledge_verify_device(
     Scalar e;
     scalar_from_bytes(e_hash, &e);
 
-    // Verify: s*G == R + e*P
-    JacobianPoint sG;
-    scalar_mul_generator_const(&proof->s, &sG);
-
-    // Compute e*P
-    JacobianPoint p_jac;
-    p_jac.x = pubkey->x;
-    p_jac.y = pubkey->y;
-    p_jac.z = FIELD_ONE;
-    p_jac.infinity = false;
-    JacobianPoint eP;
-    scalar_mul(&p_jac, &e, &eP);
-
+    // Verify: s*G - e*P == R  (Shamir double-mul GLV: 1 pass instead of 2 scalar_muls)
     // Compute R from rx (lift_x with even Y)
     FieldElement rx_fe;
     field_from_bytes(proof->rx, &rx_fe);
@@ -210,31 +198,36 @@ __device__ inline bool knowledge_verify_device(
     AffinePoint R_affine;
     if (!lift_x_even(&rx_fe, &R_affine)) return false;
 
-    // R + e*P
-    JacobianPoint R_plus_eP;
-    jacobian_add_mixed(&eP, &R_affine, &R_plus_eP);
+    // neg_e = -e mod n
+    Scalar neg_e;
+    scalar_negate(&e, &neg_e);
 
-    // Compare s*G == R + e*P via Jacobian cross-multiply (0 field_inv)
-    // Two Jacobian points (X1:Y1:Z1) == (X2:Y2:Z2) iff:
-    //   X1 * Z2^2 == X2 * Z1^2  AND  Y1 * Z2^3 == Y2 * Z1^3
+    // result = s*G + neg_e*P  (= s*G - e*P)
+    JacobianPoint p_jac;
+    p_jac.x = pubkey->x;
+    p_jac.y = pubkey->y;
+    p_jac.z = FIELD_ONE;
+    p_jac.infinity = false;
+
+    JacobianPoint result;
+    shamir_double_mul_glv(&GENERATOR_JACOBIAN, &proof->s, &p_jac, &neg_e, &result);
+
+    // Compare result == R via Jacobian cross-multiply (0 field_inv)
+    // (X1:Y1:Z1) == (X2:Y2:Z2) iff X1*Z2^2 == X2*Z1^2 AND Y1*Z2^3 == Y2*Z1^3
+    // R is affine (Z=1), so: result.x * 1 == R.x * result.z^2
+    //                        result.y * 1 == R.y * result.z^3
     {
-        FieldElement z1sq, z2sq, z1cu, z2cu;
-        field_sqr(&sG.z, &z1sq);
-        field_sqr(&R_plus_eP.z, &z2sq);
-        field_mul(&z1sq, &sG.z, &z1cu);
-        field_mul(&z2sq, &R_plus_eP.z, &z2cu);
+        FieldElement zsq, zcu;
+        field_sqr(&result.z, &zsq);
+        field_mul(&zsq, &result.z, &zcu);
 
-        FieldElement lx, rx_cmp, ly, ry;
-        field_mul(&sG.x, &z2sq, &lx);
-        field_mul(&R_plus_eP.x, &z1sq, &rx_cmp);
-        field_mul(&sG.y, &z2cu, &ly);
-        field_mul(&R_plus_eP.y, &z1cu, &ry);
+        FieldElement rx_scaled, ry_scaled;
+        field_mul(&R_affine.x, &zsq, &rx_scaled);
+        field_mul(&R_affine.y, &zcu, &ry_scaled);
 
-        // Branchless compare: subtract and check limbs directly
-        // field_sub outputs in [0, p) so zero check on limbs is exact
         FieldElement dx, dy;
-        field_sub(&lx, &rx_cmp, &dx);
-        field_sub(&ly, &ry, &dy);
+        field_sub(&result.x, &rx_scaled, &dx);
+        field_sub(&result.y, &ry_scaled, &dy);
         uint64_t acc = dx.limbs[0] | dx.limbs[1] | dx.limbs[2] | dx.limbs[3]
                      | dy.limbs[0] | dy.limbs[1] | dy.limbs[2] | dy.limbs[3];
         return acc == 0;
@@ -266,28 +259,20 @@ __device__ inline bool dleq_verify_device(
     const AffinePoint* P,
     const AffinePoint* Q)
 {
-    // R1 = s*G - e*P
+    // R1 = s*G - e*P,  R2 = s*H - e*Q  (2x Shamir double-mul GLV: 2 passes instead of 4 scalar_muls)
     JacobianPoint G_jac, H_jac, P_jac, Q_jac;
     G_jac.x = G->x; G_jac.y = G->y; G_jac.z = FIELD_ONE; G_jac.infinity = false;
     H_jac.x = H->x; H_jac.y = H->y; H_jac.z = FIELD_ONE; H_jac.infinity = false;
     P_jac.x = P->x; P_jac.y = P->y; P_jac.z = FIELD_ONE; P_jac.infinity = false;
     Q_jac.x = Q->x; Q_jac.y = Q->y; Q_jac.z = FIELD_ONE; Q_jac.infinity = false;
 
-    JacobianPoint sG, eP, sH, eQ;
-    scalar_mul(&G_jac, &proof->s, &sG);
-    scalar_mul(&P_jac, &proof->e, &eP);
-    scalar_mul(&H_jac, &proof->s, &sH);
-    scalar_mul(&Q_jac, &proof->e, &eQ);
+    // neg_e = -e mod n
+    Scalar neg_e;
+    scalar_negate(&proof->e, &neg_e);
 
-    // R1 = sG - eP (negate eP.y)
-    field_negate(&eP.y, &eP.y);
-    JacobianPoint R1;
-    jacobian_add(&sG, &eP, &R1);
-
-    // R2 = sH - eQ (negate eQ.y)
-    field_negate(&eQ.y, &eQ.y);
-    JacobianPoint R2;
-    jacobian_add(&sH, &eQ, &R2);
+    JacobianPoint R1, R2;
+    shamir_double_mul_glv(&G_jac, &proof->s, &P_jac, &neg_e, &R1);  // s*G - e*P
+    shamir_double_mul_glv(&H_jac, &proof->s, &Q_jac, &neg_e, &R2);  // s*H - e*Q
 
     // Serialize input points directly from affine (no field_inv needed -- Z=1)
     uint8_t g_comp[33], h_comp[33], p_comp[33], q_comp[33], r1_comp[33], r2_comp[33];
