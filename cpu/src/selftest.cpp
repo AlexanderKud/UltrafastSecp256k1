@@ -459,6 +459,52 @@ static bool test_batch_inverse_expanded(bool verbose) {
     return ok;
 }
 
+// Batch inversion with zero elements — zero-safety test
+static bool test_batch_inverse_zero_safe(bool verbose) {
+    if (verbose) {
+        SELFTEST_PRINT("\nBatch Inversion (zero-safe):\n");
+    }
+    // Mix of non-zero and zero elements: [3, 0, 7, 0, 11]
+    FieldElement elems[5] = {
+        FieldElement::from_uint64(3),
+        FieldElement::zero(),
+        FieldElement::from_uint64(7),
+        FieldElement::zero(),
+        FieldElement::from_uint64(11)
+    };
+    FieldElement const copy[5] = { elems[0], elems[1], elems[2], elems[3], elems[4] };
+    fe_batch_inverse(elems, 5);
+    bool ok = true;
+    // Non-zero elements get correct inverses
+    if (!(elems[0] == copy[0].inverse())) ok = false;
+    if (!(elems[2] == copy[2].inverse())) ok = false;
+    if (!(elems[4] == copy[4].inverse())) ok = false;
+    // Zero elements stay zero
+    if (!(elems[1] == FieldElement::zero())) ok = false;
+    if (!(elems[3] == FieldElement::zero())) ok = false;
+
+    // Edge case: all zeros
+    if (ok) {
+        FieldElement all_zero[3] = { FieldElement::zero(), FieldElement::zero(), FieldElement::zero() };
+        fe_batch_inverse(all_zero, 3);
+        for (int i = 0; i < 3; ++i) {
+            if (!(all_zero[i] == FieldElement::zero())) { ok = false; break; }
+        }
+    }
+
+    // Edge case: single zero
+    if (ok) {
+        FieldElement single_zero[1] = { FieldElement::zero() };
+        fe_batch_inverse(single_zero, 1);
+        if (!(single_zero[0] == FieldElement::zero())) ok = false;
+    }
+
+    if (verbose) {
+        SELFTEST_PRINT(ok ? "    PASS\n" : "    FAIL\n");
+    }
+    return ok;
+}
+
 // Bilinearity checks for K*Q with non-generator points
 // Tests: (Q+G)*K == Q*K + G*K, (Q-G)*K == Q*K - G*K
 static bool test_bilinearity_K_times_Q(bool verbose) {
@@ -858,11 +904,9 @@ static bool test_batch_inverse_sweep(bool verbose) {
     return ok;
 }
 
-// NOTE: fe_batch_inverse() requires ALL inputs to be non-zero.
-// Zero inputs cause undefined cumulative product. This is the standard
-// Montgomery trick contract (same as libsecp256k1). Callers must skip
-// zero lanes before calling. No zero-input test is needed here;
-// the contract is enforced by documentation, not runtime checks.
+// NOTE: fe_batch_inverse() is zero-safe since v3.3.1.
+// Zero inputs produce zero outputs without corrupting non-zero inverses.
+// CT variants (fe52_batch_inverse) still require callers to exclude zeros.
 
 // -- Repro bundle: prints environment info for reproducibility --
 static void print_repro_bundle(SelftestMode mode, uint64_t seed) {
@@ -1434,6 +1478,9 @@ bool Selftest(bool verbose, SelftestMode mode, uint64_t seed) {
 
     // Expanded batch inverse (32 elements)
     tally(total, passed, "batch_inverse_expanded", test_batch_inverse_expanded(verbose));
+
+    // Batch inverse zero-safety
+    tally(total, passed, "batch_inverse_zero_safe", test_batch_inverse_zero_safe(verbose));
 
     // Bilinearity for K*Q with +/-G
     tally(total, passed, "bilinearity_K_times_Q", test_bilinearity_K_times_Q(verbose));

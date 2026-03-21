@@ -147,7 +147,9 @@ inline void fe_h_based_inversion_batched(FieldElement* h_values,
     if (n_threads == 0 || batch_size == 0) return;
     
     // Process each thread's sequence independently
-    // (Parallel on multi-core CPU via OpenMP, TBB, or std::execution)
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (std::size_t tid = 0; tid < n_threads; ++tid) {
         // Forward pass: Z_final = Z_0 * prodH_i
         FieldElement z_current = z0_values[tid];
@@ -171,9 +173,6 @@ inline void fe_h_based_inversion_batched(FieldElement* h_values,
         }
     }
 }
-
-// TODO: Add parallel version using OpenMP or TBB for multi-threaded CPU batch processing
-// std::execution is not well-supported by ClangCL on Windows yet (2026)
 
 } // namespace secp256k1::fast
 

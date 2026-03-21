@@ -3408,25 +3408,32 @@ FieldElement fe_inverse_strauss(const FieldElement& value) {
     return pow_p_minus_2_strauss(value);
 }
 
-// Montgomery batch inversion algorithm
+// Montgomery batch inversion algorithm (zero-safe)
 // Input: array of N field elements [a_0, a_1, ..., a_n_1]
-// Output: modifies array in-place to [a_0^-^1, a_1^-^1, ..., a_n_1^-^1]
+// Output: modifies array in-place to [a_0^-1, a_1^-1, ..., a_n_1^-1]
+//         Zero elements map to zero in the output.
 //
 // Algorithm:
-//   1. Compute products: p_0=a_0, p_1=a_0*a_1, p_2=a_0*a_1*a_2, ..., p_n_1=a_0*...*a_n_1
-//   2. Invert final product: inv = (a_0*...*a_n_1)^-^1
-//   3. Work backwards: a^-^1 = inv * p_1, then inv = inv * a
+//   1. Compute products: p_0=a_0, p_1=a_0*a_1, ..., p_n_1=a_0*...*a_n_1
+//      (zeros are substituted with 1 to keep the product chain valid)
+//   2. Invert final product: inv = (a_0*...*a_n_1)^-1  (zeros excluded)
+//   3. Work backwards: a_i^-1 = inv * p_{i-1}, then inv = inv * a_i
+//      (zero positions are set to zero and do not update inv)
 //
 // Cost: 3N multiplications + 1 inversion (vs N inversions)
 // For N=8: ~8 us vs ~28 us (3.5x faster!)
 static inline void fe_batch_inverse_with_scratch(FieldElement* elements,
                                                  size_t count,
                                                  FieldElement* scratch) {
-    // Step 1: Compute cumulative products
-    // products[i] = elements[0] * elements[1] * ... * elements[i]
-    scratch[0] = elements[0];
+    FieldElement const kOne = FieldElement::one();
+    FieldElement const kZero = FieldElement::zero();
+
+    // Step 1: Compute cumulative products, substituting zeros with 1
+    bool const first_zero = (elements[0] == kZero);
+    scratch[0] = first_zero ? kOne : elements[0];
     for (size_t i = 1; i < count; ++i) {
-        scratch[i] = scratch[i - 1] * elements[i];
+        bool const is_z = (elements[i] == kZero);
+        scratch[i] = scratch[i - 1] * (is_z ? kOne : elements[i]);
     }
 
     // Step 2: Invert the final product (only 1 expensive inverse!)
@@ -3434,20 +3441,25 @@ static inline void fe_batch_inverse_with_scratch(FieldElement* elements,
 
     // Step 3: Work backwards to compute individual inverses
     for (size_t i = count - 1; i > 0; --i) {
+        if (elements[i] == kZero) {
+            elements[i] = kZero; // zero maps to zero
+            continue;            // inv unchanged (we used 1 for this slot)
+        }
         FieldElement const original = elements[i];
         elements[i] = inv * scratch[i - 1];
         inv = inv * original;
     }
 
-    // Handle first element separately (no products[i-1])
-    elements[0] = inv;
+    // Handle first element separately (no scratch[i-1])
+    elements[0] = first_zero ? kZero : inv;
 }
 
 SECP256K1_HOT_FUNCTION
 void fe_batch_inverse(FieldElement* elements, size_t count, std::vector<FieldElement>& scratch) {
     if (count == 0) return;
     if (count == 1) {
-        elements[0] = elements[0].inverse();
+        if (!(elements[0] == FieldElement::zero()))
+            elements[0] = elements[0].inverse();
         return;
     }
 
@@ -3462,7 +3474,7 @@ void fe_batch_inverse(FieldElement* elements, size_t count, std::vector<FieldEle
 SECP256K1_HOT_FUNCTION
 void fe_batch_inverse(FieldElement* elements, size_t count) {
     if (count <= 1) {
-        if (count == 1) {
+        if (count == 1 && !(elements[0] == FieldElement::zero())) {
             elements[0] = elements[0].inverse();
         }
         return;

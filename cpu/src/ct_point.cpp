@@ -184,7 +184,10 @@ inline FE52 fe52_inverse(const FE52& a) noexcept {
 // --- FE52 Batch Inversion (Montgomery's trick) ------------------------------
 // Computes z_inv[i] = z[i]^{-1} mod p for all i in [0, n).
 // Cost: 1 inversion + 3(n-1) multiplications (vs n inversions).
-// All z[i] MUST be non-zero (caller ensures by excluding infinity entries).
+//
+// PRECONDITION: All z[i] MUST be non-zero. This is a CT function —
+// adding variable-time zero-checks would break constant-time guarantees.
+// Callers ensure this by excluding infinity entries before calling.
 inline void fe52_batch_inverse(FE52* z_inv, const FE52* z, std::size_t n) noexcept {
     if (n == 0) return;
     if (n == 1) {
@@ -1754,7 +1757,8 @@ inline Jac4x64 jac_add_ge_var_zr(const Jac4x64& a,
     return {x3, y3, z3};
 }
 
-// --- Montgomery batch inversion ----------------------------------------------
+// --- Montgomery batch inversion (CT, 4×64 helpers) ---------------------------
+// PRECONDITION: All z[i] MUST be non-zero. CT function — no zero-checks.
 
 inline void fe_batch_inverse(FE52* inv, const FE52* z, std::size_t n) noexcept {
     if (n == 0) return;

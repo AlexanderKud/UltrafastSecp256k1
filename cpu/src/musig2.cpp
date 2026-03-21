@@ -81,6 +81,18 @@ MuSig2KeyAggCtx musig2_key_agg(const std::vector<std::array<uint8_t, 32>>& pubke
     std::size_t const n = pubkeys.size();
     if (n == 0) return ctx;
 
+    // Validate ALL pubkeys upfront before computing anything.
+    // If any key is invalid (x >= p or not on curve), reject the entire set.
+    // Silently skipping invalid keys would allow rogue key attacks.
+    for (std::size_t i = 0; i < n; ++i) {
+        FieldElement px;
+        if (!FieldElement::parse_bytes_strict(pubkeys[i], px)) return ctx;
+        auto x3 = px.square() * px;
+        auto y2 = x3 + FieldElement::from_uint64(7);
+        auto y = y2.sqrt();
+        if (y.square() != y2) return ctx;  // x not on curve
+    }
+
     // L = tagged_hash("KeyAgg list", pk_1 || pk_2 || ... || pk_n)
     SHA256 l_ctx;
     // Use tagged hash prefix
@@ -119,18 +131,14 @@ MuSig2KeyAggCtx musig2_key_agg(const std::vector<std::array<uint8_t, 32>>& pubke
     }
 
     // Q = sum(a_i * P_i)
-    // First, lift all x-only pubkeys to points
+    // All pubkeys validated upfront — lift to points unconditionally
     Point Q = Point::infinity();
     for (std::size_t i = 0; i < n; ++i) {
-        // Lift x-only to point (even Y) -- strict: reject x >= p
         FieldElement px;
-        if (!FieldElement::parse_bytes_strict(pubkeys[i], px)) continue;
+        FieldElement::parse_bytes_strict(pubkeys[i], px);  // validated above
         auto x3 = px.square() * px;
         auto y2 = x3 + FieldElement::from_uint64(7);
-
-        // sqrt via optimized addition chain (~253 sqr + 13 mul)
         auto y = y2.sqrt();
-        if (y.square() != y2) continue;  // invalid pubkey x-coord
 
         // BIP-340: ensure even Y
         if (y.limbs()[0] & 1) {

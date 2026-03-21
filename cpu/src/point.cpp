@@ -3362,13 +3362,11 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
     return from_jac52(result52);
 #endif // SECP256K1_USE_4X64_POINT_OPS
 }
-// DISABLED: ESP32/Embedded 4-stream GLV Strauss produces incorrect verify results.
-// Root cause: the 4-stream interleaved Shamir scan with GLV decomposition of BOTH
-// scalars (a and b) computes wrong R' point, causing 100% ECDSA/Schnorr verify failure.
-// The simple fallback (a*G + b*P via separate scalar_muls) uses proven code paths
-// (gen_fixed_mul for G, GLV+Shamir per-point for P) and is correct.
-// TODO: investigate and fix the 4-stream path, then re-enable.
-#elif 0 && (defined(SECP256K1_PLATFORM_ESP32) || defined(ESP_PLATFORM) || defined(SECP256K1_PLATFORM_STM32))
+// ESP32/Embedded: 4-stream GLV Strauss (4x64 field)
+// Fixed in v3.3.1: the phi(G) sign used k1_neg XOR k2_neg (flip_a) instead
+// of k2_neg alone. This is correct for the P table (where k1_neg is baked
+// into P_base), but wrong for the G table (precomputed once, no sign baked).
+#elif (defined(SECP256K1_PLATFORM_ESP32) || defined(ESP_PLATFORM) || defined(SECP256K1_PLATFORM_STM32))
 // -- ESP32/Embedded: 4-stream GLV Strauss (4x64 field) --------------------
 // Combines a*G + b*P into a single doubling chain with 4 wNAF streams,
 // halving the doublings compared to two separate scalar_mul calls.
@@ -3496,10 +3494,10 @@ Point Point::dual_scalar_mul_gen_point(const Scalar& a, const Scalar& b, const P
     // -- Handle G sign: if a decomposed with k1_neg, use neg tables --
     const AffinePoint* g_pos  = decomp_a.k1_neg ? gen4.neg_tbl_G : gen4.tbl_G;
     const AffinePoint* g_neg  = decomp_a.k1_neg ? gen4.tbl_G : gen4.neg_tbl_G;
-    // phi(G) sign: flip if k1_neg != k2_neg for a
-    bool flip_a = (decomp_a.k1_neg != decomp_a.k2_neg);
-    const AffinePoint* pg_pos = flip_a ? gen4.neg_tbl_phiG : gen4.tbl_phiG;
-    const AffinePoint* pg_neg = flip_a ? gen4.tbl_phiG : gen4.neg_tbl_phiG;
+    // phi(G) sign: use k2_neg directly (G tables have no sign baked in,
+    // unlike the 2-stream P case where k1_neg is absorbed into P_base)
+    const AffinePoint* pg_pos = decomp_a.k2_neg ? gen4.neg_tbl_phiG : gen4.tbl_phiG;
+    const AffinePoint* pg_neg = decomp_a.k2_neg ? gen4.tbl_phiG : gen4.neg_tbl_phiG;
 
     // -- 4-stream Shamir interleaved scan (JacobianPoint direct -- no Point wrapper) --
     std::size_t max_len = len_a1;
