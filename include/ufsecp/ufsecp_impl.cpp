@@ -178,6 +178,29 @@ static inline void point_to_compressed(const Point& p, uint8_t out[33]) {
     std::memcpy(out, comp.data(), 33);
 }
 
+template <typename T>
+class SecureEraseGuard {
+public:
+    explicit SecureEraseGuard(T* value) noexcept : value_(value) {}
+    SecureEraseGuard(const SecureEraseGuard&) = delete;
+    SecureEraseGuard& operator=(const SecureEraseGuard&) = delete;
+
+    ~SecureEraseGuard() {
+        if (value_ != nullptr) {
+            secp256k1::detail::secure_erase(value_, sizeof(T));
+        }
+    }
+
+private:
+    T* value_;
+};
+
+static inline void secure_erase_scalar_vector(std::vector<Scalar>& values) {
+    for (auto& value : values) {
+        secp256k1::detail::secure_erase(&value, sizeof(value));
+    }
+}
+
 static secp256k1::Network to_network(int n) {
     return n == UFSECP_NET_TESTNET ? secp256k1::Network::Testnet
                                    : secp256k1::Network::Mainnet;
@@ -835,6 +858,7 @@ static ufsecp_error_t ecdh_parse_args(ufsecp_ctx* ctx,
     }
     pk = point_from_compressed(pubkey33);
     if (pk.is_infinity()) {
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));
         return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid or infinity pubkey");
     }
     return UFSECP_OK;
@@ -1155,6 +1179,8 @@ ufsecp_error_t ufsecp_bip32_pubkey(ufsecp_ctx* ctx,
     auto ek = extkey_from_uf(key);
     auto pk = ek.public_key();
     point_to_compressed(pk, pubkey33_out);
+    secp256k1::detail::secure_erase(ek.key.data(), ek.key.size());
+    secp256k1::detail::secure_erase(ek.chain_code.data(), ek.chain_code.size());
     return UFSECP_OK;
 }
 
@@ -1198,6 +1224,7 @@ ufsecp_error_t ufsecp_taproot_tweak_seckey(ufsecp_ctx* ctx,
     auto tweaked = secp256k1::taproot_tweak_privkey(sk, merkle_root, mr_len);
     secp256k1::detail::secure_erase(&sk, sizeof(sk));
     if (tweaked.is_zero()) {
+        secp256k1::detail::secure_erase(&tweaked, sizeof(tweaked));
         return ctx_set_err(ctx, UFSECP_ERR_ARITH, "taproot tweak resulted in zero");
 }
 

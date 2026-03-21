@@ -22,6 +22,7 @@
 #include <array>
 #include <cstdint>
 #include "secp256k1/ecdsa.hpp"
+#include "secp256k1/recovery.hpp"
 #include "secp256k1/schnorr.hpp"
 #include "secp256k1/private_key.hpp"
 #include "secp256k1/ct/point.hpp"
@@ -49,6 +50,28 @@ ECDSASignature ecdsa_sign_hedged(const std::array<std::uint8_t, 32>& msg_hash,
 ECDSASignature ecdsa_sign_hedged_verified(const std::array<std::uint8_t, 32>& msg_hash,
                                           const fast::Scalar& private_key,
                                           const std::array<std::uint8_t, 32>& aux_rand);
+
+// -- CT ECDSA Sign with Recovery ID -------------------------------------------
+// Like ecdsa_sign() but also returns the recovery ID (0-3) needed for public key
+// recovery. Uses ct::generator_mul() for R=k*G and ct::scalar_inverse() for
+// k^{-1}: the private key and nonce remain constant-time throughout.
+//
+// Replaces the variable-time ::ecdsa_sign_recoverable() in all signing contexts
+// where a private key is involved (bitcoin_sign_message, Ethereum personal_sign,
+// and any Sparrow Wallet / ECIES integration using this library).
+//
+// Recovery ID extraction reads R.y parity from FieldElement::limbs()[0]&1 and
+// checks R.x overflow with a byte comparison -- neither branches on secret data.
+RecoverableSignature ecdsa_sign_recoverable(
+    const std::array<std::uint8_t, 32>& msg_hash,
+    const fast::Scalar& private_key);
+
+// PrivateKey overload.
+inline RecoverableSignature ecdsa_sign_recoverable(
+    const std::array<std::uint8_t, 32>& msg_hash,
+    const PrivateKey& private_key) {
+    return ecdsa_sign_recoverable(msg_hash, private_key.scalar());
+}
 
 // -- CT ECDSA Sign (PrivateKey overload) --------------------------------------
 // Preferred overload: accepts strong-typed PrivateKey for compile-time safety.

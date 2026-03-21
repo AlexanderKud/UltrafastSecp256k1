@@ -42,7 +42,7 @@
 [![Clang-Tidy](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/clang-tidy.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/clang-tidy.yml)
 [![SonarCloud](https://sonarcloud.io/api/project_badges/measure?project=shrec_UltrafastSecp256k1&metric=security_rating)](https://sonarcloud.io/summary/overall?id=shrec_UltrafastSecp256k1)
 [![codecov](https://codecov.io/gh/shrec/UltrafastSecp256k1/graph/badge.svg)](https://codecov.io/gh/shrec/UltrafastSecp256k1)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white)](https://discord.gg/sUmW7cc5)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white)](https://discord.gg/E4BK8SeMYU)
 
 **Supported Blockchains (secp256k1-based):**
 
@@ -585,8 +585,8 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) for a full layer-by-layer risk assessment
 | **No secret-dependent branches** | All `ct::` functions | [OK] Enforced by design, verified via Clang-Tidy checks |
 | **No secret-dependent memory access** | All `ct::` table lookups use constant-index cmov | [OK] |
 | **ASan + UBSan CI** | Every push -- catches undefined behavior in CT paths | [OK] CI |
-| **Timing tests (dudect)** | CPU field/scalar ops | 🔜 Planned (see [roadmap](ROADMAP.md)) |
-| **Formal CT verification** | Fiat-Crypto style | 🔜 Planned |
+| **Timing tests (dudect)** | CPU field/scalar ops | [OK] Implemented in CI + nightly + native ARM64 |
+| **Deterministic CT verification** | `ct-verif` LLVM + Valgrind CT | [OK] Implemented |
 
 **Assumptions:** CT guarantees depend on compiler not introducing secret-dependent branches during optimization. Builds use `-O2` with Clang; MSVC may require additional flags. Micro-architectural side channels (Spectre, power analysis) are outside current scope -- see [THREAT_MODEL.md](THREAT_MODEL.md).
 

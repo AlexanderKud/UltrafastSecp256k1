@@ -1756,6 +1756,7 @@ int main(int argc, char* argv[]) {
     auto dev = detect_ocl_device(*g_ctx);
 
     // Try to init extended kernels
+    g_kernel_dir = kernel_dir; // make available to audit modules
     if (!kernel_dir.empty()) {
         g_ext.init(*g_ctx, kernel_dir);
         g_zk.init(*g_ctx, kernel_dir);

@@ -522,26 +522,18 @@ FORCE_INLINE void field_add_impl(FieldElement* r, const FieldElement* a, const F
 #else
     ulong carry = 0;
     ulong sum[4];
-
-    // Add with carry chain
     sum[0] = add_with_carry(a->limbs[0], b->limbs[0], 0, &carry);
     sum[1] = add_with_carry(a->limbs[1], b->limbs[1], carry, &carry);
     sum[2] = add_with_carry(a->limbs[2], b->limbs[2], carry, &carry);
     sum[3] = add_with_carry(a->limbs[3], b->limbs[3], carry, &carry);
-
-    // Reduce: if carry or sum >= p, subtract p
     ulong borrow = 0;
     ulong diff[4];
-
     diff[0] = sub_with_borrow(sum[0], SECP256K1_P0, 0, &borrow);
     diff[1] = sub_with_borrow(sum[1], SECP256K1_P1, borrow, &borrow);
     diff[2] = sub_with_borrow(sum[2], SECP256K1_P2, borrow, &borrow);
     diff[3] = sub_with_borrow(sum[3], SECP256K1_P3, borrow, &borrow);
-
-    // If carry from addition or no borrow from subtraction, use diff
     ulong use_diff = (carry != 0) | (borrow == 0);
     ulong mask = use_diff ? ~0UL : 0UL;
-
     r->limbs[0] = (diff[0] & mask) | (sum[0] & ~mask);
     r->limbs[1] = (diff[1] & mask) | (sum[1] & ~mask);
     r->limbs[2] = (diff[2] & mask) | (sum[2] & ~mask);
@@ -583,23 +575,17 @@ FORCE_INLINE void field_sub_impl(FieldElement* r, const FieldElement* a, const F
 #else
     ulong borrow = 0;
     ulong diff[4];
-
-    // Subtract with borrow chain
     diff[0] = sub_with_borrow(a->limbs[0], b->limbs[0], 0, &borrow);
     diff[1] = sub_with_borrow(a->limbs[1], b->limbs[1], borrow, &borrow);
     diff[2] = sub_with_borrow(a->limbs[2], b->limbs[2], borrow, &borrow);
     diff[3] = sub_with_borrow(a->limbs[3], b->limbs[3], borrow, &borrow);
-
-    // If borrow, add p (result was negative)
     ulong mask = borrow ? ~0UL : 0UL;
-
     ulong carry = 0;
     ulong adj[4];
     adj[0] = add_with_carry(diff[0], SECP256K1_P0 & mask, 0, &carry);
     adj[1] = add_with_carry(diff[1], SECP256K1_P1 & mask, carry, &carry);
     adj[2] = add_with_carry(diff[2], SECP256K1_P2 & mask, carry, &carry);
     adj[3] = add_with_carry(diff[3], SECP256K1_P3 & mask, carry, &carry);
-
     r->limbs[0] = adj[0];
     r->limbs[1] = adj[1];
     r->limbs[2] = adj[2];
@@ -683,7 +669,6 @@ FORCE_INLINE void field_mul_impl(FieldElement* r, const FieldElement* a, const F
 
 // =============================================================================
 // Field Squaring: r = a² mod p
-// Optimized: only need upper triangle of multiplication
 // =============================================================================
 
 // Forward declaration for field_sqr_n_impl

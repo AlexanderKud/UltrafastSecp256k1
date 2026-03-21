@@ -273,6 +273,46 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 | Schnorr Sign | 137.7 ns | 7.26 M/s |
 | Schnorr Verify | 92.7 ns | 10.79 M/s |
 
+### GPU Zero-Knowledge Operations
+
+> **First open-source GPU implementation of secp256k1 ZK proofs (Knowledge + DLEQ + Bulletproof).**
+
+| Operation | Time/Op | Throughput | Notes |
+|-----------|---------|------------|-------|
+| Knowledge Prove (G) | 252.3 ns | 3,964 k/s | CT Schnorr sigma, batch 4K |
+| Knowledge Verify | 749.9 ns | 1,334 k/s | s*G == R + e*P, batch 4K |
+| DLEQ Prove | 668.3 ns | 1,496 k/s | Discrete log equality, CT path, batch 4K |
+| DLEQ Verify | 1,919.1 ns | 521 k/s | Two-base verification, batch 4K |
+| Pedersen Commit | 66.0 ns | 15,160 k/s | v*H + r*G, batch 4K |
+| Range Prove (64-bit) | 3,711,570 ns | 0.27 k/s | Bulletproof, CT path, batch 256 |
+| Range Verify (64-bit) | 764,649 ns | 1.3 k/s | Full IPA verification, batch 256 |
+
+### CUDA Launch-Width Triage (2026-03-18)
+
+The latest local rerun on the RTX 5060 Ti used `gpu_bench_unified` to check whether a global block-size
+retune should replace the current default. The answer was no: there is not yet a safe retained win.
+
+| TPB | k*G (generator) | CT k*G | CT k*P | Verdict |
+|-----|-----------------|--------|--------|---------|
+| 256 | 129.5 ns | 98.7 ns | 162.8 ns | Stable reference rerun |
+| 512 | 128.5 ns | invalid (`0.0 ns`) | invalid (`0.1 ns`) | Rejected; CT timing became unstable |
+
+The `512`-thread launch showed only a marginal `k*G` gain, while the same harness produced invalid
+constant-time timings. Until the CT timing methodology is tightened, no global CUDA TPB default change
+is retained from this sweep.
+
+**GPU vs CPU ZK Speedup (single-core throughput):**
+
+| Operation | CPU (i5-14400F) | GPU (RTX 5060 Ti) | GPU/CPU Speedup |
+|-----------|----------------:|------------------:|----------------:|
+| Knowledge Prove | 24,292 ns | 252.3 ns | **96x** |
+| Knowledge Verify | 23,830 ns | 749.9 ns | **32x** |
+| DLEQ Prove | 42,370 ns | 668.3 ns | **63x** |
+| DLEQ Verify | 60,607 ns | 1,919.1 ns | **32x** |
+| Pedersen Commit | 29,718 ns | 66.0 ns | **450x** |
+| Range Prove (64-bit) | 13,618,693 ns | 3,711,570 ns | **3.7x** |
+| Range Verify (64-bit) | 2,669,843 ns | 764,649 ns | **3.5x** |
+
 ---
 
 ## OpenCL Benchmarks
@@ -280,6 +320,20 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 **Hardware:** NVIDIA RTX 5060 Ti (36 CUs, 2602 MHz)  
 **OpenCL:** 3.0 CUDA, Driver 580.126.09  
 **Build:** Clang 19, Release, -O3, PTX inline assembly  
+
+### OpenCL GPU C ABI Coverage (2026-03-18)
+
+| C ABI operation | OpenCL status | Notes |
+|-----------------|---------------|-------|
+| `ufsecp_gpu_generator_mul_batch` | Implemented | Uses `batch_scalar_mul_generator` + `batch_jacobian_to_affine` |
+| `ufsecp_gpu_ecdsa_verify_batch` | Missing | Returns `UFSECP_ERR_GPU_UNSUPPORTED` |
+| `ufsecp_gpu_schnorr_verify_batch` | Missing | Returns `UFSECP_ERR_GPU_UNSUPPORTED` |
+| `ufsecp_gpu_ecdh_batch` | Implemented | GPU scalar mul, CPU SHA-256 finalization |
+| `ufsecp_gpu_hash160_pubkey_batch` | Implemented | Public-data batch hashing |
+| `ufsecp_gpu_msm` | Implemented | GPU scalar mul + CPU-side affine reduction |
+
+The missing OpenCL pieces are therefore the two batch verify paths. Core ECC,
+ECDH, Hash160, and MSM are already wired through the backend-neutral C ABI.
 
 ### Kernel-Only Timing (no buffer alloc/copy overhead)
 
@@ -310,8 +364,10 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 | Field Inv | 29.0 ns | 34.43 M/s | batch 1M |
 | Point Double | 58.4 ns | 17.11 M/s | batch 1M |
 | Point Add | 111.9 ns | 8.94 M/s | batch 1M |
-| kG (batch=65K) | 307.7 ns | 3.25 M/s | |
-| kG (batch=16K) | 311.6 ns | 3.21 M/s | |
+| kG (batch=65536) | 115.1 ns | 8.69 M/s | retained 2026-03-17 revalidation |
+| kP (batch=65536) | 263.1 ns | 3.80 M/s | retained 2026-03-17 revalidation |
+| kP upload | 6.7 ns | 149.25 M/s | host-to-device transfer slice |
+| kP readback | 12.4 ns | 80.65 M/s | device-to-host transfer slice |
 
 ### CUDA / OpenCL Configuration
 
@@ -392,29 +448,48 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 
 **Hardware:** RK3588 (Cortex-A76 @ 2.256 GHz, pinned to big cores)  
 **OS:** Android  
-**Compiler:** NDK r26, Clang 17.0.2  
+**Compiler:** NDK r27.2.12479018, Clang 18.0.3  
 **Assembly:** ARM64 inline (MUL/UMULH)  
 **Field:** 10x26 (optimal for ARM64)
 
 | Operation | Time | Notes |
 |-----------|------|-------|
-| Field Mul | 74 ns | ARM64 MUL/UMULH, 10x26 |
+| Field Mul | 68.3 ns | ARM64 MUL/UMULH, 10x26 |
 | Field Square | 50 ns | |
 | Field Add | 8 ns | |
 | Field Negate | 18 ns | |
 | Field Inverse | 2 us | Fermat's theorem |
 | Point Add | 992 ns | Jacobian coordinates |
 | Point Double | 548 ns | |
-| Generator Mul (kxG) | 14 us | Precomputed tables |
-| Scalar Mul (kxP) | 131 us | GLV + wNAF |
-| ECDSA Sign | 30 us | RFC 6979 |
-| ECDSA Verify | 153 us | Shamir + GLV |
-| Schnorr Sign (BIP-340) | 38 us | |
-| Schnorr Verify (BIP-340) | 173 us | |
+| Generator Mul (kxG) | 15.27 us | Precomputed tables |
+| Scalar Mul (kxP) | 130.33 us | GLV + wNAF |
+| ECDSA Sign | 22.22 us | ARMv8 SHA2 dispatch retained |
+| ECDSA Verify | 150.13 us | Shamir + GLV |
+| Schnorr Sign (BIP-340) | 16.67 us | Precomputed keypair path |
+| Schnorr Verify (BIP-340) | 153.63 us | Raw pubkey path is similar |
 | Batch Inverse (n=100) | 265 ns/elem | Montgomery's trick |
 | Batch Inverse (n=1000) | 240 ns/elem | |
 
 ARM64 10x26 representation with MUL/UMULH assembly provides optimal field arithmetic performance.
+
+### Android ARM64 Optimization Rerun (2026-03-17)
+
+This rerun used the connected RK3588 Android device and `android/test/bench_hornet_android.cpp`
+as the benchmark truth source. The retained code change was enabling the existing ARMv8 SHA-256
+instruction path in `hash_accel.cpp` for `sha256_33`, `sha256_32`, `hash160_33`, and
+`sha256_compress_dispatch`.
+
+| Operation | Baseline | Retained result | Delta |
+|-----------|----------|-----------------|-------|
+| ECDSA Sign | 25.89 us | 22.22 us | 14.2% faster |
+| Schnorr Sign (precomputed) | 17.73 us | 16.67 us | 6.0% faster |
+| Schnorr Sign (raw privkey) | 33.01 us | 31.99 us | 3.1% faster |
+| CT ECDSA Sign | 70.50 us | 67.11 us | 4.8% faster |
+| CT Schnorr Sign | 59.87 us | 59.10 us | 1.3% faster |
+
+No meaningful win was found from forcing `SECP256K1_USE_4X64_POINT_OPS`, from changing
+`SECP256K1_GLV_WINDOW_WIDTH` to 4 or 6, or from keeping PGO as the default Android path.
+Those variants were measured and rejected.
 
 ---
 
