@@ -8,13 +8,13 @@
 
 **Zero-dependency, multi-backend secp256k1 cryptography engine** -- built independently from scratch for Bitcoin, Ethereum, Silent Payments, threshold signatures, embedded systems, and GPU-scale workloads. UltrafastSecp256k1 delivers GPU-accelerated ECDSA and Schnorr, constant-time CPU signing paths, and 12+ platform targets including CUDA, Metal, OpenCL, ROCm, WebAssembly, RISC-V, ESP32, and STM32.
 
-> **10.74 M BIP352 scans/s** * **4.88 M ECDSA signs/s** * **2.44 M ECDSA verifies/s** * **3.66 M Schnorr signs/s** * **2.82 M Schnorr verifies/s** -- single GPU (RTX 5060 Ti, hybrid GPU execution model)
+> **11.00 M BIP352 scans/s** * **4.88 M ECDSA signs/s** * **2.44 M ECDSA verifies/s** * **3.66 M Schnorr signs/s** * **2.82 M Schnorr verifies/s** -- single GPU (RTX 5060 Ti, hybrid GPU execution model)
 
 ### Why UltrafastSecp256k1?
 
 - **Fastest open-source GPU signatures** -- no other library provides secp256k1 ECDSA + Schnorr sign/verify on CUDA; OpenCL covers full ECC + ECDSA/Schnorr verify, Metal provides discovery/lifecycle ([reproducible benchmark suite and raw logs](docs/BENCHMARKS.md))
 - **High-performance CPU secp256k1 engine** -- optimized generator multiply, scalar multiply, hashing, and serialization pipelines across x86-64, ARM64, RISC-V, and embedded targets ([see bench_unified ratio table](docs/BENCHMARKS.md))
-- **BIP-352 Silent Payments at 10.74 M/s** -- the full 7-stage GPU pipeline (k×P → hash → k×G → add → match) runs at 93.3 ns/op on CUDA, **269× faster** than single-threaded CPU ([GPU bench](docs/BENCHMARKS.md), [standalone CPU benchmark by @craigraw](https://github.com/craigraw/bench_bip352))
+- **BIP-352 Silent Payments at 11.00 M/s** -- the full 7-stage GPU pipeline (k×P → hash → k×G → add → match) runs at 91.0 ns/op on CUDA, **267× faster** than single-threaded CPU ([GPU bench](docs/BENCHMARKS.md), [standalone CPU benchmark by @craigraw](https://github.com/craigraw/bench_bip352))
 - **Built for modern secp256k1 workloads** -- signing, verification, wallet derivation, threshold protocols, adaptor signatures, ZK primitives, address generation, and large-scale public-key pipelines in one engine
 - **Field-tested GPU pipeline** -- the CUDA engine has been stress-tested in live high-throughput workflows over long-running sessions and very large point volumes, not only in short synthetic benchmarks
 - **Zero dependencies** -- pure C++20, no Boost, no OpenSSL, compiles anywhere with a conforming compiler
@@ -86,7 +86,7 @@
 
 ## Highlights
 
-- **BIP-352 GPU pipeline at 10.74 M/s** -- full silent payment scanning pipeline on CUDA (93.3 ns/op), 269× faster than CPU
+- **BIP-352 GPU pipeline at 11.00 M/s** -- full silent payment scanning pipeline on CUDA (91.0 ns/op), 267× faster than CPU
 - **GPU-accelerated secp256k1** -- ECDSA + Schnorr sign/verify on CUDA; ECDSA + Schnorr verify + core ECC on OpenCL; Metal experimental
 - **GPU C ABI (`ufsecp_gpu`)** -- 16-function stable FFI for GPU batch ops across CUDA, OpenCL, and Metal (6/6 ops on CUDA & OpenCL)
 - **Zero-Knowledge cryptographic layer** -- Pedersen commitments, DLEQ proofs, Bulletproof range proofs, Ethereum-compatible Keccak-256
@@ -355,18 +355,18 @@ The full 7-stage BIP-352 scanning pipeline runs entirely on-GPU with zero CPU ro
 
 | Mode | ns/op | Throughput | Notes |
 |------|-------|------------|-------|
-| GPU pipeline (GLV, w=4) | ~260 ns | ~3.84 M/s | Standard windowed GLV |
-| **GPU pipeline (LUT)** | **93.3 ns** | **10.74 M/s** | 64 MB precomputed 16×64K generator table |
+| GPU pipeline (GLV, w=4) | 179.2 ns | 5.58 M/s | GLV wNAF decomposition |
+| **GPU pipeline (LUT)** | **91.0 ns** | **11.00 M/s** | 64 MB precomputed 16×64K generator table |
 | GPU pipeline (LUT + pretbl) | 102.1 ns | ~9.79 M/s | Precomputed per-tweak tables |
 
-*500K tweak points per batch, 11 passes, median. Near-optimal occupancy for RTX 5060 Ti (SM 12.0, 36 SMs). ~928 billion candidates/day.*
+*500K tweak points per batch, 11 passes, median. Near-optimal occupancy for RTX 5060 Ti (SM 12.0, 36 SMs). ~950 billion candidates/day.*
 
 ### GPU vs CPU Comparison
 
 | Platform | Full Pipeline | vs GPU (LUT) |
 |----------|--------------|-------|
-| **CUDA GPU (RTX 5060 Ti)** | **93.3 ns/op** | **baseline** |
-| x86-64 CPU (i5-14400F, GCC 14) | 25,079 ns/op | 269× slower |
+| **CUDA GPU (RTX 5060 Ti)** | **91.0 ns/op** | **baseline** |
+| x86-64 CPU (i5-14400F, GCC 14) | 24,285 ns/op | 267× slower |
 | ARM64 CPU (Cortex-A55, Clang 18) | 153,385 ns/op | 1,644× slower |
 | RISC-V 64 (SiFive U74, GCC 13) | 257,996 ns/op | 2,765× slower |
 
@@ -559,7 +559,7 @@ UltrafastSecp256k1 is the **only open-source library** that provides full secp25
 | Point Double | 0.8 ns | 0.9 ns | **CUDA 1.13x** |
 | Point Add | 1.6 ns | 1.6 ns | Tie |
 | kG (Generator Mul) | 217.7 ns | 258.9 ns | **CUDA 1.19x** |
-| BIP352 Pipeline | 93.3 ns | 126.0 ns (LUT) | **CUDA 1.35x** |
+| BIP352 Pipeline | 91.0 ns | 93.6 ns | **CUDA 1.03x** |
 
 *Benchmarks: 2026-02-14, Linux x86_64, NVIDIA Driver 580.126.09. Both kernel-only (no buffer allocation/copy overhead).*
 

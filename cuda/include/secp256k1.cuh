@@ -2629,7 +2629,7 @@ __device__ inline void build_generator_table(JacobianPoint* table) {
     table[1] = GENERATOR_JACOBIAN;
 
     // table[2] = 2G
-    jacobian_double(&table[1], &table[2]);
+    jacobian_double_unchecked(&table[1], &table[2]);
 
     // table[3..15] = iG via mixed addition with G (affine, Z=1)
     AffinePoint G_aff;
@@ -2637,7 +2637,7 @@ __device__ inline void build_generator_table(JacobianPoint* table) {
     G_aff.y = GENERATOR_JACOBIAN.y;
 
     for (int i = 3; i <= 15; i++) {
-        jacobian_add_mixed(&table[i - 1], &G_aff, &table[i]);
+        jacobian_add_mixed_unchecked(&table[i - 1], &G_aff, &table[i]);
     }
 }
 
@@ -2664,10 +2664,10 @@ __device__ inline void scalar_mul_generator_windowed(
             uint32_t idx = (uint32_t)((w >> (nib * 4)) & 0xFULL);
 
             if (started) {
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
             }
 
             if (idx != 0) {
@@ -2777,7 +2777,7 @@ __device__ inline void scalar_mul_wnaf(const JacobianPoint* p, const Scalar* k, 
         p_jac.y = base.y;
         field_set_one(&p_jac.z);
         p_jac.infinity = false;
-        jacobian_double(&p_jac, &dbl_jac);
+        jacobian_double_unchecked(&p_jac, &dbl_jac);
     }
 
     // Convert 2P to affine for mixed additions in table building
@@ -2800,7 +2800,7 @@ __device__ inline void scalar_mul_wnaf(const JacobianPoint* p, const Scalar* k, 
         acc.infinity = false;
 
         for (int i = 1; i < 8; i++) {
-            jacobian_add_mixed(&acc, &dbl_aff, &acc);
+            jacobian_add_mixed_unchecked(&acc, &dbl_aff, &acc);
             // Convert acc to affine
             FieldElement zi, zi2, zi3;
             field_inv(&acc.z, &zi);
@@ -2833,7 +2833,7 @@ __device__ inline void scalar_mul_wnaf(const JacobianPoint* p, const Scalar* k, 
     #pragma unroll 1
     for (int i = wnaf_len - 1; i >= 0; i--) {
         if (!r->infinity) {
-            jacobian_double(r, r);
+            jacobian_double_unchecked(r, r);
         }
         int8_t d = wnaf[i];
         if (d > 0) {
@@ -2844,7 +2844,7 @@ __device__ inline void scalar_mul_wnaf(const JacobianPoint* p, const Scalar* k, 
                 field_set_one(&r->z);
                 r->infinity = false;
             } else {
-                jacobian_add_mixed(r, &tbl[idx], r);
+                jacobian_add_mixed_unchecked(r, &tbl[idx], r);
             }
         } else if (d < 0) {
             int idx = (-d - 1) / 2;
@@ -2854,7 +2854,7 @@ __device__ inline void scalar_mul_wnaf(const JacobianPoint* p, const Scalar* k, 
                 field_set_one(&r->z);
                 r->infinity = false;
             } else {
-                jacobian_add_mixed(r, &neg_tbl[idx], r);
+                jacobian_add_mixed_unchecked(r, &neg_tbl[idx], r);
             }
         }
     }
@@ -3184,7 +3184,7 @@ __device__ inline void shamir_double_mul(
         JacobianPoint jp, jpq;
         jp.x = aff_P.x; jp.y = aff_P.y;
         field_set_one(&jp.z); jp.infinity = false;
-        jacobian_add_mixed(&jp, &aff_Q, &jpq);
+        jacobian_add_mixed_unchecked(&jp, &aff_Q, &jpq);
         if (jpq.infinity) {
             // P = -Q, degenerate
             r->infinity = true;
@@ -3220,7 +3220,7 @@ __device__ inline void shamir_double_mul(
     #pragma unroll 1
     for (int i = max_len - 1; i >= 0; --i) {
         if (!r->infinity) {
-            jacobian_double(r, r);
+            jacobian_double_unchecked(r, r);
         }
 
         int ba = scalar_bit(a, i);
@@ -3234,7 +3234,7 @@ __device__ inline void shamir_double_mul(
                 field_set_one(&r->z);
                 r->infinity = false;
             } else {
-                jacobian_add_mixed(r, &table[idx], r);
+                jacobian_add_mixed_unchecked(r, &table[idx], r);
             }
         }
     }

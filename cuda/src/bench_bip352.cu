@@ -997,7 +997,12 @@ int main() {
     printf("\n--- GPU + LUT (16x64K precomputed table for k*G) ---\n");
     int lut_blocks = (BENCH_N + gpu_tpb_lut - 1) / gpu_tpb_lut;
 
-    // Standard warmup only — GPU clock is already at boost from GLV section above.
+    // Extended warmup with LUT kernel: GLV warmup does not fully restore boost for LUT kernel.
+    for (int w = 0; w < BENCH_CLOCK_WARMUP; ++w) {
+        bip352_pipeline_kernel_lut<<<lut_blocks, gpu_tpb_lut>>>(
+            d_tweaks, d_scan_key, d_spend, d_gen_lut, d_prefixes, BENCH_N);
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
     for (int w = 0; w < BENCH_WARMUP; ++w) {
         bip352_pipeline_kernel_lut<<<lut_blocks, gpu_tpb_lut>>>(
             d_tweaks, d_scan_key, d_spend, d_gen_lut, d_prefixes, BENCH_N);
