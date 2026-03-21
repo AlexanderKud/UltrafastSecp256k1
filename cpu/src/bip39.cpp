@@ -217,8 +217,8 @@ bool bip39_validate(const std::string& mnemonic) {
 
     // Verify checksum
     auto hash = SHA256::hash(entropy, entropy_bytes);
-    uint8_t expected_cs = hash[0] >> (8 - checksum_bits);
-    uint8_t actual_cs = checksum_byte >> (8 - checksum_bits);
+    const uint8_t expected_cs = hash[0] >> (8 - checksum_bits);
+    const uint8_t actual_cs = checksum_byte >> (8 - checksum_bits);
 
     detail::secure_erase(entropy, sizeof(entropy));
     return expected_cs == actual_cs;
@@ -294,8 +294,8 @@ bip39_mnemonic_to_entropy(const std::string& mnemonic) {
 
     // Verify checksum
     auto hash = SHA256::hash(entropy, entropy_bytes);
-    uint8_t expected_cs = hash[0] >> (8 - checksum_bits);
-    uint8_t actual_cs = checksum_byte >> (8 - checksum_bits);
+    const uint8_t expected_cs = hash[0] >> (8 - checksum_bits);
+    const uint8_t actual_cs = checksum_byte >> (8 - checksum_bits);
 
     if (expected_cs != actual_cs) {
         detail::secure_erase(entropy, sizeof(entropy));
