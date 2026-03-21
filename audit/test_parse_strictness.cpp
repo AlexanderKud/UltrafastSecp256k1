@@ -367,7 +367,7 @@ static void run_ps31_wif_decode(ufsecp_ctx* ctx) {
     AUDIT_LOG("\n  [PS-31..36] wif_decode: WIF private key parsing\n");
 
     // Well-known valid WIF for privkey=1, mainnet, compressed
-    static const char* VALID_WIF = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73NUBBy9s";
+    static const char* VALID_WIF = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
     uint8_t out32[32] = {};
     int net_out = 0;
     int comp_out = 0;

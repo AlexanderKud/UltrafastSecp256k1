@@ -301,8 +301,7 @@ size_t ufsecp_ctx_size(void) {
 
 ufsecp_error_t ufsecp_seckey_verify(const ufsecp_ctx* ctx,
                                     const uint8_t privkey[32]) {
-    if (!privkey) return UFSECP_ERR_NULL_ARG;
-    (void)ctx;
+    if (!ctx || !privkey) return UFSECP_ERR_NULL_ARG;
     // BIP-340 strict: reject if privkey == 0 or privkey >= n (no reduction)
     Scalar sk;
     if (!Scalar::parse_bytes_strict_nonzero(privkey, sk)) {
@@ -998,6 +997,13 @@ ufsecp_error_t ufsecp_addr_p2tr(ufsecp_ctx* ctx,
     if (!ctx || !internal_key_x || !addr_out || !addr_len) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
 
+    // Reject all-zero x-only key (not a valid curve point)
+    {
+        uint8_t acc = 0;
+        for (int i = 0; i < 32; ++i) acc |= internal_key_x[i];
+        if (acc == 0) return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "zero x-only key");
+    }
+
     std::array<uint8_t, 32> key_x;
     std::memcpy(key_x.data(), internal_key_x, 32);
     auto addr = secp256k1::address_p2tr_raw(key_x, to_network(network));
@@ -1200,6 +1206,13 @@ ufsecp_error_t ufsecp_taproot_output_key(ufsecp_ctx* ctx,
         return UFSECP_ERR_NULL_ARG;
 }
     ctx_clear_err(ctx);
+
+    // Reject all-zero x-only key (not a valid curve point)
+    {
+        uint8_t acc = 0;
+        for (int i = 0; i < 32; ++i) acc |= internal_x[i];
+        if (acc == 0) return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "zero x-only key");
+    }
 
     std::array<uint8_t, 32> ik;
     std::memcpy(ik.data(), internal_x, 32);

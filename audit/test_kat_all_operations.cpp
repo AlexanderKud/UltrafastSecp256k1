@@ -163,7 +163,7 @@ static void run_kat1_ecdh(ufsecp_ctx* ctx) {
 //   WIF     = "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87JcbXMTcA"
 
 static constexpr char WIF_KEY1_MAINNET_COMPRESSED[] =
-    "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73NUBBy9s";
+    "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
 static constexpr char WIF_KEY1_TESTNET_COMPRESSED[] =
     "cMahea7zqjxrtgAbB7LSGbcQUr1uX1ojuat9jZodMN87JcbXMTcA";
 
@@ -493,7 +493,7 @@ static void run_kat31_hash(ufsecp_ctx* /* ctx */) {
             0x07,0x02,0x9B,0xFC,0xDB,0x2D,0xCE,0x28,
             0xD9,0x59,0xF2,0x81,0x5B,0x16,0xF8,0x17,0x98
         };
-        static constexpr char EXPECTED[] = "751e76e8199196f58d986020efa17336ea8e8b6b";
+        static constexpr char EXPECTED[] = "751e76e8199196d454941c45d1b3a323f1433bd6";
         CHECK_OK(ufsecp_hash160(G_COMPRESSED, 33, digest20), "KAT-34a: hash160(G) ok");
         char hex[41] = {};
         bytes_to_hex(digest20, 20, hex);
