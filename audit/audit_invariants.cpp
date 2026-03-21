@@ -77,15 +77,6 @@ static bool point_is_on_curve(const Point& P) {
     return lhs == rhs;
 }
 
-// Core invariant: scalar is in (0, n) i.e. reduced and non-zero
-static bool scalar_is_reduced_nonzero(const Scalar& s) {
-    if (s.is_zero()) return false;
-    // from_bytes(to_bytes(s)) must give the same scalar
-    auto bytes = s.to_bytes();
-    Scalar re = Scalar::from_bytes(bytes);
-    return re == s;
-}
-
 // ============================================================================
 // INV-1: Post-point-add: every result must be on curve
 // ============================================================================
@@ -444,3 +435,7 @@ int audit_invariants_run() {
     printf("[audit_invariants] %d/%d checks passed\n", g_pass, g_pass + g_fail);
     return (g_fail > 0) ? 1 : 0;
 }
+
+#ifdef STANDALONE_TEST
+int main() { return audit_invariants_run(); }
+#endif

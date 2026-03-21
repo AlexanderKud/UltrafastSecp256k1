@@ -26,6 +26,7 @@
 #include "secp256k1/zk.hpp"
 #include "secp256k1/pedersen.hpp"
 #include "secp256k1/sanitizer_scale.hpp"
+#define AUDIT_SCALE(n) SCALED((n), (n) / 10)
 
 using namespace secp256k1::fast;
 
@@ -76,7 +77,7 @@ static void run_zk1_knowledge_standard() {
     constexpr int N_ROUND_TRIP = AUDIT_SCALE(100);
     for (int i = 0; i < N_ROUND_TRIP; ++i) {
         Scalar secret = random_scalar();
-        Point pubkey  = Point::generator_mul(secret);
+        Point pubkey  = Point::generator().scalar_mul(secret);
         auto  msg     = random_bytes32();
         auto  aux     = random_bytes32();
 
@@ -89,7 +90,7 @@ static void run_zk1_knowledge_standard() {
 
         // 2. Wrong public key rejected
         Scalar other_secret = random_scalar();
-        Point  wrong_pubkey = Point::generator_mul(other_secret);
+        Point  wrong_pubkey = Point::generator().scalar_mul(other_secret);
         CHECK(!secp256k1::zk::knowledge_verify(proof, wrong_pubkey, msg),
               "knowledge_verify(wrong pubkey) should be false");
 
@@ -105,7 +106,7 @@ static void run_zk1_knowledge_standard() {
     constexpr int N_TAMPER = AUDIT_SCALE(50);
     for (int i = 0; i < N_TAMPER; ++i) {
         Scalar secret = random_scalar();
-        Point  pubkey = Point::generator_mul(secret);
+        Point  pubkey = Point::generator().scalar_mul(secret);
         auto   msg    = random_bytes32();
         auto   aux    = random_bytes32();
 
@@ -121,7 +122,7 @@ static void run_zk1_knowledge_standard() {
     // 5. Tampered s rejected
     for (int i = 0; i < N_TAMPER; ++i) {
         Scalar secret = random_scalar();
-        Point  pubkey = Point::generator_mul(secret);
+        Point  pubkey = Point::generator().scalar_mul(secret);
         auto   msg    = random_bytes32();
         auto   aux    = random_bytes32();
 
@@ -155,10 +156,10 @@ static void run_zk2_knowledge_base() {
     for (int i = 0; i < N_ROUND_TRIP; ++i) {
         // Generate a random base point B = b*G (nothing-up-my-sleeve base)
         Scalar base_scalar = random_scalar();
-        Point  base        = Point::generator_mul(base_scalar);
+        Point  base        = Point::generator().scalar_mul(base_scalar);
 
         Scalar secret = random_scalar();
-        Point  point  = base * secret;  // P = secret * B
+        Point  point  = base.scalar_mul(secret);  // P = secret * B
         auto   msg    = random_bytes32();
         auto   aux    = random_bytes32();
 
@@ -176,7 +177,7 @@ static void run_zk2_knowledge_base() {
 
         // 3. Wrong base rejected
         Scalar wrong_base_scalar = random_scalar();
-        Point  wrong_base        = Point::generator_mul(wrong_base_scalar);
+        Point  wrong_base        = Point::generator().scalar_mul(wrong_base_scalar);
         CHECK(!secp256k1::zk::knowledge_verify_base(proof, point, wrong_base, msg),
               "knowledge_verify_base(wrong base) should be false");
     }
@@ -196,11 +197,11 @@ static void run_zk3_dleq() {
         // G1 = generator, H = hash-to-curve (use random scalar * G as independent generator)
         Point G1 = Point::generator();
         Scalar h_scalar = random_scalar();
-        Point  H  = Point::generator_mul(h_scalar);
+        Point  H  = Point::generator().scalar_mul(h_scalar);
 
         Scalar secret = random_scalar();
-        Point  P = G1 * secret;   // P = secret * G
-        Point  Q = H  * secret;   // Q = secret * H  (same discrete log!)
+        Point  P = G1.scalar_mul(secret);   // P = secret * G
+        Point  Q = H.scalar_mul(secret);    // Q = secret * H  (same discrete log!)
 
         auto aux = random_bytes32();
         secp256k1::zk::DLEQProof proof =
@@ -216,7 +217,7 @@ static void run_zk3_dleq() {
 
         // 3. Wrong Q (computed with different scalar)
         Scalar wrong_scalar = random_scalar();
-        Point  wrong_Q      = H * wrong_scalar;
+        Point  wrong_Q      = H.scalar_mul(wrong_scalar);
         CHECK(!secp256k1::zk::dleq_verify(proof, G1, H, P, wrong_Q),
               "dleq_verify(wrong Q) should be false");
     }
@@ -226,11 +227,11 @@ static void run_zk3_dleq() {
     for (int i = 0; i < N_TAMPER; ++i) {
         Point  G1 = Point::generator();
         Scalar h_scalar = random_scalar();
-        Point  H  = Point::generator_mul(h_scalar);
+        Point  H  = Point::generator().scalar_mul(h_scalar);
 
         Scalar secret = random_scalar();
-        Point  P = G1 * secret;
-        Point  Q = H  * secret;
+        Point  P = G1.scalar_mul(secret);
+        Point  Q = H.scalar_mul(secret);
         auto   aux = random_bytes32();
 
         secp256k1::zk::DLEQProof proof =
@@ -340,7 +341,7 @@ static void run_zk5_serialization() {
     constexpr int N = AUDIT_SCALE(30);
     for (int i = 0; i < N; ++i) {
         Scalar secret = random_scalar();
-        Point  pubkey = Point::generator_mul(secret);
+        Point  pubkey = Point::generator().scalar_mul(secret);
         auto   msg    = random_bytes32();
         auto   aux    = random_bytes32();
 
@@ -376,11 +377,11 @@ static void run_zk5_serialization() {
     for (int i = 0; i < N; ++i) {
         Point  G1 = Point::generator();
         Scalar h_scalar = random_scalar();
-        Point  H  = Point::generator_mul(h_scalar);
+        Point  H  = Point::generator().scalar_mul(h_scalar);
 
         Scalar secret = random_scalar();
-        Point  P = G1 * secret;
-        Point  Q = H  * secret;
+        Point  P = G1.scalar_mul(secret);
+        Point  Q = H.scalar_mul(secret);
         auto   aux = random_bytes32();
 
         secp256k1::zk::DLEQProof proof =
@@ -515,3 +516,7 @@ int audit_zk_run() {
     printf("[audit_zk] %d/%d checks passed\n", g_pass, g_pass + g_fail);
     return (g_fail > 0) ? 1 : 0;
 }
+
+#ifdef STANDALONE_TEST
+int main() { return audit_zk_run(); }
+#endif

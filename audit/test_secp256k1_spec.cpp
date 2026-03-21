@@ -339,3 +339,7 @@ int test_secp256k1_spec_run() {
     printf("[test_secp256k1_spec] %d/%d checks passed\n", g_pass, g_pass + g_fail);
     return (g_fail > 0) ? 1 : 0;
 }
+
+#ifdef STANDALONE_TEST
+int main() { return test_secp256k1_spec_run(); }
+#endif
