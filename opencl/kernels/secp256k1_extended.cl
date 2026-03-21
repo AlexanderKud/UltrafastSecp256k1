@@ -821,61 +821,47 @@ inline void scalar_mul_glv_impl(JacobianPoint* r, const Scalar* k, const AffineP
     AffinePoint base = *p;
     if (k1_neg) field_negate_impl(&base.y, &base.y);
 
-    // Build P precomp table: [P, 3P, 5P, ..., 15P] (8 entries, w=5)
-    JacobianPoint tbl_jac[8];
-    JacobianPoint dbl;
-    point_from_affine(&tbl_jac[0], &base);
-    point_double_impl(&dbl, &tbl_jac[0]);
-    for (int i = 1; i < 8; i++)
-        point_add_impl(&tbl_jac[i], &tbl_jac[i-1], &dbl);
+    AffinePoint table[8];
+    FieldElement globalz;
+    build_wnaf_table_zr_impl(&base, table, &globalz);
 
-    // Build phi(P) table: apply endomorphism, flip y if signs differ
-    AffinePoint endo_base;
-    FieldElement beta;
-    beta.limbs[0] = GLV_BETA0; beta.limbs[1] = GLV_BETA1;
-    beta.limbs[2] = GLV_BETA2; beta.limbs[3] = GLV_BETA3;
-    field_mul_impl(&endo_base.x, &base.x, &beta);
-    endo_base.y = base.y;
-    int flip_phi = (k1_neg != k2_neg);
-    if (flip_phi) field_negate_impl(&endo_base.y, &endo_base.y);
-
-    JacobianPoint tbl2_jac[8];
-    point_from_affine(&tbl2_jac[0], &endo_base);
-    JacobianPoint dbl2;
-    point_double_impl(&dbl2, &tbl2_jac[0]);
-    for (int i = 1; i < 8; i++)
-        point_add_impl(&tbl2_jac[i], &tbl2_jac[i-1], &dbl2);
+    AffinePoint endo_table[8];
+    derive_endo_table_impl(table, endo_table, (k1_neg != k2_neg));
 
     // wNAF encode both half-width scalars
-    int wnaf1[260], wnaf2[260];
-    int len1 = scalar_to_wnaf(&k1, wnaf1);
-    int len2 = scalar_to_wnaf(&k2, wnaf2);
-    int max_len = (len1 > len2) ? len1 : len2;
+    int wnaf1[130] = {0};
+    int wnaf2[130] = {0};
+    scalar_to_wnaf(&k1, wnaf1);
+    scalar_to_wnaf(&k2, wnaf2);
 
     // Shamir interleaved loop
     point_set_infinity(r);
-    for (int i = max_len - 1; i >= 0; --i) {
+    for (int i = 129; i >= 0; --i) {
         if (!point_is_infinity(r)) point_double_impl(r, r);
 
-        int d1 = (i < len1) ? wnaf1[i] : 0;
+        int d1 = wnaf1[i];
         if (d1 != 0) {
-            int idx = ((d1 > 0) ? d1 : -d1) >> 1;
-            if (idx >= 8) idx = 7;
-            JacobianPoint pt = tbl_jac[idx];
+            int idx = (((d1 > 0) ? d1 : -d1) - 1) >> 1;
+            AffinePoint pt = table[idx];
             if (d1 < 0) field_negate_impl(&pt.y, &pt.y);
-            if (point_is_infinity(r)) { *r = pt; }
-            else { JacobianPoint tmp; point_add_impl(&tmp, r, &pt); *r = tmp; }
+            if (point_is_infinity(r)) { point_from_affine(r, &pt); }
+            else { point_add_mixed_impl(r, r, &pt); }
         }
 
-        int d2 = (i < len2) ? wnaf2[i] : 0;
+        int d2 = wnaf2[i];
         if (d2 != 0) {
-            int idx = ((d2 > 0) ? d2 : -d2) >> 1;
-            if (idx >= 8) idx = 7;
-            JacobianPoint pt = tbl2_jac[idx];
+            int idx = (((d2 > 0) ? d2 : -d2) - 1) >> 1;
+            AffinePoint pt = endo_table[idx];
             if (d2 < 0) field_negate_impl(&pt.y, &pt.y);
-            if (point_is_infinity(r)) { *r = pt; }
-            else { JacobianPoint tmp; point_add_impl(&tmp, r, &pt); *r = tmp; }
+            if (point_is_infinity(r)) { point_from_affine(r, &pt); }
+            else { point_add_mixed_impl(r, r, &pt); }
         }
+    }
+
+    if (!point_is_infinity(r)) {
+        FieldElement corrected_z;
+        field_mul_impl(&corrected_z, &r->z, &globalz);
+        r->z = corrected_z;
     }
 }
 

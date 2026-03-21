@@ -22,6 +22,10 @@ Benchmark results for UltrafastSecp256k1 across all supported platforms.
 | OpenCL (RTX 5060 Ti) | 0.2 ns | 113.5 ns | 97.7 ns | **230.2 ns** | **258.6 ns** | -- |
 | Metal (Apple M3 Pro) | 1.9 ns | 3.00 us | 2.94 us | -- | -- | -- |
 
+GPU rows use the latest retained local rerun per backend. For OpenCL, the public
+GPU C ABI still covers 4 of the 6 first-wave operations; the missing two are
+batch ECDSA verify and batch Schnorr verify.
+
 ---
 
 ## Real-World Flow Coverage
@@ -58,6 +62,46 @@ Quick sanity run from `bench_unified --quick` on the local x86-64 validation mac
 These values are mainly intended as workflow reference points. For publishable
 cross-machine comparisons, use the full pinned benchmark methodology and JSON
 artifacts from `bench_unified`.
+
+### x86-64 Batch Verify Rerun (2026-03-17)
+
+A retained low-risk x86 CPU improvement was keeping the Schnorr batch pubkey cache
+capacity aligned with the full batch size in `cpu/src/batch_verify.cpp` instead of
+clamping reserve capacity to 64 entries. This avoids avoidable vector reallocations
+when uncached batches grow beyond 64 signatures.
+
+Quick reruns on the local i5-14400F validation machine showed the improvement on the
+uncached Schnorr path while preserving correctness (`ctest -R 'comprehensive|multiscalar'` PASS):
+
+| Operation | Before | After | Delta |
+|-----------|--------|-------|-------|
+| Schnorr batch verify N=128 | 20.27 us/sig | 19.94-20.06 us/sig | up to 1.6% faster |
+| Schnorr batch verify N=192 | 18.56 us/sig | 18.01-18.45 us/sig | up to 3.0% faster |
+
+This change does not materially affect the cached-path benchmark; the measured win is specifically
+the uncached parse-and-resolve flow for larger Schnorr batches.
+
+### Cross-Platform Refresh Status (2026-03-18)
+
+Recent retained reruns and validation passes across the active optimization campaign:
+
+| Platform | Latest validated result | Status |
+|----------|-------------------------|--------|
+| x86-64 / Linux | Schnorr batch verify `N=128`: 19.94-20.06 us/sig, `N=192`: 18.01-18.45 us/sig | Retained low-risk pubkey-cache reserve improvement |
+| Android ARM64 / RK3588 | ECDSA Sign 22.22 us, Schnorr Sign (precomputed) 16.67 us, CT ECDSA Sign 67.11 us | Retained ARMv8 SHA2 dispatch win |
+| OpenCL / RTX 5060 Ti | `kG (batch=65536)` 115.1 ns, `kP (batch=65536)` 263.1 ns, `kG (kernel)` 98.7 ns | Revalidated retained tuning; `opencl_test` and `opencl_audit_runner` passed |
+| CUDA / RTX 5060 Ti | `k*G` 129.5 ns at TPB 256; TPB 512 reached 128.5 ns but CT rows became invalid in the same harness | No safe global retune retained yet |
+| RISC-V / Milk-V Mars | Latest native rerun remains the 2026-03-07 Mars baseline below | Current local environment has toolchain but no runnable board/emulator path |
+
+This page keeps the last trustworthy result per platform. When a rerun only proves that an
+experiment is unstable or not worth shipping, it is recorded here but not promoted as a retained
+default.
+
+OpenCL's current 4/6 C ABI status refers specifically to the generic GPU host ABI in
+`ufsecp_gpu.h`: `generator_mul_batch`, `ecdh_batch`, `hash160_pubkey_batch`, and
+`msm` are implemented on the OpenCL backend, while `ecdsa_verify_batch` and
+`schnorr_verify_batch` currently return `UFSECP_ERR_GPU_UNSUPPORTED` until the
+extended verify kernels are promoted into the backend bridge.
 
 ---
 
@@ -395,6 +439,11 @@ ECDH, Hash160, and MSM are already wired through the backend-neutral C ABI.
 | Knowledge Verify | **175.9 ns** | **175.9 ns** | Tie |
 | DLEQ Prove | 537.2 ns | 537.2 ns | Tie |
 | DLEQ Verify | **369.0 ns** | **369.0 ns** | Tie |
+
+`kG` above uses the latest retained local reruns on the same RTX 5060 Ti host:
+CUDA `gpu_bench_unified` at TPB 256 (`129.5 ns`) and OpenCL `opencl_benchmark`
+kernel timing (`98.7 ns`). CUDA still leads on verify and ZK because those paths
+are not yet exposed on OpenCL.
 
 ---
 

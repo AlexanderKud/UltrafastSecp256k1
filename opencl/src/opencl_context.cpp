@@ -635,6 +635,18 @@ inline void field_sqr_n_impl(FieldElement* r, int n) {
     for (int i = 0; i < n; i++) field_sqr_impl(r, r);
 }
 
+inline int field_is_zero_impl(const FieldElement* a) {
+    return (a->limbs[0] | a->limbs[1] | a->limbs[2] | a->limbs[3]) == 0;
+}
+
+inline void field_set_zero_impl(FieldElement* a) {
+    a->limbs[0] = 0; a->limbs[1] = 0; a->limbs[2] = 0; a->limbs[3] = 0;
+}
+
+inline void field_set_one_impl(FieldElement* a) {
+    a->limbs[0] = 1; a->limbs[1] = 0; a->limbs[2] = 0; a->limbs[3] = 0;
+}
+
 inline void field_inv_impl(FieldElement* r, const FieldElement* a) {
     FieldElement x2,x3,x6,x12,x24,x48,x96,x192,x7,x31,x223,x5,x11,x22,t;
     field_sqr_impl(&x2, a); field_mul_impl(&x2, &x2, a);
@@ -1010,6 +1022,11 @@ inline void scalar_mul_mod_n_cl(const Scalar* a, const Scalar* b, Scalar* r) {
     scalar_cond_sub_n_cl(r); scalar_cond_sub_n_cl(r); scalar_cond_sub_n_cl(r);
 }
 
+)KERNEL",
+
+// ---- third segment (scalar utilities + GLV + point operations) ----
+R"KERNEL(
+
 // Scalar bit length (uses clz intrinsic -- single instruction on GPU)
 inline int scalar_bitlen_cl(const Scalar* s) {
     for (int i = 3; i >= 0; i--) {
@@ -1125,41 +1142,189 @@ inline void glv_decompose_cl(const Scalar* k, Scalar* k1, Scalar* k2, int* k1_ne
     *k1_neg = k1_is_neg; *k2_neg = k2_is_neg;
 }
 
-// GLV + interleaved binary scalar multiplication: k*P
-// GPU-optimized: NO tables, two affine bases, mixed additions, minimal registers (~92)
-// SIMT-aware: two independent if-blocks (not else-if) for optimal warp divergence
+inline void point_from_affine(JacobianPoint* j, const AffinePoint* a) {
+    j->x = a->x; j->y = a->y;
+    j->z.limbs[0] = 1UL; j->z.limbs[1] = 0UL; j->z.limbs[2] = 0UL; j->z.limbs[3] = 0UL;
+    j->infinity = 0;
+}
+
+inline void point_add_mixed_h_impl(JacobianPoint* r, const JacobianPoint* p,
+                                   const AffinePoint* q, FieldElement* h_out) {
+    h_out->limbs[0] = 1UL; h_out->limbs[1] = 0UL; h_out->limbs[2] = 0UL; h_out->limbs[3] = 0UL;
+    if (point_is_infinity(p)) { point_from_affine(r, q); return; }
+
+    FieldElement Z1Z1, U2, S2, H, HH, I, J, rr, V, X3, Y3, Z3, t1, t2;
+    field_sqr_impl(&Z1Z1, &p->z);
+    field_mul_impl(&U2, &q->x, &Z1Z1);
+    field_mul_impl(&t1, &q->y, &p->z);
+    field_mul_impl(&S2, &t1, &Z1Z1);
+    field_sub_impl(&H, &U2, &p->x);
+
+    if ((H.limbs[0] | H.limbs[1] | H.limbs[2] | H.limbs[3]) == 0) {
+        field_sub_impl(&t1, &S2, &p->y);
+        if ((t1.limbs[0] | t1.limbs[1] | t1.limbs[2] | t1.limbs[3]) == 0)
+            { point_double_impl(r, p); return; }
+        point_set_infinity(r); return;
+    }
+    field_add_impl(h_out, &H, &H);
+    field_sqr_impl(&HH, &H);
+    field_add_impl(&I, &HH, &HH); field_add_impl(&I, &I, &I);
+    field_mul_impl(&J, &H, &I);
+    field_sub_impl(&rr, &S2, &p->y); field_add_impl(&rr, &rr, &rr);
+    field_mul_impl(&V, &p->x, &I);
+    field_sqr_impl(&X3, &rr);
+    field_sub_impl(&X3, &X3, &J);
+    field_add_impl(&t1, &V, &V); field_sub_impl(&X3, &X3, &t1);
+    field_sub_impl(&t1, &V, &X3); field_mul_impl(&Y3, &rr, &t1);
+    field_mul_impl(&t2, &p->y, &J); field_add_impl(&t2, &t2, &t2);
+    field_sub_impl(&Y3, &Y3, &t2);
+    field_add_impl(&t1, &p->z, &H); field_sqr_impl(&Z3, &t1);
+    field_sub_impl(&Z3, &Z3, &Z1Z1); field_sub_impl(&Z3, &Z3, &HH);
+    r->x = X3; r->y = Y3; r->z = Z3; r->infinity = 0;
+}
+
+inline void build_wnaf_table_zr_cl(const AffinePoint* base, AffinePoint table[8], FieldElement* globalz) {
+    JacobianPoint base_jac;
+    point_from_affine(&base_jac, base);
+
+    JacobianPoint doubled;
+    point_double_impl(&doubled, &base_jac);
+
+    FieldElement c = doubled.z;
+    FieldElement c2, c3;
+    field_sqr_impl(&c2, &c);
+    field_mul_impl(&c3, &c2, &c);
+
+    AffinePoint doubled_affine;
+    doubled_affine.x = doubled.x;
+    doubled_affine.y = doubled.y;
+
+    JacobianPoint accum;
+    field_mul_impl(&accum.x, &base->x, &c2);
+    field_mul_impl(&accum.y, &base->y, &c3);
+    accum.z.limbs[0] = 1UL; accum.z.limbs[1] = 0UL; accum.z.limbs[2] = 0UL; accum.z.limbs[3] = 0UL;
+    accum.infinity = 0;
+
+    table[0].x = accum.x;
+    table[0].y = accum.y;
+
+    FieldElement zr[8];
+    zr[0] = c;
+
+    for (int i = 1; i < 8; ++i) {
+        FieldElement h;
+        point_add_mixed_h_impl(&accum, &accum, &doubled_affine, &h);
+        table[i].x = accum.x;
+        table[i].y = accum.y;
+        zr[i] = h;
+    }
+
+    field_mul_impl(globalz, &accum.z, &c);
+
+    FieldElement zs = zr[7];
+    for (int idx = 6; idx >= 0; --idx) {
+        if (idx != 6) {
+            FieldElement tmp;
+            field_mul_impl(&tmp, &zs, &zr[idx + 1]);
+            zs = tmp;
+        }
+
+        FieldElement zs2, zs3;
+        field_sqr_impl(&zs2, &zs);
+        field_mul_impl(&zs3, &zs2, &zs);
+
+        FieldElement tx, ty;
+        field_mul_impl(&tx, &table[idx].x, &zs2);
+        field_mul_impl(&ty, &table[idx].y, &zs3);
+        table[idx].x = tx;
+        table[idx].y = ty;
+    }
+}
+
+inline void derive_endo_table_cl(const AffinePoint table[8], AffinePoint endo_table[8], int negate_y) {
+    FieldElement beta;
+    beta.limbs[0]=GLV_BETA0; beta.limbs[1]=GLV_BETA1;
+    beta.limbs[2]=GLV_BETA2; beta.limbs[3]=GLV_BETA3;
+
+    for (int i = 0; i < 8; ++i) {
+        field_mul_impl(&endo_table[i].x, &table[i].x, &beta);
+        if (negate_y) field_neg_impl(&endo_table[i].y, &table[i].y);
+        else endo_table[i].y = table[i].y;
+    }
+}
+
+static inline void scalar_to_wnaf(const Scalar* k, int wnaf[130]) {
+    ulong s[4];
+    for (int i = 0; i < 4; i++) s[i] = k->limbs[i];
+    for (int i = 0; i < 130; i++) {
+        if (s[0] & 1UL) {
+            int d = (int)(s[0] & 0x1FUL);
+            if (d >= 16) {
+                d -= 32;
+                ulong add = (ulong)(-d);
+                ulong prev = s[0]; s[0] += add;
+                if (s[0] < prev) { for (int j=1;j<4;j++) if (++s[j]) break; }
+            } else {
+                ulong prev = s[0]; s[0] -= (ulong)d;
+                if (s[0] > prev) { for (int j=1;j<4;j++) if (s[j]--) break; }
+            }
+            wnaf[i] = d;
+        } else { wnaf[i] = 0; }
+        s[0] = (s[0] >> 1) | (s[1] << 63);
+        s[1] = (s[1] >> 1) | (s[2] << 63);
+        s[2] = (s[2] >> 1) | (s[3] << 63);
+        s[3] >>= 1;
+    }
+}
+
 inline void scalar_mul_glv_cl(JacobianPoint* r, const Scalar* k, const AffinePoint* base) {
     if (scalar_is_zero_cl(k)) { point_set_infinity(r); return; }
 
     Scalar k1, k2; int k1_neg, k2_neg;
     glv_decompose_cl(k, &k1, &k2, &k1_neg, &k2_neg);
 
-    // Two affine bases: P and phi(P) = (beta*P.x, (+/-)P.y)
     AffinePoint P = *base;
     if (k1_neg) field_neg_impl(&P.y, &P.y);
 
-    FieldElement beta;
-    beta.limbs[0]=GLV_BETA0; beta.limbs[1]=GLV_BETA1;
-    beta.limbs[2]=GLV_BETA2; beta.limbs[3]=GLV_BETA3;
+    AffinePoint table[8];
+    FieldElement globalz;
+    build_wnaf_table_zr_cl(&P, table, &globalz);
 
-    AffinePoint phi_P;
-    field_mul_impl(&phi_P.x, &P.x, &beta);
-    if (k1_neg != k2_neg) field_neg_impl(&phi_P.y, &P.y);
-    else phi_P.y = P.y;
+    AffinePoint endo_table[8];
+    derive_endo_table_cl(table, endo_table, k1_neg != k2_neg);
 
-    // Find max bit length of k1, k2
-    int bl1 = scalar_bitlen_cl(&k1);
-    int bl2 = scalar_bitlen_cl(&k2);
-    int max_bit = (bl1 > bl2) ? bl1 : bl2;
+    int wnaf1[130] = {0};
+    int wnaf2[130] = {0};
+    scalar_to_wnaf(&k1, wnaf1);
+    scalar_to_wnaf(&k2, wnaf2);
 
-    // Interleaved binary double-and-add with mixed additions
     point_set_infinity(r);
-    for (int i = max_bit - 1; i >= 0; --i) {
+    for (int i = 129; i >= 0; --i) {
         if (!point_is_infinity(r)) point_double_impl(r, r);
-        int b1 = (int)((k1.limbs[i >> 6] >> (i & 63)) & 1UL);
-        int b2 = (int)((k2.limbs[i >> 6] >> (i & 63)) & 1UL);
-        if (b1) point_add_mixed_impl(r, r, &P);
-        if (b2) point_add_mixed_impl(r, r, &phi_P);
+
+        int d1 = wnaf1[i];
+        if (d1 != 0) {
+            int idx = (((d1 > 0) ? d1 : -d1) - 1) >> 1;
+            AffinePoint pt = table[idx];
+            if (d1 < 0) field_neg_impl(&pt.y, &pt.y);
+            if (point_is_infinity(r)) point_from_affine(r, &pt);
+            else point_add_mixed_impl(r, r, &pt);
+        }
+
+        int d2 = wnaf2[i];
+        if (d2 != 0) {
+            int idx = (((d2 > 0) ? d2 : -d2) - 1) >> 1;
+            AffinePoint pt = endo_table[idx];
+            if (d2 < 0) field_neg_impl(&pt.y, &pt.y);
+            if (point_is_infinity(r)) point_from_affine(r, &pt);
+            else point_add_mixed_impl(r, r, &pt);
+        }
+    }
+
+    if (!point_is_infinity(r)) {
+        FieldElement corrected_z;
+        field_mul_impl(&corrected_z, &r->z, &globalz);
+        r->z = corrected_z;
     }
 }
 
@@ -1203,14 +1368,14 @@ inline int get_window_4bit(const Scalar* s, int pos) {
     return (int)(v & 0xFUL);
 }
 
-__kernel void scalar_mul_generator(__global const Scalar* scalars, __global JacobianPoint* results, uint count) {
-    uint gid = get_global_id(0); if (gid >= count) return;
-    Scalar k = scalars[gid];
-    JacobianPoint R;
-    if ((k.limbs[0]|k.limbs[1]|k.limbs[2]|k.limbs[3]) == 0) { point_set_infinity(&R); results[gid] = R; return; }
+inline void scalar_mul_generator_glv_impl(JacobianPoint* r, const Scalar* k) {
+    if ((k->limbs[0]|k->limbs[1]|k->limbs[2]|k->limbs[3]) == 0) {
+        point_set_infinity(r);
+        return;
+    }
 
     Scalar k1, k2; int k1_neg, k2_neg;
-    glv_decompose_cl(&k, &k1, &k2, &k1_neg, &k2_neg);
+    glv_decompose_cl(k, &k1, &k2, &k1_neg, &k2_neg);
 
     FieldElement beta;
     beta.limbs[0]=GLV_BETA0; beta.limbs[1]=GLV_BETA1;
@@ -1232,16 +1397,23 @@ __kernel void scalar_mul_generator(__global const Scalar* scalars, __global Jaco
         if (w1) {
             AffinePoint pt; get_gen_entry(&pt, w1 - 1);
             if (k1_neg) field_neg_impl(&pt.y, &pt.y);
-            point_add_mixed_impl(&R, &R, &pt);
+            point_add_mixed_impl(r, r, &pt);
         }
         int w2 = get_window_4bit(&k2, w);
         if (w2) {
             AffinePoint pt; get_gen_entry(&pt, w2 - 1);
             field_mul_impl(&pt.x, &pt.x, &beta);
             if (k2_neg) field_neg_impl(&pt.y, &pt.y);
-            point_add_mixed_impl(&R, &R, &pt);
+            point_add_mixed_impl(r, r, &pt);
         }
     }
+}
+
+__kernel void scalar_mul_generator(__global const Scalar* scalars, __global JacobianPoint* results, uint count) {
+    uint gid = get_global_id(0); if (gid >= count) return;
+    Scalar k = scalars[gid];
+    JacobianPoint R;
+    scalar_mul_generator_glv_impl(&R, &k);
     results[gid] = R;
 }
 
@@ -2088,7 +2260,6 @@ void Context::batch_scalar_mul_generator(const Scalar* scalars, JacobianPoint* r
         impl_->cache_smg_count = count;
     }
 
-    // Upload scalars (async)
     clEnqueueWriteBuffer(impl_->queue, impl_->cache_smg_scalars, CL_FALSE, 0,
                          count * sizeof(Scalar), scalars, 0, nullptr, nullptr);
 
@@ -2143,10 +2314,11 @@ void Context::batch_scalar_mul(const Scalar* scalars, const AffinePoint* points,
         impl_->cache_sm_count = count;
     }
 
+    clEnqueueWriteBuffer(impl_->queue, impl_->cache_sm_points, CL_TRUE, 0,
+                         count * sizeof(AffinePoint), points, 0, nullptr, nullptr);
     clEnqueueWriteBuffer(impl_->queue, impl_->cache_sm_scalars, CL_FALSE, 0,
                          count * sizeof(Scalar), scalars, 0, nullptr, nullptr);
-    clEnqueueWriteBuffer(impl_->queue, impl_->cache_sm_points, CL_FALSE, 0,
-                         count * sizeof(AffinePoint), points, 0, nullptr, nullptr);
+    clFlush(impl_->queue);
 
     cl_uint cnt = static_cast<cl_uint>(count);
     clSetKernelArg(impl_->kernel_scalar_mul, 0, sizeof(cl_mem), &impl_->cache_sm_scalars);
