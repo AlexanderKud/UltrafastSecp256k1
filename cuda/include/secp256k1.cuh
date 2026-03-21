@@ -2930,7 +2930,8 @@ __device__ inline void build_wnaf_table_zr(
     field_set_one(&P_jac.z); P_jac.infinity = false;
 
     JacobianPoint D;
-    jacobian_double(&P_jac, &D);
+    // Unchecked: P_jac.infinity = false (set above).
+    jacobian_double_unchecked(&P_jac, &D);
 
     // C = D.z, C2 = C^2, C3 = C^3
     FieldElement C = D.z;
@@ -3077,7 +3078,8 @@ __device__ inline void scalar_mul_glv_wnaf(const JacobianPoint* p, const Scalar*
     #pragma unroll 1
     for (int i = LOOP_LEN - 1; i >= 0; --i) {
         if (!r->infinity) {
-            jacobian_double(r, r);
+            // Unchecked: r->infinity is false (checked above).
+            jacobian_double_unchecked(r, r);
         }
 
         // Apply k1 wNAF digit
@@ -3092,7 +3094,8 @@ __device__ inline void scalar_mul_glv_wnaf(const JacobianPoint* p, const Scalar*
                 r->x = pt.x; r->y = pt.y;
                 field_set_one(&r->z); r->infinity = false;
             } else {
-                jacobian_add_mixed(r, &pt, r);
+                // Unchecked: r->infinity is false (else branch above).
+                jacobian_add_mixed_unchecked(r, &pt, r);
             }
         }
 
@@ -3108,7 +3111,8 @@ __device__ inline void scalar_mul_glv_wnaf(const JacobianPoint* p, const Scalar*
                 r->x = pt.x; r->y = pt.y;
                 field_set_one(&r->z); r->infinity = false;
             } else {
-                jacobian_add_mixed(r, &pt, r);
+                // Unchecked: r->infinity is false (else branch above).
+                jacobian_add_mixed_unchecked(r, &pt, r);
             }
         }
     }
@@ -3383,14 +3387,16 @@ __device__ inline void shamir_double_mul_glv(
             const Scalar* scalars[4] = { &da.k1, &da.k2, &db.k1, &db.k2 };
             #pragma unroll 1
             for (int i = max_len - 1; i >= 0; --i) {
-                if (!r->infinity) jacobian_double(r, r);
+                // Unchecked: r->infinity is false (checked above).
+                if (!r->infinity) jacobian_double_unchecked(r, r);
                 for (int j = 0; j < 4; j++) {
                     if (scalar_bit(scalars[j], i)) {
                         if (r->infinity) {
                             r->x = pts[j].x; r->y = pts[j].y;
                             field_set_one(&r->z); r->infinity = false;
                         } else {
-                            jacobian_add_mixed(r, &pts[j], r);
+                            // Unchecked: r->infinity is false (else branch above).
+                            jacobian_add_mixed_unchecked(r, &pts[j], r);
                         }
                     }
                 }
@@ -3449,7 +3455,8 @@ __device__ inline void shamir_double_mul_glv(
     #pragma unroll 1
     for (int i = max_len - 1; i >= 0; --i) {
         if (!r->infinity) {
-            jacobian_double(r, r);
+            // Unchecked: r->infinity is false (checked above).
+            jacobian_double_unchecked(r, r);
         }
 
         int idx = scalar_bit(&da.k1, i)
@@ -3464,7 +3471,8 @@ __device__ inline void shamir_double_mul_glv(
                 field_set_one(&r->z);
                 r->infinity = false;
             } else {
-                jacobian_add_mixed(r, &table[idx], r);
+                // Unchecked: r->infinity is false (else branch above).
+                jacobian_add_mixed_unchecked(r, &table[idx], r);
             }
         }
     }
@@ -3553,10 +3561,11 @@ __device__ inline void scalar_mul_generator_const(const Scalar* k, JacobianPoint
             uint32_t idx = (uint32_t)((w >> (nib * 4)) & 0xFULL);
 
             if (started) {
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
+                // Unchecked: started=true guarantees r->infinity=false.
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
             }
 
             if (idx != 0) {
@@ -3596,14 +3605,15 @@ __device__ inline void scalar_mul_generator_w8(const Scalar* k, JacobianPoint* r
             uint32_t idx = (uint32_t)((w >> (byte_idx * 8)) & 0xFFULL);
 
             if (started) {
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
-                jacobian_double(r, r);
+                // Unchecked: started=true guarantees r->infinity=false.
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
+                jacobian_double_unchecked(r, r);
             }
 
             if (idx != 0) {
