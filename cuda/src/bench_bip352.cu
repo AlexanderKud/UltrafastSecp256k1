@@ -826,6 +826,21 @@ int main() {
     }
     printf("\n");
 
+    // GPU pre-warmup: LUT build + wNAF precompute are brief (~500 ms total) and
+    // are not enough to bring the GPU from idle P-state to sustained boost clock.
+    // Run BENCH_CLOCK_WARMUP full-batch pipeline passes before autotuning so that
+    // clock measurements reflect the real steady-state boost frequency.
+    {
+        printf("Pre-warming GPU clock (%d passes)...\n", BENCH_CLOCK_WARMUP);
+        int wb = (BENCH_N + GPU_TPB - 1) / GPU_TPB;
+        for (int w = 0; w < BENCH_CLOCK_WARMUP; ++w) {
+            bip352_pipeline_kernel<<<wb, GPU_TPB>>>(
+                d_tweaks, d_scan_key, d_spend, d_prefixes, BENCH_N);
+            CUDA_CHECK(cudaDeviceSynchronize());
+        }
+        printf("Done.\n\n");
+    }
+
     const int gpu_tpb_glv = autotune_gpu_tpb(
         "GPU pipeline (GLV)", BENCH_N, prop.maxThreadsPerBlock,
         {128, 256, 384, 512},

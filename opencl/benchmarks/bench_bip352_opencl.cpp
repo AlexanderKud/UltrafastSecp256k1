@@ -40,6 +40,10 @@ namespace {
 constexpr int BENCH_N = 10000;
 constexpr int BENCH_WARMUP = 3;
 constexpr int BENCH_PASSES = 11;
+// Extra passes before autotuning to bring GPU from idle P-state to boost clock.
+// Without this, autotuning measures idle-clock performance and may pick a
+// suboptimal local size (mirrors the same fix applied to the CUDA benchmark).
+constexpr int BENCH_CLOCK_WARMUP = 15;
 // RTX 5060 Ti (and most NVIDIA): warp=32, SM occupancy peaks at 128-256 threads.
 // Previous defaults (64/32) left SMs underutilized.
 constexpr int DEFAULT_LOCAL_SIZE_FUSED = 128;
@@ -556,6 +560,24 @@ int main(int argc, char** argv) {
     }
     if (static_cast<std::size_t>(local_size) > ctx->device_info().max_work_group_size) {
         throw std::runtime_error("local size exceeds device max work group size");
+    }
+
+    // GPU clock pre-warmup: LUT build + wNAF precompute are brief and may not be
+    // enough to bring the GPU from idle P-state to sustained boost clock before
+    // autotuning starts.  Run BENCH_CLOCK_WARMUP passes first so the clock governor
+    // has time to ramp up, then autotune from a warm state.
+    {
+        int default_ls = use_lut ? DEFAULT_LOCAL_SIZE_LUT : DEFAULT_LOCAL_SIZE_FUSED;
+        size_t wg_global = ((static_cast<size_t>(count) + static_cast<size_t>(default_ls) - 1)
+                           / static_cast<size_t>(default_ls)) * static_cast<size_t>(default_ls);
+        size_t wg_local  = static_cast<size_t>(default_ls);
+        printf("Pre-warming GPU clock (%d passes)...\n", BENCH_CLOCK_WARMUP);
+        for (int w = 0; w < BENCH_CLOCK_WARMUP; ++w) {
+            check_cl(clEnqueueNDRangeKernel(cl_q, kernel, 1, nullptr,
+                &wg_global, &wg_local, 0, nullptr, nullptr), "clock warmup");
+            check_cl(clFinish(cl_q), "clock warmup finish");
+        }
+        printf("Done.\n\n");
     }
 
     // Autotune: find optimal local size among candidates (mirrors CUDA autotune_gpu_tpb).
