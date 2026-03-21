@@ -228,7 +228,7 @@ Machine-checked proofs (Fiat-Crypto/Vale/Jasmin) are not yet applied.
 
 | Gap | Impact | Blocked By |
 |-----|--------|------------|
-| **Formal verification** | CT properties unverified mathematically | Fiat-Crypto/ct-verif integration needed |
+| **Machine-checked proofs** | CT/math properties not proven in Coq/Jasmin/Vale-style frameworks | Separate proof-bearing core or generated arithmetic path needed |
 | **Cross-ABI tests** | Cannot verify FFI correctness across calling conventions | Need multi-compiler test matrix |
 
 ### Medium Priority

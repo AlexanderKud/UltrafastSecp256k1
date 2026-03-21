@@ -1,5 +1,11 @@
 # UltrafastSecp256k1 -- High-Performance secp256k1 Engine for CPU, GPU, Mobile, Embedded, and Web
 
+[![CI](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ci.yml)
+[![ct-verif](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ct-verif.yml/badge.svg?branch=main)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ct-verif.yml)
+[![CodeQL](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/codeql.yml)
+[![OSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/shrec/UltrafastSecp256k1/badge)](https://securityscorecards.dev/viewer/?uri=github.com/shrec/UltrafastSecp256k1)
+[![GPU Self-Hosted](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/gpu-selfhosted.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/gpu-selfhosted.yml)
+
 **Zero-dependency, multi-backend secp256k1 cryptography engine** -- built independently from scratch for Bitcoin, Ethereum, Silent Payments, threshold signatures, embedded systems, and GPU-scale workloads. UltrafastSecp256k1 delivers GPU-accelerated ECDSA and Schnorr, constant-time CPU signing paths, and 12+ platform targets including CUDA, Metal, OpenCL, ROCm, WebAssembly, RISC-V, ESP32, and STM32.
 
 > **4.88 M ECDSA signs/s** * **2.44 M ECDSA verifies/s** * **3.66 M Schnorr signs/s** * **2.82 M Schnorr verifies/s** -- single GPU (RTX 5060 Ti, hybrid GPU execution model)
@@ -267,7 +273,7 @@ Sponsorship helps sustain development of:
 - **Platform ports** -- embedded (ESP32, STM32), mobile (iOS, Android), WASM
 - **Protocol features** -- MuSig2, FROST threshold signatures, Taproot, BIP-352 Silent Payments
 - **Multi-coin support** -- 27+ blockchain address formats and signing
-- **Formal verification** -- Fiat-Crypto integration, ct-verif, Cryptol models
+- **Formal verification** -- Fiat-Crypto integration, Cryptol models (ct-verif and valgrind-ct already active in CI)
 - **CI/CD infrastructure** -- cross-platform testing, performance regression gates, fuzzing
 
 ### How to Sponsor
