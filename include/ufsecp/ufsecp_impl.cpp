@@ -1794,7 +1794,6 @@ ufsecp_error_t ufsecp_musig2_partial_sign(
     }
     if (!scalar_parse_strict(session + 33, sess.b))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid session scalar b");
-    }
     if (!scalar_parse_strict(session + 65, sess.e)) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid session scalar e");
     }
@@ -1851,7 +1850,6 @@ ufsecp_error_t ufsecp_musig2_partial_verify(
     }
     if (!scalar_parse_strict(session + 33, sess.b))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid session scalar b");
-    }
     if (!scalar_parse_strict(session + 65, sess.e)) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid session scalar e");
     }
@@ -1882,7 +1880,6 @@ ufsecp_error_t ufsecp_musig2_partial_sig_agg(
     }
     if (!scalar_parse_strict(session + 33, sess.b))
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid session scalar b");
-    }
     if (!scalar_parse_strict(session + 65, sess.e)) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid session scalar e");
     }
@@ -1919,7 +1916,6 @@ ufsecp_error_t ufsecp_frost_keygen_begin(
     const size_t needed_commits = 8 + coeff_count * 33;
     if (*commits_len < needed_commits)
         return ctx_set_err(ctx, UFSECP_ERR_BUF_TOO_SMALL, "commits buffer too small");
-    }
     const auto cc32 = static_cast<uint32_t>(coeff_count);
     std::memcpy(commits_out, &cc32, 4);
     std::memcpy(commits_out + 4, &commit.from, 4);
@@ -3144,6 +3140,7 @@ ufsecp_error_t ufsecp_ecies_encrypt(
     uint8_t* envelope_out, size_t* envelope_len) {
     if (!ctx || !recipient_pubkey33 || !plaintext || !envelope_out || !envelope_len) {
         return UFSECP_ERR_NULL_ARG;
+    }
     if (plaintext_len == 0) {
         return UFSECP_ERR_BAD_INPUT;
     }
