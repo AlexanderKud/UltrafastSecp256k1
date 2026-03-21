@@ -1387,11 +1387,11 @@ inline void scalar_mul_generator_glv_impl(JacobianPoint* r, const Scalar* k) {
     int max_bits = (bl1 > bl2) ? bl1 : bl2;
     int num_windows = (max_bits + 3) / 4;
 
-    point_set_infinity(&R);
+    point_set_infinity(r);
     for (int w = num_windows - 1; w >= 0; --w) {
-        if (!point_is_infinity(&R)) {
-            point_double_impl(&R, &R); point_double_impl(&R, &R);
-            point_double_impl(&R, &R); point_double_impl(&R, &R);
+        if (!point_is_infinity(r)) {
+            point_double_impl(r, r); point_double_impl(r, r);
+            point_double_impl(r, r); point_double_impl(r, r);
         }
         int w1 = get_window_4bit(&k1, w);
         if (w1) {
