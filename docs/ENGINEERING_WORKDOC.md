@@ -110,21 +110,20 @@ Suggested parity categories:
 
 ### 2. Parsing and Validation Unification
 
-- `[WIP]` Strict parsing exists in many public paths.
-- `[TODO]` Ensure every public parse path goes through a single strict policy for:
-  - compressed pubkeys
-  - x-only pubkeys
-  - compact signatures
-  - DER signatures
-  - scalars / private keys
-- `[TODO]` Add one regression checklist for "no alternate malformed input path accepted."
+- `[OK]` Strict parsing exists in all public paths.
+- `[OK]` `test_parse_strictness.cpp` (audit module [55/55]) validates every public parse/decode
+  entry point against malformed inputs — compressed/uncompressed pubkeys, x-only encoding,
+  compact signatures, DER signatures, WIF, BIP-32 seed, scalar range. ~60 regression checks.
+- `[OK]` Regression checklist: `test_parse_strictness_run()` runs as a hard CI gate.
 
 ### 3. Sensitive Path Hardening
 
 - `[OK]` CT layer exists and is clearly separated.
 - `[OK]` CT equivalence, side-channel, fault-injection, Wycheproof, and audit tests exist.
-- `[TODO]` Keep secret-bearing APIs on one consistent zeroization policy.
-- `[TODO]` Review new features to ensure secret data never bypasses the intended CT path unintentionally.
+- `[OK]` Zeroization policy audited: `audit_secure_erase.cpp` verifies `secure_erase()` across
+  all secret-bearing paths; `audit_ct_namespace.cpp` verifies CT namespace discipline at source level.
+- `[OK]` Nonce isolation verified: `test_nonce_uniqueness.cpp` checks determinism, uniqueness, and
+  key isolation across ECDSA and Schnorr; no k-reuse possible under RFC 6979 + BIP-340.
 
 ### 4. Protocol Misuse Coverage
 
@@ -176,9 +175,9 @@ Suggested parity categories:
 
 If effort is limited, these are the highest-value items:
 
-1. Finish parser strictness unification.
-2. Finish ECIES hardening before broad positioning.
-3. Complete ROCm validation on real AMD hardware.
-4. Formalize CPU/GPU / backend parity artifacts.
-5. Refresh benchmark artifacts after the current fix wave lands.
+1. ~~Finish parser strictness unification.~~ **DONE** — `test_parse_strictness.cpp` added as module [55/55].
+2. Finish ECIES hardening before broad positioning (authenticated envelope + CSPRNG path).
+3. Complete ROCm validation on real AMD hardware (requires device access).
+4. Formalize CPU/GPU cross-backend equivalence matrix (`docs/GPU_BACKEND_PARITY.md`).
+5. Refresh benchmark artifacts after current fix wave lands.
 

@@ -232,38 +232,52 @@ UltrafastSecp256k1/
 
 ## 5. Automated CI Workflows
 
+23 GitHub Actions workflows provide continuous assurance across every push and PR:
+
 | Workflow | File | Trigger | What It Does |
 |----------|------|---------|--------------|
-| CI | `ci.yml` | push/PR | Linux/Win/macOS/iOS/WASM/Android build + test |
-| Benchmark | `benchmark.yml` | push/PR | Performance regression detection |
-| Bindings | `bindings.yml` | push/PR | Language binding tests |
+| CI | `ci.yml` | push/PR | Linux/Win/macOS/iOS/WASM/Android build + test (17 configs × 7 archs) |
+| Preflight | `preflight.yml` | PR | Fast pre-merge smoke gate |
+| Security Audit | `security-audit.yml` | push/PR/cron | -Werror + ASan/UBSan + **MSan** + TSan + Valgrind + dudect |
+| Unified Audit | `audit-report.yml` | push/manual | Runs `unified_audit_runner` (55 modules, ~1M checks) |
+| CT Verification | `ct-verif.yml` | push/PR | Formal CT verification via ct-verif LLVM pass |
+| CT ARM64 | `ct-arm64.yml` | push/PR | Native ARM64 dudect on Apple M1 hardware |
+| Valgrind CT | `valgrind-ct.yml` | push/PR | Valgrind CT taint analysis (CLASSIFY/DECLASSIFY) |
+| Perf Regression | `bench-regression.yml` | push/PR | Blocks if any op regresses **>50%** vs baseline |
+| Benchmark | `benchmark.yml` | push | Full benchmark suite, results to live dashboard |
+| Nightly | `nightly.yml` | nightly 03:00 UTC | Extended differential (~1.3M checks) + dudect 30 min |
+| Mutation | `mutation.yml` | scheduled | Mutation testing -- verifies tests kill injected faults |
+| ClusterFuzz | `cflite.yml` | push | Continuous libFuzzer integration (ClusterFuzz-Lite) |
+| Bindings | `bindings.yml` | push/PR | All 12 language bindings compile + FFI test |
 | Clang-Tidy | `clang-tidy.yml` | push/PR | 30+ static analysis checks |
-| CodeQL | `codeql.yml` | push/PR/cron | Security + quality queries |
+| CodeQL | `codeql.yml` | push/PR/cron | GitHub SAST (C++ security + quality queries) |
+| CPPCheck | `cppcheck.yml` | push/PR | CPPCheck static analysis |
 | Dependency Review | `dependency-review.yml` | PR | Vulnerable dependency scanning |
-| Docs | `docs.yml` | push | Doxygen -> GitHub Pages |
-| Packaging | `packaging.yml` | push/PR | Debian/RPM/Arch packaging |
-| Release | `release.yml` | tag | Build + sign release artifacts |
-| Scorecard | `scorecard.yml` | cron | OpenSSF supply-chain assessment |
-| Security Audit | `security-audit.yml` | push/PR/cron | Werror + ASan/UBSan + Valgrind |
+| Scorecard | `scorecard.yml` | weekly | OpenSSF supply-chain assessment |
 | SonarCloud | `sonarcloud.yml` | push/PR | Code quality + security hotspots |
+| Docs | `docs.yml` | push | Doxygen -> GitHub Pages |
+| Packaging | `packaging.yml` | push/PR | .deb/.rpm/vcpkg/Conan/Swift Package validation |
+| Release | `release.yml` | tag | Multi-platform artifacts + SLSA attestation |
+| Discord | `discord-commits.yml` | push | Commit notifications |
 
 ---
 
 ## 6. Test Categories & Check Counts
 
-From [AUDIT_REPORT.md](AUDIT_REPORT.md) (v3.9.0):
+From [AUDIT_COVERAGE.md](AUDIT_COVERAGE.md) (v3.22.0):
 
 | Suite | Checks | Focus |
 |-------|--------|-------|
-| `audit_field` | 264,484 | Field arithmetic: identity, commutative, associative, distributive, inverse, boundary |
-| `audit_scalar` | 93,847 | Scalar arithmetic: ring properties, overflow, negate, boundary |
-| `audit_point` | 116,312 | Point ops: on-curve, group law, scalar mul, compress/decompress |
-| `audit_ct` | 120,128 | CT layer: timing-safe ops, no secret-dependent branches |
-| `audit_fuzz` | 15,423 | Fuzz-generated: random input correctness |
+| `audit_field` | 264,622 | Field arithmetic: identity, commutative, associative, distributive, inverse, boundary |
+| `audit_scalar` | 93,215 | Scalar arithmetic: ring properties, overflow, negate, boundary |
+| `audit_point` | 116,124 | Point ops: on-curve, group law, scalar mul, compress/decompress |
+| `audit_ct` | 120,652 | CT layer: timing-safe ops, no secret-dependent branches |
+| `audit_fuzz` | 15,461 | Fuzz-generated: random input correctness |
 | `audit_perf` | -- | Performance benchmarks (not a correctness check) |
-| `audit_security` | 17,856 | Security: nonce, validation, edge cases |
-| `audit_integration` | 13,144 | End-to-end: sign -> verify, derive -> use |
-| **Total** | **641,194** | |
+| `audit_security` | 17,309 | Security: nonce, validation, edge cases |
+| `audit_integration` | 13,811 | End-to-end: sign -> verify, derive -> use |
+| `audit_zk` | ~1,500 | ZK proofs: knowledge, DLEQ, Bulletproof range, serialization, rejection |
+| **Total** | **~1,000,000+** | (includes parser fuzz 530K, Wycheproof, FROST KAT, etc.) |
 
 ---
 
@@ -297,21 +311,27 @@ clang++ -fsanitize=fuzzer,address -O2 -std=c++20 \
 ## 8. Checklist for Auditors
 
 - [ ] **Build succeeds** with `-Werror -Wall -Wextra -Wpedantic`
-- [ ] **All 641,194 checks pass** (0 failures expected)
+- [ ] **All 47 audit modules pass** (0 failures expected) -- `./unified_audit_runner`
 - [ ] **ASan + UBSan**: no memory errors or undefined behavior
+- [ ] **MSan**: no uninitialized reads (`security-audit.yml` MSan job)
+- [ ] **TSan**: no data races
 - [ ] **Valgrind**: no leaks, no invalid reads/writes
 - [ ] **Field arithmetic**: verify reduction mod p is correct in `normalize()`
 - [ ] **Scalar arithmetic**: verify reduction mod n is correct
 - [ ] **Point addition**: verify complete addition formula handles all edge cases
 - [ ] **GLV decomposition**: verify k1 + k2*lambda == k (mod n) for random scalars
-- [ ] **ECDSA nonce**: verify RFC 6979 determinism
-- [ ] **Schnorr**: verify BIP-340 tagged hashing
-- [ ] **CT layer**: no secret-dependent branches (manual code review)
+- [ ] **ECDSA nonce**: verify RFC 6979 determinism (35 vectors)
+- [ ] **Schnorr**: verify BIP-340 tagged hashing (27 vectors)
+- [ ] **CT layer**: no secret-dependent branches (manual code review + ct-verif + Valgrind CT)
 - [ ] **CT layer**: dudect timing test passes (|t| < 4.5 for all operations)
 - [ ] **SafeGCD inverse**: verify Bernstein-Yang divsteps correctness
 - [ ] **from_bytes vs from_limbs**: verify endianness handling
-- [ ] **GPU kernels**: verify arithmetic matches CPU reference
-- [ ] **FROST / MuSig2**: note these are experimental, test coverage is limited
+- [ ] **ZK proofs**: `audit_zk` passes -- knowledge, DLEQ, range proof, serialization, rejection
+- [ ] **Wycheproof**: all 89 ECDSA + 36 ECDH adversarial vectors correctly rejected/accepted
+- [ ] **Fiat-Crypto linkage**: field arithmetic matches formally-verified reference
+- [ ] **GPU kernels**: verify arithmetic matches CPU reference (note: no CT guarantee on GPU)
+- [ ] **FROST / MuSig2**: note these are experimental; test vectors per BIP-327 and FROST spec
+- [ ] **Ethereum layer**: EIP-155 chain ID encoding, ecrecover, personal_sign round-trip
 
 ---
 
@@ -323,4 +343,4 @@ clang++ -fsanitize=fuzzer,address -O2 -std=c++20 \
 
 ---
 
-*UltrafastSecp256k1 v3.16.0 -- Audit Guide*
+*UltrafastSecp256k1 v3.22.0 -- Audit Guide*

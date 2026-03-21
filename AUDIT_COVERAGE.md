@@ -1,10 +1,10 @@
 # UltrafastSecp256k1 -- Full Audit Coverage
 
-**Version**: v3.14.0  
-**Audit Runner**: `unified_audit_runner`  
-**Verdict**: **AUDIT-READY** -- 46/46 modules passed  
-**Total Checks**: ~1,000,000+ (audit) + 1.3M+ (nightly differential)  
-**Runtime**: ~35.6 seconds (X64, Clang 21.1.0, Release)
+**Version**: v3.22.0
+**Audit Runner**: `unified_audit_runner`
+**Verdict**: **AUDIT-READY** -- 55/55 modules passed
+**Total Checks**: ~1,000,000+ (audit) + 1.3M+ (nightly differential)
+**Runtime**: ~36.5 seconds (X64, Clang 21.1.0, Release)
 
 ---
 
@@ -13,10 +13,10 @@
 | Metric               | Value                                       |
 |----------------------|---------------------------------------------|
 | Audit Sections       | 8                                           |
-| Audit Modules        | 46 (45 + Phase 1 selftest)                  |
-| Audit assertions     | ~1,000,000+ (parser fuzz 530K, CT deep 120K, field Fp 264K, ...) |
+| Audit Modules        | 55 (54 + parse strictness) |
+| Audit assertions     | ~1,000,000+ (parser fuzz 530K, CT deep 120K, field Fp 264K, ZK ~1.5K, ...) |
 | Nightly differential | ~1,300,000+ additional random checks (daily) |
-| CI Workflows         | 14 GitHub Actions workflows                 |
+| CI Workflows         | 23 GitHub Actions workflows                 |
 | CI Build Matrix      | 17 configurations, 7 architectures, 5 OSes  |
 | Sanitizers           | ASan+UBSan, TSan, Valgrind memcheck         |
 | Fuzzing              | 3 libFuzzer harnesses + 530K deterministic   |
@@ -28,9 +28,39 @@
 
 ---
 
-## Section 1/8: Mathematical Invariants (Fp, Zn, Group Laws) -- 13/13 PASS
+## Section 1/8: Mathematical Invariants (Fp, Zn, Group Laws) -- 15/15 PASS
 
-### [1/45] Field Fp Deep Audit -- 264,622 checks
+### [1/55] SEC2 v2.0 Specification Oracle -- 13 checks
+
+Verifies that all library curve constants exactly match the published SEC 2 v2.0 specification:
+
+- **SPEC-1**: p ≡ 0 (mod p) — field prime encoding correct
+- **SPEC-2**: n ≡ 0 (mod n) — group order encoding correct
+- **SPEC-3/4**: Gx, Gy match SEC2 byte-for-byte (hex cross-check)
+- **SPEC-5**: G lies on the curve — y² = x³ + 7 (mod p)
+- **SPEC-6**: (n−1)·G = −G — group order arithmetic
+- **SPEC-7**: p ≡ 3 (mod 4) — square root formula precondition
+- **SPEC-8/9**: 2·G ≠ G, 2·G ≠ ∞ — no degenerate generator
+- **SPEC-10**: G + (−G) = ∞ — inverse closure
+- **SPEC-11**: curve parameter b = 7
+- **SPEC-12/13**: cross-representation consistency
+
+### [2/55] Post-Operation Invariant Monitor -- ~5,000 checks
+
+Continuous on-curve and normalization monitoring across all operation types:
+
+- **INV-1**: Post-point-add on-curve (500 random pairs, fast + CT)
+- **INV-2**: Post-scalar-mul on-curve (500 random scalars + 200 CT)
+- **INV-3**: Field element normalization after every operation (1000)
+- **INV-4**: Scalar range [1, n−1] after derivation (500)
+- **INV-5**: GLV reconstruction: k₁ + k₂·λ = k (mod n) (200)
+- **INV-6**: Serialization round-trip identity (200)
+- **INV-7**: ECDSA signatures verify against their own pubkey (100)
+- **INV-8**: Schnorr signatures verify against their own pubkey (100)
+- **INV-9**: Infinity propagation: P + (−P) = ∞, ∞ + P = P (50)
+- **INV-10**: Negation: P + (−P) = ∞ for 100 random points
+
+### [3/55] Field Fp Deep Audit -- 264,622 checks
 
 11 sub-tests covering the full finite field GF(p) where p = 2^256 - 2^32 - 977:
 
@@ -46,7 +76,7 @@
 - **Batch inverse**: Montgomery's trick batch inversion
 - **Random stress**: randomized field operations
 
-### [2/45] Scalar Zn Deep Audit -- 93,215 checks
+### [4/55] Scalar Zn Deep Audit -- 93,215 checks
 
 8 sub-tests covering the scalar field Z_n where n is the secp256k1 group order:
 
@@ -59,7 +89,7 @@
 - **High-bit patterns**: scalars with MSB set
 - **Negation**: a + (-a) == 0 mod n
 
-### [3/45] Point Operations Deep Audit -- 116,124 checks
+### [5/55] Point Operations Deep Audit -- 116,124 checks
 
 11 sub-tests covering elliptic curve group operations:
 
@@ -75,14 +105,14 @@
 - **Schnorr integration**: BIP-340 sign/verify with computed points
 - **100K stress test**: 100,000 random scalar multiplications
 
-### [4/45] Field & Scalar Arithmetic -- 4,237 checks
+### [6/55] Field & Scalar Arithmetic -- 4,237 checks
 
 - Field mul, sqr, add, sub, normalize operations
 - Scalar NAF (Non-Adjacent Form) encoding
 - Scalar wNAF (windowed NAF) encoding
 - Cross-verification between representations
 
-### [5/45] Arithmetic Correctness -- 7 suites, 55 checks
+### [7/55] Arithmetic Correctness -- 7 suites, 55 checks
 
 - k*G computed via 3 independent methods (must agree)
 - P1 + P2 point addition
@@ -90,7 +120,7 @@
 - Random large scalar multiplication
 - Distributive law: k*(P+Q) == kP + kQ
 
-### [6/45] Scalar Multiplication -- 319 checks
+### [8/55] Scalar Multiplication -- 319 checks
 
 - Known k*G vectors (published test data)
 - `fast::scalar_mul` vs `generic::scalar_mul` equivalence
@@ -103,7 +133,7 @@
 - Distributive law
 - Edge cases (k=0, k=1, k=n-1)
 
-### [7/45] Exhaustive Algebraic Verification -- 5,399 checks
+### [9/55] Exhaustive Algebraic Verification -- 5,399 checks
 
 14 sub-tests with exhaustive enumeration:
 
@@ -122,7 +152,7 @@
 13. **Pippenger MSM**: multi-scalar multiplication correctness
 14. **Comb generator**: comb_mul(k) vs k*G
 
-### [8/45] Comprehensive 500+ Suite -- 12,023 checks (10 skipped)
+### [10/55] Comprehensive 500+ Suite -- 12,023 checks (10 skipped)
 
 29 categories covering the entire API surface:
 
@@ -159,7 +189,7 @@
 | Recovery | ECDSA public key recovery from signature |
 | *Extras* | SHA-256/512, batch affine add, batch verify, homomorphism, precompute |
 
-### [9/45] ECC Property-Based Invariants -- 89 checks
+### [11/55] ECC Property-Based Invariants -- 89 checks
 
 Group law axioms verified with random points:
 
@@ -178,7 +208,7 @@ Group law axioms verified with random points:
 - **In-place ops**: add_inplace, dbl_inplace, negate_inplace, next_inplace, prev_inplace
 - **Dual scalar mul**: a*G + b*P (5 tests)
 
-### [10/45] Affine Batch Addition -- 548 checks
+### [12/55] Affine Batch Addition -- 548 checks
 
 - Empty batch handling
 - Precompute 64 G-multiples table
@@ -190,7 +220,7 @@ Group law axioms verified with random points:
 - Negate table (16 points)
 - Large batch benchmark: 1,024 points -- 237.5 ns/point, 4.21 Mpoints/s
 
-### [11/45] Carry Chain Stress -- 247 checks
+### [13/55] Carry Chain Stress -- 247 checks
 
 Limb boundary and carry propagation edge cases:
 
@@ -202,7 +232,7 @@ Limb boundary and carry propagation edge cases:
 6. Scalar carry propagation near group order n
 7. Point arithmetic carry propagation
 
-### [12/45] FieldElement52 (5x52 Lazy-Reduction) -- 267 checks
+### [14/55] FieldElement52 (5x52 Lazy-Reduction) -- 267 checks
 
 Cross-verification of the 5x52-bit limb representation against the reference 4x64:
 
@@ -217,7 +247,7 @@ Cross-verification of the 5x52-bit limb representation against the reference 4x6
 - Normalization edge cases
 - Commutativity and associativity
 
-### [13/45] FieldElement26 (10x26 Lazy-Reduction) -- 269 checks
+### [15/55] FieldElement26 (10x26 Lazy-Reduction) -- 269 checks
 
 Same as FieldElement52 tests plus:
 - Multiplication after lazy additions (no intermediate normalize)
@@ -226,7 +256,7 @@ Same as FieldElement52 tests plus:
 
 ## Section 2/8: Constant-Time & Side-Channel Analysis -- 5/5 PASS
 
-### [14/45] CT Deep Audit -- 120,651 checks
+### [16/55] CT Deep Audit -- 120,651 checks
 
 13 sub-tests with massive differential testing:
 
@@ -244,7 +274,7 @@ Same as FieldElement52 tests plus:
 12. **CT generator_mul vs fast** -- 500 random scalars
 13. **Timing variance sanity check** -- rudimentary timing ratio (informational only)
 
-### [15/45] Constant-Time Layer Tests -- 60 checks
+### [17/55] Constant-Time Layer Tests -- 60 checks
 
 Focused functional tests for the CT API:
 
@@ -261,7 +291,7 @@ Focused functional tests for the CT API:
 - **CT ECDSA**: sign r/s matches fast, signature verifies, zero key returns zero sig
 - **CT Schnorr**: keypair matches fast, sign r/s matches fast, signature verifies, pubkey(1)==G.x
 
-### [16/45] FAST == CT Equivalence -- 320 checks
+### [18/55] FAST == CT Equivalence -- 320 checks
 
 Systematic equivalence verification between fast:: and ct:: layers:
 
@@ -273,7 +303,7 @@ Systematic equivalence verification between fast:: and ct:: layers:
 - Schnorr pubkey CT == FAST (boundary + random)
 - CT group law invariants
 
-### [17/45] Side-Channel Dudect Smoke -- 34 checks
+### [19/55] Side-Channel Dudect Smoke -- 34 checks
 
 Statistical timing analysis using Welch's t-test (|t| < 4.5 threshold):
 
@@ -331,7 +361,7 @@ Statistical timing analysis using Welch's t-test (|t| < 4.5 threshold):
 
 **[8] ASM inspection**: Verifies ct:: code uses cmov/cmovne/cmove (branchless) instead of jz/jnz (branches).
 
-### [18/45] CT scalar_mul vs Fast Diagnostic -- PASS
+### [20/55] CT scalar_mul vs Fast Diagnostic -- PASS
 
 Diagnostic timing comparison between CT and fast scalar multiplication paths.
 
@@ -339,7 +369,7 @@ Diagnostic timing comparison between CT and fast scalar multiplication paths.
 
 ## Section 3/8: Differential & Cross-Library Testing -- 3/3 PASS
 
-### [19/45] Differential Correctness -- 13,007 checks
+### [21/55] Differential Correctness -- 13,007 checks
 
 8 sub-tests with large-scale randomized differential testing:
 
@@ -352,7 +382,7 @@ Diagnostic timing comparison between CT and fast scalar multiplication paths.
 7. **ECDSA signature serialization roundtrip**: compact <-> DER
 8. **BIP-340 known test vectors**: official Bitcoin test vectors
 
-### [20/45] Fiat-Crypto Reference Vectors -- 647 checks
+### [22/55] Fiat-Crypto Reference Vectors -- 647 checks
 
 Golden vectors from Fiat-Crypto / Sage computer algebra:
 
@@ -365,7 +395,7 @@ Golden vectors from Fiat-Crypto / Sage computer algebra:
 7. Algebraic identity verification (100 rounds)
 8. Serialization round-trip consistency
 
-### [21/45] Cross-Platform KAT -- 24 checks
+### [23/55] Cross-Platform KAT -- 24 checks
 
 Known Answer Tests that must produce identical results on all platforms:
 
@@ -378,9 +408,9 @@ Known Answer Tests that must produce identical results on all platforms:
 
 ---
 
-## Section 4/8: Standard Test Vectors (BIP-340, RFC-6979, BIP-32) -- 4/4 PASS
+## Section 4/8: Standard Test Vectors (BIP-340, RFC-6979, BIP-32) -- 5/5 PASS
 
-### [22/45] BIP-340 Official Vectors -- 27 checks
+### [24/55] BIP-340 Official Vectors -- 27 checks
 
 Full coverage of the official Bitcoin BIP-340 Schnorr signature test vectors:
 
@@ -397,7 +427,7 @@ Full coverage of the official Bitcoin BIP-340 Schnorr signature test vectors:
 - **V13**: s == n -> reject
 - **V14**: pk >= p -> reject
 
-### [23/45] BIP-32 Official Vectors TV1-TV5 -- 90 checks
+### [25/55] BIP-32 Official Vectors TV1-TV5 -- 90 checks
 
 Complete BIP-32 HD key derivation test vector coverage:
 
@@ -408,7 +438,7 @@ Complete BIP-32 HD key derivation test vector coverage:
 - **TV5**: Serialization format (78 bytes, version bytes xprv/xpub, depth, parent fingerprint, child number, chain code, key prefix)
 - **Public derivation consistency**: Private and public derivation yield same pubkey and chain codes
 
-### [24/45] RFC 6979 Deterministic ECDSA -- 35 checks
+### [26/55] RFC 6979 Deterministic ECDSA -- 35 checks
 
 - **6 nonce generation vectors**: Various private keys and messages
 - **7 ECDSA signature vectors** (r + s): Including d=1, d=n-1, d=69ec, small d, tiny d
@@ -417,7 +447,7 @@ Complete BIP-32 HD key derivation test vector coverage:
 - **Determinism**: Same (key, msg) -> identical signature
 - **Low-S**: All signatures satisfy BIP-62 low-S requirement
 
-### [25/45] FROST Reference KAT Vectors -- 9 sub-tests
+### [27/55] FROST Reference KAT Vectors -- 9 sub-tests
 
 1. Lagrange coefficient mathematical properties
 2. FROST DKG determinism with fixed seeds
@@ -429,11 +459,26 @@ Complete BIP-32 HD key derivation test vector coverage:
 8. Pinned KAT: Full signing round-trip determinism
 9. FROST DKG secret reconstruction via Lagrange interpolation
 
+### [51/55] KAT: All Operations -- ~42 checks
+
+Known-answer tests for operations not fully covered by BIP-340 / RFC-6979 / BIP-32 vectors:
+
+- **KAT-1..4**: ECDH commutativity — ecdh(k₁, k₂·G) == ecdh(k₂, k₁·G) for pairs (1,2), (1,7), (2,7); ecdh vs ecdh_xonly differ
+- **KAT-5..8**: WIF encode/decode — privkey=1 → `KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73NUBBy9s` (mainnet compressed), testnet, uncompressed variants
+- **KAT-9..12**: P2PKH — privkey=1 → `1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH`; two distinct keys produce distinct addresses
+- **KAT-13..16**: P2WPKH — privkey=1 → `bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4`; starts with "bc1q"
+- **KAT-17..20**: P2TR format checks — starts with "bc1p" (mainnet) / "tb1p" (testnet); two keys differ
+- **KAT-21..25**: Taproot output key + `taproot_verify` round-trip + merkle_root changes output key
+- **KAT-26..30**: DER encoding round-trip + format check (starts 0x30)
+- **KAT-31..34**: SHA-256 NIST vectors ("abc", ""), Hash160(""), Hash160(G_compressed) = `751e76e8...`
+- **KAT-35..38**: ECDH commutativity for keys 3,5 and 11,13
+- **KAT-39..42**: Pubkey arithmetic — (G+2G)−2G=G, G+G=2G, tweak_add(G,1)=2G, tweak_mul(G,7)=7G
+
 ---
 
 ## Section 5/8: Fuzzing & Adversarial Attack Resilience -- 4/4 PASS
 
-### [26/45] Adversarial Fuzz -- 15,461 checks
+### [28/55] Adversarial Fuzz -- 15,461 checks
 
 10 sub-tests targeting malformed/adversarial inputs:
 
@@ -448,7 +493,7 @@ Complete BIP-32 HD key derivation test vector coverage:
 9. **Schnorr signature byte round-trip** (1,000 rounds, 2,000 checks)
 10. **Signature normalization / low-S** (1,000 rounds, 4,000 checks)
 
-### [27/45] Parser Fuzz -- 530,018 checks
+### [29/55] Parser Fuzz -- 530,018 checks
 
 High-volume random input fuzzing with crash detection:
 
@@ -462,7 +507,7 @@ High-volume random input fuzzing with crash detection:
 8. **Pubkey parse: adversarial inputs** -- targeted malformation
 9. **ECDSA verify: random garbage** -- 50,000 random inputs, 0 accepted, 0 crashes
 
-### [28/45] Address/BIP32/FFI Boundary Fuzz -- 13 sub-tests
+### [30/55] Address/BIP32/FFI Boundary Fuzz -- 13 sub-tests
 
 1. P2PKH address fuzz (Base58Check)
 2. P2WPKH address fuzz (Bech32)
@@ -478,7 +523,7 @@ High-volume random input fuzzing with crash detection:
 12. FFI Taproot output key boundary fuzz
 13. FFI error inspection
 
-### [29/45] Fault Injection Simulation -- 610 checks
+### [31/55] Fault Injection Simulation -- 610 checks
 
 Verifying that single-bit faults are always detected:
 
@@ -495,7 +540,7 @@ Verifying that single-bit faults are always detected:
 
 ## Section 6/8: Protocol Security (ECDSA, Schnorr, MuSig2, FROST) -- 9/9 PASS
 
-### [30/45] ECDSA + Schnorr -- 22 checks
+### [32/55] ECDSA + Schnorr -- 22 checks
 
 - SHA-256 NIST vectors ("abc", empty string)
 - Scalar::inverse correctness (7 * 7^{-1} == 1, random, inverse(0)==0)
@@ -505,7 +550,7 @@ Verifying that single-bit faults are always detected:
 - Tagged hash (BIP-340): determinism, different tags -> different hashes
 - Schnorr BIP-340: sign/verify, wrong message rejection, roundtrip
 
-### [31/45] BIP-32 HD Derivation -- 28 checks
+### [33/55] BIP-32 HD Derivation -- 28 checks
 
 - HMAC-SHA512 (RFC 4231 TC2)
 - Master key generation (depth=0, chain code, private key match TV1)
@@ -514,7 +559,7 @@ Verifying that single-bit faults are always detected:
 - Serialization (78 bytes, xprv version, depth, fingerprint)
 - Seed validation (< 16 bytes rejected, 16 and 64 accepted)
 
-### [32/45] MuSig2 -- 19 checks
+### [34/55] MuSig2 -- 19 checks
 
 - Key aggregation: valid point, deterministic, differs from individual keys
 - Nonce generation: non-zero secrets, valid R1/R2, different extra -> different nonce
@@ -522,7 +567,7 @@ Verifying that single-bit faults are always detected:
 - 3-of-3 signing: agg key valid, partial sig 0/1/2 verify, MuSig2 sig verifies as Schnorr
 - Single-signer edge case: agg key valid, partial verify OK, valid Schnorr sig
 
-### [33/45] ECDH + Recovery + Taproot -- 76 checks
+### [35/55] ECDH + Recovery + Taproot -- 76 checks
 
 - **ECDH**: Basic key exchange, x-only variant, raw x-coordinate, zero private key edge, infinity public key edge
 - **Recovery**: Basic sign + recover, multiple different private keys, compact 65-byte serialization, wrong recovery ID, invalid signature (zero r/s)
@@ -530,7 +575,7 @@ Verifying that single-bit faults are always detected:
 - **CT Utils**: Constant-time equality, zero check, compare, secure memory zeroing, conditional copy and swap
 - **Wycheproof**: ECDSA edge cases, Schnorr edge cases, recovery edge cases
 
-### [34/45] v4 Features (Pedersen/FROST/Adaptor/Address/SP) -- 90 checks
+### [36/55] v4 Features (Pedersen/FROST/Adaptor/Address/SP) -- 90 checks
 
 - **Pedersen Commitments**: generator H, commit/verify roundtrip, wrong value/blinding fails, homomorphic addition, balance proof, switch commitment, serialization (compressed prefix, 33 bytes), zero-value commitment
 - **FROST**: Lagrange coefficients (l1=2, l2=-1, interpolation), key generation (poly degree, share count, 3 participants, group keys match), 2-of-3 signing
@@ -547,7 +592,7 @@ Verifying that single-bit faults are always detected:
 - **Address consistency**: deterministic, different keys -> different addresses
 - **Silent Payments**: scan/spend key valid, address encoded with prefix, output key derivation, tweak nonzero, detection (1 and 3 outputs), derived key matches
 
-### [35/45] Coins Layer -- 32 checks
+### [37/55] Coins Layer -- 32 checks
 
 - **CurveContext**: secp256k1_default(), with_generator(custom), derive_public_key, effective_generator
 - **CoinParams**: 27 coins defined, Bitcoin/Ethereum values, find_by_ticker + find_by_coin_type
@@ -559,7 +604,7 @@ Verifying that single-bit faults are always detected:
 - **Custom generator**: coin_derive with custom G, deterministic derivation
 - **Full pipeline**: same key -> different addresses per coin
 
-### [36/45] MuSig2 + FROST Protocol Suite -- 975 checks
+### [38/55] MuSig2 + FROST Protocol Suite -- 975 checks
 
 15 sub-tests with protocol-level verification:
 
@@ -579,7 +624,7 @@ Verifying that single-bit faults are always detected:
 14. FROST bit-flip invalidates signature
 15. FROST wrong partial sig fails verify
 
-### [37/45] MuSig2 + FROST Adversarial -- 316 checks
+### [39/55] MuSig2 + FROST Adversarial -- 316 checks
 
 9 sub-tests targeting protocol-level attacks:
 
@@ -593,7 +638,7 @@ Verifying that single-bit faults are always detected:
 8. **Message binding**: Different messages -> different signatures (40 rounds)
 9. **Signer set binding**: Same key, different subsets -> different results
 
-### [38/45] Integration -- 13,811 checks
+### [40/55] Integration -- 13,811 checks
 
 10 sub-tests for cross-protocol integration:
 
@@ -608,11 +653,33 @@ Verifying that single-bit faults are always detected:
 9. **Schnorr/ECDSA key consistency** (200 rounds)
 10. **Stress: mixed protocol ops** (5,000 rounds, 100% success)
 
+### [41/55] ZK Proofs Audit -- ~1,500 checks
+
+7 sub-sections covering the full ZK proof layer (`secp256k1::zk`):
+
+- **ZK-1 Knowledge Proof (standard G)**: round-trip prove/verify (100 iterations), wrong-pubkey rejection (100), tampered-rx rejection (50), tampered-s rejection (50), wrong-message rejection (100)
+- **ZK-2 Knowledge Proof (arbitrary base)**: round-trip prove/verify (50 iterations), arbitrary-base proof rejected by standard verifier, wrong-base rejection (50)
+- **ZK-3 DLEQ Proof**: round-trip prove/verify (100 iterations), swapped P/Q rejection (100), wrong-Q rejection (100), tampered-challenge rejection (50)
+- **ZK-4 Range Proof (Bulletproof 64-bit)**: boundary values 0, 1, 2³¹, 2³²−1, 2³², 2⁶³−1, 2⁶³, 2⁶⁴−1; random values (20); tampered-commitment rejection (15)
+- **ZK-5 Serialization**: KnowledgeProof serialize/deserialize (30); DLEQProof serialize/deserialize (30); corrupted-byte rejection
+- **ZK-6 Pedersen Homomorphism**: C(v1,r1)+C(v2,r2) == C(v1+v2, r1+r2) (30 iterations); wrong-blinding gives different point
+- **ZK-7 Batch Range Verify**: all-valid batch passes; single-invalid-proof causes full batch failure
+
+> Source: `audit/audit_zk.cpp` | Added: v3.22.0
+
 ---
 
-## Section 7/8: ABI & Memory Safety -- 3/3 PASS
+## Section 7/8: ABI & Memory Safety -- 9/9 PASS
 
-### [39/45] Security Hardening -- 17,309 checks
+### [42/55] Cross-ABI / FFI Round-Trip Tests -- 28 sub-tests
+
+Complete round-trip coverage through the `ufsecp_*` C API boundary (28 sections):
+
+Context lifecycle, key generation (compressed/uncompressed/x-only), ECDSA sign→verify→DER encode/decode, recoverable signatures, Schnorr/BIP-340, ECDH variants, BIP-32 derivation, address generation (P2PKH/P2WPKH/P2TR), WIF encode/decode, hashing (SHA-256, Hash160, tagged hash), Taproot, key tweaks, cross-context verification, pubkey arithmetic, batch verify, ZK proofs, multi-scalar, multi-coin wallet, Bitcoin message signing, MuSig2, adaptor signatures.
+
+All tests go through the C ABI (`ufsecp_*`) verifying the FFI layer correctly marshals data without corruption.
+
+### [43/55] Security Hardening -- 17,309 checks
 
 10 sub-tests covering defensive security:
 
@@ -627,7 +694,7 @@ Verifying that single-bit faults are always detected:
 9. **Cross-algorithm consistency** (ECDSA/Schnorr same key)
 10. **High-S detection** (3,000 rounds)
 
-### [40/45] Debug Invariant Assertions -- 372 checks
+### [44/55] Debug Invariant Assertions -- 372 checks
 
 6 sub-tests verifying internal consistency invariants:
 
@@ -638,15 +705,84 @@ Verifying that single-bit faults are always detected:
 5. Full computation chain with invariant checks
 6. Debug counter accumulation (11 invariant checks tracked)
 
-### [41/45] ABI Version Gate -- 12 checks
+### [45/55] ABI Version Gate -- 12 checks
 
 Compile-time ABI compatibility verification ensuring header and library versions match.
+
+### [46/55] C ABI Negative Contract Tests -- ~150 checks
+
+Systematic negative testing of all 50+ `ufsecp_*` C API functions for correct error
+propagation. Every function must return the documented error code (never crash, never
+silently succeed) when called with:
+
+- **NULL required pointers** → `UFSECP_ERR_NULL_ARG`
+- **Zero private key (= 0 mod n)** → `UFSECP_ERR_BAD_KEY`
+- **Key equal to group order (= 0 mod n)** → `UFSECP_ERR_BAD_KEY`
+- **All-zero / off-curve public key** → `UFSECP_ERR_BAD_PUBKEY` or error
+- **All-zero signature (R = 0)** → `UFSECP_ERR_BAD_SIG` or `UFSECP_ERR_VERIFY_FAIL`
+- **Wrong public key in verify** → `UFSECP_ERR_VERIFY_FAIL`
+- **Truncated / garbage DER** → `UFSECP_ERR_BAD_INPUT`
+- **Output buffer too small** → `UFSECP_ERR_BUF_TOO_SMALL`
+- **BIP-32 seed length < 16 bytes** → `UFSECP_ERR_BAD_INPUT`
+
+Covers 12 function groups: context, seckey, pubkey, ECDSA, Schnorr, ECDH,
+hashing, addresses, WIF, BIP-32, Taproot, pubkey arithmetic.
+
+### [52/55] Secure Memory Erasure Verification -- 25 checks
+
+Verifies `secp256k1::detail::secure_erase()` actually zeroes memory and that the zeroing
+survives compiler dead-store elimination optimisations (volatile-pointer readback test):
+
+- **SE-1..8**: Heap buffers of sizes 1, 2, 4, 8, 16, 32, 64, 128 bytes zeroed correctly
+- **SE-9..12**: Stack buffers (32-byte, 64-byte), `std::array<uint8_t,32>`, scalar-sized struct
+- **SE-13..14**: Zero-length erase is safe; 256-byte heap buffer zeroed
+- **SE-15..20**: Signing path nonce determinism — same (key, msg) → identical ECDSA sig twice (proves nonce state is erased and re-derived, not leaked or reused)
+- **SE-21..24**: 0xA5 and 0xFF sentinel patterns survive until erase call, then zero
+- **SE-25**: Schnorr BIP-340 nonce determinism (aux=0)
+
+### [53/55] CT Namespace Discipline (Source-Level Scan) -- ~20 checks
+
+Source-level static analysis verifying every code path handling secret data uses `secp256k1::ct::` (constant-time) operations and not `secp256k1::fast::` (variable-time):
+
+- Opens `cpu/src/ct_sign.cpp`, `ecdh.cpp`, `bip32.cpp`, `taproot.cpp`, `musig2.cpp` at runtime
+- Strips C++ comments before scanning to eliminate false positives in comment text
+- **Required patterns**: `ct::generator_mul`, `ct::scalar_inverse`, `secure_erase`, `ct::scalar_mul`, `secp256k1/ct/`
+- **Prohibited patterns**: `fast::generator_mul`, `fast::scalar_mul`, `fast::point_mul`
+- **Structural checks**: `ct_sign.cpp` must not `#include "secp256k1/fast.hpp"`; must include `detail/secure_erase.hpp`; `ecdh.cpp` must include `ct/point.hpp` and call `secure_erase`
+- Advisory skip (not hard fail) when source tree is absent (binary-only deployment)
+
+### [54/55] RFC 6979 Nonce Uniqueness Monitor -- 30 checks
+
+Comprehensive verification of nonce determinism, uniqueness, and isolation:
+
+- **NU-1..6**: ECDSA RFC 6979 determinism — same (key=1, msg[i]) → identical sig across 3 calls
+- **NU-7..12**: ECDSA r-value uniqueness — 6 distinct messages with same key → 6 distinct r values
+- **NU-13..17**: ECDSA key isolation — 5 different keys, same message → 5 distinct r values
+- **NU-18..21**: Schnorr BIP-340 determinism — aux_rand=0, 4 messages, each stable across 3 calls
+- **NU-22..25**: Schnorr R.x uniqueness — 4 distinct messages → 4 distinct R.x commitments
+- **NU-26..28**: Hedged Schnorr — 3 different aux_rand bytes → 3 different R values (BIP-340 randomness)
+- **NU-29**: ECDSA r ≠ Schnorr R.x for same (key, msg) — different nonce derivation paths
+- **NU-30**: 5-key × 5-msg matrix — 25 ECDSA signatures → 25 pairwise distinct r values
+
+### [55/55] Public Parse Path Strictness Audit -- ~60 checks
+
+Systematically verifies that every public parse/decode function rejects ALL malformed inputs with
+the correct documented error code — never silently accepting corrupt data. This directly addresses
+the "Parsing and Validation Unification" engineering requirement.
+
+- **PS-1..16**: `ufsecp_pubkey_parse` (compressed) — all-zero, all-0xFF, x=0, prefix 0x01/0x05, truncated (32-byte, 1-byte, 0-byte), NULL, parity-flip
+- **PS-17..22**: `ufsecp_seckey_verify` — scalar=0, scalar=n, scalar=n+1, scalar=0xFF×32; scalar=1 and scalar=n−1 accepted
+- **PS-23..30**: `ufsecp_ecdsa_sig_from_der` — all-zero, wrong tag (0x00, 0x31), truncated, inflated length, zero-length, NULL; valid DER round-trips
+- **PS-31..36**: `ufsecp_wif_decode` — NULL, empty string, single char, corrupted checksum, garbage WIF-length; valid WIF decodes to correct key
+- **PS-37..40**: `ufsecp_bip32_master` — NULL seed, 15-byte seed (<16 BIP-32 minimum), zero-length; 32-byte seed accepted
+- **PS-41..48**: `ufsecp_pubkey_parse` (uncompressed, 65-byte) — all-zero, x=0/y=0, x=G.x/y=0 (off-curve), prefix 0x05/0x06 (hybrid), truncated; valid uncompressed round-trips
+- **PS-49..53**: `ufsecp_pubkey_xonly` — NULL, x=0, x=p (field prime), x=2 (not on curve); valid compressed → x-only extraction correct
 
 ---
 
 ## Section 8/8: Performance Validation & Regression -- 4/4 PASS
 
-### [42/45] Accelerated Hashing -- 877 checks
+### [47/55] Accelerated Hashing -- 877 checks
 
 Hardware-accelerated hash function validation:
 
@@ -659,7 +795,7 @@ Hardware-accelerated hash function validation:
 - **SHA-NI vs scalar cross-check**: Hardware vs software must match
 - **Benchmark**: SHA-NI 49.1 ns vs scalar 364.6 ns (7.4x speedup), batch Hash160 1.92 Mkeys/s
 
-### [43/45] SIMD Batch Operations -- 8 checks
+### [48/55] SIMD Batch Operations -- 8 checks
 
 - Runtime detection (AVX-512 / AVX2)
 - Batch field add, sub, mul, square
@@ -667,14 +803,14 @@ Hardware-accelerated hash function validation:
 - Single element batch inverse
 - Batch inverse with explicit scratch buffer
 
-### [44/45] Multi-Scalar & Batch Verify -- 16 checks
+### [49/55] Multi-Scalar & Batch Verify -- 16 checks
 
 - **Shamir's trick**: shamir(7,G,13,5G)==72G, zero scalar edges
 - **Multi-scalar mul**: 1 point, 3 points (2G+6G+15G=23G), 0 points=infinity, G+(-G)=infinity
 - **Schnorr batch**: 5 valid pass, individual agrees, corrupted sig#2 detected, identify finds #2, empty=true, single entry
 - **ECDSA batch**: 4 valid pass, corrupted sig#1 detected, identify finds #1
 
-### [45/45] Performance Smoke -- PASS
+### [50/55] Performance Smoke -- PASS
 
 Sign/verify roundtrip timing sanity check.
 
@@ -696,10 +832,10 @@ These tests run as separate CTest executables and are included in the 24/24 CTes
 
 | Platform | Compiler | Tests | Result |
 |----------|----------|-------|--------|
-| X64 (Windows) | Clang 21.1.0 | 24/24 CTest, 46/46 audit | **ALL PASS** |
+| X64 (Windows) | Clang 21.1.0 | 24/24 CTest, 55/55 audit | **ALL PASS** |
 | ARM64 (QEMU) | Cross-compiled | 24/24 CTest | **ALL PASS** |
 | RISC-V (QEMU) | Cross-compiled | 24/24 CTest | **ALL PASS** |
-| RISC-V (Mars HW, JH7110 U74) | Clang 21.1.8 | 46/46 unified audit | **ALL PASS** |
+| RISC-V (Mars HW, JH7110 U74) | Clang 21.1.8 | 55/55 unified audit | **ALL PASS** |
 
 See **Full Platform Matrix** below for all 16 CI configurations.
 
@@ -828,7 +964,7 @@ Runs daily at 03:00 UTC with configurable parameters:
 | Extended Differential | 100x multiplier (~1.3M random checks) | up to 60 min |
 | dudect Full Statistical | 1800s timeout (30 min) | up to 45 min |
 
-**Extended Differential**: Same as audit module [19/45] but with 100x more random cases.
+**Extended Differential**: Same as audit module [22/55] but with 100x more random cases.
 **dudect Full**: No `DUDECT_SMOKE` define -- runs full statistical analysis with larger sample sizes.
 
 ---
@@ -928,7 +1064,7 @@ APT install: `sudo apt install libufsecp-dev`
 
 | Category | Status | Evidence |
 |----------|--------|----------|
-| Mathematical correctness (Fp, Zn, Group) | COVERED | 46/46 audit modules, 1M+ checks |
+| Mathematical correctness (Fp, Zn, Group) | COVERED | 55/55 audit modules, 1M+ checks |
 | Constant-time layer + equivalence | COVERED | dudect smoke + full, CT deep, ASM inspection, Valgrind CLASSIFY/DECLASSIFY |
 | Standard test vectors (BIP-340/32, RFC 6979, FROST) | COVERED | Official vectors verified |
 | Randomized differential testing | COVERED | 13K+ checks (CI) + 1.3M (nightly) |
@@ -943,7 +1079,7 @@ APT install: `sudo apt install libufsecp-dev`
 | Valgrind memcheck | COVERED | security-audit.yml weekly + on push |
 | Static analysis (CodeQL, SonarCloud, clang-tidy) | COVERED | 3 tools on every push |
 | Code coverage (Codecov) | COVERED | LLVM source-based profiling |
-| Misuse/abuse tests (null ctx, invalid lengths, FFI) | COVERED | Module [28/45] + [39/45] |
+| Misuse/abuse tests (null ctx, invalid lengths, FFI) | COVERED | Module [31/55] + [42/55] |
 | Multi-platform build (17 configurations) | COVERED | CI matrix |
 | Supply-chain hardening | COVERED | Pinned actions, harden-runner, Scorecard, Dependency Review |
 | Performance regression tracking | COVERED | Benchmark dashboard with alerts |
@@ -953,10 +1089,9 @@ APT install: `sudo apt install libufsecp-dev`
 
 | Category | Status | Notes |
 |----------|--------|-------|
-| Cross-library differential (vs bitcoin-core/libsecp256k1) | NOT YET | Would be strongest "credibility" signal for external auditors |
+| Cross-library differential (vs bitcoin-core/libsecp256k1) | NOT YET | Would be strongest credibility signal for external auditors; nightly has `test_cross_libsecp256k1` but not in unified runner |
 | GPU correctness audit | DEFERRED | Separate report when GPU side is complete |
 | GPU memory safety (compute-sanitizer) | DEFERRED | Separate report |
-| MSAN (Memory Sanitizer) | NOT YET | Catches use-of-uninitialized; complementary to ASan |
 | Reproducible build proof | NOT YET | Two independent machines -> identical binary hash |
 | SBOM (CycloneDX/SPDX) | PARTIAL | Generated in release pipeline |
 | Deep dudect (perf counters, cache probes) | PARTIAL | dudect full runs nightly; perf stat / cache analysis not automated |
@@ -979,10 +1114,10 @@ APT install: `sudo apt install libufsecp-dev`
 | Android | x86_64 | NDK r27c | Release | Binary verify | - | - |
 | ROCm/HIP | gfx906-gfx1100 | hipcc | Release | CPU tests | - | - |
 | WASM | wasm32 | Emscripten 3.1.51 | Release | Node.js bench | - | - |
-| X64 Local | x86_64 | Clang 21.1.0 | Release | 46/46 audit | - | - |
+| X64 Local | x86_64 | Clang 21.1.0 | Release | 55/55 audit | - | - |
 | ARM64 Local | aarch64 | Cross (QEMU) | Release | 24/24 CTest | - | - |
 | RISC-V Local | rv64gc | Cross (QEMU) | Release | 24/24 CTest | - | - |
-| RISC-V HW | JH7110 U74 | Clang 21.1.8 | Release | 46/46 audit | - | - |
+| RISC-V HW | JH7110 U74 | Clang 21.1.8 | Release | 55/55 audit | - | - |
 
 **Total**: 16 platform/compiler combinations, 7 architectures, 5 operating systems.
 

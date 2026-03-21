@@ -100,7 +100,7 @@ jobs:
         output-file-path: /tmp/benchmark_results/benchmark.json
         github-token: ${{ secrets.GITHUB_TOKEN }}
         auto-push: true
-        alert-threshold: '200%'
+        alert-threshold: '150%'
         comment-on-alert: true
         fail-on-alert: true
         benchmark-data-dir-path: 'dev/bench-gate'
@@ -109,7 +109,7 @@ jobs:
       # Compares PR benchmark against the stored baseline from push events.
       # Does NOT store (auto-push: false) -- only the push to main/dev updates baseline.
       # BLOCKS PR if regression exceeds threshold.
-      # Threshold matches push (200%) -- shared CI runners have up to ~60% variance.
+      # Threshold: 150% -- flags any operation >50% slower than baseline.
       if: github.event_name == 'pull_request'
       uses: benchmark-action/github-action-benchmark@a7bc2366eda11037936ea57d811a43b3418d3073 # v1
       with:
@@ -118,7 +118,7 @@ jobs:
         output-file-path: /tmp/benchmark_results/benchmark.json
         github-token: ${{ secrets.GITHUB_TOKEN }}
         auto-push: false
-        alert-threshold: '200%'
+        alert-threshold: '150%'
         comment-on-alert: true
         fail-on-alert: true
         benchmark-data-dir-path: 'dev/bench-gate'

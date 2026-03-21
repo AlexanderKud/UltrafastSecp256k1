@@ -158,6 +158,27 @@ int test_field_26_main();   // 10x26 lazy-reduction
 int diag_scalar_mul_run();
 
 // ============================================================================
+// Forward declarations -- ZK proof layer
+// ============================================================================
+int audit_zk_run();
+
+// ============================================================================
+// Forward declarations -- Specification oracle & invariant monitor
+// ============================================================================
+int test_secp256k1_spec_run();    // SEC2 v2.0 curve constant oracle
+int audit_invariants_run();       // Post-operation on-curve invariant checker
+int test_c_abi_negative_run();    // C ABI null/bad-input contract tests
+
+// ============================================================================
+// Forward declarations -- Security audit modules (new)
+// ============================================================================
+int audit_secure_erase_run();       // Secure memory erasure verification
+int audit_ct_namespace_run();       // CT namespace discipline (source-level)
+int test_kat_all_operations_run();  // KAT for ops not in standard vector suite
+int test_nonce_uniqueness_run();    // RFC 6979 nonce determinism + uniqueness
+int test_parse_strictness_run();    // Public parse path strictness audit
+
+// ============================================================================
 // Forward declarations -- Ethereum (conditional)
 // ============================================================================
 #ifdef SECP256K1_BUILD_ETHEREUM
@@ -216,6 +237,8 @@ static const AuditModule ALL_MODULES[] = {
     // ===================================================================
     // Section 1: Mathematical Invariants (Fp, Zn, Group Laws)
     // ===================================================================
+    { "secp256k1_spec",    "SEC2 v2.0 curve constant oracle",              "math_invariants", test_secp256k1_spec_run, false },
+    { "audit_invariants",  "Post-op invariant monitor (on-curve/normalized)","math_invariants", audit_invariants_run, false },
     { "audit_field",       "Field Fp deep audit (add/mul/inv/sqrt/batch)", "math_invariants", audit_field_run, false },
     { "audit_scalar",      "Scalar Zn deep audit (mod/GLV/edge/inv)",      "math_invariants", audit_scalar_run, false },
     { "audit_point",       "Point ops deep audit (Jac/affine/sigs)",       "math_invariants", audit_point_run, false },
@@ -284,6 +307,7 @@ static const AuditModule ALL_MODULES[] = {
     { "musig2_frost_adv",  "MuSig2 + FROST advanced/adversar",           "protocol_security", test_musig2_frost_advanced_run, false },
     { "audit_integration", "Integration (ECDH/batch/cross-proto)",        "protocol_security", audit_integration_run, false },
     { "batch_randomness",  "Batch verify weight randomness audit",        "protocol_security", test_batch_randomness_run, false },
+    { "audit_zk",          "ZK proofs (knowledge/DLEQ/Bulletproof range)","protocol_security", audit_zk_run, false },
 #ifdef SECP256K1_BUILD_ETHEREUM
     { "ethereum",          "Ethereum signing layer (EIP-191/155/ecrecover)","protocol_security", test_ethereum_run, false },
 #endif
@@ -295,6 +319,12 @@ static const AuditModule ALL_MODULES[] = {
     { "debug_invariants",  "Debug invariant assertions",                   "memory_safety",  test_debug_invariants_run, false },
     { "abi_gate",          "ABI version gate (compile-time)",              "memory_safety",  test_abi_gate_run, false },
     { "ffi_round_trip",    "Cross-ABI/FFI round-trip (ufsecp C API)",     "memory_safety",  test_ffi_round_trip_run, false },
+    { "c_abi_negative",    "C ABI null/bad-key/bad-sig contract tests",   "memory_safety",  test_c_abi_negative_run, false },
+    { "secure_erase",      "Secure memory erasure (volatile readback)",   "memory_safety",  audit_secure_erase_run, false },
+    { "ct_namespace",      "CT namespace discipline (source-level scan)", "memory_safety",  audit_ct_namespace_run, false },
+    { "kat_all_ops",       "KAT: ECDH/WIF/P2PKH/P2WPKH/P2TR/hash/arith","standard_vectors", test_kat_all_operations_run, false },
+    { "nonce_uniqueness",  "RFC 6979 nonce determinism + uniqueness",     "memory_safety",  test_nonce_uniqueness_run, false },
+    { "parse_strictness",  "Public parse path strictness (malformed inputs)","memory_safety", test_parse_strictness_run, false },
     { "adversarial_proto", "Adversarial protocol & FFI hostile-caller",   "fuzzing",         test_adversarial_protocol_run, false },
     { "ecies_regression",  "ECIES regression + C ABI prefix enforce",   "fuzzing",         test_ecies_regression_run, false },
 

@@ -176,6 +176,91 @@ if(TARGET secp256k1_gpu_host AND TARGET ufsecp_static)
     endif()
 endif()
 
+# -- SEC2 curve constant oracle -------------------------------------------
+add_executable(test_secp256k1_spec_standalone test_secp256k1_spec.cpp)
+audit_target_defaults(test_secp256k1_spec_standalone)
+target_compile_definitions(test_secp256k1_spec_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME secp256k1_spec COMMAND test_secp256k1_spec_standalone)
+set_tests_properties(secp256k1_spec PROPERTIES TIMEOUT 60)
+
+# -- Post-operation invariant monitor -------------------------------------
+add_executable(test_audit_invariants_standalone audit_invariants.cpp)
+audit_target_defaults(test_audit_invariants_standalone)
+target_compile_definitions(test_audit_invariants_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME audit_invariants COMMAND test_audit_invariants_standalone)
+set_tests_properties(audit_invariants PROPERTIES TIMEOUT 300)
+
+# -- C ABI negative contract tests ----------------------------------------
+add_executable(test_c_abi_negative_standalone
+    test_c_abi_negative.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_c_abi_negative_standalone)
+target_include_directories(test_c_abi_negative_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_c_abi_negative_standalone PRIVATE UFSECP_BUILDING)
+add_test(NAME c_abi_negative COMMAND test_c_abi_negative_standalone)
+set_tests_properties(c_abi_negative PROPERTIES TIMEOUT 120)
+
+# -- Secure memory erasure verification -----------------------------------
+add_executable(test_audit_secure_erase_standalone
+    audit_secure_erase.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_audit_secure_erase_standalone)
+target_include_directories(test_audit_secure_erase_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_audit_secure_erase_standalone PRIVATE UFSECP_BUILDING)
+add_test(NAME audit_secure_erase COMMAND test_audit_secure_erase_standalone)
+set_tests_properties(audit_secure_erase PROPERTIES TIMEOUT 120)
+
+# -- CT namespace discipline (source-level scan) ---------------------------
+add_executable(test_audit_ct_namespace_standalone audit_ct_namespace.cpp)
+audit_target_defaults(test_audit_ct_namespace_standalone)
+add_test(NAME audit_ct_namespace COMMAND test_audit_ct_namespace_standalone)
+set_tests_properties(audit_ct_namespace PROPERTIES TIMEOUT 60)
+
+# -- KAT for all operations (ECDH/WIF/addresses/hash/arithmetic) ----------
+add_executable(test_kat_all_operations_standalone
+    test_kat_all_operations.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_kat_all_operations_standalone)
+target_include_directories(test_kat_all_operations_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_kat_all_operations_standalone PRIVATE UFSECP_BUILDING)
+add_test(NAME kat_all_operations COMMAND test_kat_all_operations_standalone)
+set_tests_properties(kat_all_operations PROPERTIES TIMEOUT 120)
+
+# -- Public parse path strictness audit -----------------------------------
+add_executable(test_parse_strictness_standalone
+    test_parse_strictness.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_parse_strictness_standalone)
+target_include_directories(test_parse_strictness_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_parse_strictness_standalone PRIVATE UFSECP_BUILDING)
+add_test(NAME parse_strictness COMMAND test_parse_strictness_standalone)
+set_tests_properties(parse_strictness PROPERTIES TIMEOUT 120)
+
+# -- RFC 6979 nonce determinism + uniqueness monitor ----------------------
+add_executable(test_nonce_uniqueness_standalone
+    test_nonce_uniqueness.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_nonce_uniqueness_standalone)
+target_include_directories(test_nonce_uniqueness_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_nonce_uniqueness_standalone PRIVATE UFSECP_BUILDING)
+add_test(NAME nonce_uniqueness COMMAND test_nonce_uniqueness_standalone)
+set_tests_properties(nonce_uniqueness PROPERTIES TIMEOUT 120)
+
 # -- Formal CT verification via Valgrind/MSAN (Track I5-1) ----------------
 add_executable(test_ct_verif_formal_standalone test_ct_verif_formal.cpp)
 audit_target_defaults(test_ct_verif_formal_standalone)
@@ -450,6 +535,18 @@ add_executable(unified_audit_runner
     audit_integration.cpp
     audit_security.cpp
     audit_perf.cpp
+    audit_zk.cpp
+    # -- Specification oracle & invariant monitor --
+    test_secp256k1_spec.cpp
+    audit_invariants.cpp
+    # -- C ABI negative contract tests --
+    test_c_abi_negative.cpp
+    # -- Security audit modules --
+    audit_secure_erase.cpp
+    audit_ct_namespace.cpp
+    test_kat_all_operations.cpp
+    test_nonce_uniqueness.cpp
+    test_parse_strictness.cpp
     # -- ufsecp FFI implementation (needed by fuzz_parsers + fuzz_address) --
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp
     # -- field representation tests --
@@ -540,6 +637,9 @@ set_tests_properties(
     batch_randomness
     ct_verif_formal fiat_crypto_linkage
     adversarial_protocol
+    secp256k1_spec audit_invariants c_abi_negative
+    audit_secure_erase audit_ct_namespace kat_all_operations nonce_uniqueness
+    parse_strictness
     unified_audit
     PROPERTIES LABELS "audit"
 )

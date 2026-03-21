@@ -1,6 +1,6 @@
 # Threat Model
 
-UltrafastSecp256k1 v3.17.0 -- Layer-by-Layer Risk Assessment
+UltrafastSecp256k1 v3.22.0 -- Layer-by-Layer Risk Assessment
 
 ---
 
@@ -114,6 +114,53 @@ The coin dispatch layer generates addresses only. It does **not** store keys, ma
 | Threat | Incorrect batch inverse -> silent wrong results |
 | Mitigation | Sweep-tested up to 8192; boundary KAT vectors; fuzz harness |
 
+### 7. Zero-Knowledge Proof Layer (`secp256k1::zk`)
+
+**Added in v3.22.0.** Provides non-interactive ZK proofs over secp256k1:
+
+| Primitive | Description | Security Property |
+|-----------|-------------|------------------|
+| Knowledge Proof | Prove knowledge of discrete log (P = x*G) | Completeness, soundness, zero-knowledge |
+| DLEQ Proof | Prove equality of discrete logs (P = x*G and Q = x*H) | Completeness, soundness, zero-knowledge |
+| Bulletproof Range Proof | Prove committed value ∈ [0, 2⁶⁴) | Completeness, soundness, perfect hiding |
+
+| Property | Value |
+|----------|-------|
+| Proving | Uses CT layer (constant-time nonce derivation) |
+| Verification | Uses FAST layer (variable-time, public data only) |
+| Fiat-Shamir | Tagged SHA-256 (domain-separated per proof type) |
+| Nonce hedging | Deterministic + auxiliary randomness (same design as RFC 6979 hedged) |
+
+**Threat vectors specific to ZK layer:**
+
+| Vector | Risk | Mitigation |
+|--------|------|------------|
+| Nonce reuse in knowledge proof | CRITICAL — reveals secret | Deterministic + hedged nonce derivation; CT proving path |
+| Soundness break (forged proof) | HIGH | Audited via tampered-proof rejection tests (~300 rejection checks in `audit_zk.cpp`) |
+| Fiat-Shamir weak domain separation | MEDIUM | Tagged SHA-256 with unique prefix per proof type |
+| Bulletproof generator malleability | MEDIUM | Nothing-up-my-sleeve generators (hash-to-curve); cached after first derivation |
+| ZK proof reveals secret via timing | MEDIUM | Proving path uses `ct::` namespace throughout |
+| Batch verification shortcut forgery | LOW | Batch verify independently validates each proof; no shortcut |
+
+**⚠️ Status (v3.22.0):** API experimental. ZK primitives have internal audit coverage (`audit_zk.cpp`, ~1,500 checks) but have **not** undergone independent third-party review. Bulletproof soundness is not formally proven for this implementation.
+
+### 8. Ethereum Signing Layer (`secp256k1::eth`)
+
+**Added in v3.22.0.** Provides Ethereum-specific signing (EIP-191, EIP-155, ecrecover):
+
+| Primitive | Description | Risk |
+|-----------|-------------|------|
+| `eip191_hash` | EIP-191 personal message hash (Keccak-256 with prefix) | Incorrect prefix -> wrong hash, silent signing failure |
+| `eth_sign_hash` / `eth_personal_sign` | RFC 6979 ECDSA + EIP-155 v encoding | Wrong chain ID -> replay attacks on other chains |
+| `ecrecover` | Ethereum precompile 0x01 -- recover address from signature | Incorrect recovery -> wrong address, silent auth failure |
+
+| Threat | Risk | Mitigation |
+|--------|------|------------|
+| Wrong chain ID in EIP-155 v encoding | HIGH — cross-chain replay | `eip155_v()` / `eip155_chain_id()` round-trip tested; 32 Ethereum test cases |
+| Non-standard Keccak-256 (not SHA3) | HIGH — hash mismatch | Library uses secp256k1 Keccak-256, not SHA3; cross-validated against known ETH addresses |
+| ecrecover returns wrong signer | CRITICAL | `ecrecover` cross-validated against Ethereum test vectors |
+| `personal_sign` prefix mangling | MEDIUM | Tested with known Ethereum MetaMask-compatible vectors |
+
 ---
 
 ## Trust Boundaries
@@ -221,7 +268,7 @@ NOT TRUSTED (caller responsibility):
 
 ---
 
-## Automated Security Measures (v3.17.0)
+## Automated Security Measures (v3.22.0)
 
 | Measure | Frequency | What It Catches |
 |---------|-----------|------------------|
@@ -238,6 +285,10 @@ NOT TRUSTED (caller responsibility):
 | ct-verif LLVM pass | CI | Compile-time CT verification |
 | Fiat-Crypto linkage | CI | Formally verified field arithmetic cross-check |
 | Wycheproof vectors | CI | ECDSA/ECDH invalid input rejection (89+36 cases) |
+| ZK Proof audit (`audit_zk`) | CI | Knowledge/DLEQ/Bulletproof correctness + rejection (~1,500 checks) |
+| MSan (Memory Sanitizer) | CI | Uninitialized read detection (instrumented libc++) |
+| Mutation testing | Scheduled | Verifies tests detect injected faults |
+| Performance regression gate | Every push/PR | Blocks merge if any op regresses >50% |
 | Dependabot | Daily | Vulnerable dependency updates |
 | Dependency Review | Every PR | New vulnerable dependencies |
 | SLSA Attestation | Every release | Build provenance verification |

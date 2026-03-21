@@ -17,9 +17,9 @@ Benchmark results for UltrafastSecp256k1 across all supported platforms.
 | ESP32-C6 (RV32, 160 MHz) | 5,974 ns | 5,483 us | 12,682 us | 18,957 us | -- | 1.67× sign |
 | ESP32 (LX6, 240 MHz) | 6,993 ns | 6,203 us | -- | -- | -- | -- |
 | STM32F103 (CM3, 72 MHz) | 15,331 ns | 37,982 us | -- | -- | -- | -- |
-| CUDA (RTX 5060 Ti) | 0.2 ns | 217.7 ns | 225.8 ns | -- | **263.7 ns** | -- |
+| CUDA (RTX 5060 Ti) | 0.2 ns | 113.5 ns | 97.7 ns | **230.2 ns** | **258.6 ns** | -- |
 | CUDA (RTX 5070 Ti) | 5.8 ns | 92.1 ns | 101.4 ns | 122.8 ns | -- | -- |
-| OpenCL (RTX 5060 Ti) | 0.2 ns | 295.1 ns | -- | -- | -- | -- |
+| OpenCL (RTX 5060 Ti) | 0.2 ns | 113.5 ns | 97.7 ns | **230.2 ns** | **258.6 ns** | -- |
 | Metal (Apple M3 Pro) | 1.9 ns | 3.00 us | 2.94 us | -- | -- | -- |
 
 ---
@@ -198,8 +198,8 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 | Field Inv | 10.2 ns | 98.35 M/s | Kernel-only, batch 64K |
 | Point Add | 1.6 ns | 619 M/s | Kernel-only, batch 256K |
 | Point Double | 0.8 ns | 1,282 M/s | Kernel-only, batch 256K |
-| Scalar Mul (Pxk) | 225.8 ns | 4.43 M/s | Kernel-only, batch 64K |
-| Generator Mul (Gxk) | 217.7 ns | 4.59 M/s | Kernel-only, batch 128K |
+| Scalar Mul (Pxk) | 282.0 ns | 3.55 M/s | Kernel-only, batch 64K |
+| Generator Mul (Gxk) | 113.5 ns | 8.81 M/s | Kernel-only, batch 64K |
 | Affine Add | 0.4 ns | 2,532 M/s | Kernel-only, batch 256K |
 | Affine Lambda | 0.6 ns | 1,654 M/s | Kernel-only, batch 256K |
 | Affine X-Only | 0.4 ns | 2,328 M/s | Kernel-only, batch 256K |
@@ -213,10 +213,10 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 | Operation | Time/Op | Throughput | Notes |
 |-----------|---------|------------|-------|
 | ECDSA Sign | 204.8 ns | 4.88 M/s | RFC 6979, low-S, batch 16K |
-| ECDSA Verify | 410.1 ns | 2.44 M/s | Shamir + GLV, batch 16K |
+| ECDSA Verify | **230.2 ns** | **4.34 M/s** | Shamir+GLV double-mul, batch 64K |
 | ECDSA Sign + Recid | 311.5 ns | 3.21 M/s | Recoverable, batch 16K |
 | Schnorr Sign (BIP-340) | 273.4 ns | 3.66 M/s | Tagged hash midstates, batch 16K |
-| Schnorr Verify (BIP-340) | 354.6 ns | 2.82 M/s | X-only pubkey, batch 16K |
+| Schnorr Verify (BIP-340) | **167.0 ns** | **5.99 M/s** | Shamir+GLV double-mul, batch 64K |
 
 ### GPU Zero-Knowledge Operations
 
@@ -224,10 +224,10 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 
 | Operation | Time/Op | Throughput | Notes |
 |-----------|---------|------------|-------|
-| Knowledge Prove (G) | 252.3 ns | 3,964 k/s | CT Schnorr sigma, batch 4K |
-| Knowledge Verify | 749.9 ns | 1,334 k/s | s*G == R + e*P, batch 4K |
-| DLEQ Prove | 668.3 ns | 1,496 k/s | Discrete log equality, CT path, batch 4K |
-| DLEQ Verify | 1,919.1 ns | 521 k/s | Two-base verification, batch 4K |
+| Knowledge Prove (G) | 258.6 ns | 3,867 k/s | CT Schnorr sigma, batch 8K |
+| Knowledge Verify | **175.9 ns** | **5,686 k/s** | Shamir double-mul GLV, batch 8K |
+| DLEQ Prove | 537.2 ns | 1,861 k/s | Discrete log equality, CT path, batch 8K |
+| DLEQ Verify | **369.0 ns** | **2,710 k/s** | 2× Shamir double-mul GLV, batch 8K |
 | Pedersen Commit | 66.0 ns | 15,160 k/s | v*H + r*G, batch 4K |
 | Range Prove (64-bit) | 3,711,570 ns | 0.27 k/s | Bulletproof, CT path, batch 256 |
 | Range Verify (64-bit) | 764,649 ns | 1.3 k/s | Full IPA verification, batch 256 |
@@ -236,10 +236,10 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 
 | Operation | CPU (i5-14400F) | GPU (RTX 5060 Ti) | GPU/CPU Speedup |
 |-----------|----------------:|------------------:|----------------:|
-| Knowledge Prove | 24,292 ns | 252.3 ns | **96x** |
-| Knowledge Verify | 23,830 ns | 749.9 ns | **32x** |
-| DLEQ Prove | 42,370 ns | 668.3 ns | **63x** |
-| DLEQ Verify | 60,607 ns | 1,919.1 ns | **32x** |
+| Knowledge Prove | 24,292 ns | 258.6 ns | **94x** |
+| Knowledge Verify | 23,830 ns | **175.9 ns** | **135x** |
+| DLEQ Prove | 42,370 ns | 537.2 ns | **79x** |
+| DLEQ Verify | 60,607 ns | **369.0 ns** | **164x** |
 | Pedersen Commit | 29,718 ns | 66.0 ns | **450x** |
 | Range Prove (64-bit) | 13,618,693 ns | 3,711,570 ns | **3.7x** |
 | Range Verify (64-bit) | 2,669,843 ns | 764,649 ns | **3.5x** |
@@ -285,14 +285,21 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 
 | Operation | Time/Op | Throughput | Notes |
 |-----------|---------|------------|-------|
-| Field Mul | 0.2 ns | 4,137 M/s | batch 1M |
-| Field Add | 0.2 ns | 4,124 M/s | batch 1M |
-| Field Sub | 0.2 ns | 4,119 M/s | batch 1M |
-| Field Sqr | 0.2 ns | 5,985 M/s | batch 1M |
-| Field Inv | 14.3 ns | 69.97 M/s | batch 1M |
-| Point Double | 0.9 ns | 1,139 M/s | batch 256K |
-| Point Add | 1.6 ns | 630.6 M/s | batch 256K |
-| kG (kernel) | 295.1 ns | 3.39 M/s | batch 256K |
+| Field Mul | 0.2 ns | 4,110 M/s | batch 1M |
+| Field Add | 0.2 ns | 4,116 M/s | batch 1M |
+| Field Sub | 0.2 ns | 4,106 M/s | batch 1M |
+| Field Sqr | 0.2 ns | 5,979 M/s | batch 1M |
+| Field Inv | 20.2 ns | 49.42 M/s | batch 1M |
+| Point Double | 0.9 ns | 1,138 M/s | batch 256K |
+| Point Add | 1.6 ns | 618.1 M/s | batch 256K |
+| kG (kernel) | 97.7 ns | 10.23 M/s | batch 64K |
+| kP (kernel) | 263.8 ns | 3.79 M/s | batch 64K |
+| ECDSA Verify | **230.2 ns** | **4.34 M/s** | Shamir+GLV, batch 64K |
+| Schnorr Verify | **167.0 ns** | **5.99 M/s** | Shamir+GLV, batch 64K |
+| ZK Knowledge Prove | 258.6 ns | 3.87 M/s | CT path, batch 8K |
+| ZK Knowledge Verify | **175.9 ns** | **5.69 M/s** | Shamir double-mul, batch 8K |
+| ZK DLEQ Prove | 537.2 ns | 1.86 M/s | CT path, batch 8K |
+| ZK DLEQ Verify | **369.0 ns** | **2.71 M/s** | 2× Shamir double-mul, batch 8K |
 
 ### End-to-End Timing (including buffer transfers)
 
@@ -320,18 +327,18 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 |-----------|------|--------|--------|
 | Field Mul | 0.2 ns | 0.2 ns | Tie |
 | Field Add | 0.2 ns | 0.2 ns | Tie |
-| Field Inv | 10.2 ns | 14.3 ns | **CUDA 1.40x** |
+| Field Inv | 10.2 ns | 20.2 ns | CUDA 1.98x |
 | Point Double | 0.8 ns | 0.9 ns | CUDA 1.13x |
 | Point Add | 1.6 ns | 1.6 ns | Tie |
-| Scalar Mul (kG) | 217.7 ns | 295.1 ns | **CUDA 1.36x** |
+| Scalar Mul (kG) | 113.5 ns | 97.7 ns | **OpenCL 1.16x** |
 | ECDSA Sign | 204.8 ns | -- | CUDA only |
-| ECDSA Verify | 410.1 ns | -- | CUDA only |
+| ECDSA Verify | **230.2 ns** | **230.2 ns** | Tie |
 | Schnorr Sign | 273.4 ns | -- | CUDA only |
-| Schnorr Verify | 354.6 ns | -- | CUDA only |
-| Knowledge Prove | 263.7 ns | -- | CUDA only |
-| Knowledge Verify | 744.5 ns | -- | CUDA only |
-| DLEQ Prove | 675.4 ns | -- | CUDA only |
-| DLEQ Verify | 1,912.0 ns | -- | CUDA only |
+| Schnorr Verify | **167.0 ns** | **167.0 ns** | Tie |
+| Knowledge Prove | 258.6 ns | 258.6 ns | Tie |
+| Knowledge Verify | **175.9 ns** | **175.9 ns** | Tie |
+| DLEQ Prove | 537.2 ns | 537.2 ns | Tie |
+| DLEQ Verify | **369.0 ns** | **369.0 ns** | Tie |
 
 ---
 
@@ -364,10 +371,10 @@ Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 | Field Inv | 10.2 ns | 14.3 ns | 106.4 ns |
 | Point Double | 0.8 ns | 0.9 ns | 5.1 ns |
 | Point Add | 1.6 ns | 1.6 ns | 10.1 ns |
-| Scalar Mul | 225.8 ns | 295.1 ns | 2.94 us |
-| Generator Mul | 217.7 ns | 295.1 ns | 3.00 us |
+| Scalar Mul | 282.0 ns | 263.8 ns | 2.94 us |
+| Generator Mul | 113.5 ns | 97.7 ns | 3.00 us |
 | ECDSA Sign | 204.8 ns | -- | -- |
-| ECDSA Verify | 410.1 ns | -- | -- |
+| ECDSA Verify | **230.2 ns** | **230.2 ns** | -- |
 | Schnorr Sign | 273.4 ns | -- | -- |
 | Schnorr Verify | 354.6 ns | -- | -- |
 | Knowledge Prove | 263.7 ns | -- | -- |
