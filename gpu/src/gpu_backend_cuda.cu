@@ -59,6 +59,10 @@ extern __global__ void schnorr_verify_batch_kernel(
     const SchnorrSignatureGPU* __restrict__ sigs,
     bool*          __restrict__ results,
     int count);
+extern __global__ void frost_verify_partial_batch_kernel(
+    const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
+    const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
+    uint8_t*, int);
 } // namespace cuda
 
 namespace gpu {
@@ -544,6 +548,59 @@ public:
             return set_error(GpuError::Arith, "MSM result is point at infinity");
         }
 
+        clear_error();
+        return GpuError::Ok;
+    }
+
+    GpuError frost_verify_partial_batch(
+        const uint8_t* z_i32, const uint8_t* D_i33, const uint8_t* E_i33,
+        const uint8_t* Y_i33, const uint8_t* rho_i32, const uint8_t* lambda_ie32,
+        const uint8_t* negate_R, const uint8_t* negate_key,
+        size_t count, uint8_t* out_results) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (count == 0) { clear_error(); return GpuError::Ok; }
+        if (!z_i32 || !D_i33 || !E_i33 || !Y_i33 || !rho_i32 || !lambda_ie32 ||
+            !negate_R || !negate_key || !out_results)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        uint8_t *d_z = nullptr, *d_D = nullptr, *d_E = nullptr, *d_Y = nullptr;
+        uint8_t *d_rho = nullptr, *d_lie = nullptr;
+        uint8_t *d_nR = nullptr, *d_nK = nullptr, *d_res = nullptr;
+
+        CUDA_TRY(cudaMalloc(&d_z,   count * 32));
+        CUDA_TRY(cudaMalloc(&d_D,   count * 33));
+        CUDA_TRY(cudaMalloc(&d_E,   count * 33));
+        CUDA_TRY(cudaMalloc(&d_Y,   count * 33));
+        CUDA_TRY(cudaMalloc(&d_rho, count * 32));
+        CUDA_TRY(cudaMalloc(&d_lie, count * 32));
+        CUDA_TRY(cudaMalloc(&d_nR,  count));
+        CUDA_TRY(cudaMalloc(&d_nK,  count));
+        CUDA_TRY(cudaMalloc(&d_res, count));
+
+        CUDA_TRY(cudaMemcpy(d_z,   z_i32,       count * 32, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_D,   D_i33,       count * 33, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_E,   E_i33,       count * 33, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_Y,   Y_i33,       count * 33, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_rho, rho_i32,     count * 32, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_lie, lambda_ie32, count * 32, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_nR,  negate_R,    count,      cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_nK,  negate_key,  count,      cudaMemcpyHostToDevice));
+
+        int threads = 128;
+        int blocks  = (static_cast<int>(count) + threads - 1) / threads;
+        frost_verify_partial_batch_kernel<<<blocks, threads>>>(
+            d_z, d_D, d_E, d_Y, d_rho, d_lie, d_nR, d_nK,
+            d_res, static_cast<int>(count));
+        CUDA_TRY(cudaGetLastError());
+        CUDA_TRY(cudaDeviceSynchronize());
+
+        CUDA_TRY(cudaMemcpy(out_results, d_res, count, cudaMemcpyDeviceToHost));
+
+        cudaFree(d_res);
+        cudaFree(d_nK);  cudaFree(d_nR);
+        cudaFree(d_lie); cudaFree(d_rho);
+        cudaFree(d_Y);   cudaFree(d_E);   cudaFree(d_D);   cudaFree(d_z);
         clear_error();
         return GpuError::Ok;
     }

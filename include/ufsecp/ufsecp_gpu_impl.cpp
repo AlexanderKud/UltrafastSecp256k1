@@ -217,6 +217,26 @@ ufsecp_error_t ufsecp_gpu_msm(
         ctx->backend->msm(scalars32, points33, n, out_result33));
 }
 
+ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* z_i32,
+    const uint8_t* D_i33,
+    const uint8_t* E_i33,
+    const uint8_t* Y_i33,
+    const uint8_t* rho_i32,
+    const uint8_t* lambda_ie32,
+    const uint8_t* negate_R,
+    const uint8_t* negate_key,
+    size_t count,
+    uint8_t* out_results)
+{
+    if (!ctx) return UFSECP_ERR_NULL_ARG;
+    return to_abi_error(
+        ctx->backend->frost_verify_partial_batch(
+            z_i32, D_i33, E_i33, Y_i33, rho_i32, lambda_ie32,
+            negate_R, negate_key, count, out_results));
+}
+
 /* ===========================================================================
  * GPU error string
  * =========================================================================== */

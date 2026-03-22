@@ -152,6 +152,16 @@ public:
                          "Hash160 batch not yet available on Metal");
     }
 
+    GpuError frost_verify_partial_batch(
+        const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
+        const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
+        size_t, uint8_t*) override
+    {
+        if (!is_ready()) return set_error(GpuError::Device, "context not initialised");
+        return set_error(GpuError::Unsupported,
+                         "FROST partial verify not yet available on Metal");
+    }
+
     GpuError msm(
         const uint8_t*, const uint8_t*,
         size_t, uint8_t*) override

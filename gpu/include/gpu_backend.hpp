@@ -97,6 +97,21 @@ public:
     virtual GpuError msm(
         const uint8_t* scalars32, const uint8_t* points33,
         size_t n, uint8_t* out_result33) = 0;
+
+    /** Batch FROST partial signature verification.
+     *  Each item verifies: R_i = D_i + rho_i*E_i, lhs = z_i*G, rhs = R_i + lambda_ie*Y_i
+     *  result[i] = (lhs == rhs). */
+    virtual GpuError frost_verify_partial_batch(
+        const uint8_t* z_i32,       ///< count * 32 bytes (partial sig scalars)
+        const uint8_t* D_i33,       ///< count * 33 bytes (hiding nonce commitments)
+        const uint8_t* E_i33,       ///< count * 33 bytes (binding nonce commitments)
+        const uint8_t* Y_i33,       ///< count * 33 bytes (verification share pubkeys)
+        const uint8_t* rho_i32,     ///< count * 32 bytes (binding factors)
+        const uint8_t* lambda_ie32, ///< count * 32 bytes (lambda_i * e)
+        const uint8_t* negate_R,    ///< count bytes (1 = negate R_i, 0 = keep)
+        const uint8_t* negate_key,  ///< count bytes (1 = negate Y_i, 0 = keep)
+        size_t count,
+        uint8_t* out_results) = 0;  ///< count bytes (1 = valid, 0 = invalid)
 };
 
 /* -- Backend registry ------------------------------------------------------ */

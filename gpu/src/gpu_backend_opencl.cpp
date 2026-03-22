@@ -389,6 +389,15 @@ public:
         return GpuError::Ok;
     }
 
+    GpuError frost_verify_partial_batch(
+        const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
+        const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
+        size_t, uint8_t*) override
+    {
+        return set_error(GpuError::Unsupported,
+                         "FROST partial verify not yet implemented on OpenCL");
+    }
+
     GpuError msm(
         const uint8_t* scalars32, const uint8_t* points33,
         size_t n, uint8_t* out_result33) override

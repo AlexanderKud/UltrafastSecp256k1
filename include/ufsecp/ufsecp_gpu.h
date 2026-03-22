@@ -260,6 +260,38 @@ UFSECP_API ufsecp_error_t ufsecp_gpu_msm(
  * GPU error string extension
  * ============================================================================ */
 
+/** Batch FROST partial signature verification.
+ *
+ *  Each entry verifies: R_i = D_i + rho_i*E_i, lhs = z_i*G, rhs = R_i + lambda_ie*Y_i
+ *  result[i] = (lhs == rhs).
+ *  Returns UFSECP_ERR_UNSUPPORTED when backend does not implement FROST.
+ *
+ *  @param ctx           GPU context.
+ *  @param z_i32         Input: count * 32 bytes (partial sig scalars, big-endian).
+ *  @param D_i33         Input: count * 33 bytes (hiding nonce commitments, compressed).
+ *  @param E_i33         Input: count * 33 bytes (binding nonce commitments, compressed).
+ *  @param Y_i33         Input: count * 33 bytes (verification share pubkeys, compressed).
+ *  @param rho_i32       Input: count * 32 bytes (per-signer binding factors, big-endian).
+ *  @param lambda_ie32   Input: count * 32 bytes (lambda_i * e products, big-endian).
+ *  @param negate_R      Input: count bytes (1 = negate R_i, 0 = keep).
+ *  @param negate_key    Input: count bytes (1 = negate Y_i, 0 = keep).
+ *  @param count         Number of partial signatures to verify.
+ *  @param out_results   Output: count bytes (1 = valid, 0 = invalid per entry).
+ *  @return UFSECP_OK if batch processed (check out_results for per-entry result).
+ *          UFSECP_ERR_UNSUPPORTED if backend does not support FROST. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* z_i32,
+    const uint8_t* D_i33,
+    const uint8_t* E_i33,
+    const uint8_t* Y_i33,
+    const uint8_t* rho_i32,
+    const uint8_t* lambda_ie32,
+    const uint8_t* negate_R,
+    const uint8_t* negate_key,
+    size_t count,
+    uint8_t* out_results);
+
 /** Map GPU-specific error code to description (passes through to
  *  ufsecp_error_str for CPU error codes). */
 UFSECP_API const char* ufsecp_gpu_error_str(ufsecp_error_t err);
