@@ -327,46 +327,11 @@ std::pair<bool, FieldElement> xswiftec_inv(
         w = t2.sqrt();
     } else if (which == 2) {
         // From candidate 3: x = v - 4*g / (3*v^2 + 4*g)
-        // So 3*v^2 + 4*g = 4*g / (v - x)
+        // This is independent of X and t — every (u, t) pair gives the same x3.
+        // We just need some t s.t. candidates 1 and 2 don't also match.
+        // Pick t = 1 (adjusted for sign by flip).
         auto diff = v + x.negate();
         if (diff == FE_ZERO) return {false, FE_ZERO};
-        auto rhs = FE_FOUR * g * diff.inverse();
-        auto three_v2 = FE_THREE * v2;
-        // t^2 was used only implicitly through X = -g/t^2
-        // For case 3, we need to reconstruct differently.
-        // X is found from: x3 = v + (-4*g) / (3*v^2 + 4*g)
-        // So 3*v^2 + 4*g = -4*g / (x - v)
-        auto denom_val = (FE_FOUR.negate()) * g * diff.inverse();
-        auto X_val = three_v2 + FE_FOUR * g;
-        // Actually this case is more involved. For now, if case 0 or 1 matched we use those.
-        // Let me compute X from candidate 3 relation:
-        // From the construction: candidate 3 doesn't use X directly.
-        // Instead, need X s.t. -g / t^2 = X, and x3 = v - 4g/(3v^2+4g)
-        // This means: 3v^2 + 4g = -4g/(x-v)  => get the value
-        // Then we know that X = -(3v^2 + 4g) by construction with t.
-        // Actually: from candidate 3, t can be anything that doesn't make candidates 1 or 2 work.
-        // But for inversion, we need: given x and u, and knowing case=3 was used,
-        // find t that produces this x.
-        
-        // Simpler approach: solve t^2 = -g / X for the X that makes candidate 3 produce x.
-        // From candidate 3: x = v - 4g/(3v^2 + 4g)
-        // This means 3v^2 + 4g = -4g/(x - v)  (note x-v = -4g/(3v^2+4g))
-        if (diff == FE_ZERO) return {false, FE_ZERO};
-        auto target = (FE_FOUR * g).negate() * diff.inverse();  // = 3v^2 + 4g as computed from x
-        // Now for candidates 1 and 2 to NOT have worked, we need specific conditions.
-        // For the inverse, compute a valid t anyway:
-        // X = -g / t^2  => t^2 = -g/X
-        // We need X such that candidate 3 gives x. 
-        // X can be anything; the key constraint is 3v^2 + 4g = target (which is always the same value)
-        // But X is determined by t. So we set X s.t. the third candidate gives x.
-        // Actually X is free; let's use X = target - 3v^2 - 4g ... no.
-        
-        // For candidate 3, X doesn't matter directly. The formula is:
-        // x3 = v - 4g * (3v^2 + 4g)^{-1}
-        // This is independent of X and t!  Every (u, t) pair gives the same x3.
-        // So: x3 = v - 4g/(3v^2 + 4g). If this equals our target x, any t works
-        // (as long as candidates 1 and 2 don't also match).
-        // We just need some t. Pick t = 1 (will be adjusted for sign by flip).
         auto x3_check = v + (FE_FOUR * g).negate() * (FE_THREE * v2 + FE_FOUR * g).inverse();
         if (!(x3_check == x)) return {false, FE_ZERO};
         w = FE_ONE;

@@ -262,7 +262,7 @@ jobs:
         run: cmake --build build -j$(sysctl -n hw.logicalcpu)
 
       - name: Test (all including Metal GPU)
-        run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.logicalcpu) -E "^(ct_sidechannel|secp256k1_metal_audit)"
+        run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.logicalcpu) -E "^(ct_sidechannel|secp256k1_metal_audit|gpu_ops_equivalence)"
 
       - name: Metal GPU audit (advisory -- not blocking)
         if: success() || failure()

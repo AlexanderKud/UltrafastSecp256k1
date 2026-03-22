@@ -113,13 +113,13 @@ static void bench_transport_mixed(int total_packets) {
 
     // Pre-generate the packet schedule
     struct PacketSpec { std::size_t payload_size; };
-    std::vector<PacketSpec> schedule(total_packets);
+    std::vector<PacketSpec> schedule(static_cast<std::size_t>(total_packets));
 
     std::size_t total_payload_bytes = 0;
     std::size_t total_wire_bytes = 0;
     int bucket_count[4] = {};
 
-    for (int i = 0; i < total_packets; ++i) {
+    for (std::size_t i = 0; i < static_cast<std::size_t>(total_packets); ++i) {
         std::uint32_t r = rng.range(0, 99);
         std::size_t sz;
         if (r < 40) {
@@ -149,7 +149,7 @@ static void bench_transport_mixed(int total_packets) {
     double ns = H.run(1, [&]() {
         // Re-create sessions per pass to reset nonce counters
         SessionPair sp;
-        for (int i = 0; i < total_packets; ++i) {
+        for (std::size_t i = 0; i < static_cast<std::size_t>(total_packets); ++i) {
             auto pkt = sp.initiator.encrypt(src.data(), schedule[i].payload_size);
             auto dec = sp.responder.decrypt(pkt.data(), pkt.data() + 3, pkt.size() - 3);
             bench::DoNotOptimize(dec);
@@ -199,12 +199,12 @@ static void bench_transport_decoys(int total_packets, double decoy_rate) {
         std::size_t payload_size;
         bool is_decoy;
     };
-    std::vector<PacketSpec> schedule(total_packets);
+    std::vector<PacketSpec> schedule(static_cast<std::size_t>(total_packets));
 
     int real_count = 0, decoy_count = 0;
     std::size_t real_payload_bytes = 0, total_wire_bytes = 0;
 
-    for (int i = 0; i < total_packets; ++i) {
+    for (std::size_t i = 0; i < static_cast<std::size_t>(total_packets); ++i) {
         bool decoy = (rng.range(0, 999) < static_cast<std::uint32_t>(decoy_rate * 1000));
         // Decoys are typically small (0-64B)
         std::size_t sz;
@@ -233,7 +233,7 @@ static void bench_transport_decoys(int total_packets, double decoy_rate) {
     // but the receiver would discard the plaintext.
     double ns = H.run(1, [&]() {
         SessionPair sp;
-        for (int i = 0; i < total_packets; ++i) {
+        for (std::size_t i = 0; i < static_cast<std::size_t>(total_packets); ++i) {
             auto pkt = sp.initiator.encrypt(src.data(), schedule[i].payload_size);
             auto dec = sp.responder.decrypt(pkt.data(), pkt.data() + 3, pkt.size() - 3);
             bench::DoNotOptimize(dec);
@@ -250,7 +250,7 @@ static void bench_transport_decoys(int total_packets, double decoy_rate) {
     // Also run without decoys for comparison (same real packet count)
     double ns_no_decoy = H.run(1, [&]() {
         SessionPair sp;
-        for (int i = 0; i < total_packets; ++i) {
+        for (std::size_t i = 0; i < static_cast<std::size_t>(total_packets); ++i) {
             if (schedule[i].is_decoy) continue; // skip decoys
             auto pkt = sp.initiator.encrypt(src.data(), schedule[i].payload_size);
             auto dec = sp.responder.decrypt(pkt.data(), pkt.data() + 3, pkt.size() - 3);
@@ -318,7 +318,7 @@ static void bench_latency_mode(int num_packets) {
         }
 
         // Measure
-        for (int i = 0; i < num_packets; ++i) {
+        for (std::size_t i = 0; i < static_cast<std::size_t>(num_packets); ++i) {
             std::size_t sz = rng.range(static_cast<std::uint32_t>(bkt.lo),
                                         static_cast<std::uint32_t>(bkt.hi));
 
@@ -358,7 +358,7 @@ static void bench_latency_mode(int num_packets) {
             bench::DoNotOptimize(dec);
         }
 
-        for (int i = 0; i < num_packets; ++i) {
+        for (std::size_t i = 0; i < static_cast<std::size_t>(num_packets); ++i) {
             std::uint32_t r = rng.range(0, 99);
             std::size_t sz;
             if (r < 40)      sz = rng.range(1, 32);
@@ -501,7 +501,7 @@ static void bench_e2e_socket(int num_roundtrips) {
     std::printf("  %-22s  %8s  %8s  %8s  %8s  %8s\n",
                 "payload", "p50", "p95", "p99", "avg", "MB/s");
 
-    for (int si = 0; si < N_SIZES; ++si) {
+    for (std::size_t si = 0; si < N_SIZES; ++si) {
         std::size_t sz = SIZES[si];
         int iters = std::max(100, num_roundtrips / (static_cast<int>(sz) / 32 + 1));
 
