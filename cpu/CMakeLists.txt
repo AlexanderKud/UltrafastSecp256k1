@@ -996,6 +996,15 @@ if(BUILD_TESTING)
     target_compile_definitions(test_wallet_standalone PRIVATE STANDALONE_TEST)
     add_test(NAME wallet COMMAND test_wallet_standalone)
 
+    # -- BIP-324 Transport tests (ChaCha20-Poly1305, ElligatorSwift, HKDF) --
+    if(SECP256K1_BUILD_BIP324)
+        target_sources(run_selftest PRIVATE tests/test_bip324.cpp)
+        add_executable(test_bip324_standalone tests/test_bip324.cpp)
+        target_link_libraries(test_bip324_standalone PRIVATE ${SECP256K1_LIB_NAME})
+        target_compile_definitions(test_bip324_standalone PRIVATE STANDALONE_TEST)
+        add_test(NAME bip324_transport COMMAND test_bip324_standalone)
+    endif()
+
     # -- CTest labels for core library tests --------------------------------
     # Label all core tests so they can be run as a group:
     #   ctest --test-dir <build> -L core

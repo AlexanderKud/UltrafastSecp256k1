@@ -219,6 +219,47 @@ static void demo_cpu(ufsecp_ctx* ctx)
     vrc = ufsecp_pedersen_verify(ctx, commit, value, blinding);
     printf("  %-20s %s\n", "Verify:", vrc == UFSECP_OK ? "VALID" : "INVALID");
     printf("\n");
+
+#ifdef SECP256K1_BIP324
+    /* -- 11. BIP-324 Encrypted Transport ---------------------------------- */
+    printf("[11] BIP-324 Encrypted Transport\n");
+
+    /* Create two sessions: initiator and responder */
+    ufsecp_bip324_session *alice = NULL, *bob = NULL;
+    uint8_t alice_enc[64], bob_enc[64];
+    OK(ufsecp_bip324_create(ctx, 1, &alice, alice_enc), "bip324_create initiator");
+    OK(ufsecp_bip324_create(ctx, 0, &bob, bob_enc), "bip324_create responder");
+    printf("  Created initiator + responder sessions\n");
+
+    /* Complete handshake: exchange ElligatorSwift encodings */
+    uint8_t alice_sid[32], bob_sid[32];
+    OK(ufsecp_bip324_handshake(alice, bob_enc, alice_sid), "bip324_handshake initiator");
+    OK(ufsecp_bip324_handshake(bob, alice_enc, bob_sid), "bip324_handshake responder");
+    hex_print("Session ID:", alice_sid, 32);
+    printf("  %-20s %s\n", "SID match:", memcmp(alice_sid, bob_sid, 32) == 0 ? "YES" : "NO");
+
+    /* Encrypt a message (Alice → Bob) */
+    const char *msg = "Hello, BIP-324!";
+    size_t msg_len = strlen(msg);
+    uint8_t enc_buf[256];
+    size_t enc_len = sizeof(enc_buf);
+    OK(ufsecp_bip324_encrypt(alice, (const uint8_t*)msg, msg_len, enc_buf, &enc_len),
+       "bip324_encrypt");
+    printf("  %-20s %zu bytes → %zu bytes wire\n", "Encrypted:", msg_len, enc_len);
+
+    /* Decrypt (Bob receives) */
+    uint8_t dec_buf[256];
+    size_t dec_len = sizeof(dec_buf);
+    OK(ufsecp_bip324_decrypt(bob, enc_buf, enc_len, dec_buf, &dec_len), "bip324_decrypt");
+    dec_buf[dec_len] = '\0';
+    printf("  %-20s \"%s\"\n", "Decrypted:", (char*)dec_buf);
+    printf("  %-20s %s\n", "Roundtrip:", memcmp(msg, dec_buf, msg_len) == 0 ? "OK" : "FAIL");
+
+    /* Cleanup */
+    ufsecp_bip324_destroy(alice);
+    ufsecp_bip324_destroy(bob);
+    printf("\n");
+#endif /* SECP256K1_BIP324 */
 }
 
 /* ── GPU Examples ────────────────────────────────────────────────────────── */

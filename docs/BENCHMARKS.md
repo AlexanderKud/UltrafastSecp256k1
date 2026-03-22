@@ -796,13 +796,54 @@ scalar multiplications remain faster than MSM for the 129-point workload.
 
 ---
 
+## BIP-324 Encrypted Transport Benchmarks
+
+BIP-324 implements encrypted, authenticated peer-to-peer communication
+for Bitcoin (v2 transport). Numbers below are from `bench_unified --quick`
+on x86-64 (i5, Clang 19, AVX2, single core pinned).
+
+### Primitives
+
+| Operation | ns/op | Throughput |
+|-----------|------:|------------|
+| HKDF-SHA256 extract | ~124 | ~8.1 M op/s |
+| HKDF-SHA256 expand | ~135 | ~7.4 M op/s |
+| AEAD encrypt (256 B) | ~460 | ~2.2 M op/s |
+| AEAD decrypt (256 B) | ~470 | ~2.1 M op/s |
+
+### Elliptic-Curve Transport Setup
+
+| Operation | µs/op | Throughput |
+|-----------|------:|------------|
+| ElligatorSwift create | ~46 | ~21.5 k op/s |
+| ElligatorSwift XDH (ECDH) | ~30 | ~32.9 k op/s |
+| Session handshake (full) | ~167 | ~6.0 k op/s |
+
+### Session Data Path
+
+| Operation | ns/op | Throughput |
+|-----------|------:|------------|
+| Session encrypt (256 B) | ~558 | ~1.8 M op/s |
+| Session decrypt (256 B) | ~1,136 | ~881 k op/s |
+| Session encrypt (1 KB) | ~1,627 | ~614 k op/s |
+| Session roundtrip (256 B) | ~1,136 | ~881 k op/s |
+
+### CUDA GPU Comparison
+
+See [BENCHMARK_BIP324_GPU.md](BENCHMARK_BIP324_GPU.md) for detailed CUDA
+transport benchmarks. Summary: CUDA achieves ~30× throughput over a single
+CPU core for bulk packet encryption.
+
+---
+
 ## Available Benchmark Targets
 
 All targets registered in CMake. Build with `cmake --build build -j` then run from `build/cpu/`.
 
 | Target | What It Measures |
 |--------|-----------------|
-| `bench_unified` | THE standard: primitives + CT + batch verify + Ethereum + ZK + real-world wallet/protocol flows, with apple-to-apple comparison vs libsecp256k1 + OpenSSL |
+| `bench_unified` | THE standard: primitives + CT + batch verify + Ethereum + ZK + BIP-324 + real-world wallet/protocol flows, with apple-to-apple comparison vs libsecp256k1 + OpenSSL |
+| `bench_bip324_transport` | BIP-324 transport simulation: mixed payloads, decoy packets, latency histograms, TCP socket roundtrip |
 | `bench_ct` | Fast (`fast::`) vs Constant-Time (`ct::`) layer comparison |
 | `bench_field_52` | 5x52 field arithmetic micro-benchmarks |
 | `bench_field_26` | 10x26 field arithmetic micro-benchmarks |

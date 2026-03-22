@@ -54,6 +54,12 @@
 #include "secp256k1/ct/point.hpp"
 #include "secp256k1/zk.hpp"
 #include "secp256k1/pedersen.hpp"
+#ifdef SECP256K1_BIP324
+#include "secp256k1/bip324.hpp"
+#include "secp256k1/chacha20_poly1305.hpp"
+#include "secp256k1/ellswift.hpp"
+#include "secp256k1/hkdf.hpp"
+#endif
 #include "secp256k1/selftest.hpp"
 #include "secp256k1/init.hpp"
 #include "secp256k1/benchmark_harness.hpp"
@@ -2548,7 +2554,168 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    //  SECTION 9: Summary
+    //  SECTION 9b: BIP-324 Encrypted Transport
+    // =====================================================================
+
+    double u_ellswift_create = 0, u_ellswift_xdh = 0;
+    double u_aead_encrypt = 0, u_aead_decrypt = 0;
+    double u_hkdf_extract = 0, u_hkdf_expand = 0;
+    double u_session_handshake = 0, u_session_encrypt_256 = 0, u_session_decrypt_256 = 0;
+    double u_session_encrypt_1k = 0, u_session_roundtrip_256 = 0;
+
+#ifdef SECP256K1_BIP324
+    {
+        using namespace secp256k1;
+
+        static const std::uint8_t BIP324_KEY_A[32] = {
+            0xe8,0xf3,0x2e,0x72,0x3d,0xec,0xf4,0x05,
+            0x1a,0xef,0xac,0x8e,0x2c,0x93,0xc9,0xc5,
+            0xb2,0x14,0x31,0x38,0x17,0xcd,0xb0,0x1a,
+            0x14,0x94,0xb9,0x17,0xc8,0x43,0x6b,0x35
+        };
+        static const std::uint8_t BIP324_KEY_B[32] = {
+            0xaa,0xbb,0xcc,0xdd,0x11,0x22,0x33,0x44,
+            0x55,0x66,0x77,0x88,0x99,0x00,0xab,0xcd,
+            0xef,0x01,0x23,0x45,0x67,0x89,0xab,0xcd,
+            0xef,0xfe,0xdc,0xba,0x98,0x76,0x54,0x32
+        };
+
+        Scalar sk = Scalar::from_bytes(BIP324_KEY_A);
+
+        // ElligatorSwift create (key encoding)
+        u_ellswift_create = bench_ns([&]{
+            auto enc = ellswift_create(sk);
+            bench::DoNotOptimize(enc.data());
+        }, std::max(1, N_SIGN / 4));
+
+        // ElligatorSwift XDH (ECDH key agreement)
+        auto enc_a = ellswift_create(sk);
+        Scalar sk_b = Scalar::from_bytes(BIP324_KEY_B);
+        auto enc_b = ellswift_create(sk_b);
+        u_ellswift_xdh = bench_ns([&]{
+            auto secret = ellswift_xdh(enc_a.data(), enc_b.data(), sk, true);
+            bench::DoNotOptimize(secret.data());
+        }, std::max(1, N_SIGN / 4));
+
+        // HKDF-SHA256 extract
+        const std::uint8_t salt[32] = {};
+        const std::uint8_t ikm[32] = {1,2,3,4,5,6,7,8};
+        u_hkdf_extract = bench_ns([&]{
+            auto prk = hkdf_sha256_extract(salt, 32, ikm, 32);
+            bench::DoNotOptimize(prk[0]);
+        }, N_SIGN);
+
+        // HKDF-SHA256 expand
+        const std::uint8_t prk[32] = {0x01};
+        const std::uint8_t info[] = "bitcoin_v2";
+        u_hkdf_expand = bench_ns([&]{
+            std::uint8_t okm[32];
+            hkdf_sha256_expand(prk, info, sizeof(info) - 1, okm, 32);
+            bench::DoNotOptimize(okm[0]);
+        }, N_SIGN);
+
+        // ChaCha20-Poly1305 AEAD encrypt (256-byte payload)
+        std::uint8_t aead_key[32] = {};
+        std::uint8_t nonce[12] = {};
+        std::vector<std::uint8_t> pt_256(256, 0x42);
+        std::vector<std::uint8_t> ct_buf(256);
+        std::uint8_t tag_buf[16];
+        u_aead_encrypt = bench_ns([&]{
+            aead_chacha20_poly1305_encrypt(
+                aead_key, nonce, nullptr, 0,
+                pt_256.data(), pt_256.size(),
+                ct_buf.data(), tag_buf);
+            bench::DoNotOptimize(ct_buf[0]);
+        }, N_SIGN);
+
+        // ChaCha20-Poly1305 AEAD decrypt (256-byte payload)
+        aead_chacha20_poly1305_encrypt(
+            aead_key, nonce, nullptr, 0,
+            pt_256.data(), pt_256.size(),
+            ct_buf.data(), tag_buf);
+        std::vector<std::uint8_t> dec_buf(256);
+        u_aead_decrypt = bench_ns([&]{
+            bool ok = aead_chacha20_poly1305_decrypt(
+                aead_key, nonce, nullptr, 0,
+                ct_buf.data(), ct_buf.size(),
+                tag_buf, dec_buf.data());
+            bench::DoNotOptimize(ok);
+        }, N_SIGN);
+
+        // Session handshake (create + complete)
+        u_session_handshake = bench_ns([&]{
+            Bip324Session init(true, BIP324_KEY_A);
+            Bip324Session resp(false, BIP324_KEY_B);
+            resp.complete_handshake(init.our_ellswift_encoding().data());
+            init.complete_handshake(resp.our_ellswift_encoding().data());
+            bench::DoNotOptimize(init.session_id().data());
+        }, std::max(1, N_SIGN / 8));
+
+        // Session encrypt 256B
+        Bip324Session bench_init(true, BIP324_KEY_A);
+        Bip324Session bench_resp(false, BIP324_KEY_B);
+        bench_resp.complete_handshake(bench_init.our_ellswift_encoding().data());
+        bench_init.complete_handshake(bench_resp.our_ellswift_encoding().data());
+
+        u_session_encrypt_256 = bench_ns([&]{
+            auto pkt = bench_init.encrypt(pt_256.data(), pt_256.size());
+            bench::DoNotOptimize(pkt.data());
+        }, N_SIGN);
+
+        // Session decrypt 256B
+        auto sample_pkt = bench_init.encrypt(pt_256.data(), pt_256.size());
+        // Need a fresh session for decrypt (counter must match)
+        Bip324Session dec_init(true, BIP324_KEY_A);
+        Bip324Session dec_resp(false, BIP324_KEY_B);
+        dec_resp.complete_handshake(dec_init.our_ellswift_encoding().data());
+        dec_init.complete_handshake(dec_resp.our_ellswift_encoding().data());
+        u_session_decrypt_256 = bench_ns([&]{
+            auto pkt = dec_init.encrypt(pt_256.data(), pt_256.size());
+            auto dec = dec_resp.decrypt(pkt.data(), pkt.data() + 3, pkt.size() - 3);
+            bench::DoNotOptimize(dec.data());
+        }, N_SIGN);
+
+        // Session encrypt 1KB
+        std::vector<std::uint8_t> pt_1k(1024, 0x55);
+        Bip324Session enc1k_init(true, BIP324_KEY_A);
+        Bip324Session enc1k_resp(false, BIP324_KEY_B);
+        enc1k_resp.complete_handshake(enc1k_init.our_ellswift_encoding().data());
+        enc1k_init.complete_handshake(enc1k_resp.our_ellswift_encoding().data());
+        u_session_encrypt_1k = bench_ns([&]{
+            auto pkt = enc1k_init.encrypt(pt_1k.data(), pt_1k.size());
+            bench::DoNotOptimize(pkt.data());
+        }, N_SIGN);
+
+        // Full roundtrip 256B (encrypt + decrypt)
+        Bip324Session rt_init(true, BIP324_KEY_A);
+        Bip324Session rt_resp(false, BIP324_KEY_B);
+        rt_resp.complete_handshake(rt_init.our_ellswift_encoding().data());
+        rt_init.complete_handshake(rt_resp.our_ellswift_encoding().data());
+        u_session_roundtrip_256 = bench_ns([&]{
+            auto pkt = rt_init.encrypt(pt_256.data(), pt_256.size());
+            auto dec = rt_resp.decrypt(pkt.data(), pkt.data() + 3, pkt.size() - 3);
+            bench::DoNotOptimize(dec.data());
+        }, N_SIGN);
+
+        print_header("BIP-324 ENCRYPTED TRANSPORT");
+        print_row("ElligatorSwift create",          u_ellswift_create);
+        print_row("ElligatorSwift XDH (ECDH)",      u_ellswift_xdh);
+        print_row("HKDF-SHA256 extract",            u_hkdf_extract);
+        print_row("HKDF-SHA256 expand",             u_hkdf_expand);
+        print_row("AEAD encrypt (256B)",            u_aead_encrypt);
+        print_row("AEAD decrypt (256B)",            u_aead_decrypt);
+        print_row("Session handshake (full)",       u_session_handshake);
+        print_row("Session encrypt (256B)",         u_session_encrypt_256);
+        print_row("Session decrypt (256B)",         u_session_decrypt_256);
+        print_row("Session encrypt (1KB)",          u_session_encrypt_1k);
+        print_row("Session roundtrip (256B)",       u_session_roundtrip_256);
+        print_sep();
+        printf("\n");
+    }
+#endif
+
+    // =====================================================================
+    //  SECTION 10: Summary
     // =====================================================================
 
     printf("======================================================================\n");
@@ -2592,6 +2759,21 @@ int main(int argc, char** argv) {
     tput("Bulletproof range_prove",   u_range_prove);
     tput("Bulletproof range_verify",  u_range_verify);
     printf("\n");
+#ifdef SECP256K1_BIP324
+    if (u_ellswift_create > 0.0) {
+        printf("  --- BIP-324 Transport ---\n");
+        tput("ElligatorSwift create",     u_ellswift_create);
+        tput("ElligatorSwift XDH",        u_ellswift_xdh);
+        tput("HKDF extract",              u_hkdf_extract);
+        tput("HKDF expand",               u_hkdf_expand);
+        tput("AEAD encrypt (256B)",       u_aead_encrypt);
+        tput("AEAD decrypt (256B)",       u_aead_decrypt);
+        tput("Session handshake",         u_session_handshake);
+        tput("Session encrypt (256B)",    u_session_encrypt_256);
+        tput("Session roundtrip (256B)",  u_session_roundtrip_256);
+        printf("\n");
+    }
+#endif
     printf("  --- libsecp256k1 ---\n");
     tput("field_mul",                 ls_fe_mul);
     tput("field_sqr",                 ls_fe_sqr);

@@ -47,6 +47,9 @@ int test_ethereum_run();
 #endif
 int test_wallet_run();
 int test_zk_run();
+#ifdef SECP256K1_BIP324
+int test_bip324_run();
+#endif
 
 // -- Module descriptor --------------------------------------------------------
 struct TestModule {
@@ -82,6 +85,9 @@ static const TestModule MODULES[] = {
 #endif
     { "Unified wallet API",                              test_wallet_run },
     { "ZK proofs (knowledge/DLEQ/Bulletproof)",            test_zk_run },
+#ifdef SECP256K1_BIP324
+    { "BIP-324 encrypted transport",                          test_bip324_run },
+#endif
 };
 
 static constexpr int NUM_MODULES = sizeof(MODULES) / sizeof(MODULES[0]);
