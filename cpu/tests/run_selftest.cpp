@@ -42,6 +42,8 @@ int test_comprehensive_run();
 int test_bip340_vectors_run();
 int test_rfc6979_vectors_run();
 int test_ecc_properties_run();
+int test_ecies_run();
+int test_sha_run();
 #ifdef SECP256K1_BUILD_ETHEREUM
 int test_ethereum_run();
 #endif
@@ -80,6 +82,8 @@ static const TestModule MODULES[] = {
     { "BIP-340 official test vectors",          test_bip340_vectors_run },
     { "RFC 6979 ECDSA test vectors",              test_rfc6979_vectors_run },
     { "ECC property-based invariants",              test_ecc_properties_run },
+    { "ECIES encrypt/decrypt",                        test_ecies_run },
+    { "SHA-256/512 NIST vectors",                      test_sha_run },
 #ifdef SECP256K1_BUILD_ETHEREUM
     { "Ethereum signing layer",                       test_ethereum_run },
 #endif

@@ -54,6 +54,15 @@
 #include "secp256k1/ct/point.hpp"
 #include "secp256k1/zk.hpp"
 #include "secp256k1/pedersen.hpp"
+#include "secp256k1/adaptor.hpp"
+#include "secp256k1/frost.hpp"
+#include "secp256k1/musig2.hpp"
+#include "secp256k1/ecies.hpp"
+#include "secp256k1/multiscalar.hpp"
+#include "secp256k1/pippenger.hpp"
+#include "secp256k1/sha256.hpp"
+#include "secp256k1/sha512.hpp"
+#include "secp256k1/coins/message_signing.hpp"
 #ifdef SECP256K1_BIP324
 #include "secp256k1/bip324.hpp"
 #include "secp256k1/chacha20_poly1305.hpp"
@@ -2554,6 +2563,298 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
+    //  SECTION 8.6: Adaptor Signatures
+    // =====================================================================
+
+    double u_schnorr_adaptor_sign = 0, u_schnorr_adaptor_verify = 0;
+    double u_schnorr_adaptor_adapt = 0, u_schnorr_adaptor_extract = 0;
+    double u_ecdsa_adaptor_sign = 0, u_ecdsa_adaptor_verify = 0;
+    {
+        // adaptor secret t -> adaptor point T = t*G
+        auto adaptor_secret = make_scalar(0xADAD0001ULL);
+        auto adaptor_point = Point::generator().scalar_mul(adaptor_secret);
+
+        idx = 0;
+        u_schnorr_adaptor_sign = bench_ns([&]{
+            auto pre = schnorr_adaptor_sign(privkeys[idx % POOL], msghashes[idx % POOL],
+                                            adaptor_point, aux_rands[idx % POOL]);
+            bench::DoNotOptimize(pre); ++idx;
+        }, N_SIGN);
+
+        auto pre_schnorr = schnorr_adaptor_sign(privkeys[0], msghashes[0],
+                                                adaptor_point, aux_rands[0]);
+        u_schnorr_adaptor_verify = bench_ns([&]{
+            bool ok = schnorr_adaptor_verify(pre_schnorr, schnorr_pubkeys_x[0],
+                                             msghashes[0], adaptor_point);
+            bench::DoNotOptimize(ok);
+        }, N_VERIFY);
+
+        auto final_schnorr = schnorr_adaptor_adapt(pre_schnorr, adaptor_secret);
+        u_schnorr_adaptor_adapt = bench_ns([&]{
+            auto sig = schnorr_adaptor_adapt(pre_schnorr, adaptor_secret);
+            bench::DoNotOptimize(sig);
+        }, N_SIGN);
+
+        u_schnorr_adaptor_extract = bench_ns([&]{
+            auto [t, ok] = schnorr_adaptor_extract(pre_schnorr, final_schnorr);
+            bench::DoNotOptimize(t);
+        }, N_SIGN);
+
+        idx = 0;
+        u_ecdsa_adaptor_sign = bench_ns([&]{
+            auto pre = ecdsa_adaptor_sign(privkeys[idx % POOL], msghashes[idx % POOL],
+                                          adaptor_point);
+            bench::DoNotOptimize(pre); ++idx;
+        }, N_SIGN);
+
+        auto pre_ecdsa = ecdsa_adaptor_sign(privkeys[0], msghashes[0], adaptor_point);
+        u_ecdsa_adaptor_verify = bench_ns([&]{
+            bool ok = ecdsa_adaptor_verify(pre_ecdsa, pubkeys[0],
+                                           msghashes[0], adaptor_point);
+            bench::DoNotOptimize(ok);
+        }, N_VERIFY);
+
+        print_header("ADAPTOR SIGNATURES");
+        print_row("Schnorr adaptor sign",         u_schnorr_adaptor_sign);
+        print_row("Schnorr adaptor verify",        u_schnorr_adaptor_verify);
+        print_row("Schnorr adaptor adapt",         u_schnorr_adaptor_adapt);
+        print_row("Schnorr adaptor extract secret",u_schnorr_adaptor_extract);
+        print_row("ECDSA adaptor sign",            u_ecdsa_adaptor_sign);
+        print_row("ECDSA adaptor verify",          u_ecdsa_adaptor_verify);
+        print_sep();
+        printf("\n");
+    }
+
+    // =====================================================================
+    //  SECTION 8.7: FROST Threshold Signatures (2-of-3)
+    // =====================================================================
+
+    double u_frost_keygen = 0, u_frost_nonce_gen = 0;
+    double u_frost_sign_partial = 0, u_frost_verify_partial = 0;
+    double u_frost_aggregate = 0;
+    {
+        // Setup: 2-of-3 DKG
+        std::array<std::uint8_t, 32> seeds[3];
+        for (int i = 0; i < 3; ++i) seeds[i] = make_hash(0xF2057000ULL + static_cast<uint64_t>(i));
+
+        auto [c1, s1] = frost_keygen_begin(1, 2, 3, seeds[0]);
+        auto [c2, s2] = frost_keygen_begin(2, 2, 3, seeds[1]);
+        auto [c3, s3] = frost_keygen_begin(3, 2, 3, seeds[2]);
+
+        std::vector<FrostCommitment> all_comms = {c1, c2, c3};
+
+        // Each participant gets shares from others + own
+        std::vector<FrostShare> shares_for_1, shares_for_2, shares_for_3;
+        for (auto& s : s1) { if (s.id == 1) shares_for_1.push_back(s); else if (s.id == 2) shares_for_2.push_back(s); else shares_for_3.push_back(s); }
+        for (auto& s : s2) { if (s.id == 1) shares_for_1.push_back(s); else if (s.id == 2) shares_for_2.push_back(s); else shares_for_3.push_back(s); }
+        for (auto& s : s3) { if (s.id == 1) shares_for_1.push_back(s); else if (s.id == 2) shares_for_2.push_back(s); else shares_for_3.push_back(s); }
+
+        auto [kp1, ok1] = frost_keygen_finalize(1, all_comms, shares_for_1, 2, 3);
+        auto [kp2, ok2] = frost_keygen_finalize(2, all_comms, shares_for_2, 2, 3);
+        (void)ok1; (void)ok2;
+
+        // Nonce gen
+        auto nseed1 = make_hash(0xA0ACE01ULL);
+        auto nseed2 = make_hash(0xA0ACE02ULL);
+        auto [nonce1, ncomm1] = frost_sign_nonce_gen(1, nseed1);
+        auto [nonce2, ncomm2] = frost_sign_nonce_gen(2, nseed2);
+        std::vector<FrostNonceCommitment> ncomms = {ncomm1, ncomm2};
+
+        auto psig1 = frost_sign(kp1, nonce1, msghashes[0], ncomms);
+        auto psig2 = frost_sign(kp2, nonce2, msghashes[0], ncomms);
+
+        u_frost_keygen = bench_ns([&]{
+            auto [c, shares] = frost_keygen_begin(1, 2, 3, seeds[0]);
+            bench::DoNotOptimize(c);
+        }, std::max(1, N_SIGN / 4));
+
+        u_frost_nonce_gen = bench_ns([&]{
+            auto [n, nc] = frost_sign_nonce_gen(1, nseed1);
+            bench::DoNotOptimize(nc);
+        }, N_SIGN);
+
+        u_frost_sign_partial = bench_ns([&]{
+            auto ps = frost_sign(kp1, nonce1, msghashes[0], ncomms);
+            bench::DoNotOptimize(ps);
+        }, N_SIGN);
+
+        u_frost_verify_partial = bench_ns([&]{
+            bool ok = frost_verify_partial(psig1, ncomm1, kp1.verification_share,
+                                           msghashes[0], ncomms, kp1.group_public_key);
+            bench::DoNotOptimize(ok);
+        }, N_VERIFY);
+
+        u_frost_aggregate = bench_ns([&]{
+            auto sig = frost_aggregate({psig1, psig2}, ncomms,
+                                       kp1.group_public_key, msghashes[0]);
+            bench::DoNotOptimize(sig);
+        }, N_SIGN);
+
+        print_header("FROST THRESHOLD (2-of-3)");
+        print_row("keygen_begin (DKG round 1)",     u_frost_keygen);
+        print_row("nonce_gen",                       u_frost_nonce_gen);
+        print_row("partial_sign",                    u_frost_sign_partial);
+        print_row("partial_verify",                  u_frost_verify_partial);
+        print_row("aggregate → Schnorr sig",        u_frost_aggregate);
+        print_sep();
+        printf("\n");
+    }
+
+    // =====================================================================
+    //  SECTION 8.8: MuSig2 Multi-Signatures (2-of-2)
+    // =====================================================================
+
+    double u_musig2_key_agg = 0, u_musig2_nonce_gen = 0;
+    double u_musig2_partial_sign = 0, u_musig2_partial_verify = 0;
+    double u_musig2_sig_agg = 0;
+    {
+        // Setup: 2-of-2 (both must sign)
+        auto pk1_x = schnorr_pubkeys_x[0];
+        auto pk2_x = schnorr_pubkeys_x[1];
+        std::vector<std::array<std::uint8_t, 32>> pks = {pk1_x, pk2_x};
+
+        auto key_agg = musig2_key_agg(pks);
+        auto [snonce1, pnonce1] = musig2_nonce_gen(privkeys[0], pk1_x, key_agg.Q_x, msghashes[0]);
+        auto [snonce2, pnonce2] = musig2_nonce_gen(privkeys[1], pk2_x, key_agg.Q_x, msghashes[0]);
+        auto agg_nonce = musig2_nonce_agg({pnonce1, pnonce2});
+        auto session = musig2_start_sign_session(agg_nonce, key_agg, msghashes[0]);
+        auto ps1 = musig2_partial_sign(snonce1, privkeys[0], key_agg, session, 0);
+        auto ps2 = musig2_partial_sign(snonce2, privkeys[1], key_agg, session, 1);
+
+        u_musig2_key_agg = bench_ns([&]{
+            auto ka = musig2_key_agg(pks);
+            bench::DoNotOptimize(ka);
+        }, N_SIGN);
+
+        u_musig2_nonce_gen = bench_ns([&]{
+            auto [sn, pn] = musig2_nonce_gen(privkeys[0], pk1_x, key_agg.Q_x, msghashes[0]);
+            bench::DoNotOptimize(pn);
+        }, N_SIGN);
+
+        u_musig2_partial_sign = bench_ns([&]{
+            auto s = musig2_partial_sign(snonce1, privkeys[0], key_agg, session, 0);
+            bench::DoNotOptimize(s);
+        }, N_SIGN);
+
+        u_musig2_partial_verify = bench_ns([&]{
+            bool ok = musig2_partial_verify(ps1, pnonce1, pk1_x, key_agg, session, 0);
+            bench::DoNotOptimize(ok);
+        }, N_VERIFY);
+
+        u_musig2_sig_agg = bench_ns([&]{
+            auto sig = musig2_partial_sig_agg({ps1, ps2}, session);
+            bench::DoNotOptimize(sig);
+        }, N_SIGN);
+
+        print_header("MUSIG2 MULTI-SIGNATURES (2-of-2)");
+        print_row("key_agg (BIP-327)",              u_musig2_key_agg);
+        print_row("nonce_gen",                       u_musig2_nonce_gen);
+        print_row("partial_sign",                    u_musig2_partial_sign);
+        print_row("partial_verify",                  u_musig2_partial_verify);
+        print_row("sig_agg → Schnorr sig",          u_musig2_sig_agg);
+        print_sep();
+        printf("\n");
+    }
+
+    // =====================================================================
+    //  SECTION 8.9: ECIES Encryption
+    // =====================================================================
+
+    double u_ecies_encrypt = 0, u_ecies_decrypt = 0;
+    {
+        auto ecies_msg = std::vector<std::uint8_t>(256, 0x42);
+        auto ecies_ct = ecies_encrypt(pubkeys[0], ecies_msg.data(), ecies_msg.size());
+
+        u_ecies_encrypt = bench_ns([&]{
+            auto ct = ecies_encrypt(pubkeys[0], ecies_msg.data(), ecies_msg.size());
+            bench::DoNotOptimize(ct.data());
+        }, N_SIGN);
+
+        u_ecies_decrypt = bench_ns([&]{
+            auto pt = ecies_decrypt(privkeys[0], ecies_ct.data(), ecies_ct.size());
+            bench::DoNotOptimize(pt.data());
+        }, N_SIGN);
+
+        print_header("ECIES ENCRYPTION");
+        print_row("ECIES encrypt (256B payload)",    u_ecies_encrypt);
+        print_row("ECIES decrypt (256B payload)",    u_ecies_decrypt);
+        print_sep();
+        printf("\n");
+    }
+
+    // =====================================================================
+    //  SECTION 8.10: Message Signing & Hashing
+    // =====================================================================
+
+    double u_btc_msg_sign = 0, u_btc_msg_verify = 0;
+    double u_sha256_32 = 0, u_sha512_32 = 0;
+    double u_msm_4 = 0, u_msm_64 = 0;
+    {
+        const std::uint8_t msg_text[] = "Hello, Bitcoin!";
+        auto btc_sig = secp256k1::coins::bitcoin_sign_message(
+            msg_text, sizeof(msg_text) - 1, privkeys[0]);
+
+        idx = 0;
+        u_btc_msg_sign = bench_ns([&]{
+            auto sig = secp256k1::coins::bitcoin_sign_message(
+                msg_text, sizeof(msg_text) - 1, privkeys[idx % POOL]);
+            bench::DoNotOptimize(sig); ++idx;
+        }, N_SIGN);
+
+        u_btc_msg_verify = bench_ns([&]{
+            bool ok = secp256k1::coins::bitcoin_verify_message(
+                msg_text, sizeof(msg_text) - 1, pubkeys[0], btc_sig.sig);
+            bench::DoNotOptimize(ok);
+        }, N_VERIFY);
+
+        // SHA-256 (32-byte input)
+        u_sha256_32 = bench_ns([&]{
+            auto h = SHA256::hash(msghashes[0].data(), 32);
+            bench::DoNotOptimize(h);
+        }, N_FIELD);
+
+        // SHA-512 (32-byte input)
+        u_sha512_32 = bench_ns([&]{
+            auto h = SHA512::hash(msghashes[0].data(), 32);
+            bench::DoNotOptimize(h);
+        }, N_FIELD);
+
+        // Multi-scalar multiplication (4-point)
+        std::vector<Scalar> msm_scalars_4(4);
+        std::vector<Point> msm_points_4(4);
+        for (int i = 0; i < 4; ++i) {
+            msm_scalars_4[static_cast<std::size_t>(i)] = privkeys[i];
+            msm_points_4[static_cast<std::size_t>(i)] = pubkeys[i];
+        }
+        u_msm_4 = bench_ns([&]{
+            auto r = multi_scalar_mul(msm_scalars_4, msm_points_4);
+            bench::DoNotOptimize(r);
+        }, N_POINT);
+
+        // Multi-scalar multiplication (64-point, Pippenger)
+        std::vector<Scalar> msm_scalars_64(64);
+        std::vector<Point> msm_points_64(64);
+        for (int i = 0; i < 64; ++i) {
+            msm_scalars_64[static_cast<std::size_t>(i)] = privkeys[i % POOL];
+            msm_points_64[static_cast<std::size_t>(i)] = pubkeys[i % POOL];
+        }
+        u_msm_64 = bench_ns([&]{
+            auto r = multi_scalar_mul(msm_scalars_64, msm_points_64);
+            bench::DoNotOptimize(r);
+        }, std::max(1, N_POINT / 8));
+
+        print_header("MESSAGE SIGNING & HASHING");
+        print_row("Bitcoin message sign",            u_btc_msg_sign);
+        print_row("Bitcoin message verify",          u_btc_msg_verify);
+        print_row("SHA-256 (32B input)",             u_sha256_32);
+        print_row("SHA-512 (32B input)",             u_sha512_32);
+        print_row("Multi-scalar mul (4 points)",     u_msm_4);
+        print_row("Multi-scalar mul (64 points)",    u_msm_64);
+        print_sep();
+        printf("\n");
+    }
+
+    // =====================================================================
     //  SECTION 9b: BIP-324 Encrypted Transport
     // =====================================================================
 
@@ -2759,6 +3060,30 @@ int main(int argc, char** argv) {
     tput("Bulletproof range_prove",   u_range_prove);
     tput("Bulletproof range_verify",  u_range_verify);
     printf("\n");
+
+    printf("  --- Adaptor / FROST / MuSig2 ---\n");
+    tput("Schnorr adaptor sign",      u_schnorr_adaptor_sign);
+    tput("Schnorr adaptor verify",    u_schnorr_adaptor_verify);
+    tput("ECDSA adaptor sign",        u_ecdsa_adaptor_sign);
+    tput("FROST keygen_begin (2/3)",  u_frost_keygen);
+    tput("FROST partial_sign",        u_frost_sign_partial);
+    tput("FROST aggregate",           u_frost_aggregate);
+    tput("MuSig2 key_agg (2-of-2)",   u_musig2_key_agg);
+    tput("MuSig2 partial_sign",       u_musig2_partial_sign);
+    tput("MuSig2 sig_agg",            u_musig2_sig_agg);
+    printf("\n");
+
+    printf("  --- ECIES / Msg-Signing / Hashing ---\n");
+    tput("ECIES encrypt (256B)",      u_ecies_encrypt);
+    tput("ECIES decrypt (256B)",      u_ecies_decrypt);
+    tput("Bitcoin message sign",      u_btc_msg_sign);
+    tput("Bitcoin message verify",    u_btc_msg_verify);
+    tput("SHA-256 (32B)",             u_sha256_32);
+    tput("SHA-512 (32B)",             u_sha512_32);
+    tput("MSM (4 points)",            u_msm_4);
+    tput("MSM (64 points)",           u_msm_64);
+    printf("\n");
+
 #ifdef SECP256K1_BIP324
     if (u_ellswift_create > 0.0) {
         printf("  --- BIP-324 Transport ---\n");

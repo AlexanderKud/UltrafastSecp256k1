@@ -832,6 +832,8 @@ if(BUILD_TESTING)
         tests/test_bip340_vectors.cpp
         tests/test_rfc6979_vectors.cpp
         tests/test_ecc_properties.cpp
+        tests/test_ecies.cpp
+        tests/test_sha.cpp
     )
     target_link_libraries(run_selftest PRIVATE ${SECP256K1_LIB_NAME})
 
@@ -1005,6 +1007,29 @@ if(BUILD_TESTING)
         add_test(NAME bip324_transport COMMAND test_bip324_standalone)
     endif()
 
+    # -- ECIES encrypt/decrypt standalone tests --
+    add_executable(test_ecies_standalone tests/test_ecies.cpp)
+    target_link_libraries(test_ecies_standalone PRIVATE ${SECP256K1_LIB_NAME})
+    target_compile_definitions(test_ecies_standalone PRIVATE STANDALONE_TEST)
+    add_test(NAME ecies COMMAND test_ecies_standalone)
+
+    # -- SHA-256 / SHA-512 NIST test vector standalone tests --
+    add_executable(test_sha_standalone tests/test_sha.cpp)
+    target_link_libraries(test_sha_standalone PRIVATE ${SECP256K1_LIB_NAME})
+    target_compile_definitions(test_sha_standalone PRIVATE STANDALONE_TEST)
+    add_test(NAME sha COMMAND test_sha_standalone)
+
+    # -- FFI C ABI coverage tests (Pedersen switch, ZK range, BIP-324) --
+    add_executable(test_ffi_coverage_standalone
+        tests/test_ffi_coverage.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+    target_link_libraries(test_ffi_coverage_standalone PRIVATE ${SECP256K1_LIB_NAME})
+    target_include_directories(test_ffi_coverage_standalone PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_BINARY_DIR}/include)
+    target_compile_definitions(test_ffi_coverage_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+    add_test(NAME ffi_coverage COMMAND test_ffi_coverage_standalone)
+
     # -- CTest labels for core library tests --------------------------------
     # Label all core tests so they can be run as a group:
     #   ctest --test-dir <build> -L core
@@ -1021,7 +1046,7 @@ if(BUILD_TESTING)
     if(SECP256K1_BUILD_ETHEREUM)
         list(APPEND CORE_TESTS ethereum)
     endif()
-    list(APPEND CORE_TESTS wallet zk_proofs)
+    list(APPEND CORE_TESTS wallet zk_proofs ecies sha ffi_coverage)
     set_tests_properties(${CORE_TESTS} PROPERTIES LABELS "core")
 
     # -- Audit infrastructure lives in audit/ ------------------------------

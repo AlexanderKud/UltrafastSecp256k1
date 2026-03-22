@@ -3243,12 +3243,12 @@ ufsecp_error_t ufsecp_bip324_create(
     ctx_clear_err(ctx);
 
     auto* sess = new (std::nothrow) ufsecp_bip324_session{};
-    if (!sess) return ctx_set_err(ctx, UFSECP_ERROR, "allocation failed");
+    if (!sess) return ctx_set_err(ctx, UFSECP_ERR_INTERNAL, "allocation failed");
 
     sess->cpp_session = new (std::nothrow) secp256k1::Bip324Session(initiator != 0);
     if (!sess->cpp_session) {
         delete sess;
-        return ctx_set_err(ctx, UFSECP_ERROR, "allocation failed");
+        return ctx_set_err(ctx, UFSECP_ERR_INTERNAL, "allocation failed");
     }
 
     auto& enc = sess->cpp_session->our_ellswift_encoding();
@@ -3265,7 +3265,7 @@ ufsecp_error_t ufsecp_bip324_handshake(
     if (!session || !session->cpp_session || !peer_ellswift64) return UFSECP_ERR_NULL_ARG;
 
     if (!session->cpp_session->complete_handshake(peer_ellswift64)) {
-        return UFSECP_ERROR;
+        return UFSECP_ERR_INTERNAL;
     }
 
     if (session_id32_out) {
@@ -3283,10 +3283,10 @@ ufsecp_error_t ufsecp_bip324_encrypt(
     if (!plaintext && plaintext_len > 0) return UFSECP_ERR_NULL_ARG;
 
     size_t const needed = plaintext_len + 19; // 3 (length) + payload + 16 (tag)
-    if (*out_len < needed) return UFSECP_ERR_BUFFER_TOO_SMALL;
+    if (*out_len < needed) return UFSECP_ERR_BUF_TOO_SMALL;
 
     auto enc = session->cpp_session->encrypt(plaintext, plaintext_len);
-    if (enc.empty()) return UFSECP_ERROR;
+    if (enc.empty()) return UFSECP_ERR_INTERNAL;
 
     std::memcpy(out, enc.data(), enc.size());
     *out_len = enc.size();
@@ -3301,16 +3301,16 @@ ufsecp_error_t ufsecp_bip324_decrypt(
         return UFSECP_ERR_NULL_ARG;
 
     // encrypted = [3B header][payload][16B tag], minimum length 19
-    if (encrypted_len < 19) return UFSECP_ERR_BUFFER_TOO_SMALL;
+    if (encrypted_len < 19) return UFSECP_ERR_BUF_TOO_SMALL;
 
     const uint8_t* header = encrypted;
     const uint8_t* payload_tag = encrypted + 3;
     size_t payload_tag_len = encrypted_len - 3;
 
     auto dec = session->cpp_session->decrypt(header, payload_tag, payload_tag_len);
-    if (dec.empty() && encrypted_len > 19) return UFSECP_ERROR; // auth failure
+    if (dec.empty() && encrypted_len > 19) return UFSECP_ERR_INTERNAL; // auth failure
 
-    if (*plaintext_len < dec.size()) return UFSECP_ERR_BUFFER_TOO_SMALL;
+    if (*plaintext_len < dec.size()) return UFSECP_ERR_BUF_TOO_SMALL;
     std::memcpy(plaintext_out, dec.data(), dec.size());
     *plaintext_len = dec.size();
     return UFSECP_OK;
@@ -3350,7 +3350,7 @@ ufsecp_error_t ufsecp_aead_chacha20_poly1305_decrypt(
 
     bool ok = secp256k1::aead_chacha20_poly1305_decrypt(
         key, nonce, aad, aad_len, ciphertext, ciphertext_len, tag, out);
-    return ok ? UFSECP_OK : UFSECP_ERROR;
+    return ok ? UFSECP_OK : UFSECP_ERR_INTERNAL;
 }
 
 ufsecp_error_t ufsecp_ellswift_create(

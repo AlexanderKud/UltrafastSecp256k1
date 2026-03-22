@@ -771,7 +771,7 @@ UFSECP_API ufsecp_error_t ufsecp_pedersen_switch_commit(
 
 #define UFSECP_ZK_KNOWLEDGE_PROOF_LEN  64  /**< 32 rx + 32 s */
 #define UFSECP_ZK_DLEQ_PROOF_LEN       64  /**< 32 e + 32 s */
-#define UFSECP_ZK_RANGE_PROOF_MAX_LEN  675 /**< max Bulletproof range proof */
+#define UFSECP_ZK_RANGE_PROOF_MAX_LEN  688 /**< max Bulletproof range proof */
 
 /** Knowledge proof: prove knowledge of discrete log. */
 UFSECP_API ufsecp_error_t ufsecp_zk_knowledge_prove(
