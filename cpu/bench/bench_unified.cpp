@@ -49,6 +49,7 @@
 #include "secp256k1/taproot.hpp"
 #include "secp256k1/address.hpp"
 #include "secp256k1/bip32.hpp"
+#include "secp256k1/bip39.hpp"
 #include "secp256k1/tagged_hash.hpp"
 #include "secp256k1/ct/sign.hpp"
 #include "secp256k1/ct/point.hpp"
@@ -2855,6 +2856,48 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
+    //  SECTION 8.11: BIP-39 Mnemonic
+    // =====================================================================
+
+    double u_bip39_gen12 = 0, u_bip39_gen24 = 0, u_bip39_validate = 0, u_bip39_to_seed = 0;
+    {
+        using namespace secp256k1;
+
+        // Generate a reference mnemonic for validate/to_seed benchmarks
+        auto [mnemonic12, ok12] = bip39_generate(16);  // 128-bit -> 12 words
+        if (!ok12) { std::printf("[!] bip39_generate(16) failed\n"); return 1; }
+
+        idx = 0;
+        u_bip39_gen12 = bench_ns([&]{
+            auto [m, ok] = bip39_generate(16);
+            bench::DoNotOptimize(m.data()); ++idx;
+        }, N_SIGN);
+
+        u_bip39_gen24 = bench_ns([&]{
+            auto [m, ok] = bip39_generate(32);
+            bench::DoNotOptimize(m.data()); ++idx;
+        }, N_SIGN);
+
+        u_bip39_validate = bench_ns([&]{
+            bool v = bip39_validate(mnemonic12);
+            bench::DoNotOptimize(v);
+        }, N_SIGN);
+
+        u_bip39_to_seed = bench_ns([&]{
+            auto [seed, ok] = bip39_mnemonic_to_seed(mnemonic12, "");
+            bench::DoNotOptimize(seed.data());
+        }, std::max(1, N_SIGN / 4));  // PBKDF2 is expensive
+
+        print_header("BIP-39 MNEMONIC");
+        print_row("bip39_generate (12 words)",         u_bip39_gen12);
+        print_row("bip39_generate (24 words)",         u_bip39_gen24);
+        print_row("bip39_validate (12 words)",         u_bip39_validate);
+        print_row("bip39_to_seed (PBKDF2, 12 words)",  u_bip39_to_seed);
+        print_sep();
+        printf("\n");
+    }
+
+    // =====================================================================
     //  SECTION 9b: BIP-324 Encrypted Transport
     // =====================================================================
 
@@ -3082,6 +3125,13 @@ int main(int argc, char** argv) {
     tput("SHA-512 (32B)",             u_sha512_32);
     tput("MSM (4 points)",            u_msm_4);
     tput("MSM (64 points)",           u_msm_64);
+    printf("\n");
+
+    printf("  --- BIP-39 Mnemonic ---\n");
+    tput("bip39_generate (12w)",      u_bip39_gen12);
+    tput("bip39_generate (24w)",      u_bip39_gen24);
+    tput("bip39_validate (12w)",      u_bip39_validate);
+    tput("bip39_to_seed (PBKDF2)",    u_bip39_to_seed);
     printf("\n");
 
 #ifdef SECP256K1_BIP324
