@@ -754,6 +754,12 @@ if(BUILD_TESTING)
     if(SECP256K1_BUILD_BIP324)
         add_executable(bench_bip324 bench/bench_bip324.cpp)
         target_link_libraries(bench_bip324 PRIVATE ${SECP256K1_LIB_NAME})
+
+        add_executable(bench_bip324_transport bench/bench_bip324_transport.cpp)
+        target_link_libraries(bench_bip324_transport PRIVATE ${SECP256K1_LIB_NAME})
+        if(UNIX)
+            target_link_libraries(bench_bip324_transport PRIVATE pthread)
+        endif()
     endif()
 
     # Unified Apple-to-Apple Benchmark (cross-platform, single binary)
