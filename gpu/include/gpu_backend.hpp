@@ -112,6 +112,18 @@ public:
         const uint8_t* negate_key,  ///< count bytes (1 = negate Y_i, 0 = keep)
         size_t count,
         uint8_t* out_results) = 0;  ///< count bytes (1 = valid, 0 = invalid)
+
+    /** Batch ECDSA public-key recovery.
+     *  For each item: recovers the compressed public key from (msg, sig, recid).
+     *  out_pubkeys33[i] is zeroed for any entry that fails to recover.
+     *  out_valid[i] = 1 if recovery succeeded, 0 if failed. */
+    virtual GpuError ecrecover_batch(
+        const uint8_t* msg_hashes32, ///< count * 32 bytes (message hashes)
+        const uint8_t* sigs64,       ///< count * 64 bytes (compact R[32]||S[32], big-endian)
+        const int*     recids,       ///< count recovery ids (0-3)
+        size_t count,
+        uint8_t* out_pubkeys33,      ///< count * 33 bytes (compressed pubkeys, zeros if failed)
+        uint8_t* out_valid) = 0;     ///< count bytes (1 = recovered, 0 = failed)
 };
 
 /* -- Backend registry ------------------------------------------------------ */

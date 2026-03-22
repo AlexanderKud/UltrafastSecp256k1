@@ -559,6 +559,17 @@ public:
         return GpuError::Ok;
     }
 
+    // TODO(parity): Metal ecrecover_batch — no recovery kernel in Metal shaders yet.
+    // tracking: ecrecover_batch Metal parity — see BACKEND_ASSURANCE_MATRIX.md
+    GpuError ecrecover_batch(
+        const uint8_t* /*msg_hashes32*/, const uint8_t* /*sigs64*/,
+        const int* /*recids*/, size_t /*count*/,
+        uint8_t* /*out_pubkeys33*/, uint8_t* /*out_valid*/) override
+    {
+        return set_error(GpuError::Unsupported,
+                         "ecrecover_batch not yet implemented on Metal backend");
+    }
+
     GpuError msm(
         const uint8_t* scalars32, const uint8_t* points33,
         size_t n, uint8_t* out_result33) override

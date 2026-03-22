@@ -292,6 +292,29 @@ UFSECP_API ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
     size_t count,
     uint8_t* out_results);
 
+/** Batch ECDSA public-key recovery on GPU.
+ *  For each item recovers the compressed public key from (msg_hash, sig, recid).
+ *  An entry that fails recovery writes 33 zero bytes into out_pubkeys33 and
+ *  out_valid[i] = 0.
+ *
+ *  @param ctx           GPU context.
+ *  @param msg_hashes32  Input: count * 32 bytes (32-byte message hashes).
+ *  @param sigs64        Input: count * 64 bytes (compact R[32]||S[32], big-endian).
+ *  @param recids        Input: count ints (recovery id 0-3 per entry).
+ *  @param count         Number of entries.
+ *  @param out_pubkeys33 Output: count * 33 bytes (compressed pubkeys; zeros on failure).
+ *  @param out_valid     Output: count bytes (1 = recovered, 0 = failed).
+ *  @return UFSECP_OK if batch processed; UFSECP_ERR_GPU_UNSUPPORTED if backend
+ *          does not support this operation. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_ecrecover_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* msg_hashes32,
+    const uint8_t* sigs64,
+    const int*     recids,
+    size_t count,
+    uint8_t* out_pubkeys33,
+    uint8_t* out_valid);
+
 /** Map GPU-specific error code to description (passes through to
  *  ufsecp_error_str for CPU error codes). */
 UFSECP_API const char* ufsecp_gpu_error_str(ufsecp_error_t err);

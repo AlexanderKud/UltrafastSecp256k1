@@ -237,6 +237,21 @@ ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
             negate_R, negate_key, count, out_results));
 }
 
+ufsecp_error_t ufsecp_gpu_ecrecover_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* msg_hashes32,
+    const uint8_t* sigs64,
+    const int*     recids,
+    size_t count,
+    uint8_t* out_pubkeys33,
+    uint8_t* out_valid)
+{
+    if (!ctx) return UFSECP_ERR_NULL_ARG;
+    return to_abi_error(
+        ctx->backend->ecrecover_batch(
+            msg_hashes32, sigs64, recids, count, out_pubkeys33, out_valid));
+}
+
 /* ===========================================================================
  * GPU error string
  * =========================================================================== */

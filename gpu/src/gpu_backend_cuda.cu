@@ -63,6 +63,13 @@ extern __global__ void frost_verify_partial_batch_kernel(
     const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
     const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
     uint8_t*, int);
+extern __global__ void ecdsa_recover_batch_kernel(
+    const uint8_t* __restrict__ msg_hashes,
+    const ECDSASignatureGPU* __restrict__ sigs,
+    const int*     __restrict__ recids,
+    JacobianPoint* __restrict__ recovered_keys,
+    bool*          __restrict__ results,
+    int count);
 } // namespace cuda
 
 namespace gpu {
@@ -601,6 +608,71 @@ public:
         cudaFree(d_nK);  cudaFree(d_nR);
         cudaFree(d_lie); cudaFree(d_rho);
         cudaFree(d_Y);   cudaFree(d_E);   cudaFree(d_D);   cudaFree(d_z);
+        clear_error();
+        return GpuError::Ok;
+    }
+
+    GpuError ecrecover_batch(
+        const uint8_t* msg_hashes32, const uint8_t* sigs64,
+        const int* recids, size_t count,
+        uint8_t* out_pubkeys33, uint8_t* out_valid) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (count == 0) { clear_error(); return GpuError::Ok; }
+        if (!msg_hashes32 || !sigs64 || !recids || !out_pubkeys33 || !out_valid)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        /* Host-side: parse compact sigs into ECDSASignatureGPU structs */
+        std::vector<ECDSASignatureGPU> h_sigs(count);
+        for (size_t i = 0; i < count; ++i)
+            bytes_to_ecdsa_sig(sigs64 + i * 64, &h_sigs[i]);
+
+        /* Device allocation */
+        uint8_t*            d_msgs   = nullptr;
+        ECDSASignatureGPU*  d_sigs   = nullptr;
+        int*                d_recids = nullptr;
+        JacobianPoint*      d_keys   = nullptr;
+        bool*               d_res    = nullptr;
+        uint8_t*            d_out33  = nullptr;
+
+        CUDA_TRY(cudaMalloc(&d_msgs,   count * 32));
+        CUDA_TRY(cudaMalloc(&d_sigs,   count * sizeof(ECDSASignatureGPU)));
+        CUDA_TRY(cudaMalloc(&d_recids, count * sizeof(int)));
+        CUDA_TRY(cudaMalloc(&d_keys,   count * sizeof(JacobianPoint)));
+        CUDA_TRY(cudaMalloc(&d_res,    count * sizeof(bool)));
+        CUDA_TRY(cudaMalloc(&d_out33,  count * 33));
+
+        CUDA_TRY(cudaMemcpy(d_msgs,   msg_hashes32,    count * 32,                     cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_sigs,   h_sigs.data(),   count * sizeof(ECDSASignatureGPU), cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_recids, recids,           count * sizeof(int),            cudaMemcpyHostToDevice));
+
+        int threads = 128;
+        int blocks  = (static_cast<int>(count) + threads - 1) / threads;
+
+        /* Recover Jacobian points on GPU */
+        ecdsa_recover_batch_kernel<<<blocks, threads>>>(
+            d_msgs, d_sigs, d_recids, d_keys, d_res, static_cast<int>(count));
+        CUDA_TRY(cudaGetLastError());
+
+        /* Convert Jacobian → compressed 33-byte pubkeys on GPU */
+        batch_jac_to_compressed_kernel<<<blocks, threads>>>(
+            d_keys, d_out33, static_cast<int>(count));
+        CUDA_TRY(cudaGetLastError());
+        CUDA_TRY(cudaDeviceSynchronize());
+
+        CUDA_TRY(cudaMemcpy(out_pubkeys33, d_out33, count * 33, cudaMemcpyDeviceToHost));
+
+        std::vector<bool> h_res(count);
+        CUDA_TRY(cudaMemcpy(h_res.data(), d_res, count * sizeof(bool), cudaMemcpyDeviceToHost));
+        for (size_t i = 0; i < count; ++i) {
+            out_valid[i] = h_res[i] ? 1 : 0;
+            if (!h_res[i])
+                std::memset(out_pubkeys33 + i * 33, 0, 33); /* zero failed entries */
+        }
+
+        cudaFree(d_out33);
+        cudaFree(d_res);   cudaFree(d_keys);
+        cudaFree(d_recids); cudaFree(d_sigs);  cudaFree(d_msgs);
         clear_error();
         return GpuError::Ok;
     }

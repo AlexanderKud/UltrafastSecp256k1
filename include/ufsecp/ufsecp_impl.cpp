@@ -828,6 +828,69 @@ ufsecp_error_t ufsecp_schnorr_sign_verified(ufsecp_ctx* ctx,
     return UFSECP_OK;
 }
 
+ufsecp_error_t ufsecp_ecdsa_sign_batch(
+    ufsecp_ctx* ctx,
+    size_t count,
+    const uint8_t* msgs32,
+    const uint8_t* privkeys32,
+    uint8_t* sigs64_out)
+{
+    if (!ctx || !msgs32 || !privkeys32 || !sigs64_out) return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+    for (size_t i = 0; i < count; ++i) {
+        std::array<uint8_t, 32> msg;
+        std::memcpy(msg.data(), msgs32 + i * 32, 32);
+        Scalar sk;
+        if (!scalar_parse_strict_nonzero(privkeys32 + i * 32, sk)) {
+            secp256k1::detail::secure_erase(&sk, sizeof(sk));
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY,
+                               "privkey[i] is zero or >= n");
+        }
+        auto sig = secp256k1::ct::ecdsa_sign(msg, sk);
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));
+        auto compact = sig.to_compact();
+        std::memcpy(sigs64_out + i * 64, compact.data(), 64);
+    }
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_schnorr_sign_batch(
+    ufsecp_ctx* ctx,
+    size_t count,
+    const uint8_t* msgs32,
+    const uint8_t* privkeys32,
+    const uint8_t* aux_rands32,
+    uint8_t* sigs64_out)
+{
+    if (!ctx || !msgs32 || !privkeys32 || !sigs64_out) return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+
+    static constexpr uint8_t kZeroAux[32] = {};
+
+    for (size_t i = 0; i < count; ++i) {
+        Scalar sk;
+        if (!scalar_parse_strict_nonzero(privkeys32 + i * 32, sk)) {
+            secp256k1::detail::secure_erase(&sk, sizeof(sk));
+            return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY,
+                               "privkey[i] is zero or >= n");
+        }
+
+        std::array<uint8_t, 32> msg_arr, aux_arr;
+        std::memcpy(msg_arr.data(), msgs32 + i * 32, 32);
+        const uint8_t* aux_src = aux_rands32 ? aux_rands32 + i * 32 : kZeroAux;
+        std::memcpy(aux_arr.data(), aux_src, 32);
+
+        auto kp  = secp256k1::ct::schnorr_keypair_create(sk);
+        auto sig = secp256k1::ct::schnorr_sign(kp, msg_arr, aux_arr);
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));
+        secp256k1::detail::secure_erase(&kp.d, sizeof(kp.d));
+
+        auto sig_bytes = sig.to_bytes();
+        std::memcpy(sigs64_out + i * 64, sig_bytes.data(), 64);
+    }
+    return UFSECP_OK;
+}
+
 ufsecp_error_t ufsecp_schnorr_verify(ufsecp_ctx* ctx,
                                      const uint8_t msg32[32],
                                      const uint8_t sig64[64],

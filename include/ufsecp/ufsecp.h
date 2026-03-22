@@ -243,6 +243,47 @@ UFSECP_API ufsecp_error_t ufsecp_schnorr_verify(ufsecp_ctx* ctx,
                                                 const uint8_t pubkey_x[32]);
 
 /* ===========================================================================
+ * Batch signing (CPU constant-time dispatch -- private keys never leave host)
+ * =========================================================================== */
+
+/** ECDSA sign a batch of messages.
+ *  Signs each (msgs32[i], privkeys32[i]) pair in order using the CT sign path.
+ *  The private key for each entry is immediately erased from memory after use.
+ *  Returns on the first failure; already-written entries remain valid.
+ *
+ *  @param ctx         CPU context.
+ *  @param count       Number of (message, key) pairs.
+ *  @param msgs32      Input: count * 32 bytes (message hashes, contiguous).
+ *  @param privkeys32  Input: count * 32 bytes (private keys, contiguous).
+ *  @param sigs64_out  Output: count * 64 bytes (compact R||S per entry). */
+UFSECP_API ufsecp_error_t ufsecp_ecdsa_sign_batch(
+    ufsecp_ctx* ctx,
+    size_t count,
+    const uint8_t* msgs32,
+    const uint8_t* privkeys32,
+    uint8_t* sigs64_out);
+
+/** BIP-340 Schnorr sign a batch of messages.
+ *  Signs each (msgs32[i], privkeys32[i], aux_rands32[i]) triple in order.
+ *  The private key for each entry is immediately erased from memory after use.
+ *  Returns on the first failure; already-written entries remain valid.
+ *
+ *  @param ctx         CPU context.
+ *  @param count       Number of (message, key) pairs.
+ *  @param msgs32      Input: count * 32 bytes (message hashes, contiguous).
+ *  @param privkeys32  Input: count * 32 bytes (private keys, contiguous).
+ *  @param aux_rands32 Input: count * 32 bytes (aux randomness); pass NULL to
+ *                     use all-zero aux for every entry.
+ *  @param sigs64_out  Output: count * 64 bytes (BIP-340 Schnorr signatures). */
+UFSECP_API ufsecp_error_t ufsecp_schnorr_sign_batch(
+    ufsecp_ctx* ctx,
+    size_t count,
+    const uint8_t* msgs32,
+    const uint8_t* privkeys32,
+    const uint8_t* aux_rands32,
+    uint8_t* sigs64_out);
+
+/* ===========================================================================
  * ECDH (Diffie-Hellman key agreement)
  * =========================================================================== */
 
