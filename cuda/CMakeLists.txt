@@ -154,6 +154,27 @@ else()
 endif()
 target_link_libraries(gpu_bench_unified PRIVATE secp256k1_cuda_lib)
 
+# ===== BIP-324 Transport Benchmark (CUDA batch parallel) =====
+set(_BENCH_BIP324_SOURCES src/bench_bip324_transport.cu)
+if(_GPU_LANG STREQUAL "HIP")
+    set_source_files_properties(${_BENCH_BIP324_SOURCES} PROPERTIES LANGUAGE HIP)
+    add_executable(bench_bip324_cuda ${_BENCH_BIP324_SOURCES})
+    target_compile_options(bench_bip324_cuda PRIVATE
+        $<$<COMPILE_LANGUAGE:HIP>:-O3>
+        $<$<COMPILE_LANGUAGE:HIP>:-ffast-math>
+    )
+else()
+    add_executable(bench_bip324_cuda ${_BENCH_BIP324_SOURCES})
+    target_compile_options(bench_bip324_cuda PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
+        $<$<COMPILE_LANGUAGE:CUDA>:-O3>
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xptxas=-O3>
+    )
+    set_target_properties(bench_bip324_cuda PROPERTIES
+        CUDA_SEPARABLE_COMPILATION OFF)
+endif()
+
 # ===== CPU vs GPU Comparison Benchmark =====
 set(_BENCH_COMPARE_SOURCES src/bench_compare.cu)
 if(_GPU_LANG STREQUAL "HIP")
