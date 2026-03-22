@@ -52,6 +52,13 @@
 #include "secp256k1/coins/coin_hd.hpp"
 #include "secp256k1/coins/message_signing.hpp"
 
+#if defined(SECP256K1_BIP324)
+#include "secp256k1/chacha20_poly1305.hpp"
+#include "secp256k1/hkdf.hpp"
+#include "secp256k1/ellswift.hpp"
+#include "secp256k1/bip324.hpp"
+#endif
+
 #if defined(SECP256K1_BUILD_ETHEREUM)
 #include "secp256k1/coins/keccak256.hpp"
 #include "secp256k1/coins/ethereum.hpp"
@@ -3216,6 +3223,179 @@ ufsecp_error_t ufsecp_ecies_decrypt(
     *plaintext_len = pt.size();
     return UFSECP_OK;
 }
+
+/* ===========================================================================
+ * BIP-324: Version 2 P2P Encrypted Transport (conditional: SECP256K1_BIP324)
+ * =========================================================================== */
+
+#if defined(SECP256K1_BIP324)
+
+struct ufsecp_bip324_session {
+    secp256k1::Bip324Session* cpp_session;
+};
+
+ufsecp_error_t ufsecp_bip324_create(
+    ufsecp_ctx* ctx,
+    int initiator,
+    ufsecp_bip324_session** session_out,
+    uint8_t ellswift64_out[64]) {
+    if (!ctx || !session_out || !ellswift64_out) return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+
+    auto* sess = new (std::nothrow) ufsecp_bip324_session{};
+    if (!sess) return ctx_set_err(ctx, UFSECP_ERROR, "allocation failed");
+
+    sess->cpp_session = new (std::nothrow) secp256k1::Bip324Session(initiator != 0);
+    if (!sess->cpp_session) {
+        delete sess;
+        return ctx_set_err(ctx, UFSECP_ERROR, "allocation failed");
+    }
+
+    auto& enc = sess->cpp_session->our_ellswift_encoding();
+    std::memcpy(ellswift64_out, enc.data(), 64);
+
+    *session_out = sess;
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_bip324_handshake(
+    ufsecp_bip324_session* session,
+    const uint8_t peer_ellswift64[64],
+    uint8_t session_id32_out[32]) {
+    if (!session || !session->cpp_session || !peer_ellswift64) return UFSECP_ERR_NULL_ARG;
+
+    if (!session->cpp_session->complete_handshake(peer_ellswift64)) {
+        return UFSECP_ERROR;
+    }
+
+    if (session_id32_out) {
+        auto& sid = session->cpp_session->session_id();
+        std::memcpy(session_id32_out, sid.data(), 32);
+    }
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_bip324_encrypt(
+    ufsecp_bip324_session* session,
+    const uint8_t* plaintext, size_t plaintext_len,
+    uint8_t* out, size_t* out_len) {
+    if (!session || !session->cpp_session || !out || !out_len) return UFSECP_ERR_NULL_ARG;
+    if (!plaintext && plaintext_len > 0) return UFSECP_ERR_NULL_ARG;
+
+    size_t const needed = plaintext_len + 19; // 3 (length) + payload + 16 (tag)
+    if (*out_len < needed) return UFSECP_ERR_BUFFER_TOO_SMALL;
+
+    auto enc = session->cpp_session->encrypt(plaintext, plaintext_len);
+    if (enc.empty()) return UFSECP_ERROR;
+
+    std::memcpy(out, enc.data(), enc.size());
+    *out_len = enc.size();
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_bip324_decrypt(
+    ufsecp_bip324_session* session,
+    const uint8_t* encrypted, size_t encrypted_len,
+    uint8_t* plaintext_out, size_t* plaintext_len) {
+    if (!session || !session->cpp_session || !encrypted || !plaintext_out || !plaintext_len)
+        return UFSECP_ERR_NULL_ARG;
+
+    // encrypted = [3B header][payload][16B tag], minimum length 19
+    if (encrypted_len < 19) return UFSECP_ERR_BUFFER_TOO_SMALL;
+
+    const uint8_t* header = encrypted;
+    const uint8_t* payload_tag = encrypted + 3;
+    size_t payload_tag_len = encrypted_len - 3;
+
+    auto dec = session->cpp_session->decrypt(header, payload_tag, payload_tag_len);
+    if (dec.empty() && encrypted_len > 19) return UFSECP_ERROR; // auth failure
+
+    if (*plaintext_len < dec.size()) return UFSECP_ERR_BUFFER_TOO_SMALL;
+    std::memcpy(plaintext_out, dec.data(), dec.size());
+    *plaintext_len = dec.size();
+    return UFSECP_OK;
+}
+
+void ufsecp_bip324_destroy(ufsecp_bip324_session* session) {
+    if (session) {
+        if (session->cpp_session) {
+            delete session->cpp_session;
+        }
+        delete session;
+    }
+}
+
+ufsecp_error_t ufsecp_aead_chacha20_poly1305_encrypt(
+    const uint8_t key[32], const uint8_t nonce[12],
+    const uint8_t* aad, size_t aad_len,
+    const uint8_t* plaintext, size_t plaintext_len,
+    uint8_t* out, uint8_t tag[16]) {
+    if (!key || !nonce || !out || !tag) return UFSECP_ERR_NULL_ARG;
+    if (!plaintext && plaintext_len > 0) return UFSECP_ERR_NULL_ARG;
+    if (!aad && aad_len > 0) return UFSECP_ERR_NULL_ARG;
+
+    secp256k1::aead_chacha20_poly1305_encrypt(
+        key, nonce, aad, aad_len, plaintext, plaintext_len, out, tag);
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_aead_chacha20_poly1305_decrypt(
+    const uint8_t key[32], const uint8_t nonce[12],
+    const uint8_t* aad, size_t aad_len,
+    const uint8_t* ciphertext, size_t ciphertext_len,
+    const uint8_t tag[16], uint8_t* out) {
+    if (!key || !nonce || !tag || !out) return UFSECP_ERR_NULL_ARG;
+    if (!ciphertext && ciphertext_len > 0) return UFSECP_ERR_NULL_ARG;
+    if (!aad && aad_len > 0) return UFSECP_ERR_NULL_ARG;
+
+    bool ok = secp256k1::aead_chacha20_poly1305_decrypt(
+        key, nonce, aad, aad_len, ciphertext, ciphertext_len, tag, out);
+    return ok ? UFSECP_OK : UFSECP_ERROR;
+}
+
+ufsecp_error_t ufsecp_ellswift_create(
+    ufsecp_ctx* ctx,
+    const uint8_t privkey[32],
+    uint8_t encoding64_out[64]) {
+    if (!ctx || !privkey || !encoding64_out) return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
+
+    auto enc = secp256k1::ellswift_create(sk);
+    std::memcpy(encoding64_out, enc.data(), 64);
+
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    return UFSECP_OK;
+}
+
+ufsecp_error_t ufsecp_ellswift_xdh(
+    ufsecp_ctx* ctx,
+    const uint8_t ell_a64[64],
+    const uint8_t ell_b64[64],
+    const uint8_t our_privkey[32],
+    int initiating,
+    uint8_t secret32_out[32]) {
+    if (!ctx || !ell_a64 || !ell_b64 || !our_privkey || !secret32_out)
+        return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+
+    Scalar sk;
+    if (!scalar_parse_strict_nonzero(our_privkey, sk)) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
+    }
+
+    auto secret = secp256k1::ellswift_xdh(ell_a64, ell_b64, sk, initiating != 0);
+    std::memcpy(secret32_out, secret.data(), 32);
+
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    return UFSECP_OK;
+}
+
+#endif /* SECP256K1_BIP324 */
 
 /* ===========================================================================
  * Ethereum (conditional: SECP256K1_BUILD_ETHEREUM)

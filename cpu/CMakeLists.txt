@@ -240,6 +240,21 @@ else()
     add_compile_definitions(SECP256K1_NO_ASM=1)
 endif()
 
+# BIP-324 module (conditional: -DSECP256K1_BUILD_BIP324=ON/OFF)
+option(SECP256K1_BUILD_BIP324 "Enable BIP-324 v2 encrypted P2P transport (ChaCha20-Poly1305, ElligatorSwift, HKDF)" ON)
+if(SECP256K1_BUILD_BIP324)
+    list(APPEND SECP256K1_SOURCES
+        src/chacha20_poly1305.cpp  # ChaCha20-Poly1305 AEAD (RFC 8439)
+        src/hkdf.cpp               # HKDF-SHA256 + HMAC-SHA256 (RFC 5869)
+        src/ellswift.cpp           # ElligatorSwift encoding (BIP-324)
+        src/bip324.cpp             # BIP-324 session management
+    )
+    add_compile_definitions(SECP256K1_BIP324=1)
+    message(STATUS "Secp256k1: BIP-324 module: ON (ChaCha20-Poly1305, ElligatorSwift, HKDF, v2 transport)")
+else()
+    message(STATUS "Secp256k1: BIP-324 module: OFF")
+endif()
+
 # Ethereum module sources (conditional: -DSECP256K1_BUILD_ETHEREUM=ON/OFF)
 if(SECP256K1_BUILD_ETHEREUM)
     list(APPEND SECP256K1_SOURCES

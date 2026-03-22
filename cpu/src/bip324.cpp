@@ -1,0 +1,287 @@
+// ============================================================================
+// BIP-324: Version 2 P2P Encrypted Transport Protocol
+// ============================================================================
+// Session management, key derivation, and packet encrypt/decrypt.
+//
+// Key derivation (from BIP-324 spec):
+//   1. ECDH: shared_secret = tagged_hash("bip324_ellswift_xonly_ecdh",
+//            ell_a || ell_b || x(a * B))
+//   2. Keys: PRK = HKDF-Extract(salt="bitcoin_v2_shared_secret", IKM=shared_secret)
+//   3. send_key = HKDF-Expand(PRK, info="initiator_L" or "responder_L", 32)
+//   4. recv_key = HKDF-Expand(PRK, info="responder_L" or "initiator_L", 32)
+//   5. session_id = HKDF-Expand(PRK, info="session_id", 32)
+//
+// Packet format:
+//   [3B encrypted length] [N bytes encrypted payload] [16B Poly1305 tag]
+//   Length is encrypted with ChaCha20 (counter 0, first 3 bytes of keystream)
+//   Payload+tag use AEAD (ChaCha20-Poly1305) with counter 0 and AAD = enc_length
+// ============================================================================
+
+#include "secp256k1/bip324.hpp"
+#include "secp256k1/chacha20_poly1305.hpp"
+#include "secp256k1/hkdf.hpp"
+#include "secp256k1/ellswift.hpp"
+#include "secp256k1/sha256.hpp"
+#include "secp256k1/detail/secure_erase.hpp"
+#include <cstring>
+
+// OS CSPRNG
+#if defined(_WIN32)
+#  include <windows.h>
+#  include <bcrypt.h>
+#  pragma comment(lib, "bcrypt.lib")
+#elif defined(__APPLE__)
+#  include <Security/SecRandom.h>
+#elif defined(__ANDROID__)
+#  include <cstdio>
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+#  include <sys/random.h>
+#else
+#  include <cstdio>
+#endif
+
+namespace secp256k1 {
+
+namespace {
+
+void csprng_fill(std::uint8_t* buf, std::size_t len) {
+#if defined(_WIN32)
+    NTSTATUS const status = BCryptGenRandom(
+        nullptr, buf, static_cast<ULONG>(len), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    if (status != 0) std::abort();
+#elif defined(__APPLE__)
+    if (SecRandomCopyBytes(kSecRandomDefault, len, buf) != errSecSuccess)
+        std::abort();
+#elif defined(__ANDROID__)
+    FILE* f = std::fopen("/dev/urandom", "rb");
+    if (!f) std::abort();
+    if (std::fread(buf, 1, len, f) != len) { std::fclose(f); std::abort(); }
+    std::fclose(f);
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+    std::size_t filled = 0;
+    while (filled < len) {
+        ssize_t const r = getrandom(buf + filled, len - filled, 0);
+        if (r <= 0) std::abort();
+        filled += static_cast<std::size_t>(r);
+    }
+#else
+    FILE* f = std::fopen("/dev/urandom", "rb");
+    if (!f) std::abort();
+    if (std::fread(buf, 1, len, f) != len) { std::fclose(f); std::abort(); }
+    std::fclose(f);
+#endif
+}
+
+} // anonymous namespace
+
+// ============================================================================
+// Bip324Cipher
+// ============================================================================
+
+void Bip324Cipher::init(const std::uint8_t key[32]) noexcept {
+    std::memcpy(key_, key, 32);
+    packet_counter_ = 0;
+}
+
+void Bip324Cipher::build_nonce(std::uint8_t nonce[12]) const noexcept {
+    // Nonce = 4 zero bytes || 8-byte little-endian packet counter
+    std::memset(nonce, 0, 4);
+    for (int i = 0; i < 8; ++i) {
+        nonce[4 + i] = static_cast<std::uint8_t>(packet_counter_ >> (i * 8));
+    }
+}
+
+std::vector<std::uint8_t> Bip324Cipher::encrypt(
+    const std::uint8_t* aad, std::size_t aad_len,
+    const std::uint8_t* plaintext, std::size_t plaintext_len) noexcept {
+
+    // Output: [3-byte encrypted length] [encrypted payload] [16-byte tag]
+    // The length field encodes plaintext_len as a 3-byte little-endian value.
+
+    // BIP-324 packet structure:
+    // 1. Encrypt the 3-byte length with a separate ChaCha20 keystream
+    // 2. Encrypt the payload with AEAD
+    //
+    // Simplified: we encrypt length||payload as a single AEAD operation.
+    // The 3-byte length prefix is the first 3 bytes of the plaintext.
+
+    // Build length prefix
+    std::uint8_t len_bytes[3];
+    len_bytes[0] = static_cast<std::uint8_t>(plaintext_len & 0xFF);
+    len_bytes[1] = static_cast<std::uint8_t>((plaintext_len >> 8) & 0xFF);
+    len_bytes[2] = static_cast<std::uint8_t>((plaintext_len >> 16) & 0xFF);
+
+    // Combine: [length(3)] [payload(N)]
+    std::vector<std::uint8_t> combined(3 + plaintext_len);
+    std::memcpy(combined.data(), len_bytes, 3);
+    if (plaintext_len > 0) {
+        std::memcpy(combined.data() + 3, plaintext, plaintext_len);
+    }
+
+    // Encrypt with AEAD
+    std::uint8_t nonce[12];
+    build_nonce(nonce);
+
+    std::vector<std::uint8_t> output(combined.size() + 16); // ciphertext + tag
+    std::uint8_t tag[16];
+
+    aead_chacha20_poly1305_encrypt(
+        key_, nonce,
+        aad, aad_len,
+        combined.data(), combined.size(),
+        output.data(),
+        tag);
+
+    std::memcpy(output.data() + combined.size(), tag, 16);
+
+    packet_counter_++;
+    return output;
+}
+
+std::vector<std::uint8_t> Bip324Cipher::decrypt(
+    const std::uint8_t* aad, std::size_t aad_len,
+    const std::uint8_t header_enc[3],
+    const std::uint8_t* contents, std::size_t contents_len) noexcept {
+
+    // contents = encrypted_payload || 16-byte tag
+    // Total encrypted data: header(3) + payload
+    // contents_len includes the 16-byte tag
+
+    if (contents_len < 16) return {};
+
+    std::size_t const ct_len = 3 + (contents_len - 16);
+
+    // Reconstruct the full ciphertext: [header(3)] [payload_ciphertext]
+    std::vector<std::uint8_t> full_ct(ct_len);
+    std::memcpy(full_ct.data(), header_enc, 3);
+    if (contents_len > 16) {
+        std::memcpy(full_ct.data() + 3, contents, contents_len - 16);
+    }
+
+    // Tag is the last 16 bytes of contents
+    const std::uint8_t* tag = contents + (contents_len - 16);
+
+    std::uint8_t nonce[12];
+    build_nonce(nonce);
+
+    std::vector<std::uint8_t> decrypted(ct_len);
+    bool ok = aead_chacha20_poly1305_decrypt(
+        key_, nonce,
+        aad, aad_len,
+        full_ct.data(), ct_len,
+        tag,
+        decrypted.data());
+
+    packet_counter_++;
+
+    if (!ok) return {};
+
+    // Extract length and payload
+    std::uint32_t const payload_len = static_cast<std::uint32_t>(decrypted[0])
+                                    | (static_cast<std::uint32_t>(decrypted[1]) << 8)
+                                    | (static_cast<std::uint32_t>(decrypted[2]) << 16);
+
+    if (payload_len > ct_len - 3) return {};
+
+    return std::vector<std::uint8_t>(decrypted.begin() + 3,
+                                      decrypted.begin() + 3 + payload_len);
+}
+
+// ============================================================================
+// Bip324Session
+// ============================================================================
+
+Bip324Session::Bip324Session(bool initiator) noexcept
+    : initiator_(initiator) {
+    // Generate ephemeral private key
+    csprng_fill(privkey_.data(), 32);
+    auto sk = fast::Scalar::from_bytes(privkey_);
+    our_encoding_ = ellswift_create(sk);
+}
+
+Bip324Session::Bip324Session(bool initiator, const std::uint8_t privkey[32]) noexcept
+    : initiator_(initiator) {
+    std::memcpy(privkey_.data(), privkey, 32);
+    auto sk = fast::Scalar::from_bytes(privkey_);
+    our_encoding_ = ellswift_create(sk);
+}
+
+bool Bip324Session::complete_handshake(const std::uint8_t peer_encoding[64]) noexcept {
+    if (established_) return false;
+
+    std::memcpy(peer_encoding_.data(), peer_encoding, 64);
+
+    auto sk = fast::Scalar::from_bytes(privkey_);
+
+    // Determine ell_a and ell_b (initiator = a, responder = b)
+    const std::uint8_t* ell_a = initiator_ ? our_encoding_.data() : peer_encoding_.data();
+    const std::uint8_t* ell_b = initiator_ ? peer_encoding_.data() : our_encoding_.data();
+
+    // 1. ECDH via ElligatorSwift
+    auto shared_secret = ellswift_xdh(ell_a, ell_b, sk, initiator_);
+
+    // Check for failure (all zeros)
+    bool all_zero = true;
+    for (auto b : shared_secret) {
+        if (b != 0) { all_zero = false; break; }
+    }
+    if (all_zero) return false;
+
+    // 2. Derive PRK via HKDF-Extract
+    const char* salt = "bitcoin_v2_shared_secret";
+    auto prk = hkdf_sha256_extract(
+        reinterpret_cast<const std::uint8_t*>(salt), std::strlen(salt),
+        shared_secret.data(), shared_secret.size());
+
+    // 3. Derive directional keys via HKDF-Expand
+    std::uint8_t initiator_key[32], responder_key[32];
+
+    const char* init_info = "initiator_L";
+    const char* resp_info = "responder_L";
+
+    hkdf_sha256_expand(prk.data(),
+                        reinterpret_cast<const std::uint8_t*>(init_info), std::strlen(init_info),
+                        initiator_key, 32);
+    hkdf_sha256_expand(prk.data(),
+                        reinterpret_cast<const std::uint8_t*>(resp_info), std::strlen(resp_info),
+                        responder_key, 32);
+
+    // 4. Derive session ID
+    const char* sid_info = "session_id";
+    hkdf_sha256_expand(prk.data(),
+                        reinterpret_cast<const std::uint8_t*>(sid_info), std::strlen(sid_info),
+                        session_id_.data(), 32);
+
+    // 5. Assign send/recv keys based on role
+    if (initiator_) {
+        send_cipher_.init(initiator_key);
+        recv_cipher_.init(responder_key);
+    } else {
+        send_cipher_.init(responder_key);
+        recv_cipher_.init(initiator_key);
+    }
+
+    // Secure erase intermediates
+    detail::secure_erase(shared_secret.data(), shared_secret.size());
+    detail::secure_erase(prk.data(), prk.size());
+    detail::secure_erase(initiator_key, sizeof(initiator_key));
+    detail::secure_erase(responder_key, sizeof(responder_key));
+
+    established_ = true;
+    return true;
+}
+
+std::vector<std::uint8_t> Bip324Session::encrypt(
+    const std::uint8_t* plaintext, std::size_t plaintext_len) noexcept {
+    if (!established_) return {};
+    return send_cipher_.encrypt(nullptr, 0, plaintext, plaintext_len);
+}
+
+std::vector<std::uint8_t> Bip324Session::decrypt(
+    const std::uint8_t header[3],
+    const std::uint8_t* payload_and_tag, std::size_t len) noexcept {
+    if (!established_) return {};
+    return recv_cipher_.decrypt(nullptr, 0, header, payload_and_tag, len);
+}
+
+} // namespace secp256k1

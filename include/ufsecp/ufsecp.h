@@ -975,6 +975,100 @@ UFSECP_API ufsecp_error_t ufsecp_ecies_decrypt(
     const uint8_t* envelope, size_t envelope_len,
     uint8_t* plaintext_out, size_t* plaintext_len);
 
+/* ========================================================================== */
+/* BIP-324: Version 2 P2P Encrypted Transport (conditional: SECP256K1_BIP324) */
+/* ========================================================================== */
+#ifdef SECP256K1_BIP324
+
+/** Opaque BIP-324 session handle. */
+typedef struct ufsecp_bip324_session ufsecp_bip324_session;
+
+/** Create a new BIP-324 session.
+ *  initiator: 1 if this peer initiates the connection, 0 if responder.
+ *  session_out: receives the session handle (caller must free with ufsecp_bip324_destroy).
+ *  ellswift64_out: receives our 64-byte ElligatorSwift-encoded public key to send to the peer. */
+UFSECP_API ufsecp_error_t ufsecp_bip324_create(
+    ufsecp_ctx* ctx,
+    int initiator,
+    ufsecp_bip324_session** session_out,
+    uint8_t ellswift64_out[64]);
+
+/** Complete the BIP-324 handshake by providing the peer's 64-byte ElligatorSwift encoding.
+ *  session_id32_out: if non-NULL, receives the 32-byte session ID.
+ *  Returns UFSECP_OK on success. */
+UFSECP_API ufsecp_error_t ufsecp_bip324_handshake(
+    ufsecp_bip324_session* session,
+    const uint8_t peer_ellswift64[64],
+    uint8_t session_id32_out[32]);
+
+/** Encrypt a BIP-324 packet.
+ *  plaintext: the message payload.
+ *  out: buffer for encrypted output ([3B enc length][encrypted payload][16B tag]).
+ *  out_len: in = buffer size, out = bytes written. Must be >= plaintext_len + 19. */
+UFSECP_API ufsecp_error_t ufsecp_bip324_encrypt(
+    ufsecp_bip324_session* session,
+    const uint8_t* plaintext, size_t plaintext_len,
+    uint8_t* out, size_t* out_len);
+
+/** Decrypt a BIP-324 packet.
+ *  encrypted: the full encrypted packet ([3B header][payload][16B tag]).
+ *  encrypted_len: total length of encrypted data.
+ *  plaintext_out: buffer for decrypted payload.
+ *  plaintext_len: in = buffer size, out = payload bytes written.
+ *  Returns UFSECP_OK on success, UFSECP_ERROR on auth failure. */
+UFSECP_API ufsecp_error_t ufsecp_bip324_decrypt(
+    ufsecp_bip324_session* session,
+    const uint8_t* encrypted, size_t encrypted_len,
+    uint8_t* plaintext_out, size_t* plaintext_len);
+
+/** Destroy a BIP-324 session and securely erase key material. */
+UFSECP_API void ufsecp_bip324_destroy(ufsecp_bip324_session* session);
+
+/** ChaCha20-Poly1305 AEAD encrypt (standalone, independent of BIP-324 sessions).
+ *  key32: 256-bit key.
+ *  nonce12: 96-bit nonce.
+ *  aad/aad_len: additional authenticated data.
+ *  plaintext/plaintext_len: input.
+ *  out: ciphertext (same length as plaintext).
+ *  tag16_out: 128-bit authentication tag. */
+UFSECP_API ufsecp_error_t ufsecp_aead_chacha20_poly1305_encrypt(
+    const uint8_t key[32], const uint8_t nonce[12],
+    const uint8_t* aad, size_t aad_len,
+    const uint8_t* plaintext, size_t plaintext_len,
+    uint8_t* out, uint8_t tag[16]);
+
+/** ChaCha20-Poly1305 AEAD decrypt (standalone).
+ *  Returns UFSECP_OK if tag is valid, UFSECP_ERROR on authentication failure. */
+UFSECP_API ufsecp_error_t ufsecp_aead_chacha20_poly1305_decrypt(
+    const uint8_t key[32], const uint8_t nonce[12],
+    const uint8_t* aad, size_t aad_len,
+    const uint8_t* ciphertext, size_t ciphertext_len,
+    const uint8_t tag[16], uint8_t* out);
+
+/** ElligatorSwift: create a 64-byte encoding of a public key.
+ *  privkey32: private key (used to compute the public key).
+ *  encoding64_out: receives the 64-byte uniformly random-looking encoding. */
+UFSECP_API ufsecp_error_t ufsecp_ellswift_create(
+    ufsecp_ctx* ctx,
+    const uint8_t privkey[32],
+    uint8_t encoding64_out[64]);
+
+/** ElligatorSwift ECDH: compute shared secret from ElligatorSwift encodings.
+ *  ell_a64: initiator's 64-byte encoding.
+ *  ell_b64: responder's 64-byte encoding.
+ *  our_privkey32: our private key.
+ *  initiating: 1 if we are the initiator, 0 if responder.
+ *  secret32_out: 32-byte shared secret. */
+UFSECP_API ufsecp_error_t ufsecp_ellswift_xdh(
+    ufsecp_ctx* ctx,
+    const uint8_t ell_a64[64],
+    const uint8_t ell_b64[64],
+    const uint8_t our_privkey[32],
+    int initiating,
+    uint8_t secret32_out[32]);
+
+#endif /* SECP256K1_BIP324 */
+
 #ifdef SECP256K1_BUILD_ETHEREUM
 
 /** Ethereum address size (20 bytes). */
