@@ -12,9 +12,6 @@ namespace secp256k1 {
 
 static std::array<std::uint8_t, 20> local_hash160(
     const std::uint8_t* data, std::size_t len) noexcept {
-    // SHA256 then RIPEMD160
-    auto sha = SHA256::hash(data, len);
-
     // Minimal RIPEMD160 — we import from address module
     // Actually, address.hpp already has hash160. For self-containment,
     // use SHA256 + inline RIPEMD160 constants.

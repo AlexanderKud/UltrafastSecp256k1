@@ -606,7 +606,7 @@ jobs:
       - name: Run differential smoke test (10 K random cases)
         # DIFFERENTIAL_MULTIPLIER=1 => ~10K cases; fast enough for per-PR gate.
         # Nightly uses 100 (1M cases) for extended coverage.
-        run: ./build/cpu/test_differential_standalone 1
+        run: ./build/audit/test_differential_standalone 1
 
   # -- Protocol reference vectors (MuSig2 BIP-327 + FROST KAT) --------------
   protocol-vectors:

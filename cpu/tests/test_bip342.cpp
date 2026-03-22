@@ -34,45 +34,6 @@ static std::array<uint8_t, 32> hex32(const char* hex) {
     return out;
 }
 
-// Build simple single-input single-output TapSighashTxData
-static TapSighashTxData make_simple_tx(
-    const std::array<uint8_t, 32>& prevout_txid,
-    uint32_t prevout_vout,
-    uint64_t input_amount,
-    const uint8_t* input_spk, size_t input_spk_len,
-    uint64_t output_value,
-    const uint8_t* output_spk, size_t output_spk_len,
-    uint32_t& version_storage,
-    uint32_t& locktime_storage,
-    uint32_t& vout_storage,
-    uint32_t& seq_storage,
-    uint64_t& amt_storage,
-    uint64_t& oval_storage) {
-
-    version_storage = 2;
-    locktime_storage = 0;
-    vout_storage = prevout_vout;
-    seq_storage = 0xFFFFFFFF;
-    amt_storage = input_amount;
-    oval_storage = output_value;
-
-    TapSighashTxData td{};
-    td.version = version_storage;
-    td.locktime = locktime_storage;
-    td.input_count = 1;
-    td.prevout_txids = &prevout_txid;
-    td.prevout_vouts = &vout_storage;
-    td.input_amounts = &amt_storage;
-    td.input_sequences = &seq_storage;
-    td.input_scriptpubkeys = &input_spk;
-    td.input_scriptpubkey_lens = &input_spk_len;
-    td.output_count = 1;
-    td.output_values = &oval_storage;
-    td.output_scriptpubkeys = &output_spk;
-    td.output_scriptpubkey_lens = &output_spk_len;
-    return td;
-}
-
 // ===========================================================================
 // BIP-341 Key-Path Sighash Tests
 // ===========================================================================
@@ -81,7 +42,6 @@ static void test_keypath_sighash_deterministic() {
     (void)std::printf("[BIP-341] Key-path sighash determinism...\n");
 
     auto txid = hex32("c37af31116d1b27caf68aae9e3ac82f1477929014d5b917657d0eb49478cb670");
-    uint8_t input_spk[] = {0x51, 0x20};  // OP_1 <32 bytes>
     uint8_t full_spk[34];
     full_spk[0] = 0x51; full_spk[1] = 0x20;
     std::memset(full_spk + 2, 0xAA, 32);
@@ -89,7 +49,7 @@ static void test_keypath_sighash_deterministic() {
     output_spk[0] = 0x51; output_spk[1] = 0x20;
     std::memset(output_spk + 2, 0xBB, 32);
 
-    uint32_t ver, lt, vout, seq;
+    uint32_t vout, seq;
     uint64_t amt, oval;
     const uint8_t* ispk = full_spk;
     size_t ispk_len = 34;

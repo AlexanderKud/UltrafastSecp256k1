@@ -57,6 +57,7 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DSECP256K1_MARCH=x86-64-v3 \
             -DSECP256K1_WERROR=ON \
+            -DSECP256K1_BUILD_BENCH=OFF \
             -DSECP256K1_BUILD_TESTS=ON
 
       - name: Build (zero warnings required)

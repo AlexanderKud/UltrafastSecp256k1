@@ -49,17 +49,6 @@ static std::vector<uint8_t> hex_to_vec(const char* hex) {
     return out;
 }
 
-static std::string bytes_to_hex(const uint8_t* data, std::size_t len) {
-    std::string out;
-    out.reserve(len * 2);
-    for (std::size_t i = 0; i < len; ++i) {
-        char buf[3];
-        std::snprintf(buf, sizeof(buf), "%02x", data[i]);
-        out += buf;
-    }
-    return out;
-}
-
 // ===========================================================================
 // BIP-143 Tests
 // ===========================================================================

@@ -125,7 +125,6 @@ std::array<std::uint8_t, 32> bip143_sighash(
     std::uint32_t sequence,
     std::uint32_t sighash_type) noexcept {
 
-    constexpr std::uint32_t SIGHASH_ALL          = 0x01;
     constexpr std::uint32_t SIGHASH_NONE         = 0x02;
     constexpr std::uint32_t SIGHASH_SINGLE       = 0x03;
     constexpr std::uint32_t SIGHASH_ANYONECANPAY = 0x80;

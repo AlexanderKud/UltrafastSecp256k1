@@ -734,7 +734,7 @@ endif()
 #
 # All use benchmark_harness.hpp (RDTSC/chrono, IQR, thread pinning).
 # =============================================================================
-if(BUILD_TESTING)
+if(SECP256K1_BUILD_BENCH)
     # CT (Constant-Time) layer benchmark -- fast:: vs ct:: overhead comparison
     add_executable(bench_ct bench/bench_ct.cpp)
     target_link_libraries(bench_ct PRIVATE ${SECP256K1_LIB_NAME})

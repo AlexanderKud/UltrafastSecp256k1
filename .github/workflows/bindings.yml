@@ -107,17 +107,20 @@ jobs:
           name: capi-ubuntu-24.04
           path: /tmp/capi
 
+      - name: Resolve Linux C API library path
+        shell: bash
+        run: |
+          lib_path="$(find /tmp/capi -type f -name 'libultrafast_secp256k1.so' | head -n1)"
+          test -n "$lib_path"
+          echo "ULTRAFAST_SECP256K1_LIB=$lib_path" >> "$GITHUB_ENV"
+
       - name: Functional smoke test (sign + verify)
         # Load the real shared library via ULTRAFAST_SECP256K1_LIB and run a
         # minimal end-to-end test: key generation, ECDSA sign/verify, Schnorr sign/verify.
-        env:
-          ULTRAFAST_SECP256K1_LIB: /tmp/capi/libultrafast_secp256k1.so
         run: |
           python - <<'SMOKE'
           import sys, os
           sys.path.insert(0, 'bindings/python')
-          os.environ.setdefault('ULTRAFAST_SECP256K1_LIB',
-              '/tmp/capi/libultrafast_secp256k1.so')
           from ultrafast_secp256k1 import Secp256k1
           lib = Secp256k1()
           privkey = bytes.fromhex(
