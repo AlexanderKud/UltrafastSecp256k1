@@ -215,5 +215,50 @@ void ecdsa_recover_batch_kernel(
 
 #endif // !SECP256K1_CUDA_LIMBS_32
 
+// ============================================================================
+// FROST Partial Signature Verification batch kernel
+// ============================================================================
+#ifndef SECP256K1_CUDA_LIMBS_32
+__global__ __launch_bounds__(128, 2)
+void frost_verify_partial_batch_kernel(
+    const uint8_t* __restrict__ z_i_bytes,
+    const uint8_t* __restrict__ D_i_bytes,
+    const uint8_t* __restrict__ E_i_bytes,
+    const uint8_t* __restrict__ Y_i_bytes,
+    const uint8_t* __restrict__ rho_i_bytes,
+    const uint8_t* __restrict__ lambda_i_e_bytes,
+    const uint8_t* __restrict__ negate_R,
+    const uint8_t* __restrict__ negate_key,
+    uint8_t*       __restrict__ results,
+    int count)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    results[idx] = frost_verify_partial_device(
+        z_i_bytes        + idx * 32,
+        D_i_bytes        + idx * 33,
+        E_i_bytes        + idx * 33,
+        Y_i_bytes        + idx * 33,
+        rho_i_bytes      + idx * 32,
+        lambda_i_e_bytes + idx * 32,
+        negate_R [idx],
+        negate_key[idx]);
+}
+
+// ============================================================================
+// Batch Jacobian -> Compressed (33-byte SEC1) batch kernel
+// ============================================================================
+__global__ __launch_bounds__(128, 2)
+void batch_jacobian_to_compressed_kernel(
+    const JacobianPoint* __restrict__ points,
+    uint8_t*             __restrict__ out33,
+    int count)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    jacobian_to_compressed_device(&points[idx], out33 + idx * 33);
+}
+#endif // !SECP256K1_CUDA_LIMBS_32
+
 } // namespace cuda
 } // namespace secp256k1

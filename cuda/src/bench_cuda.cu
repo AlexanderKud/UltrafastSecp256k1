@@ -824,6 +824,12 @@ extern __global__ void ecdsa_sign_recoverable_batch_kernel(
     const uint8_t*, const Scalar*, RecoverableSignatureGPU*, bool*, int);
 extern __global__ void ecdsa_recover_batch_kernel(
     const uint8_t*, const ECDSASignatureGPU*, const int*, JacobianPoint*, bool*, int);
+extern __global__ void frost_verify_partial_batch_kernel(
+    const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
+    const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
+    uint8_t*, int);
+extern __global__ void batch_jacobian_to_compressed_kernel(
+    const JacobianPoint*, uint8_t*, int);
 }} // namespace secp256k1::cuda
 
 // Helper: generate test keys and sign messages on GPU for verify benchmarks
@@ -1299,6 +1305,142 @@ BenchResult bench_ecdsa_sign_recoverable(const BenchConfig& cfg) {
 }
 
 // ============================================================================
+// FROST Partial Signature Verification benchmark
+// ============================================================================
+BenchResult bench_frost_verify_partial(const BenchConfig& cfg) {
+    // FROST partial-sig verify: each thread computes
+    //   R_i = D_i + rho_i*E_i,  lhs = z_i*G,  rhs = R_i + lambda_i_e*Y_i
+    //   result = (lhs.x == rhs.x && lhs.y_parity == rhs.y_parity)
+    // D_i, E_i, Y_i are the secp256k1 generator G (valid, decompresses OK).
+    // Scalars z_i, rho_i, lambda_i_e are random — all verifications return 0,
+    // but the kernel executes the full computation path every time.
+    int batch = std::min(cfg.batch_size, 16384);
+    constexpr int kThreads = 128;
+
+    // secp256k1 generator compressed (prefix 0x02, y is even)
+    static const uint8_t kG[33] = {
+        0x02,
+        0x79,0xBE,0x66,0x7E,0xF9,0xDC,0xBB,0xAC,
+        0x55,0xA0,0x62,0x95,0xCE,0x87,0x0B,0x07,
+        0x02,0x9B,0xFC,0xDB,0x2D,0xCE,0x28,0xD9,
+        0x59,0xF2,0x81,0x5B,0x16,0xF8,0x17,0x98
+    };
+
+    std::vector<uint8_t> h_D(batch * 33), h_E(batch * 33), h_Y(batch * 33);
+    std::vector<uint8_t> h_negate_R(batch, 0), h_negate_key(batch, 0);
+    for (int i = 0; i < batch; ++i) {
+        memcpy(h_D.data() + i * 33, kG, 33);
+        memcpy(h_E.data() + i * 33, kG, 33);
+        memcpy(h_Y.data() + i * 33, kG, 33);
+    }
+
+    // Random scalar bytes for z_i, rho_i, lambda_i_e
+    std::vector<Scalar> h_sc(batch * 3);
+    generate_random_scalars(h_sc.data(), batch * 3);
+
+    uint8_t *d_D, *d_E, *d_Y, *d_z, *d_rho, *d_lie, *d_nR, *d_nK, *d_res;
+    Scalar  *d_sc;
+    CUDA_CHECK(cudaMalloc(&d_sc,  batch * 3 * sizeof(Scalar)));
+    CUDA_CHECK(cudaMalloc(&d_D,   batch * 33));
+    CUDA_CHECK(cudaMalloc(&d_E,   batch * 33));
+    CUDA_CHECK(cudaMalloc(&d_Y,   batch * 33));
+    CUDA_CHECK(cudaMalloc(&d_nR,  batch));
+    CUDA_CHECK(cudaMalloc(&d_nK,  batch));
+    CUDA_CHECK(cudaMalloc(&d_res, batch));
+    // Each Scalar is 32 bytes — reuse d_sc as the three 32-byte-per-entry inputs
+    // by casting to uint8_t* and offsetting by batch*32 each.
+    d_z   = reinterpret_cast<uint8_t*>(d_sc);
+    d_rho = d_z   + batch * sizeof(Scalar);
+    d_lie = d_rho + batch * sizeof(Scalar);
+
+    CUDA_CHECK(cudaMemcpy(d_sc, h_sc.data(), batch * 3 * sizeof(Scalar), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_D,  h_D.data(),  batch * 33,                 cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_E,  h_E.data(),  batch * 33,                 cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_Y,  h_Y.data(),  batch * 33,                 cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(d_nR,  0, batch));
+    CUDA_CHECK(cudaMemset(d_nK,  0, batch));
+
+    int blocks = (batch + kThreads - 1) / kThreads;
+
+    for (int i = 0; i < cfg.warmup_iterations; ++i) {
+        frost_verify_partial_batch_kernel<<<blocks, kThreads>>>(
+            d_z, d_D, d_E, d_Y, d_rho, d_lie, d_nR, d_nK, d_res, batch);
+    }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CudaTimer timer;
+    timer.start();
+    for (int i = 0; i < cfg.measure_iterations; ++i) {
+        frost_verify_partial_batch_kernel<<<blocks, kThreads>>>(
+            d_z, d_D, d_E, d_Y, d_rho, d_lie, d_nR, d_nK, d_res, batch);
+    }
+    float total_ms = timer.stop();
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    double avg_ms    = total_ms / cfg.measure_iterations;
+    double throughput = (batch / avg_ms) / 1000.0;
+    double ns_per_op  = (avg_ms * 1e6) / batch;
+
+    CUDA_CHECK(cudaFree(d_sc));
+    CUDA_CHECK(cudaFree(d_D)); CUDA_CHECK(cudaFree(d_E)); CUDA_CHECK(cudaFree(d_Y));
+    CUDA_CHECK(cudaFree(d_nR)); CUDA_CHECK(cudaFree(d_nK)); CUDA_CHECK(cudaFree(d_res));
+
+    return {"FROST Partial Verify", avg_ms, batch, throughput, ns_per_op};
+}
+
+// ============================================================================
+// Batch Jacobian -> Compressed benchmark
+// ============================================================================
+BenchResult bench_batch_to_compressed(const BenchConfig& cfg) {
+    int batch = std::min(cfg.batch_size, 65536);
+    constexpr int kThreads = 128;
+
+    // Generate valid Jacobian points via G*k for random k, then compress them.
+    std::vector<Scalar> h_priv(batch);
+    generate_random_scalars(h_priv.data(), batch);
+
+    JacobianPoint *d_pts;
+    Scalar        *d_priv;
+    uint8_t       *d_out;
+    CUDA_CHECK(cudaMalloc(&d_pts,  batch * sizeof(JacobianPoint)));
+    CUDA_CHECK(cudaMalloc(&d_priv, batch * sizeof(Scalar)));
+    CUDA_CHECK(cudaMalloc(&d_out,  batch * 33));
+
+    CUDA_CHECK(cudaMemcpy(d_priv, h_priv.data(), batch * sizeof(Scalar), cudaMemcpyHostToDevice));
+
+    // Generate valid secp256k1 Jacobian points via G*k
+    int blocks = (batch + kThreads - 1) / kThreads;
+    generator_mul_batch_kernel<<<blocks, kThreads>>>(d_priv, d_pts, batch);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    for (int i = 0; i < cfg.warmup_iterations; ++i) {
+        batch_jacobian_to_compressed_kernel<<<blocks, kThreads>>>(d_pts, d_out, batch);
+    }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CudaTimer timer;
+    timer.start();
+    for (int i = 0; i < cfg.measure_iterations; ++i) {
+        batch_jacobian_to_compressed_kernel<<<blocks, kThreads>>>(d_pts, d_out, batch);
+    }
+    float total_ms = timer.stop();
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    double avg_ms    = total_ms / cfg.measure_iterations;
+    double throughput = (batch / avg_ms) / 1000.0;
+    double ns_per_op  = (avg_ms * 1e6) / batch;
+
+    CUDA_CHECK(cudaFree(d_pts));
+    CUDA_CHECK(cudaFree(d_priv));
+    CUDA_CHECK(cudaFree(d_out));
+
+    return {"Batch J->Compressed", avg_ms, batch, throughput, ns_per_op};
+}
+
+// ============================================================================
 // Print results
 // ============================================================================
 void print_device_info() {
@@ -1462,6 +1604,14 @@ int main(int argc, char** argv) {
     print_result(results.back());
 
     results.push_back(bench_schnorr_verify(cfg));
+    print_result(results.back());
+
+    std::cout << "\n=== FROST Threshold Signatures ===\n";
+    results.push_back(bench_frost_verify_partial(cfg));
+    print_result(results.back());
+
+    std::cout << "\n=== Batch Serialization ===\n";
+    results.push_back(bench_batch_to_compressed(cfg));
     print_result(results.back());
 
     // Print summary table

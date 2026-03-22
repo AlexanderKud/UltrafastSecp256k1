@@ -4042,6 +4042,97 @@ __device__ inline bool point_x_bytes_and_parity(const JacobianPoint* p,
     return true;
 }
 
+// ============================================================================
+// FROST Partial Signature Verification (device helper + batch kernel)
+// ============================================================================
+//
+// Each thread verifies one partial signature:
+//   R_i = D_i + rho_i * E_i
+//   lhs = z_i * G
+//   rhs = R_i + lambda_i_e * Y_i
+//   result = (lhs == rhs)
+//
+// Device helper — called from the __global__ batch kernel in secp256k1.cu.
+__device__ inline uint8_t frost_verify_partial_device(
+    const uint8_t* __restrict__ z_i_bytes,
+    const uint8_t* __restrict__ D_i_bytes,
+    const uint8_t* __restrict__ E_i_bytes,
+    const uint8_t* __restrict__ Y_i_bytes,
+    const uint8_t* __restrict__ rho_i_bytes,
+    const uint8_t* __restrict__ lambda_i_e_bytes,
+    uint8_t negate_R_flag,
+    uint8_t negate_key_flag)
+{
+    // Parse scalars
+    Scalar z_i, rho_i, lambda_i_e;
+    scalar_from_bytes(z_i_bytes,        &z_i);
+    scalar_from_bytes(rho_i_bytes,      &rho_i);
+    scalar_from_bytes(lambda_i_e_bytes, &lambda_i_e);
+
+    // Decompress input points
+    JacobianPoint D_pt, E_pt, Y_pt;
+    bool ok  = point_from_compressed(D_i_bytes, &D_pt);
+    ok      &= point_from_compressed(E_i_bytes, &E_pt);
+    ok      &= point_from_compressed(Y_i_bytes, &Y_pt);
+    if (!ok) return 0;
+
+    // R_i = D_i + rho_i * E_i
+    JacobianPoint rho_E;
+    scalar_mul_glv(&E_pt, &rho_i, &rho_E);
+    JacobianPoint R_i;
+    jacobian_add(&D_pt, &rho_E, &R_i);
+
+    // Optionally negate R_i (even-y convention)
+    if (negate_R_flag) {
+        field_negate(&R_i.y, &R_i.y);
+    }
+
+    // lhs = z_i * G
+    JacobianPoint lhs;
+    scalar_mul(&GENERATOR_JACOBIAN, &z_i, &lhs);
+
+    // Optionally negate Y_i
+    if (negate_key_flag) {
+        field_negate(&Y_pt.y, &Y_pt.y);
+    }
+
+    // rhs = R_i + lambda_i_e * Y_i
+    JacobianPoint lambda_Y;
+    scalar_mul_glv(&Y_pt, &lambda_i_e, &lambda_Y);
+    JacobianPoint rhs;
+    jacobian_add(&R_i, &lambda_Y, &rhs);
+
+    // Compare lhs == rhs via affine x + y-parity
+    uint8_t lhs_xb[32], rhs_xb[32];
+    bool lhs_odd, rhs_odd;
+    if (!point_x_bytes_and_parity(&lhs, lhs_xb, &lhs_odd)) return 0;
+    if (!point_x_bytes_and_parity(&rhs, rhs_xb, &rhs_odd)) return 0;
+
+    if (lhs_odd != rhs_odd) return 0;
+    for (int b = 0; b < 32; ++b)
+        if (lhs_xb[b] != rhs_xb[b]) return 0;
+    return 1;
+}
+
+// ============================================================================
+// Batch Jacobian -> Compressed (device helper)
+// ============================================================================
+// Converts one JacobianPoint to 33-byte SEC1 compressed form at out33.
+// The __global__ batch kernel lives in secp256k1.cu.
+__device__ inline void jacobian_to_compressed_device(
+    const JacobianPoint* __restrict__ p,
+    uint8_t* __restrict__ out33)
+{
+    if (p->infinity) {
+        for (int b = 0; b < 33; ++b) out33[b] = 0;
+        return;
+    }
+    FieldElement ax, ay;
+    jacobian_to_affine(p, &ax, &ay);
+    out33[0] = field_is_odd(&ay) ? 0x03 : 0x02;
+    field_to_bytes(&ax, out33 + 1);
+}
+
 } // namespace cuda
 } // namespace secp256k1
 
