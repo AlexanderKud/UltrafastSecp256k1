@@ -65,7 +65,7 @@ For auditors and security researchers, the following documents are available:
 | Document | Purpose |
 |----------|---------|
 | [AUDIT_GUIDE.md](AUDIT_GUIDE.md) | **Start here** -- Auditor navigation, checklist, reproduction commands |
-| [AUDIT_REPORT.md](AUDIT_REPORT.md) | Internal audit report (v3.9.0 baseline; test suite restructured since -- see below) |
+| [AUDIT_REPORT.md](AUDIT_REPORT.md) | Internal audit report (v3.9.0 baseline; test suite significantly restructured since -- see below) |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Layer-by-layer risk + attack surface analysis |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Technical architecture for auditors |
 | [docs/CT_VERIFICATION.md](docs/CT_VERIFICATION.md) | Constant-time methodology, dudect, known limitations |
@@ -280,4 +280,4 @@ We appreciate responsible disclosure. Contributors who report valid security iss
 
 ---
 
-*UltrafastSecp256k1 v3.17.0 -- Security Policy*
+*UltrafastSecp256k1 v3.3.0 dev (next release: v3.4.0) -- Security Policy*

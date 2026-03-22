@@ -5,9 +5,26 @@ All notable changes to UltrafastSecp256k1 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] (dev branch)
+## [Unreleased] (dev branch — heading to v3.4.0)
 
-> **Development: post-v3.22.0** | Unified Wallet API, multi-chain address formats, message signing
+> **Development:** v3.3.x dev | Unified Wallet API, multi-chain address formats, message signing, CUDA w8 signing performance
+
+### Fixed
+
+- **CUDA `jacobian_add_mixed_unchecked` infinity flag** — missing `r->infinity = false` assignment
+  in the normal (non-infinity-input) code path caused generator table entries `table[3..15]` built
+  by `build_generator_table` to carry uninitialized infinity flags. Scalars with many consecutive
+  high nibbles (e.g. `n-1`, all-`0xF` pattern) heavily hit `table[15]` and produced wrong public
+  keys. All 52/52 CUDA signing tests now pass.
+
+### Changed
+
+- **CUDA signing paths — `scalar_mul_generator_const` → `scalar_mul_generator_w8`** across all
+  signing kernels (`ecdsa.cuh`, `schnorr.cuh`, `bip32.cuh`, `pedersen.cuh`, `zk.cuh`).
+  w=8 uses 32 windows of 8-bit lookups instead of 64 windows of 4-bit lookups (w=4):
+  - ECDSA Sign: **220.9 → 198.3 ns/op** (−10.2%, beats OpenCL 211.3 ns)
+  - Schnorr Sign: equivalent speedup via the same generator multiplication hotspot
+  - `scalar_mul_generator_const` (w=4) retained for audit/benchmark comparisons.
 
 ### Added
 

@@ -1,6 +1,6 @@
 # UltrafastSecp256k1 -- Project Roadmap
 
-> Last updated: 2026-03-04
+> Last updated: 2026-03-22
 > Covers: March 2026 - February 2027
 
 This roadmap describes what the project intends to do -- and explicitly not do -- over the next 12 months. It is organized into four phases.
@@ -25,7 +25,7 @@ This roadmap describes what the project intends to do -- and explicitly not do -
 
 ---
 
-## Phase II: Protocol & Production Hardening (Q3-Q4 2026)
+## Phase II: Protocol & Production Hardening (Q3-Q4 2026) — ACTIVE
 
 **Goal**: Harden advanced protocols, expand fuzzing, prepare for production deployments.
 
@@ -135,7 +135,7 @@ These items are **intentionally out of scope** for the 2026-2027 roadmap:
 | Phase | Status | Key Milestone |
 |-------|--------|---------------|
 | **Phase I** -- Core Assurance | **COMPLETE** | 49+ audit modules, 4-layer CT verification, SafeGCD, 1.2M+ automated checks |
-| **Phase II** -- Protocol Hardening | **In Progress** | MuSig2/FROST tests exist, bindings + SBOM remaining |
+| **Phase II** -- Protocol Hardening | **ACTIVE (Q2 2026)** | CUDA w8 signing complete, infinity flag fixed; MuSig2/FROST tests exist, bindings + SBOM remaining |
 | **Phase III** -- Platform Parity | **Planned (Q4 2026)** | CUDA has ECDSA/Schnorr; OpenCL/Metal/WASM need parity |
 | **Phase IV** -- Bug Bounty & Audit | **Planned (Q1-Q2 2027)** | Bug bounty first, then external audit engagement |
 

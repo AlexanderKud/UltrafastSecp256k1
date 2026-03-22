@@ -45,3 +45,13 @@
 # Bindings (C ABI, Java, Python, etc.)
 /bindings/       @shrec
 /include/ufsecp/ @shrec
+
+# Zero-Knowledge primitives -- security-critical proof layer
+/cpu/src/zk*         @shrec
+/cpu/include/zk*     @shrec
+/cuda/include/zk*    @shrec
+/cuda/include/ct_zk* @shrec
+
+# Benchmarks and performance docs
+/benchmarks/         @shrec
+/docs/BENCHMARK*     @shrec

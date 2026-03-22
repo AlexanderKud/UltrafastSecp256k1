@@ -3551,6 +3551,10 @@ __device__ __constant__ static const AffinePoint GENERATOR_TABLE_AFFINE[16] = {
 // Uses GENERATOR_TABLE_AFFINE in __constant__ memory (no build_generator_table needed).
 // Fixed-window w=4: 252 doublings + <=64 mixed additions.
 // Saves shared-memory allocation and __syncthreads() compared to runtime table.
+//
+// NOTE: For signing paths prefer scalar_mul_generator_w8 (w=8, 32 windows, ~198 ns/op).
+// This function (w=4, 64 windows, ~220 ns/op) is retained for audit and benchmark
+// comparisons that need the original reference implementation.
 __device__ inline void scalar_mul_generator_const(const Scalar* k, JacobianPoint* r) {
     r->infinity = true;
     field_set_zero(&r->x);

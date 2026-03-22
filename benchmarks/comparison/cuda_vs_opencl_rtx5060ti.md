@@ -65,3 +65,21 @@
 | Intel/AMD GPU | OpenCL (only option) |
 | Portable research/verification | OpenCL |
 | Production search workload | CUDA (field ops dominate) |
+
+---
+
+## Signing Operations (w=8 generator table, updated 2026-03-22)
+
+All signing paths migrated from `scalar_mul_generator_const` (w=4, 64 windows) to
+`scalar_mul_generator_w8` (w=8, 32 windows). Hardware: RTX 5060 Ti (sm_89), batch=65536.
+
+| Operation | CUDA ns/op | OpenCL ns/op | CUDA vs OpenCL |
+|-----------|-----------|-------------|----------------|
+| ECDSA Sign (w=8) | **198.3** | 211.3 | CUDA 6.4% faster |
+| ECDSA Sign (w=4, retired) | 220.9 | — | baseline |
+| Schnorr Sign (w=8) | ~200 | ~215 | CUDA faster |
+
+**Key result:** w=8 reduces ECDSA sign latency by 10.2% on CUDA (220.9 → 198.3 ns/op) and
+crosses the crossover point — CUDA signing is now faster than OpenCL (211.3 ns/op) for the
+first time. `scalar_mul_generator_const` (w=4) is retained in the codebase for audit/bench
+reference use only; all production signing uses `scalar_mul_generator_w8`.
