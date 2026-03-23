@@ -1703,6 +1703,7 @@ ufsecp_error_t ufsecp_segwit_parse_program(
         *program_len_out = 0;
         return UFSECP_ERR_BAD_INPUT;
     }
+    if (wp.program.size() > 40) return UFSECP_ERR_INTERNAL;   /* BIP-141 cap */
     *version_out = wp.version;
     *program_len_out = wp.program.size();
     std::memcpy(program_out, wp.program.data(), wp.program.size());

@@ -149,6 +149,8 @@ ufsecp_error_t ufsecp_gpu_generator_mul_batch(
     uint8_t* out_pubkeys33)
 {
     if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!scalars32 || !out_pubkeys33) return UFSECP_ERR_NULL_ARG;
     return to_abi_error(
         ctx->backend->generator_mul_batch(scalars32, count, out_pubkeys33));
 }
@@ -162,6 +164,9 @@ ufsecp_error_t ufsecp_gpu_ecdsa_verify_batch(
     uint8_t* out_results)
 {
     if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!msg_hashes32 || !pubkeys33 || !sigs64 || !out_results)
+        return UFSECP_ERR_NULL_ARG;
     return to_abi_error(
         ctx->backend->ecdsa_verify_batch(
             msg_hashes32, pubkeys33, sigs64, count, out_results));
@@ -176,6 +181,9 @@ ufsecp_error_t ufsecp_gpu_schnorr_verify_batch(
     uint8_t* out_results)
 {
     if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!msg_hashes32 || !pubkeys_x32 || !sigs64 || !out_results)
+        return UFSECP_ERR_NULL_ARG;
     return to_abi_error(
         ctx->backend->schnorr_verify_batch(
             msg_hashes32, pubkeys_x32, sigs64, count, out_results));
@@ -189,6 +197,9 @@ ufsecp_error_t ufsecp_gpu_ecdh_batch(
     uint8_t* out_secrets32)
 {
     if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!privkeys32 || !peer_pubkeys33 || !out_secrets32)
+        return UFSECP_ERR_NULL_ARG;
     return to_abi_error(
         ctx->backend->ecdh_batch(
             privkeys32, peer_pubkeys33, count, out_secrets32));
@@ -201,6 +212,8 @@ ufsecp_error_t ufsecp_gpu_hash160_pubkey_batch(
     uint8_t* out_hash160)
 {
     if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!pubkeys33 || !out_hash160) return UFSECP_ERR_NULL_ARG;
     return to_abi_error(
         ctx->backend->hash160_pubkey_batch(pubkeys33, count, out_hash160));
 }
@@ -213,6 +226,8 @@ ufsecp_error_t ufsecp_gpu_msm(
     uint8_t* out_result33)
 {
     if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (n == 0) return UFSECP_OK;
+    if (!scalars32 || !points33 || !out_result33) return UFSECP_ERR_NULL_ARG;
     return to_abi_error(
         ctx->backend->msm(scalars32, points33, n, out_result33));
 }
@@ -231,6 +246,10 @@ ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
     uint8_t* out_results)
 {
     if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!z_i32 || !D_i33 || !E_i33 || !Y_i33 || !rho_i32 ||
+        !lambda_ie32 || !negate_R || !negate_key || !out_results)
+        return UFSECP_ERR_NULL_ARG;
     return to_abi_error(
         ctx->backend->frost_verify_partial_batch(
             z_i32, D_i33, E_i33, Y_i33, rho_i32, lambda_ie32,
@@ -247,6 +266,9 @@ ufsecp_error_t ufsecp_gpu_ecrecover_batch(
     uint8_t* out_valid)
 {
     if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!msg_hashes32 || !sigs64 || !recids || !out_pubkeys33 || !out_valid)
+        return UFSECP_ERR_NULL_ARG;
     return to_abi_error(
         ctx->backend->ecrecover_batch(
             msg_hashes32, sigs64, recids, count, out_pubkeys33, out_valid));
