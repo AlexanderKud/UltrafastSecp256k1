@@ -35,7 +35,7 @@ afterAll(async () => {
 });
 
 test('ctx_create_abi', async () => {
-  const abi = ctx.abiVersion;
+  const abi = await UfsecpContext.abiVersion();
   expect(abi).toBeGreaterThanOrEqual(1);
 });
 
@@ -72,11 +72,11 @@ test('schnorr_sign_verify', async () => {
 });
 
 test('ecdsa_recover', async () => {
-  const { signature, recid } = await ctx.ecdsaSignRecoverable(MSG32, KNOWN_PRIVKEY);
-  expect(recid).toBeGreaterThanOrEqual(0);
-  expect(recid).toBeLessThanOrEqual(3);
+  const { signature, recoveryId } = await ctx.ecdsaSignRecoverable(MSG32, KNOWN_PRIVKEY);
+  expect(recoveryId).toBeGreaterThanOrEqual(0);
+  expect(recoveryId).toBeLessThanOrEqual(3);
 
-  const pub = await ctx.ecdsaRecover(MSG32, signature, recid);
+  const pub = await ctx.ecdsaRecover(MSG32, signature, recoveryId);
   expect(pub.toLowerCase()).toBe(KNOWN_PUBKEY);
 });
 

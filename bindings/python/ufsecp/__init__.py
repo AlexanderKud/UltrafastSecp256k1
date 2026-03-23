@@ -160,9 +160,16 @@ class Ufsecp:
             pub = ctx.pubkey_create(privkey)
     """
 
+    EXPECTED_ABI = 1
+
     def __init__(self, lib_path: Optional[str] = None):
         self._lib = ctypes.CDLL(lib_path or _find_library())
         self._bind()
+        abi = self._lib.ufsecp_abi_version()
+        if abi != self.EXPECTED_ABI:
+            raise RuntimeError(
+                f"ABI mismatch: wrapper expects ABI {self.EXPECTED_ABI}, lib reports ABI {abi}."
+            )
         ctx = c_void_p()
         rc = self._lib.ufsecp_ctx_create(byref(ctx))
         if rc != _OK:

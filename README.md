@@ -42,7 +42,7 @@ All measurements: RTX 5060 Ti (SM 12.0, CUDA 12), batch=16 384, kernel-only thro
 
 > **Why this library, in depth?** See [WHY_ULTRAFASTSECP256K1.md](WHY_ULTRAFASTSECP256K1.md) for a full breakdown of the audit culture, 23-workflow CI/CD pipeline, formal verification layers, and supply-chain hardening that back these claims.
 
-**Quick links:** [Discord](https://discord.gg/sUmW7cc5) * [Benchmarks](docs/BENCHMARKS.md) * [Build Guide](docs/BUILDING.md) * [API Reference](docs/API_REFERENCE.md) * [Security Policy](SECURITY.md) * [Threat Model](THREAT_MODEL.md) * [**Why This Library?**](WHY_ULTRAFASTSECP256K1.md) * [Porting Guide](PORTING.md) * [**Sponsor**](https://github.com/sponsors/shrec)
+**Quick links:** [Discord](https://discord.gg/sUmW7cc5) * [Benchmarks](docs/BENCHMARKS.md) * [Build Guide](docs/BUILDING.md) * [API Reference](docs/API_REFERENCE.md) * [Binding Usage Standard](docs/BINDINGS_USAGE_STANDARD.md) * [Security Policy](SECURITY.md) * [Threat Model](THREAT_MODEL.md) * [**Why This Library?**](WHY_ULTRAFASTSECP256K1.md) * [Porting Guide](PORTING.md) * [**Sponsor**](https://github.com/sponsors/shrec)
 
 ---
 
@@ -104,10 +104,10 @@ All measurements: RTX 5060 Ti (SM 12.0, CUDA 12), batch=16 384, kernel-only thro
 
 - **BIP-352 GPU pipeline at 11.00 M/s** -- full silent payment scanning pipeline on CUDA (91.0 ns/op), 267× faster than CPU
 - **GPU-accelerated secp256k1** -- ECDSA + Schnorr sign/verify on CUDA; ECDSA + Schnorr verify + core ECC on OpenCL; Metal experimental
-- **GPU C ABI (`ufsecp_gpu`)** -- stable FFI for GPU batch ops across CUDA, OpenCL, and Metal (8 ops total; CUDA 8/8, OpenCL 7/8, Metal 7/8 with documented temporary `ecrecover_batch` stubs)
+- **GPU C ABI (`ufsecp_gpu`)** -- stable FFI for GPU batch ops across CUDA, OpenCL, and Metal (8 ops total; CUDA/OpenCL/Metal all 8/8 implemented)
 - **Zero-Knowledge cryptographic layer** -- Pedersen commitments, DLEQ proofs, Bulletproof range proofs, Ethereum-compatible Keccak-256
 - **17–67× faster batch operations** -- all-affine Pippenger with touched-bucket optimization
-- **Multi-language bindings** -- Python, Node.js, Rust, Go, C#, Java, Swift, PHP, Ruby, Dart
+- **Multi-language bindings** -- Python, Node.js, Rust, Go, C#, Java, Swift, PHP, Ruby, Dart, React Native
 - **Embedded device support** -- ESP32-S3, ESP32-P4, ESP32-C6, STM32 Cortex-M
 - **Zero-dependency C++20 core** -- no Boost, no OpenSSL, compiles anywhere
 - **Massively parallel workloads** -- batch signatures, key scanning, address generation at GPU scale
@@ -176,9 +176,10 @@ All measurements: RTX 5060 Ti (SM 12.0, CUDA 12), batch=16 384, kernel-only thro
 | [docs/BACKEND_ASSURANCE_MATRIX.md](docs/BACKEND_ASSURANCE_MATRIX.md) | Per-backend assurance matrix |
 | [docs/AUDIT_TRACEABILITY.md](docs/AUDIT_TRACEABILITY.md) | Requirement-to-test traceability map |
 
-> **Note:** UltrafastSecp256k1 has not yet undergone an independent third-party cryptographic audit.
-> The self-audit system above is rigorous internal QA — not a substitute for external review.
-> See [Seeking Sponsors](#seeking-sponsors----audit-bug-bounty--development) to support a formal audit.
+> **Note:** UltrafastSecp256k1 has not yet undergone a paid third-party cryptographic audit.
+> The primary assurance model here is open self-audit: reproducible tests, traceability, CI enforcement, and public review artifacts that anyone can rerun.
+> We are open to external audit and actively preparing the codebase and evidence for outside review, but we do not wait for a formal engagement before strengthening the library ourselves.
+> Our philosophy is to keep hardening the system continuously through internal audit on every build and every commit.
 
 ---
 
@@ -257,24 +258,16 @@ For the full audit infrastructure breakdown (1M+ assertions, 23 CI/CD workflows,
 
 ---
 
-## Seeking Sponsors -- Audit, Bug Bounty & Development
+## Seeking Sponsors -- Bug Bounty & Development
 
-> **We are actively seeking sponsors and funding partners** to take UltrafastSecp256k1 from research-grade to production-ready.
+> **We are actively seeking sponsors and funding partners** to expand continuous verification, bug bounty coverage, and long-term maintenance.
 
 [![Sponsor](https://img.shields.io/badge/Sponsor_This_Project-GitHub_Sponsors-ea4aaa.svg?style=for-the-badge&logo=github)](https://github.com/sponsors/shrec)
 [![Donate with Bitcoin Lightning](https://img.shields.io/badge/Lightning_Sats-shrec@stacker.news-F7931A?style=for-the-badge&logo=bitcoin)](https://stacker.news/shrec)
 
-UltrafastSecp256k1 is a **high-performance, zero-dependency secp256k1 library** with GPU acceleration, constant-time side-channel protection, and 12+ platform targets. To reach production maturity, we need:
+UltrafastSecp256k1 is a **high-performance, zero-dependency secp256k1 library** with GPU acceleration, constant-time side-channel protection, and 12+ platform targets. The funding priorities are:
 
-### 1. Independent Cryptographic Audit
-
-The #1 priority. A professional third-party audit of the core cryptographic layers (field arithmetic, scalar operations, point operations, ECDSA, Schnorr BIP-340, constant-time layer) is essential before any production deployment. We are looking for:
-
-- **Audit firms** willing to perform a full review (NCC Group, Trail of Bits, Cure53, Least Authority, etc.)
-- **Grants** from blockchain foundations (Bitcoin, Ethereum, Zcash, etc.) to fund the audit
-- **Corporate sponsors** who use secp256k1 in their products and want a second high-quality audited implementation
-
-### 2. Bug Bounty Program
+### 1. Bug Bounty Program
 
 We want to establish a **funded bug bounty program** to incentivize security researchers:
 
@@ -282,6 +275,15 @@ We want to establish a **funded bug bounty program** to incentivize security res
 - Correctness bugs (arithmetic errors, edge cases) -- medium bounty tier
 - Memory safety / undefined behavior -- standard bounty tier
 - All GPU backends (CUDA, OpenCL, Metal, ROCm) covered
+
+### 2. Open Audit Infrastructure
+
+We want to make outside review easier without turning assurance into a bureaucratic checkbox:
+
+- One-command replay packs for self-audit, differential tests, and platform validation
+- Public artifact bundles for benchmark and audit reruns
+- More native-device automation for ARM64 and RISC-V
+- More adversarial and concurrency stress harnesses that outside reviewers can reuse
 
 Currently we accept vulnerability reports via [GitHub Security Advisories](https://github.com/shrec/UltrafastSecp256k1/security/advisories/new) but **cannot offer financial rewards without sponsor funding**.
 
@@ -820,7 +822,7 @@ Production GPU apps use a memory-efficient variant: instead of storing full Z co
 
 ## secp256k1 Stable C ABI (`ufsecp`) -- FFI Bindings
 
-Starting with **v3.4.0**, UltrafastSecp256k1 ships a stable C ABI -- `ufsecp` -- designed for FFI bindings (C#, Python, Rust, Go, Java, Node.js, etc.):
+Starting with **v3.4.0**, UltrafastSecp256k1 ships a stable C ABI -- `ufsecp` -- designed for FFI bindings (C#, Python, Rust, Go, Java, Node.js, Dart, React Native, PHP, Ruby, etc.):
 
 ```
 +--------------------------------------------------+
@@ -968,6 +970,33 @@ cmake --build build -j
 ```
 
 Universal XCFramework (arm64 device + arm64 simulator). Also available via **Swift Package Manager** and **CocoaPods**.
+
+### Local ARM64 / RISC-V QEMU Smoke
+
+```bash
+# ARM64 cross-build + QEMU smoke
+bash ./scripts/run-qemu-smoke.sh arm64
+
+# RISC-V cross-build + QEMU smoke
+bash ./scripts/run-qemu-smoke.sh riscv64
+
+# Both architectures
+bash ./scripts/run-qemu-smoke.sh all
+```
+
+This local helper runs the same cross-arch smoke surface now used in CI:
+`run_selftest smoke`, `test_bip324_standalone`, `bench_kP`, and `bench_bip324`.
+Install the corresponding cross toolchain, libc sysroot, `qemu-user-static`, and `ninja-build` first.
+
+If you prefer the existing local CI entry point, the same coverage is also available as:
+
+```bash
+bash ./scripts/local-ci.sh --job qemu-smoke
+
+# Optional: limit to one architecture
+SECP256K1_QEMU_SMOKE_TARGET=arm64 bash ./scripts/local-ci.sh --job qemu-smoke
+SECP256K1_QEMU_SMOKE_TARGET=riscv64 bash ./scripts/local-ci.sh --job qemu-smoke
+```
 
 ### Build Options
 
@@ -1369,7 +1398,7 @@ cosign verify-blob SHA256SUMS \
 > All functions in `ct::` namespace are constant-time: field arithmetic, scalar arithmetic, point multiplication, complete addition, signing, and ECDH. The C ABI uses CT internally for all secret-key operations. See [CT Evidence](#ct-evidence--methodology) above.
 
 **Which parts are production-safe today?**
-> This library has **not been independently audited**. Tier 1 features (core ECC, ECDSA, Schnorr, ECDH, stable C ABI) are extensively tested, fuzzed, regression-gated, and run through sanitizer-backed CI. Teams can evaluate it today with a strong self-audit trail, but high-value production deployments should still prefer independently audited cryptographic libraries until external review is completed.
+> This library has **not undergone a paid external audit**. Tier 1 features (core ECC, ECDSA, Schnorr, ECDH, stable C ABI) are extensively tested, fuzzed, regression-gated, and run through sanitizer-backed CI. Teams can evaluate it today with a strong self-audit trail and reproducible audit evidence, then make their own deployment decision based on their risk model and review standards.
 
 **How do I reproduce the benchmarks?**
 > See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) for exact commands, pinned compiler/driver versions, and raw logs. The [live dashboard](https://shrec.github.io/UltrafastSecp256k1/dev/bench/) tracks performance across commits.
@@ -1465,7 +1494,7 @@ Extra gratitude to [@0xbitcoiner](https://stacker.news/0xbitcoiner) for the init
 
 If you find **UltrafastSecp256k1** useful, consider supporting its development!
 
-> **We are actively seeking sponsors for an independent cryptographic audit, a funded bug bounty program, and ongoing development.**
+> **We are actively seeking sponsors for a funded bug bounty program, stronger open audit infrastructure, and ongoing development.**
 > See the [Seeking Sponsors](#seeking-sponsors----audit-bug-bounty--development) section above for details.
 
 [![Sponsor](https://img.shields.io/badge/Sponsor_This_Project-GitHub_Sponsors-ea4aaa.svg?style=for-the-badge&logo=github)](https://github.com/sponsors/shrec)
@@ -1481,7 +1510,7 @@ If you find **UltrafastSecp256k1** useful, consider supporting its development!
 
 ### What Your Sponsorship Funds
 
-- **Audit** -- Independent third-party cryptographic review by a professional security firm
+- **Open Audit Infrastructure** -- reproducible audit packs, more validation automation, and reviewer-ready evidence bundles
 - **Bug Bounty** -- Financial rewards for security researchers who find vulnerabilities
 - **Development** -- GPU acceleration, ZK proofs, formal verification, embedded platform support
 - **Infrastructure** -- CI/CD, cross-platform testing, fuzzing, performance regression gates

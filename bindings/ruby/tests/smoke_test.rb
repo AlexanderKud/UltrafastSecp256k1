@@ -93,12 +93,12 @@ check('sha256_golden') do
 end
 
 check('addr_p2wpkh') do
-  addr = ctx.addr_p2wpkh(KNOWN_PUBKEY, 0)
+  addr = ctx.addr_p2wpkh(KNOWN_PUBKEY, network: 0)
   assert_true(addr.start_with?('bc1q'), "Expected bc1q..., got #{addr}")
 end
 
 check('wif_roundtrip') do
-  wif = ctx.wif_encode(KNOWN_PRIVKEY, true, 0)
+  wif = ctx.wif_encode(KNOWN_PRIVKEY, compressed: true, network: 0)
   decoded = ctx.wif_decode(wif)
   assert_eq(decoded[:privkey], KNOWN_PRIVKEY, 'WIF privkey')
   assert_true(decoded[:compressed], 'WIF compressed')

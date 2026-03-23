@@ -2664,19 +2664,13 @@ Point Point::scalar_mul_with_plan(const KPlan& plan) const {
     // Embedded: fallback to regular scalar_mul using stored k1
     return scalar_mul(plan.k1);  // scalar_mul already normalizes
 #elif defined(SECP256K1_FAST_52BIT)
-    // FE52 fast path: effective-affine + batch inversion + mixed adds (7M+4S)
-    {
-        Point r = scalar_mul_with_plan_glv52(*this, plan);
-        r.normalize();
-        return r;
-    }
+    // FE52 fast path: keep the Jacobian result lazy-affine.
+    // Most callers compare points or continue arithmetic and do not require
+    // eager normalization; serialization/x()/y() already normalize on demand.
+    return scalar_mul_with_plan_glv52(*this, plan);
 #else
-    // Legacy 4x64 path: full Jacobian adds (12M+5S)
-    {
-        Point r = scalar_mul_precomputed_wnaf(plan.wnaf1, plan.wnaf2, plan.neg1, plan.neg2);
-        r.normalize();
-        return r;
-    }
+    // Legacy 4x64 path: keep the Jacobian result lazy-affine here too.
+    return scalar_mul_precomputed_wnaf(plan.wnaf1, plan.wnaf2, plan.neg1, plan.neg2);
 #endif
 }
 

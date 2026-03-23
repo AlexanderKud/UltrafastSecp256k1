@@ -571,8 +571,10 @@ void aead_chacha20_poly1305_encrypt(
     chacha20_block(key, nonce, 0, poly_key);
 
     // 2. Encrypt plaintext (counter starts at 1)
-    if (out != plaintext) std::memcpy(out, plaintext, plaintext_len);
-    chacha20_crypt(key, nonce, 1, out, plaintext_len);
+    if (plaintext_len > 0) {
+        if (out != plaintext) std::memcpy(out, plaintext, plaintext_len);
+        chacha20_crypt(key, nonce, 1, out, plaintext_len);
+    }
 
     // 3. Compute Poly1305 tag over (AAD || pad || ciphertext || pad || lengths)
     Poly1305State st;
@@ -608,14 +610,18 @@ bool aead_chacha20_poly1305_decrypt(
 
     if (!poly1305_verify(computed_tag, tag)) {
         detail::secure_erase(computed_tag, sizeof(computed_tag));
-        std::memset(out, 0, ciphertext_len);
+        if (ciphertext_len > 0) {
+            std::memset(out, 0, ciphertext_len);
+        }
         return false;
     }
     detail::secure_erase(computed_tag, sizeof(computed_tag));
 
     // 3. Decrypt (counter starts at 1)
-    if (out != ciphertext) std::memcpy(out, ciphertext, ciphertext_len);
-    chacha20_crypt(key, nonce, 1, out, ciphertext_len);
+    if (ciphertext_len > 0) {
+        if (out != ciphertext) std::memcpy(out, ciphertext, ciphertext_len);
+        chacha20_crypt(key, nonce, 1, out, ciphertext_len);
+    }
 
     return true;
 }

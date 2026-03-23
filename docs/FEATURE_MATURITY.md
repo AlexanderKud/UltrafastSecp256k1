@@ -133,7 +133,7 @@ Each feature is rated by: implementation status, threat model coverage, test vec
 | Batch verify (ECDSA/Schnorr) | Y | - | - | - | CUDA only | N/A (public) | Experimental |
 | ECDH/Hash160/MSM batch | Y | - | - | - | Partial | ECDH secret-bearing | Experimental |
 | FROST partial verify GPU ABI | Y | Malformed commitments, unsupported backend | Protocol vectors + backend probing | - | Y (all 3) | N/A (public) | Production |
-| ecrecover_batch GPU ABI | Y | Invalid recid, malformed compact sig, unsupported backend | Backend probing | - | CUDA; OpenCL/Metal temporary stub | N/A (public) | Experimental |
+| ecrecover_batch GPU ABI | Y | Invalid recid, malformed compact sig | Backend probing + GPU/CPU equivalence | - | CUDA/OpenCL/Metal | N/A (public) | Experimental |
 
 ---
 

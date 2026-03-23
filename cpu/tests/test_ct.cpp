@@ -60,6 +60,13 @@ static bool pt_eq_affine(const PT& a, const PT& b) {
     return ax == bx && ay == by;
 }
 
+static bool bytes_all_zero(const std::array<uint8_t, 32>& bytes) {
+    for (uint8_t byte : bytes) {
+        if (byte != 0) return false;
+    }
+    return true;
+}
+
 #define CHECK(cond, msg)                                        \
     do {                                                        \
         if (cond) {                                             \
@@ -541,6 +548,49 @@ static void test_ct_schnorr_pubkey() {
 // --- CT PrivateKey Overload Tests --------------------------------------------
 // Exercise the inline PrivateKey overloads in ct/sign.hpp so they are covered.
 
+static void test_privatekey_invalid_parse_zeroes_output() {
+    secp256k1::PrivateKey pk = secp256k1::PrivateKey::wrap(SC::from_uint64(7));
+    std::array<uint8_t, 32> zero{};
+
+    CHECK(!secp256k1::PrivateKey::from_bytes(zero, pk),
+        "PrivateKey::from_bytes(zero) rejects invalid key");
+    CHECK(!pk.is_valid(),
+        "PrivateKey invalid parse leaves output invalid");
+    CHECK(bytes_all_zero(pk.to_bytes()),
+        "PrivateKey invalid parse leaves output zeroed");
+}
+
+static void test_privatekey_copy_move_semantics() {
+    std::array<uint8_t, 32> raw{};
+    raw[31] = 0x05;
+
+    secp256k1::PrivateKey original;
+    CHECK(secp256k1::PrivateKey::from_bytes(raw, original),
+        "PrivateKey::from_bytes(5) succeeds");
+
+    secp256k1::PrivateKey copy(original);
+    CHECK(copy == original,
+        "PrivateKey copy constructor preserves key bytes");
+
+    secp256k1::PrivateKey moved(std::move(copy));
+    CHECK(moved.is_valid(),
+        "PrivateKey move constructor preserves destination validity");
+    CHECK(!copy.is_valid() && bytes_all_zero(copy.to_bytes()),
+        "PrivateKey move constructor zeroes source");
+
+    secp256k1::PrivateKey assigned = secp256k1::PrivateKey::wrap(SC::from_uint64(9));
+    assigned = original;
+    CHECK(assigned == original,
+        "PrivateKey copy assignment preserves key bytes");
+
+    secp256k1::PrivateKey move_assigned = secp256k1::PrivateKey::wrap(SC::from_uint64(11));
+    move_assigned = std::move(assigned);
+    CHECK(move_assigned.is_valid(),
+        "PrivateKey move assignment preserves destination validity");
+    CHECK(!assigned.is_valid() && bytes_all_zero(assigned.to_bytes()),
+        "PrivateKey move assignment zeroes source");
+}
+
 static void test_ct_privatekey_ecdsa() {
     // Create a PrivateKey via from_bytes (key = 1)
     std::array<uint8_t, 32> raw{};
@@ -694,6 +744,8 @@ int test_ct_run() {
 
     // CT PrivateKey overloads
     std::cout << "--- CT PrivateKey Overloads ---\n";
+    test_privatekey_invalid_parse_zeroes_output();
+    test_privatekey_copy_move_semantics();
     test_ct_privatekey_ecdsa();
     test_ct_privatekey_ecdsa_hedged();
     test_ct_privatekey_schnorr();

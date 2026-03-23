@@ -481,7 +481,7 @@ inline void field_negate_impl(FieldElement* r, const FieldElement* a) {
 // Uses full lattice-based decomposition with Babai rounding.
 
 // (a * b) >> 384 with rounding (bit 383)
-inline void mul_shift_384_impl(const ulong a[4], __constant const ulong b[4], ulong result[4]) {
+inline void glv_mul_shift_384_impl(const ulong a[4], __constant const ulong b[4], ulong result[4]) {
     ulong prod[8] = {0,0,0,0,0,0,0,0};
     for (int i = 0; i < 4; i++) {
         ulong carry = 0;
@@ -507,8 +507,8 @@ inline void glv_decompose_impl(const Scalar* k, Scalar* k1, Scalar* k2,
                                  int* k1_neg, int* k2_neg) {
     // c1 = round(k * g1 / 2^384), c2 = round(k * g2 / 2^384)
     ulong c1_limbs[4], c2_limbs[4];
-    mul_shift_384_impl(k->limbs, GLV_G1, c1_limbs);
-    mul_shift_384_impl(k->limbs, GLV_G2, c2_limbs);
+    glv_mul_shift_384_impl(k->limbs, GLV_G1, c1_limbs);
+    glv_mul_shift_384_impl(k->limbs, GLV_G2, c2_limbs);
 
     Scalar c1, c2;
     for (int i = 0; i < 4; i++) { c1.limbs[i] = c1_limbs[i]; c2.limbs[i] = c2_limbs[i]; }
@@ -1837,6 +1837,38 @@ __kernel void ecdsa_verify(
     JacobianPoint pub = pubkeys[gid];
     ECDSASignature sig = signatures[gid];
     results[gid] = ecdsa_verify_impl(msg, &pub, &sig);
+}
+
+__kernel void ecrecover_batch(
+    __global const uchar* msg_hashes,
+    __global const ECDSASignature* signatures,
+    __global const int* recids,
+    __global JacobianPoint* pubkeys,
+    __global int* results,
+    const uint count
+) {
+    uint gid = get_global_id(0);
+    if (gid >= count) return;
+
+    uchar msg[32];
+    for (int i = 0; i < 32; ++i) msg[i] = msg_hashes[gid * 32 + i];
+
+    ECDSASignature sig = signatures[gid];
+    JacobianPoint recovered;
+    int ok = ecdsa_recover_impl(msg, &sig, recids[gid], &recovered);
+    results[gid] = ok;
+    if (ok) {
+        pubkeys[gid] = recovered;
+    } else {
+        pubkeys[gid].x.limbs[0] = 0; pubkeys[gid].x.limbs[1] = 0;
+        pubkeys[gid].x.limbs[2] = 0; pubkeys[gid].x.limbs[3] = 0;
+        pubkeys[gid].y.limbs[0] = 1; pubkeys[gid].y.limbs[1] = 0;
+        pubkeys[gid].y.limbs[2] = 0; pubkeys[gid].y.limbs[3] = 0;
+        pubkeys[gid].z.limbs[0] = 0; pubkeys[gid].z.limbs[1] = 0;
+        pubkeys[gid].z.limbs[2] = 0; pubkeys[gid].z.limbs[3] = 0;
+        pubkeys[gid].infinity = 1;
+        for (int i = 0; i < 7; ++i) pubkeys[gid].pad[i] = 0;
+    }
 }
 
 __kernel void schnorr_sign(

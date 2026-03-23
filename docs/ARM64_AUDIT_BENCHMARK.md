@@ -17,6 +17,11 @@ ARM64 (AArch64) architecture is **fully audited** and **production-ready** with 
 
 All 48/49 audit modules pass on ARM64 platforms. Benchmark results demonstrate competitive performance with optimized field arithmetic (10×26 limb representation).
 
+Update (2026-03-22): the connected RK3588 Android device was re-tested over USB
+with fresh on-device binaries for `android_test`, `bench_hornet`, `bench_kP`, and
+`bench_bip324`. This supplements the original Hornet campaign with direct BIP-352
+and BIP-324 measurements.
+
 ---
 
 ## 📊 Audit Coverage
@@ -25,7 +30,7 @@ All 48/49 audit modules pass on ARM64 platforms. Benchmark results demonstrate c
 
 | Platform | Arch | Compiler | Modules Passed | Audit Status | Notes |
 |----------|------|----------|----------------|--------------|-------|
-| **Android ARM64** | Cortex-A55 (ARMv8-A) | Clang 18.0.1 (NDK r27) | 48/49 | ✅ AUDIT-READY | Real hardware (YF_022A device) |
+| **Android ARM64** | Cortex-A55 / RK3588 class (ARMv8-A) | Clang 18.x (NDK r27) | 48/49 | ✅ AUDIT-READY | Real hardware (`YF_022A` USB device) |
 | **Apple Silicon** | M1/M2/M3 (ARMv8.5-A+) | AppleClang 15+ | 48/49 | ✅ AUDIT-READY | Native dudect CT verification |
 | **Linux ARM64** | aarch64 (generic) | GCC 13.3.0 | Build-only | ✅ CROSS-COMPILE | Ubuntu aarch64-linux-gnu |
 
@@ -57,7 +62,7 @@ All 48/49 audit modules pass on ARM64 platforms. Benchmark results demonstrate c
 - ✅ Tests: All 31 test targets compile successfully
 - ✅ Benchmarks: `bench_comprehensive`, `bench_hornet`
 
-**Status:** Build-only verification (no QEMU runtime execution in CI to avoid emulation overhead).
+**Status:** Build-only verification in CI; native Android hardware rerun completed manually on 2026-03-22.
 
 ---
 
@@ -111,6 +116,22 @@ All 48/49 audit modules pass on ARM64 platforms. Benchmark results demonstrate c
 | **scalar_add** (mod n) | 8.9 | 112.04 M op/s |
 
 **Reference File:** `audit/platform-reports/android-arm64-clang18-bench-hornet.txt`
+
+#### 2026-03-22 USB Device Rerun (RK3588 `YF_022A`)
+
+| Measurement | Result |
+|-------------|--------|
+| `android_test`: fast scalar_mul (k*P) | 57.67 us |
+| `android_test`: ct::scalar_mul (k*P) | 150.26 us |
+| `bench_kP`: scalar_mul(K) | 130.90 us |
+| `bench_kP`: scalar_mul_with_plan(K) | 127.24 us |
+| `bench_bip324`: full_handshake (both sides) | 727.24 us |
+| `bench_bip324`: session_encrypt 1024 B | 5.96 us, 163.9 MB/s |
+| `bench_bip324`: session_roundtrip 1024 B | 12.05 us, 81.0 MB/s |
+
+The March 22 rerun also validated that the added Android targets `bench_kP` and
+`bench_bip324` can be deployed directly via `adb push` + `adb shell` on the same
+hardware path used for `android_test` and `bench_hornet`.
 
 ---
 

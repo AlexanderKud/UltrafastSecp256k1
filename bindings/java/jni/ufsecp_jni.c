@@ -8,6 +8,13 @@
 #include <string.h>
 #include "ufsecp.h"
 
+static void secure_zero(void *ptr, size_t len) {
+    volatile uint8_t *p = (volatile uint8_t*)ptr;
+    while (len--) {
+        *p++ = 0;
+    }
+}
+
 /* Helper: throw Java exception on non-zero return code. Returns 0 on success. */
 static int throw_on_err(JNIEnv *env, int rc, const char *op) {
     if (rc == 0) return 0;
@@ -184,7 +191,7 @@ JNIEXPORT jstring JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeAddrP2pkh(
     JNIEnv *env, jclass clz, jlong ctx, jbyteArray pubkey, jint network) {
     (void)clz;
     jbyte *pk = pin(env, pubkey);
-    uint8_t addr[128];
+    char addr[128];
     size_t alen = 128;
     int rc = ufsecp_addr_p2pkh((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)pk, (int)network, addr, &alen);
     unpin(env, pubkey, pk);
@@ -197,7 +204,7 @@ JNIEXPORT jstring JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeAddrP2wpkh(
     JNIEnv *env, jclass clz, jlong ctx, jbyteArray pubkey, jint network) {
     (void)clz;
     jbyte *pk = pin(env, pubkey);
-    uint8_t addr[128];
+    char addr[128];
     size_t alen = 128;
     int rc = ufsecp_addr_p2wpkh((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)pk, (int)network, addr, &alen);
     unpin(env, pubkey, pk);
@@ -210,7 +217,7 @@ JNIEXPORT jstring JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeAddrP2tr(
     JNIEnv *env, jclass clz, jlong ctx, jbyteArray xonly, jint network) {
     (void)clz;
     jbyte *pk = pin(env, xonly);
-    uint8_t addr[128];
+    char addr[128];
     size_t alen = 128;
     int rc = ufsecp_addr_p2tr((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)pk, (int)network, addr, &alen);
     unpin(env, xonly, pk);
@@ -225,14 +232,19 @@ JNIEXPORT jstring JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeWifEncode(
     JNIEnv *env, jclass clz, jlong ctx, jbyteArray privkey, jboolean compressed, jint network) {
     (void)clz;
     jbyte *pk = pin(env, privkey);
-    uint8_t wif[128];
+    char wif[128];
     size_t wlen = 128;
     int rc = ufsecp_wif_encode((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)pk,
                                compressed ? 1 : 0, (int)network, wif, &wlen);
     unpin(env, privkey, pk);
-    if (throw_on_err(env, rc, "wif_encode")) return NULL;
+    if (throw_on_err(env, rc, "wif_encode")) {
+        secure_zero(wif, sizeof(wif));
+        return NULL;
+    }
     wif[wlen] = '\0';
-    return (*env)->NewStringUTF(env, (const char*)wif);
+    jstring out = (*env)->NewStringUTF(env, (const char*)wif);
+    secure_zero(wif, sizeof(wif));
+    return out;
 }
 
 /* ── BIP-32 ──────────────────────────────────────────────────────────── */
@@ -242,22 +254,36 @@ JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeBip32Master(
     (void)clz;
     jbyte *s = pin(env, seed);
     jsize slen = (*env)->GetArrayLength(env, seed);
-    uint8_t key[82];
-    int rc = ufsecp_bip32_master((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)s, (size_t)slen, key);
+    ufsecp_bip32_key key;
+    int rc = ufsecp_bip32_master((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)s, (size_t)slen, &key);
     unpin(env, seed, s);
-    if (throw_on_err(env, rc, "bip32_master")) return NULL;
-    return mk(env, key, 82);
+    if (throw_on_err(env, rc, "bip32_master")) {
+        secure_zero(&key, sizeof(key));
+        return NULL;
+    }
+    jbyteArray out = mk(env, (const uint8_t*)&key, (int)sizeof(key));
+    secure_zero(&key, sizeof(key));
+    return out;
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeBip32Derive(
     JNIEnv *env, jclass clz, jlong ctx, jbyteArray parent, jint index) {
     (void)clz;
     jbyte *p = pin(env, parent);
-    uint8_t child[82];
-    int rc = ufsecp_bip32_derive((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)p, (uint32_t)index, child);
+    ufsecp_bip32_key parent_key;
+    ufsecp_bip32_key child;
+    memcpy(&parent_key, p, sizeof(parent_key));
+    int rc = ufsecp_bip32_derive((ufsecp_ctx*)(uintptr_t)ctx, &parent_key, (uint32_t)index, &child);
     unpin(env, parent, p);
-    if (throw_on_err(env, rc, "bip32_derive")) return NULL;
-    return mk(env, child, 82);
+    if (throw_on_err(env, rc, "bip32_derive")) {
+        secure_zero(&parent_key, sizeof(parent_key));
+        secure_zero(&child, sizeof(child));
+        return NULL;
+    }
+    jbyteArray out = mk(env, (const uint8_t*)&child, (int)sizeof(child));
+    secure_zero(&parent_key, sizeof(parent_key));
+    secure_zero(&child, sizeof(child));
+    return out;
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeBip32DerivePath(
@@ -265,12 +291,21 @@ JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeBip32DeriveP
     (void)clz;
     jbyte *m = pin(env, master);
     const char *p = (*env)->GetStringUTFChars(env, path, NULL);
-    uint8_t key[82];
-    int rc = ufsecp_bip32_derive_path((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)m, p, key);
+    ufsecp_bip32_key master_key;
+    ufsecp_bip32_key key;
+    memcpy(&master_key, m, sizeof(master_key));
+    int rc = ufsecp_bip32_derive_path((ufsecp_ctx*)(uintptr_t)ctx, &master_key, p, &key);
     (*env)->ReleaseStringUTFChars(env, path, p);
     unpin(env, master, m);
-    if (throw_on_err(env, rc, "bip32_derive_path")) return NULL;
-    return mk(env, key, 82);
+    if (throw_on_err(env, rc, "bip32_derive_path")) {
+        secure_zero(&master_key, sizeof(master_key));
+        secure_zero(&key, sizeof(key));
+        return NULL;
+    }
+    jbyteArray out = mk(env, (const uint8_t*)&key, (int)sizeof(key));
+    secure_zero(&master_key, sizeof(master_key));
+    secure_zero(&key, sizeof(key));
+    return out;
 }
 
 /* ── Version ─────────────────────────────────────────────────────────── */
@@ -320,8 +355,13 @@ JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeSeckeyNegate
     memcpy(buf, pk, 32);
     unpin(env, privkey, pk);
     int rc = ufsecp_seckey_negate((ufsecp_ctx*)(uintptr_t)ctx, buf);
-    if (throw_on_err(env, rc, "seckey_negate")) return NULL;
-    return mk(env, buf, 32);
+    if (throw_on_err(env, rc, "seckey_negate")) {
+        secure_zero(buf, sizeof(buf));
+        return NULL;
+    }
+    jbyteArray out = mk(env, buf, 32);
+    secure_zero(buf, sizeof(buf));
+    return out;
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeSeckeyTweakAdd(
@@ -334,8 +374,13 @@ JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeSeckeyTweakA
     int rc = ufsecp_seckey_tweak_add((ufsecp_ctx*)(uintptr_t)ctx, buf, (const uint8_t*)tw);
     unpin(env, tweak, tw);
     unpin(env, privkey, pk);
-    if (throw_on_err(env, rc, "seckey_tweak_add")) return NULL;
-    return mk(env, buf, 32);
+    if (throw_on_err(env, rc, "seckey_tweak_add")) {
+        secure_zero(buf, sizeof(buf));
+        return NULL;
+    }
+    jbyteArray out = mk(env, buf, 32);
+    secure_zero(buf, sizeof(buf));
+    return out;
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeSeckeyTweakMul(
@@ -348,8 +393,13 @@ JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeSeckeyTweakM
     int rc = ufsecp_seckey_tweak_mul((ufsecp_ctx*)(uintptr_t)ctx, buf, (const uint8_t*)tw);
     unpin(env, tweak, tw);
     unpin(env, privkey, pk);
-    if (throw_on_err(env, rc, "seckey_tweak_mul")) return NULL;
-    return mk(env, buf, 32);
+    if (throw_on_err(env, rc, "seckey_tweak_mul")) {
+        secure_zero(buf, sizeof(buf));
+        return NULL;
+    }
+    jbyteArray out = mk(env, buf, 32);
+    secure_zero(buf, sizeof(buf));
+    return out;
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativePubkeyParse(
@@ -472,7 +522,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeTaggedHash(
     /* null-terminate the tag */
     char tbuf[256];
     if (tlen >= (jsize)sizeof(tbuf)) tlen = (jsize)sizeof(tbuf) - 1;
-    memcpy(tbuf, t, tlen);
+    memcpy(tbuf, t, (size_t)tlen);
     tbuf[tlen] = '\0';
     (*env)->ReleaseByteArrayElements(env, tag, (jbyte*)t, JNI_ABORT);
 
@@ -495,12 +545,17 @@ JNIEXPORT jobject JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeWifDecode(
     int comp = 0, net = 0;
     int rc = ufsecp_wif_decode((ufsecp_ctx*)(uintptr_t)ctx, w, privkey, &comp, &net);
     (*env)->ReleaseStringUTFChars(env, wif, w);
-    if (throw_on_err(env, rc, "wif_decode")) return NULL;
+    if (throw_on_err(env, rc, "wif_decode")) {
+        secure_zero(privkey, sizeof(privkey));
+        return NULL;
+    }
 
     jbyteArray keyArr = mk(env, privkey, 32);
     jclass cls = (*env)->FindClass(env, "com/ultrafast/ufsecp/WifDecoded");
     jmethodID ctor = (*env)->GetMethodID(env, cls, "<init>", "([BZI)V");
-    return (*env)->NewObject(env, cls, ctor, keyArr, (jboolean)(comp == 1), (jint)net);
+    jobject out = (*env)->NewObject(env, cls, ctor, keyArr, (jboolean)(comp == 1), (jint)net);
+    secure_zero(privkey, sizeof(privkey));
+    return out;
 }
 
 /* ── BIP-32 extras ───────────────────────────────────────────────────── */
@@ -509,21 +564,36 @@ JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeBip32Privkey
     JNIEnv *env, jclass clz, jlong ctx, jbyteArray key) {
     (void)clz;
     jbyte *k = pin(env, key);
+    ufsecp_bip32_key key_in;
+    memcpy(&key_in, k, sizeof(key_in));
     uint8_t priv[32];
-    int rc = ufsecp_bip32_privkey((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)k, priv);
+    int rc = ufsecp_bip32_privkey((ufsecp_ctx*)(uintptr_t)ctx, &key_in, priv);
     unpin(env, key, k);
-    if (throw_on_err(env, rc, "bip32_privkey")) return NULL;
-    return mk(env, priv, 32);
+    if (throw_on_err(env, rc, "bip32_privkey")) {
+        secure_zero(&key_in, sizeof(key_in));
+        secure_zero(priv, sizeof(priv));
+        return NULL;
+    }
+    jbyteArray out = mk(env, priv, 32);
+    secure_zero(&key_in, sizeof(key_in));
+    secure_zero(priv, sizeof(priv));
+    return out;
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeBip32Pubkey(
     JNIEnv *env, jclass clz, jlong ctx, jbyteArray key) {
     (void)clz;
     jbyte *k = pin(env, key);
+    ufsecp_bip32_key key_in;
+    memcpy(&key_in, k, sizeof(key_in));
     uint8_t pub[33];
-    int rc = ufsecp_bip32_pubkey((ufsecp_ctx*)(uintptr_t)ctx, (const uint8_t*)k, pub);
+    int rc = ufsecp_bip32_pubkey((ufsecp_ctx*)(uintptr_t)ctx, &key_in, pub);
     unpin(env, key, k);
-    if (throw_on_err(env, rc, "bip32_pubkey")) return NULL;
+    if (throw_on_err(env, rc, "bip32_pubkey")) {
+        secure_zero(&key_in, sizeof(key_in));
+        return NULL;
+    }
+    secure_zero(&key_in, sizeof(key_in));
     return mk(env, pub, 33);
 }
 
@@ -545,7 +615,9 @@ JNIEXPORT jobject JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeTaprootOutputKe
     jbyteArray outArr = mk(env, outx, 32);
     jclass cls = (*env)->FindClass(env, "com/ultrafast/ufsecp/TaprootOutputKeyResult");
     jmethodID ctor = (*env)->GetMethodID(env, cls, "<init>", "([BI)V");
-    return (*env)->NewObject(env, cls, ctor, outArr, (jint)parity);
+    jobject out = (*env)->NewObject(env, cls, ctor, outArr, (jint)parity);
+    secure_zero(outx, sizeof(outx));
+    return out;
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeTaprootTweakSeckey(
@@ -558,8 +630,13 @@ JNIEXPORT jbyteArray JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeTaprootTweak
         (const uint8_t*)pk, mr ? (const uint8_t*)mr : NULL, out);
     if (mr) unpin(env, merkleRoot, mr);
     unpin(env, privkey, pk);
-    if (throw_on_err(env, rc, "taproot_tweak_seckey")) return NULL;
-    return mk(env, out, 32);
+    if (throw_on_err(env, rc, "taproot_tweak_seckey")) {
+        secure_zero(out, sizeof(out));
+        return NULL;
+    }
+    jbyteArray result = mk(env, out, 32);
+    secure_zero(out, sizeof(out));
+    return result;
 }
 
 JNIEXPORT jboolean JNICALL Java_com_ultrafast_ufsecp_Ufsecp_nativeTaprootVerify(

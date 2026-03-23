@@ -2,6 +2,13 @@
 ## UltrafastSecp256k1 -- OpenCL / CUDA / Metal
 
 > This document guides testing of ALL GPU backends when switching to Linux/Apple.
+>
+> Scope note: this guide includes backend kernel inventory and internal
+> capability checks that are broader than the stable public GPU C ABI in
+> [include/ufsecp/ufsecp_gpu.h](include/ufsecp/ufsecp_gpu.h). Do not treat every
+> internal kernel listed here as a supported secret-bearing public interface.
+> For security decisions, the stable ABI contract in `ufsecp_gpu.h` is the
+> source of truth.
 
 ---
 
@@ -39,7 +46,12 @@
 
 ---
 
-## 2. Feature Coverage Matrix
+## 2. Internal Backend Capability Matrix
+
+This matrix tracks backend/kernel coverage, not just the stable public GPU ABI.
+Rows such as `RFC 6979` or `ECDSA sign/verify` indicate internal implementation
+or test coverage; they do not, by themselves, mean that a stable public
+secret-bearing GPU C ABI exists for those operations.
 
 | Feature           | CUDA | OpenCL | Metal | Notes |
 |-------------------|------|--------|-------|-------|

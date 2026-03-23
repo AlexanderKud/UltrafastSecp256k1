@@ -27,7 +27,7 @@
 | CT ZK | - | Y | Y | Y | Y |
 | Bloom filter | Y | - | Y | Y | Y |
 | Key recovery (single) | Y | - | Y | Y | Y |
-| Key recovery batch (`ecrecover_batch`) | Y | - | Y (CUDA) | TODO (stub) | TODO (stub) |
+| Key recovery batch (`ecrecover_batch`) | Y | - | Y | Y | Y |
 | ECDSA sign batch (CPU CT) | - | Y | N/A | N/A | N/A |
 | Schnorr sign batch (CPU CT) | - | Y | N/A | N/A | N/A |
 
@@ -39,8 +39,7 @@
 
 | Operation | Backend | Tracking note |
 |-----------|---------|---------------|
-| `ecrecover_batch` | OpenCL | `secp256k1_recovery.cl` has `ecdsa_recover_impl` device function; needs a batch kernel entry wired in `gpu_backend_opencl.cpp` |
-| `ecrecover_batch` | Metal | No recovery shader yet in Metal shaders; needs new MSL kernel |
+| *(none — all parity gaps resolved)* | - | - |
 
 ### Current permanent exceptions
 

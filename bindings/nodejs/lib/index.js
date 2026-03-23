@@ -139,14 +139,92 @@ function loadLib(libPath) {
 const NETWORK_MAINNET = 0;
 const NETWORK_TESTNET = 1;
 
+function bestEffortZero(buf) {
+    if (!Buffer.isBuffer(buf) && !(buf instanceof Uint8Array)) {
+        throw new TypeError('buf must be a Buffer or Uint8Array');
+    }
+    buf.fill(0);
+    return buf;
+}
+
+class SensitiveBytes {
+    constructor(buf, { copy = false } = {}) {
+        if (!Buffer.isBuffer(buf) && !(buf instanceof Uint8Array)) {
+            throw new TypeError('buf must be a Buffer or Uint8Array');
+        }
+        this._buf = copy
+            ? Buffer.from(buf)
+            : Buffer.isBuffer(buf)
+                ? buf
+                : Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength);
+        this._destroyed = false;
+    }
+
+    static take(buf) {
+        return new SensitiveBytes(buf, { copy: false });
+    }
+
+    static copy(buf) {
+        return new SensitiveBytes(buf, { copy: true });
+    }
+
+    get bytes() {
+        if (this._destroyed) throw new Error('SensitiveBytes already destroyed');
+        return this._buf;
+    }
+
+    destroy() {
+        if (!this._destroyed) {
+            bestEffortZero(this._buf);
+            this._destroyed = true;
+        }
+    }
+}
+
+if (typeof Symbol.dispose === 'symbol') {
+    SensitiveBytes.prototype[Symbol.dispose] = SensitiveBytes.prototype.destroy;
+}
+
+function _unwrapBytes(buf) {
+    return buf instanceof SensitiveBytes ? buf.bytes : buf;
+}
+
+function _wipeSecretInput(value) {
+    if (value instanceof SensitiveBytes) {
+        value.destroy();
+        return;
+    }
+    bestEffortZero(value);
+}
+
+function _parseCtorArgs(libPathOrOptions, maybeOptions) {
+    if (typeof libPathOrOptions === 'string' || libPathOrOptions == null) {
+        return {
+            libPath: libPathOrOptions || undefined,
+            autoZeroInputs: Boolean(maybeOptions && maybeOptions.autoZeroInputs),
+        };
+    }
+    if (typeof libPathOrOptions === 'object') {
+        return {
+            libPath: libPathOrOptions.libPath,
+            autoZeroInputs: Boolean(libPathOrOptions.autoZeroInputs),
+        };
+    }
+    throw new TypeError('constructor expects a library path string or options object');
+}
+
 // ── Secp256k1 class ───────────────────────────────────────────────────────────
 class Secp256k1 {
     /**
-     * @param {string} [libPath] - Path to the shared library. Auto-detected if omitted.
+     * @param {string|object} [libPathOrOptions] - Path to the shared library or
+     *   options: { libPath?: string, autoZeroInputs?: boolean }.
+     * @param {object} [maybeOptions] - Optional options when the first arg is a path.
      */
-    constructor(libPath) {
-        const resolvedPath = libPath || findLibrary();
+    constructor(libPathOrOptions, maybeOptions) {
+        const opts = _parseCtorArgs(libPathOrOptions, maybeOptions);
+        const resolvedPath = opts.libPath || findLibrary();
         this._lib = loadLib(resolvedPath);
+        this._autoZeroInputs = opts.autoZeroInputs;
 
         const rc = this._lib.secp256k1_init();
         if (rc !== 0) {
@@ -167,11 +245,14 @@ class Secp256k1 {
      * @returns {Buffer} 33-byte compressed public key.
      */
     ecPubkeyCreate(privkey) {
-        _check(privkey, 32, 'privkey');
-        const out = Buffer.alloc(33);
-        const rc = this._lib.secp256k1_ec_pubkey_create(privkey, out);
-        if (rc !== 0) throw new Error('Invalid private key');
-        return out;
+        const raw = _unwrapBytes(privkey);
+        _check(raw, 32, 'privkey');
+        return this._withSecretCleanup([privkey], () => {
+            const out = Buffer.alloc(33);
+            const rc = this._lib.secp256k1_ec_pubkey_create(raw, out);
+            if (rc !== 0) throw new Error('Invalid private key');
+            return out;
+        });
     }
 
     /**
@@ -180,11 +261,14 @@ class Secp256k1 {
      * @returns {Buffer}
      */
     ecPubkeyCreateUncompressed(privkey) {
-        _check(privkey, 32, 'privkey');
-        const out = Buffer.alloc(65);
-        const rc = this._lib.secp256k1_ec_pubkey_create_uncompressed(privkey, out);
-        if (rc !== 0) throw new Error('Invalid private key');
-        return out;
+        const raw = _unwrapBytes(privkey);
+        _check(raw, 32, 'privkey');
+        return this._withSecretCleanup([privkey], () => {
+            const out = Buffer.alloc(65);
+            const rc = this._lib.secp256k1_ec_pubkey_create_uncompressed(raw, out);
+            if (rc !== 0) throw new Error('Invalid private key');
+            return out;
+        });
     }
 
     /**
@@ -201,36 +285,48 @@ class Secp256k1 {
 
     /** @returns {boolean} True if privkey is valid. */
     ecSeckeyVerify(privkey) {
-        _check(privkey, 32, 'privkey');
-        return this._lib.secp256k1_ec_seckey_verify(privkey) === 1;
+        const raw = _unwrapBytes(privkey);
+        _check(raw, 32, 'privkey');
+        return this._withSecretCleanup([privkey], () => this._lib.secp256k1_ec_seckey_verify(raw) === 1);
     }
 
     /** Negate private key (mod n). Returns new Buffer. */
     ecPrivkeyNegate(privkey) {
-        _check(privkey, 32, 'privkey');
-        const out = Buffer.from(privkey);
-        this._lib.secp256k1_ec_privkey_negate(out);
-        return out;
+        const raw = _unwrapBytes(privkey);
+        _check(raw, 32, 'privkey');
+        return this._withSecretCleanup([privkey], () => {
+            const out = Buffer.from(raw);
+            this._lib.secp256k1_ec_privkey_negate(out);
+            return out;
+        });
     }
 
     /** Add tweak to private key. Returns new Buffer. */
     ecPrivkeyTweakAdd(privkey, tweak) {
-        _check(privkey, 32, 'privkey');
-        _check(tweak, 32, 'tweak');
-        const out = Buffer.from(privkey);
-        const rc = this._lib.secp256k1_ec_privkey_tweak_add(out, tweak);
-        if (rc !== 0) throw new Error('Tweak add produced invalid key');
-        return out;
+        const rawPrivkey = _unwrapBytes(privkey);
+        const rawTweak = _unwrapBytes(tweak);
+        _check(rawPrivkey, 32, 'privkey');
+        _check(rawTweak, 32, 'tweak');
+        return this._withSecretCleanup([privkey, tweak], () => {
+            const out = Buffer.from(rawPrivkey);
+            const rc = this._lib.secp256k1_ec_privkey_tweak_add(out, rawTweak);
+            if (rc !== 0) throw new Error('Tweak add produced invalid key');
+            return out;
+        });
     }
 
     /** Multiply private key by tweak. Returns new Buffer. */
     ecPrivkeyTweakMul(privkey, tweak) {
-        _check(privkey, 32, 'privkey');
-        _check(tweak, 32, 'tweak');
-        const out = Buffer.from(privkey);
-        const rc = this._lib.secp256k1_ec_privkey_tweak_mul(out, tweak);
-        if (rc !== 0) throw new Error('Tweak mul produced invalid key');
-        return out;
+        const rawPrivkey = _unwrapBytes(privkey);
+        const rawTweak = _unwrapBytes(tweak);
+        _check(rawPrivkey, 32, 'privkey');
+        _check(rawTweak, 32, 'tweak');
+        return this._withSecretCleanup([privkey, tweak], () => {
+            const out = Buffer.from(rawPrivkey);
+            const rc = this._lib.secp256k1_ec_privkey_tweak_mul(out, rawTweak);
+            if (rc !== 0) throw new Error('Tweak mul produced invalid key');
+            return out;
+        });
     }
 
     // ── ECDSA ────────────────────────────────────────────────────────────
@@ -242,12 +338,15 @@ class Secp256k1 {
      * @returns {Buffer} 64-byte signature.
      */
     ecdsaSign(msgHash, privkey) {
+        const rawPrivkey = _unwrapBytes(privkey);
         _check(msgHash, 32, 'msgHash');
-        _check(privkey, 32, 'privkey');
-        const sig = Buffer.alloc(64);
-        const rc = this._lib.secp256k1_ecdsa_sign(msgHash, privkey, sig);
-        if (rc !== 0) throw new Error('ECDSA signing failed');
-        return sig;
+        _check(rawPrivkey, 32, 'privkey');
+        return this._withSecretCleanup([privkey], () => {
+            const sig = Buffer.alloc(64);
+            const rc = this._lib.secp256k1_ecdsa_sign(msgHash, rawPrivkey, sig);
+            if (rc !== 0) throw new Error('ECDSA signing failed');
+            return sig;
+        });
     }
 
     /**
@@ -275,13 +374,16 @@ class Secp256k1 {
 
     /** Sign with recovery id. Returns { signature, recoveryId }. */
     ecdsaSignRecoverable(msgHash, privkey) {
+        const rawPrivkey = _unwrapBytes(privkey);
         _check(msgHash, 32, 'msgHash');
-        _check(privkey, 32, 'privkey');
-        const sig = Buffer.alloc(64);
-        const recidBuf = ref.alloc('int', 0);
-        const rc = this._lib.secp256k1_ecdsa_sign_recoverable(msgHash, privkey, sig, recidBuf);
-        if (rc !== 0) throw new Error('Recoverable signing failed');
-        return { signature: sig, recoveryId: ref.deref(recidBuf) };
+        _check(rawPrivkey, 32, 'privkey');
+        return this._withSecretCleanup([privkey], () => {
+            const sig = Buffer.alloc(64);
+            const recidBuf = ref.alloc('int', 0);
+            const rc = this._lib.secp256k1_ecdsa_sign_recoverable(msgHash, rawPrivkey, sig, recidBuf);
+            if (rc !== 0) throw new Error('Recoverable signing failed');
+            return { signature: sig, recoveryId: ref.deref(recidBuf) };
+        });
     }
 
     /** Recover public key. @returns {Buffer} 33-byte compressed pubkey. */
@@ -298,13 +400,17 @@ class Secp256k1 {
 
     /** Create BIP-340 Schnorr signature. @returns {Buffer} 64 bytes. */
     schnorrSign(msg, privkey, auxRand) {
+        const rawPrivkey = _unwrapBytes(privkey);
+        const rawAuxRand = _unwrapBytes(auxRand);
         _check(msg, 32, 'msg');
-        _check(privkey, 32, 'privkey');
-        _check(auxRand, 32, 'auxRand');
-        const sig = Buffer.alloc(64);
-        const rc = this._lib.secp256k1_schnorr_sign(msg, privkey, auxRand, sig);
-        if (rc !== 0) throw new Error('Schnorr signing failed');
-        return sig;
+        _check(rawPrivkey, 32, 'privkey');
+        _check(rawAuxRand, 32, 'auxRand');
+        return this._withSecretCleanup([privkey, auxRand], () => {
+            const sig = Buffer.alloc(64);
+            const rc = this._lib.secp256k1_schnorr_sign(msg, rawPrivkey, rawAuxRand, sig);
+            if (rc !== 0) throw new Error('Schnorr signing failed');
+            return sig;
+        });
     }
 
     /** Verify Schnorr signature. @returns {boolean} */
@@ -317,43 +423,55 @@ class Secp256k1 {
 
     /** Get x-only public key (32 bytes). @returns {Buffer} */
     schnorrPubkey(privkey) {
-        _check(privkey, 32, 'privkey');
-        const out = Buffer.alloc(32);
-        const rc = this._lib.secp256k1_schnorr_pubkey(privkey, out);
-        if (rc !== 0) throw new Error('Invalid private key');
-        return out;
+        const rawPrivkey = _unwrapBytes(privkey);
+        _check(rawPrivkey, 32, 'privkey');
+        return this._withSecretCleanup([privkey], () => {
+            const out = Buffer.alloc(32);
+            const rc = this._lib.secp256k1_schnorr_pubkey(rawPrivkey, out);
+            if (rc !== 0) throw new Error('Invalid private key');
+            return out;
+        });
     }
 
     // ── ECDH ─────────────────────────────────────────────────────────────
 
     /** ECDH: SHA256(compressed shared point). @returns {Buffer} 32 bytes. */
     ecdh(privkey, pubkey) {
-        _check(privkey, 32, 'privkey');
+        const rawPrivkey = _unwrapBytes(privkey);
+        _check(rawPrivkey, 32, 'privkey');
         _check(pubkey, 33, 'pubkey');
-        const out = Buffer.alloc(32);
-        const rc = this._lib.secp256k1_ecdh(privkey, pubkey, out);
-        if (rc !== 0) throw new Error('ECDH failed');
-        return out;
+        return this._withSecretCleanup([privkey], () => {
+            const out = Buffer.alloc(32);
+            const rc = this._lib.secp256k1_ecdh(rawPrivkey, pubkey, out);
+            if (rc !== 0) throw new Error('ECDH failed');
+            return out;
+        });
     }
 
     /** ECDH x-only. @returns {Buffer} */
     ecdhXonly(privkey, pubkey) {
-        _check(privkey, 32, 'privkey');
+        const rawPrivkey = _unwrapBytes(privkey);
+        _check(rawPrivkey, 32, 'privkey');
         _check(pubkey, 33, 'pubkey');
-        const out = Buffer.alloc(32);
-        const rc = this._lib.secp256k1_ecdh_xonly(privkey, pubkey, out);
-        if (rc !== 0) throw new Error('ECDH xonly failed');
-        return out;
+        return this._withSecretCleanup([privkey], () => {
+            const out = Buffer.alloc(32);
+            const rc = this._lib.secp256k1_ecdh_xonly(rawPrivkey, pubkey, out);
+            if (rc !== 0) throw new Error('ECDH xonly failed');
+            return out;
+        });
     }
 
     /** ECDH raw x-coordinate. @returns {Buffer} */
     ecdhRaw(privkey, pubkey) {
-        _check(privkey, 32, 'privkey');
+        const rawPrivkey = _unwrapBytes(privkey);
+        _check(rawPrivkey, 32, 'privkey');
         _check(pubkey, 33, 'pubkey');
-        const out = Buffer.alloc(32);
-        const rc = this._lib.secp256k1_ecdh_raw(privkey, pubkey, out);
-        if (rc !== 0) throw new Error('ECDH raw failed');
-        return out;
+        return this._withSecretCleanup([privkey], () => {
+            const out = Buffer.alloc(32);
+            const rc = this._lib.secp256k1_ecdh_raw(rawPrivkey, pubkey, out);
+            if (rc !== 0) throw new Error('ECDH raw failed');
+            return out;
+        });
     }
 
     // ── Hashing ──────────────────────────────────────────────────────────
@@ -406,9 +524,11 @@ class Secp256k1 {
 
     /** Encode private key as WIF. @returns {string} */
     wifEncode(privkey, compressed = true, network = NETWORK_MAINNET) {
-        _check(privkey, 32, 'privkey');
-        return this._getAddress((buf, lenPtr) =>
-            this._lib.secp256k1_wif_encode(privkey, compressed ? 1 : 0, network, buf, lenPtr));
+        const rawPrivkey = _unwrapBytes(privkey);
+        _check(rawPrivkey, 32, 'privkey');
+        return this._withSecretCleanup([privkey], () =>
+            this._getAddress((buf, lenPtr) =>
+                this._lib.secp256k1_wif_encode(rawPrivkey, compressed ? 1 : 0, network, buf, lenPtr)));
     }
 
     /** Decode WIF. @returns {{ privkey: Buffer, compressed: boolean, network: number }} */
@@ -429,11 +549,14 @@ class Secp256k1 {
 
     /** Create master key from seed. @returns {Buffer} 79-byte opaque key. */
     bip32MasterKey(seed) {
-        if (seed.length < 16 || seed.length > 64) throw new Error('Seed must be 16-64 bytes');
-        const key = Buffer.alloc(79);
-        const rc = this._lib.secp256k1_bip32_master_key(seed, seed.length, key);
-        if (rc !== 0) throw new Error('Master key generation failed');
-        return key;
+        const rawSeed = _unwrapBytes(seed);
+        if (rawSeed.length < 16 || rawSeed.length > 64) throw new Error('Seed must be 16-64 bytes');
+        return this._withSecretCleanup([seed], () => {
+            const key = Buffer.alloc(79);
+            const rc = this._lib.secp256k1_bip32_master_key(rawSeed, rawSeed.length, key);
+            if (rc !== 0) throw new Error('Master key generation failed');
+            return key;
+        });
     }
 
     /** Derive key from path. @returns {Buffer} */
@@ -477,11 +600,14 @@ class Secp256k1 {
 
     /** Tweak privkey for Taproot. @returns {Buffer} */
     taprootTweakPrivkey(privkey, merkleRoot = null) {
-        _check(privkey, 32, 'privkey');
-        const out = Buffer.alloc(32);
-        const rc = this._lib.secp256k1_taproot_tweak_privkey(privkey, merkleRoot, out);
-        if (rc !== 0) throw new Error('Taproot tweak failed');
-        return out;
+        const rawPrivkey = _unwrapBytes(privkey);
+        _check(rawPrivkey, 32, 'privkey');
+        return this._withSecretCleanup([privkey], () => {
+            const out = Buffer.alloc(32);
+            const rc = this._lib.secp256k1_taproot_tweak_privkey(rawPrivkey, merkleRoot, out);
+            if (rc !== 0) throw new Error('Taproot tweak failed');
+            return out;
+        });
     }
 
     // ── Internal helper ──────────────────────────────────────────────────
@@ -494,14 +620,26 @@ class Secp256k1 {
         const len = ref.deref(lenPtr);
         return buf.toString('ascii', 0, Number(len));
     }
+
+    _withSecretCleanup(values, fn) {
+        try {
+            return fn();
+        } finally {
+            for (const value of values) {
+                if (value instanceof SensitiveBytes || (this._autoZeroInputs && value && (Buffer.isBuffer(value) || value instanceof Uint8Array))) {
+                    _wipeSecretInput(value);
+                }
+            }
+        }
+    }
 }
 
 function _check(buf, expected, name) {
-    if (!Buffer.isBuffer(buf)) throw new TypeError(`${name} must be a Buffer`);
+    if (!Buffer.isBuffer(buf) && !(buf instanceof Uint8Array)) throw new TypeError(`${name} must be a Buffer or Uint8Array`);
     if (buf.length !== expected) throw new RangeError(`${name} must be ${expected} bytes, got ${buf.length}`);
 }
 
 // ── TypeScript definitions ────────────────────────────────────────────────────
 // (see lib/index.d.ts)
 
-module.exports = { Secp256k1, NETWORK_MAINNET, NETWORK_TESTNET };
+module.exports = { Secp256k1, NETWORK_MAINNET, NETWORK_TESTNET, SensitiveBytes, bestEffortZero };

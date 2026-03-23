@@ -21,6 +21,7 @@
 #   bash scripts/local-ci.sh --job ci           # CI matrix (GCC+Clang x Debug+Release)
 #   bash scripts/local-ci.sh --job valgrind-ct  # Valgrind CT taint analysis
 #   bash scripts/local-ci.sh --job bench        # Quick benchmark snapshot (no regression check)
+#   bash scripts/local-ci.sh --job qemu-smoke   # ARM64/RISC-V cross-build + QEMU smoke
 #   bash scripts/local-ci.sh --job trust        # Trust signals summary (coverage + links)
 #   bash scripts/local-ci.sh --list             # List all available jobs
 #
@@ -586,6 +587,34 @@ job_bench() {
 }
 
 # -----------------------------------------------------------------------------
+# Job: qemu-smoke - ARM64/RISC-V cross-build + QEMU smoke
+# Mirrors: ci.yml / linux-arm64 + linux-riscv64
+# Optional env: SECP256K1_QEMU_SMOKE_TARGET=arm64|riscv64|all (default: all)
+# -----------------------------------------------------------------------------
+job_qemu_smoke() {
+    banner "qemu-smoke: ARM64/RISC-V cross-build + QEMU smoke"
+
+    local script="$SRC/scripts/run-qemu-smoke.sh"
+    local target="${SECP256K1_QEMU_SMOKE_TARGET:-all}"
+    local out_dir="$SRC/local-ci-output"
+    mkdir -p "$out_dir"
+
+    if [ ! -f "$script" ]; then
+        fail "qemu-smoke: scripts/run-qemu-smoke.sh not found"
+        return
+    fi
+
+    echo -e "${BOLD}Target:${NC} $target"
+    echo -e "${BOLD}Hint:${NC} export SECP256K1_QEMU_SMOKE_TARGET=arm64|riscv64|all to override"
+
+    if bash "$script" "$target" 2>&1 | tee "$out_dir/qemu-smoke.txt"; then
+        pass "qemu-smoke: $target"
+    else
+        fail "qemu-smoke: $target"
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Job: trust - Trust signals summary (local)
 # Mirrors: codecov + SonarCloud + scorecard (local = evidence + links)
 # -----------------------------------------------------------------------------
@@ -690,6 +719,7 @@ main() {
                 echo "  dudect      dudect 60s timing smoke test   (security-audit.yml)"
                 echo "  valgrind-ct Valgrind CT taint analysis     (valgrind-ct.yml)"
                 echo "  bench       Benchmark snapshot (output only) (benchmark.yml)"
+                echo "  qemu-smoke  ARM64/RISC-V cross-build + QEMU smoke (ci.yml)"
                 echo "  trust       Trust signals summary (coverage + links)"
                 echo ""
                 echo "Presets:"
@@ -735,6 +765,7 @@ main() {
             audit)       job_audit ;;
             valgrind-ct) job_valgrind_ct ;;
             bench)       job_bench ;;
+            qemu-smoke)  job_qemu_smoke ;;
             trust)       job_trust ;;
             *) echo -e "${RED}Unknown job: $job${NC}"; exit 1 ;;
         esac

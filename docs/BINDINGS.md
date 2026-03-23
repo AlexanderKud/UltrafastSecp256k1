@@ -98,9 +98,8 @@ This document tracks the **stable (ufsecp)** bindings only.
 
 | Tier | Languages | SLA |
 |------|-----------|-----|
-| **Tier 1** | C#, Java, Swift, Python, Node.js, Rust | Full parity, CI smoke tests, golden vectors, examples |
-| **Tier 2** | Go, Dart, React Native | Full parity, CI compile, examples |
-| **Tier 3** | PHP, Ruby | Full parity, CI compile, best-effort tests |
+| **Tier 1** | C#, Java, Swift, Python, Node.js, Rust, Go, Dart, React Native | Full parity, smoke tests, golden vectors, examples |
+| **Tier 2** | PHP, Ruby | Full parity, smoke tests, examples |
 | **Platforms** | Android (AAR/JNI), iOS (XCFramework/SPM), WASM | Platform-specific packaging + tests |
 
 ---
@@ -119,22 +118,21 @@ This document tracks the **stable (ufsecp)** bindings only.
 > Differential correctness is inherited from the core library's
 > cross-library test suite against bitcoin-core/libsecp256k1.
 
-### CI Pipeline
+### Validation Pipeline
 
 ```
-bindings.yml (every push to dev/main):
-  build-capi          -> Shared lib on Linux/macOS/Windows
-  python              -> py_compile + mypy
-  nodejs              -> tsc --noEmit
-  csharp              -> dotnet build
-  java                -> javac
-  swift               -> swiftc -typecheck
-  go                  -> go vet
-  rust                -> cargo check
-  dart                -> dart analyze
-  php                 -> php -l
-  ruby                -> ruby -c
-  react-native        -> tsc --noEmit
+Shared validation entrypoint:
+  scripts/validate_bindings.sh
+
+Smoke suites covered by the shared validator:
+  csharp, java, swift, python, go, rust, nodejs, php, ruby, dart
+
+React Native validation:
+  default             -> mock-bridge contract smoke in plain Node.js
+  optional extra      -> native RN/Jest smoke via UFSECP_VALIDATE_REACT_NATIVE=1
+
+Per-ecosystem compile/type gates remain in their native toolchains
+  (dotnet build, javac, swift test, cargo test, dart analyze, tsc, etc.).
 ```
 
 ---
@@ -146,12 +144,12 @@ bindings.yml (every push to dev/main):
 | C# | UltrafastSecp256k1.Native | NuGet | Multi-RID .nupkg |
 | Java | com.ultrafast:ufsecp | Maven Central / GitHub Packages | JAR + shaded JNI |
 | Swift | UltrafastSecp256k1 | SPM (Package.swift) | XCFramework |
-| React Native | react-native-ufsecp | npm | JS + .podspec + AAR |
+| React Native | react-native-ultrafast-secp256k1 | npm | JS + .podspec + AAR |
 | Node.js | ufsecp | npm | N-API addon |
 | Python | ufsecp | PyPI | manylinux/macos/windows wheels |
 | Rust | ufsecp | crates.io | -sys + safe wrapper |
 | Go | github.com/.../ufsecp | Go modules | CGo binding |
-| Dart | ufsecp | pub.dev | FFI plugin |
+| Dart | ultrafast_secp256k1 | pub.dev | FFI plugin |
 | PHP | ultrafast/ufsecp | Packagist | FFI extension |
 | Ruby | ufsecp | RubyGems | FFI gem |
 | iOS | UltrafastSecp256k1 | CocoaPods + SPM | .podspec + Package.swift |

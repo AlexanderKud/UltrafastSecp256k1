@@ -4,6 +4,9 @@ Standalone C header-only API for [UltrafastSecp256k1](https://github.com/shrec/U
 
 This is a **stateless** API with `secp256k1_*` naming (no context object). It differs from the main `ufsecp_*` context-based API.
 
+> Warning: this legacy stateless surface is not the standardized secure binding model.
+> For secret-bearing integrations, prefer the `ufsecp_*` context-based ABI and the binding standard in `docs/BINDINGS_USAGE_STANDARD.md`.
+
 ## Features
 
 - **ECDSA** -- sign, verify, DER serialization (RFC 6979)
@@ -60,7 +63,7 @@ int ok = secp256k1_ecdsa_verify(msg, sig, pubkey);
 
 ## Architecture Note
 
-Both APIs use the **fast** (variable-time) implementation for maximum throughput. A constant-time (CT) layer with identical mathematical operations is available via the C++ headers for applications requiring timing-attack resistance.
+This legacy API uses the **fast** (variable-time) implementation for maximum throughput. For secret-bearing integrations, use the `ufsecp_*` context-based ABI, which is the standardized stable surface with explicit context lifecycle and constant-time secret routing.
 
 ## Performance Tuning
 

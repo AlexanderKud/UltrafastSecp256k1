@@ -13,6 +13,8 @@ use std::os::raw::{c_char, c_int};
 
 pub use ufsecp_sys;
 
+const EXPECTED_ABI: u32 = 1;
+
 // ── Error ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,11 +54,16 @@ impl ErrorCode {
 pub struct Error {
     pub op: &'static str,
     pub code: ErrorCode,
+    pub detail: Option<String>,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ufsecp {} failed: {:?}", self.op, self.code)
+        if let Some(detail) = &self.detail {
+            write!(f, "ufsecp {} failed: {:?}: {}", self.op, self.code, detail)
+        } else {
+            write!(f, "ufsecp {} failed: {:?}", self.op, self.code)
+        }
     }
 }
 
@@ -65,7 +72,11 @@ impl std::error::Error for Error {}
 pub type Result<T> = std::result::Result<T, Error>;
 
 fn chk(rc: c_int, op: &'static str) -> Result<()> {
-    if rc == 0 { Ok(()) } else { Err(Error { op, code: ErrorCode::from_raw(rc) }) }
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(Error { op, code: ErrorCode::from_raw(rc), detail: None })
+    }
 }
 
 // ── Network ────────────────────────────────────────────────────────────
@@ -100,7 +111,8 @@ pub struct Context {
     ptr: *mut ufsecp_sys::ufsecp_ctx,
 }
 
-// SAFETY: The ufsecp context is internally thread-safe (dual-layer CT, no mutable shared state).
+// SAFETY: Context ownership may move across threads, but each ufsecp_ctx must
+// be used by only one thread at a time unless externally synchronized.
 unsafe impl Send for Context {}
 
 impl Drop for Context {
@@ -114,6 +126,17 @@ impl Drop for Context {
 
 impl Context {
     pub fn new() -> Result<Self> {
+        let abi = unsafe { ufsecp_sys::ufsecp_abi_version() };
+        if abi != EXPECTED_ABI {
+            return Err(Error {
+                op: "init",
+                code: ErrorCode::Internal,
+                detail: Some(format!(
+                    "ABI mismatch: wrapper expects ABI {}, library reports ABI {}.",
+                    EXPECTED_ABI, abi
+                )),
+            });
+        }
         let mut ptr: *mut ufsecp_sys::ufsecp_ctx = std::ptr::null_mut();
         let rc = unsafe { ufsecp_sys::ufsecp_ctx_create(&mut ptr) };
         chk(rc, "ctx_create")?;
@@ -138,11 +161,13 @@ impl Context {
     }
 
     /// Return the last error message stored in this context.
-    pub fn last_error_msg(&self) -> &str {
+    pub fn last_error_msg(&self) -> String {
         unsafe {
             let p = ufsecp_sys::ufsecp_last_error_msg(self.ptr);
-            if p.is_null() { return ""; }
-            CStr::from_ptr(p).to_str().unwrap_or("")
+            if p.is_null() {
+                return String::new();
+            }
+            CStr::from_ptr(p).to_string_lossy().into_owned()
         }
     }
 
@@ -348,7 +373,11 @@ impl Context {
 
     pub fn tagged_hash(tag: &str, data: &[u8]) -> Result<[u8; 32]> {
         let mut out = [0u8; 32];
-        let ctag = CString::new(tag).map_err(|_| Error { op: "tagged_hash", code: ErrorCode::BadInput })?;
+        let ctag = CString::new(tag).map_err(|_| Error {
+            op: "tagged_hash",
+            code: ErrorCode::BadInput,
+            detail: None,
+        })?;
         let rc = unsafe { ufsecp_sys::ufsecp_tagged_hash(ctag.as_ptr(), data.as_ptr(), data.len(), out.as_mut_ptr()) };
         chk(rc, "tagged_hash")?;
         Ok(out)
@@ -412,7 +441,11 @@ impl Context {
     }
 
     pub fn wif_decode(&self, wif: &str) -> Result<WifDecoded> {
-        let cwif = CString::new(wif).map_err(|_| Error { op: "wif_decode", code: ErrorCode::BadInput })?;
+        let cwif = CString::new(wif).map_err(|_| Error {
+            op: "wif_decode",
+            code: ErrorCode::BadInput,
+            detail: None,
+        })?;
         let mut privkey = [0u8; 32];
         let mut comp: c_int = 0;
         let mut net: c_int = 0;
@@ -447,7 +480,11 @@ impl Context {
 
     pub fn bip32_derive_path(&self, master: &[u8], path: &str) -> Result<[u8; 82]> {
         assert_eq!(master.len(), 82);
-        let cpath = CString::new(path).map_err(|_| Error { op: "bip32_derive_path", code: ErrorCode::BadInput })?;
+        let cpath = CString::new(path).map_err(|_| Error {
+            op: "bip32_derive_path",
+            code: ErrorCode::BadInput,
+            detail: None,
+        })?;
         let mut key = [0u8; 82];
         let rc = unsafe { ufsecp_sys::ufsecp_bip32_derive_path(self.ptr, master.as_ptr(), cpath.as_ptr(), key.as_mut_ptr()) };
         chk(rc, "bip32_derive_path")?;

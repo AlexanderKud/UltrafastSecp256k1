@@ -17,7 +17,9 @@
  *      nonce gen, key tweak) ALWAYS use the CT layer; public operations
  *      (verification, point serialisation) ALWAYS use the fast layer.
  *      Both layers are architecturally wired -- no flag, no opt-in.
- *      This eliminates the human factor entirely.
+ *      This removes flag-based routing mistakes inside the core ABI.
+ *      Bindings and callers must still enforce context ownership, buffer
+ *      lifetime, and secret-handling discipline.
  *
  * ## Naming
  *
@@ -72,7 +74,7 @@ extern "C" {
  *   |  Layer 1 -- FAST:  public operations (verify, point arith)  |
  *   |  Layer 2 -- CT  :  secret operations (sign, nonce, tweak)   |
  *   |  Both layers are ALWAYS ACTIVE simultaneously.              |
- *   |  No opt-in / opt-out.  Human-error-proof by design.        |
+ *   |  No opt-in / opt-out in the core ABI.                       |
  *   +-------------------------------------------------------------+
  *
  * CT layer guarantees:
@@ -103,7 +105,10 @@ UFSECP_API void ufsecp_ctx_destroy(ufsecp_ctx* ctx);
 /** Last error code on this context (0 = none). */
 UFSECP_API ufsecp_error_t ufsecp_last_error(const ufsecp_ctx* ctx);
 
-/** Last error message on this context (never NULL). */
+/** Last error message on this context (never NULL).
+ *  The returned pointer is borrowed storage owned by ctx.
+ *  It remains valid until the next call that mutates the same ctx, or until
+ *  ufsecp_ctx_destroy(ctx). Copy it if it must outlive the context/call. */
 UFSECP_API const char* ufsecp_last_error_msg(const ufsecp_ctx* ctx);
 
 /** Size of the compiled ufsecp_ctx struct (for FFI layout assertions). */
@@ -367,7 +372,10 @@ UFSECP_API ufsecp_error_t ufsecp_wif_decode(ufsecp_ctx* ctx,
  * BIP-32 (HD key derivation)
  * =========================================================================== */
 
-/** Opaque serialised BIP-32 extended key. */
+/** Opaque serialised BIP-32 extended key.
+ *  Reserved bytes must remain zero.
+ *  Caller-supplied keys are rejected unless is_private, serialized version bytes,
+ *  and serialized key material form a valid xprv/xpub encoding. */
 typedef struct {
     uint8_t data[UFSECP_BIP32_SERIALIZED_LEN];
     uint8_t is_private;   /**< 1 = xprv, 0 = xpub */
@@ -662,16 +670,16 @@ UFSECP_API ufsecp_error_t ufsecp_ecdsa_batch_verify(
     const uint8_t* entries, size_t n);
 
 /** Schnorr batch identify invalid: returns indices of invalid sigs.
- *  invalid_out: caller-owned array of size_t (at least n elements).
- *  invalid_count: out = number of invalid entries. */
+ *  invalid_out: caller-owned array of size_t.
+ *  invalid_count: in = invalid_out capacity, out = total number of invalid entries. */
 UFSECP_API ufsecp_error_t ufsecp_schnorr_batch_identify_invalid(
     ufsecp_ctx* ctx,
     const uint8_t* entries, size_t n,
     size_t* invalid_out, size_t* invalid_count);
 
 /** ECDSA batch identify invalid: returns indices of invalid sigs.
- *  invalid_out: caller-owned array of size_t (at least n elements).
- *  invalid_count: out = number of invalid entries. */
+ *  invalid_out: caller-owned array of size_t.
+ *  invalid_count: in = invalid_out capacity, out = total number of invalid entries. */
 UFSECP_API ufsecp_error_t ufsecp_ecdsa_batch_identify_invalid(
     ufsecp_ctx* ctx,
     const uint8_t* entries, size_t n,
@@ -715,7 +723,8 @@ UFSECP_API ufsecp_error_t ufsecp_multi_scalar_mul(
 #define UFSECP_MUSIG2_SECNONCE_LEN   64  /**< secret nonce (2 x 32 bytes) */
 
 /** Aggregate public keys for MuSig2.
- *  pubkeys: n * 32 bytes (x-only). keyagg_out: opaque context. */
+ *  pubkeys: n * 32 bytes (x-only). keyagg_out: opaque context.
+ *  The current fixed-size keyagg/session format supports 2 to 3 participants. */
 UFSECP_API ufsecp_error_t ufsecp_musig2_key_agg(
     ufsecp_ctx* ctx,
     const uint8_t* pubkeys, size_t n,
@@ -733,13 +742,17 @@ UFSECP_API ufsecp_error_t ufsecp_musig2_nonce_gen(
     uint8_t secnonce_out[UFSECP_MUSIG2_SECNONCE_LEN],
     uint8_t pubnonce_out[UFSECP_MUSIG2_PUBNONCE_LEN]);
 
-/** Aggregate public nonces. */
+/** Aggregate public nonces.
+ *  pubnonces must contain exactly n records of UFSECP_MUSIG2_PUBNONCE_LEN bytes.
+ *  Each record must contain two valid 33-byte compressed curve points.
+ *  n must be at least 2. */
 UFSECP_API ufsecp_error_t ufsecp_musig2_nonce_agg(
     ufsecp_ctx* ctx,
     const uint8_t* pubnonces, size_t n,
     uint8_t aggnonce_out[UFSECP_MUSIG2_AGGNONCE_LEN]);
 
-/** Start a MuSig2 signing session. */
+/** Start a MuSig2 signing session.
+ *  keyagg must be a valid opaque context previously produced by ufsecp_musig2_key_agg. */
 UFSECP_API ufsecp_error_t ufsecp_musig2_start_sign_session(
     ufsecp_ctx* ctx,
     const uint8_t aggnonce[UFSECP_MUSIG2_AGGNONCE_LEN],
@@ -748,7 +761,9 @@ UFSECP_API ufsecp_error_t ufsecp_musig2_start_sign_session(
     uint8_t session_out[UFSECP_MUSIG2_SESSION_LEN]);
 
 /** Produce a partial signature.
- *  IMPORTANT: secnonce is zeroed after use to prevent nonce reuse. */
+ *  IMPORTANT: secnonce is zeroed after use to prevent nonce reuse.
+ *  keyagg must be a valid opaque context previously produced by ufsecp_musig2_key_agg.
+ *  signer_index must be a valid participant index within the aggregated key set. */
 UFSECP_API ufsecp_error_t ufsecp_musig2_partial_sign(
     ufsecp_ctx* ctx,
     uint8_t secnonce[UFSECP_MUSIG2_SECNONCE_LEN],
@@ -758,7 +773,9 @@ UFSECP_API ufsecp_error_t ufsecp_musig2_partial_sign(
     size_t signer_index,
     uint8_t partial_sig32_out[32]);
 
-/** Verify a partial signature. */
+/** Verify a partial signature.
+ *  keyagg must be a valid opaque context previously produced by ufsecp_musig2_key_agg.
+ *  signer_index must be a valid participant index within the aggregated key set. */
 UFSECP_API ufsecp_error_t ufsecp_musig2_partial_verify(
     ufsecp_ctx* ctx,
     const uint8_t partial_sig32[32],
@@ -768,7 +785,9 @@ UFSECP_API ufsecp_error_t ufsecp_musig2_partial_verify(
     const uint8_t session[UFSECP_MUSIG2_SESSION_LEN],
     size_t signer_index);
 
-/** Aggregate partial signatures into a final BIP-340 Schnorr signature. */
+/** Aggregate partial signatures into a final BIP-340 Schnorr signature.
+ *  partial_sigs must contain exactly n records of 32 bytes.
+ *  n must be non-zero. */
 UFSECP_API ufsecp_error_t ufsecp_musig2_partial_sig_agg(
     ufsecp_ctx* ctx,
     const uint8_t* partial_sigs, size_t n,
@@ -793,7 +812,13 @@ UFSECP_API ufsecp_error_t ufsecp_frost_keygen_begin(
     uint8_t* commits_out, size_t* commits_len,
     uint8_t* shares_out, size_t* shares_len);
 
-/** FROST key generation phase 2: finalise key package. */
+/** FROST key generation phase 2: finalise key package.
+ *  participant_id must be in [1, num_participants] and threshold must satisfy
+ *  2 <= threshold <= num_participants.
+ *  all_commits must contain exactly num_participants unique commitment records,
+ *  each with exactly threshold coefficients.
+ *  received_shares must contain exactly num_participants unique share records and
+ *  shares_len must be an exact multiple of UFSECP_FROST_SHARE_LEN. */
 UFSECP_API ufsecp_error_t ufsecp_frost_keygen_finalize(
     ufsecp_ctx* ctx,
     uint32_t participant_id,
@@ -810,7 +835,11 @@ UFSECP_API ufsecp_error_t ufsecp_frost_sign_nonce_gen(
     uint8_t nonce_out[UFSECP_FROST_NONCE_LEN],
     uint8_t nonce_commit_out[UFSECP_FROST_NONCE_COMMIT_LEN]);
 
-/** Produce FROST partial signature. */
+/** Produce FROST partial signature.
+ *  nonce_commits must contain exactly n_signers records of
+ *  UFSECP_FROST_NONCE_COMMIT_LEN bytes and n_signers must be non-zero.
+ *  Signer IDs in nonce_commits must be unique, within the key package participant
+ *  range, and must include the caller's own participant ID exactly once. */
 UFSECP_API ufsecp_error_t ufsecp_frost_sign(
     ufsecp_ctx* ctx,
     const uint8_t keypkg[UFSECP_FROST_KEYPKG_LEN],
@@ -820,7 +849,9 @@ UFSECP_API ufsecp_error_t ufsecp_frost_sign(
     uint8_t partial_sig_out[36]);
 
 /** Verify FROST partial signature.
- *  verification_share33: 33-byte compressed signer verification share Y_i. */
+ *  verification_share33: 33-byte compressed signer verification share Y_i.
+ *  nonce_commits must contain exactly n_signers records of
+ *  UFSECP_FROST_NONCE_COMMIT_LEN bytes and n_signers must be non-zero. */
 UFSECP_API ufsecp_error_t ufsecp_frost_verify_partial(
     ufsecp_ctx* ctx,
     const uint8_t partial_sig[36],
@@ -829,7 +860,13 @@ UFSECP_API ufsecp_error_t ufsecp_frost_verify_partial(
     const uint8_t msg32[32],
     const uint8_t group_pubkey33[33]);
 
-/** Aggregate FROST partial signatures into final Schnorr signature. */
+/** Aggregate FROST partial signatures into final Schnorr signature.
+ *  partial_sigs must contain exactly n records of 36 bytes.
+ *  nonce_commits must contain exactly n_signers records of
+ *  UFSECP_FROST_NONCE_COMMIT_LEN bytes.
+ *  Both n and n_signers must be non-zero and must describe the same signer set.
+ *  Partial signature IDs and nonce commitment IDs must be unique, non-zero, and
+ *  each partial signature signer must appear exactly once in nonce_commits. */
 UFSECP_API ufsecp_error_t ufsecp_frost_aggregate(
     ufsecp_ctx* ctx,
     const uint8_t* partial_sigs, size_t n,
@@ -999,7 +1036,8 @@ UFSECP_API ufsecp_error_t ufsecp_zk_range_prove(
     const uint8_t aux_rand[32],
     uint8_t* proof_out, size_t* proof_len);
 
-/** Verify Bulletproof range proof. */
+/** Verify Bulletproof range proof.
+ *  proof must be exactly one serialized range-proof record. */
 UFSECP_API ufsecp_error_t ufsecp_zk_range_verify(
     ufsecp_ctx* ctx,
     const uint8_t commitment33[33],
@@ -1032,6 +1070,7 @@ UFSECP_API ufsecp_error_t ufsecp_coin_address(
     char* addr_out, size_t* addr_len);
 
 /** Derive full key from seed for a specific coin.
+ *  seed must be 16 to 64 bytes.
  *  Derives using best_purpose for the coin.
  *  privkey32_out, pubkey33_out: optional (NULL to skip). */
 UFSECP_API ufsecp_error_t ufsecp_coin_derive_from_seed(
@@ -1167,7 +1206,7 @@ UFSECP_API ufsecp_error_t ufsecp_ecies_decrypt(
 typedef struct ufsecp_bip324_session ufsecp_bip324_session;
 
 /** Create a new BIP-324 session.
- *  initiator: 1 if this peer initiates the connection, 0 if responder.
+ *  initiator: must be exactly 1 if this peer initiates the connection, or 0 if responder.
  *  session_out: receives the session handle (caller must free with ufsecp_bip324_destroy).
  *  ellswift64_out: receives our 64-byte ElligatorSwift-encoded public key to send to the peer. */
 UFSECP_API ufsecp_error_t ufsecp_bip324_create(

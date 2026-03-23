@@ -1,6 +1,9 @@
 # Bindings Quick-Start Examples
 ## UltrafastSecp256k1 -- Copy-Paste Recipes per Language
 
+> **Canonical operational standard**: see `docs/BINDINGS_USAGE_STANDARD.md`.
+> This file remains the broader example cookbook.
+
 > **3 examples per binding**: Sign/Verify, Address Derive, Error Handling  
 > All examples use the **stable `ufsecp` ABI** (context-based API).
 
@@ -507,9 +510,10 @@ fn main() {
 ### Example 1: Sign & Verify
 
 ```dart
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
-import 'package:ufsecp/ufsecp.dart';
+import 'package:ultrafast_secp256k1/ufsecp.dart';
 
 void main() {
   final ctx = UfsecpContext();
@@ -519,7 +523,7 @@ void main() {
 
   final pubkey = ctx.pubkeyCreate(privkey);
   final xonly  = ctx.pubkeyXonly(privkey);
-  final msg = UfsecpContext.sha256(Uint8List.fromList('Hello, secp256k1!'.codeUnits));
+    final msg = ctx.sha256(Uint8List.fromList(utf8.encode('Hello, secp256k1!')));
 
   // ECDSA
   final sig = ctx.ecdsaSign(msg, privkey);
@@ -539,7 +543,7 @@ void main() {
 
 ```dart
 import 'dart:typed_data';
-import 'package:ufsecp/ufsecp.dart';
+import 'package:ultrafast_secp256k1/ufsecp.dart';
 
 Uint8List hexToBytes(String hex) {
   final result = Uint8List(hex.length ~/ 2);
@@ -552,11 +556,11 @@ Uint8List hexToBytes(String hex) {
 void main() {
   final ctx = UfsecpContext();
   final seed = hexToBytes('000102030405060708090a0b0c0d0e0f');
-  final master = ctx.bip32Master(seed);
+    final master = ctx.bip32Master(seed);
   final child = ctx.bip32DerivePath(master, "m/84'/0'/0'/0/0");
 
   final pubkey = ctx.pubkeyCreate(child.sublist(0, 32));
-  final addr = ctx.addrP2wpkh(pubkey, Network.mainnet);
+    final addr = ctx.addrP2WPKH(pubkey, network: Network.mainnet);
   print('Address: $addr');
 
   ctx.destroy();
@@ -567,7 +571,7 @@ void main() {
 
 ```dart
 import 'dart:typed_data';
-import 'package:ufsecp/ufsecp.dart';
+import 'package:ultrafast_secp256k1/ufsecp.dart';
 
 void main() {
   final ctx = UfsecpContext();
@@ -720,7 +724,7 @@ ctx.destroy
 ### Example 1: Sign & Verify
 
 ```javascript
-import { UfsecpContext } from 'react-native-ufsecp';
+import { UfsecpContext } from 'react-native-ultrafast-secp256k1/lib/ufsecp';
 import { randomBytes } from 'react-native-get-random-values';
 
 const ctx = await UfsecpContext.create();
@@ -745,7 +749,7 @@ await ctx.destroy();
 ### Example 2: Address Derivation
 
 ```javascript
-import { UfsecpContext } from 'react-native-ufsecp';
+import { UfsecpContext } from 'react-native-ultrafast-secp256k1/lib/ufsecp';
 
 const ctx = await UfsecpContext.create();
 const seed = '000102030405060708090a0b0c0d0e0f';
@@ -762,7 +766,7 @@ await ctx.destroy();
 ### Example 3: Error Handling
 
 ```javascript
-import { UfsecpContext, UfsecpError } from 'react-native-ufsecp';
+import { UfsecpContext, UfsecpError } from 'react-native-ultrafast-secp256k1/lib/ufsecp';
 
 const ctx = await UfsecpContext.create();
 

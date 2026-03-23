@@ -235,17 +235,17 @@ __kernel void batch_scalar_mul_precomp(
         return;
     }
 
-    JacobianPoint R;
-    point_set_infinity(&R);
+    JacobianPoint acc;
+    point_set_infinity(&acc);
 
     // Simple double-and-add with precomputed table
     // Process 4 bits at a time
     for (int i = 63; i >= 0; i--) {
         // Double 4 times
-        point_double_impl(&R, &R);
-        point_double_impl(&R, &R);
-        point_double_impl(&R, &R);
-        point_double_impl(&R, &R);
+        point_double_impl(&acc, &acc);
+        point_double_impl(&acc, &acc);
+        point_double_impl(&acc, &acc);
+        point_double_impl(&acc, &acc);
 
         // Extract 4-bit window from each limb
         for (int limb = 3; limb >= 0; limb--) {
@@ -260,14 +260,14 @@ __kernel void batch_scalar_mul_precomp(
                 if (window < PRECOMP_SIZE * 2) {
                     uint idx = (window & 1) ? ((window - 1) >> 1) : (window >> 1);
                     if (idx < PRECOMP_SIZE) {
-                        point_add_mixed_impl(&R, &R, &precomp[idx]);
+                        point_add_mixed_impl(&acc, &acc, &precomp[idx]);
                     }
                 }
             }
         }
     }
 
-    results[gid] = R;
+    results[gid] = acc;
 }
 
 #endif // SECP256K1_BATCH_CL

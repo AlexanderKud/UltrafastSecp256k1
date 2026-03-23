@@ -19,5 +19,10 @@ let package = Package(
             dependencies: ["CUfsecp"],
             path: "Sources/Ufsecp"
         ),
+        .testTarget(
+            name: "UfsecpTests",
+            dependencies: ["Ufsecp"],
+            path: "Tests/UfsecpTests"
+        ),
     ]
 )

@@ -13,6 +13,51 @@ import Foundation
 import CUfsecp
 #endif
 
+@inline(__always)
+private func secureZero(_ bytes: inout [UInt8]) {
+    bytes.withUnsafeMutableBufferPointer { buffer in
+        guard let base = buffer.baseAddress else { return }
+        for index in 0..<buffer.count {
+            base.advanced(by: index).pointee = 0
+        }
+    }
+}
+
+@inline(__always)
+private func takeAndZero(_ bytes: inout [UInt8]) -> Data {
+    let data = Data(bytes)
+    secureZero(&bytes)
+    return data
+}
+
+@inline(__always)
+private func secureZero(_ key: inout ufsecp_bip32_key) {
+    withUnsafeMutableBytes(of: &key) { raw in
+        guard let base = raw.baseAddress else { return }
+        for index in 0..<raw.count {
+            base.advanced(by: index).storeBytes(of: UInt8(0), toByteOffset: 0, as: UInt8.self)
+        }
+    }
+}
+
+@inline(__always)
+private func decodeBip32Key(_ data: Data) -> ufsecp_bip32_key {
+    var key = ufsecp_bip32_key()
+    withUnsafeMutableBytes(of: &key) { dst in
+        data.withUnsafeBytes { src in
+            dst.copyBytes(from: src)
+        }
+    }
+    return key
+}
+
+@inline(__always)
+private func takeAndZero(_ key: inout ufsecp_bip32_key) -> Data {
+    let data = withUnsafeBytes(of: &key) { Data($0) }
+    secureZero(&key)
+    return data
+}
+
 // MARK: - Error
 
 public enum UfsecpErrorCode: Int32 {
@@ -64,10 +109,19 @@ public struct WifDecoded {
 // MARK: - Context
 
 public final class UfsecpContext {
+    public static let expectedABI: UInt32 = 1
+
     private var ctx: OpaquePointer?
     private var destroyed = false
 
     public init() throws {
+	    let abi = ufsecp_abi_version()
+	    guard abi == Self.expectedABI else {
+	        throw UfsecpError(
+	            operation: "init",
+	            code: .internal
+	        )
+	    }
         var ptr: OpaquePointer?
         let rc = ufsecp_ctx_create(&ptr)
         guard rc == 0, let p = ptr else {
@@ -143,7 +197,7 @@ public final class UfsecpContext {
         try chk(privkey, 32, "privkey"); try alive()
         var buf = [UInt8](privkey)
         try throwRC(ufsecp_seckey_negate(ctx!, &buf), "seckey_negate")
-        return Data(buf)
+        return takeAndZero(&buf)
     }
 
     public func seckeyTweakAdd(privkey: Data, tweak: Data) throws -> Data {
@@ -152,7 +206,7 @@ public final class UfsecpContext {
         try tweak.withUnsafeBytes { tw in
             try throwRC(ufsecp_seckey_tweak_add(ctx!, &buf, tw.baseAddress!.assumingMemoryBound(to: UInt8.self)), "seckey_tweak_add")
         }
-        return Data(buf)
+        return takeAndZero(&buf)
     }
 
     public func seckeyTweakMul(privkey: Data, tweak: Data) throws -> Data {
@@ -161,7 +215,7 @@ public final class UfsecpContext {
         try tweak.withUnsafeBytes { tw in
             try throwRC(ufsecp_seckey_tweak_mul(ctx!, &buf, tw.baseAddress!.assumingMemoryBound(to: UInt8.self)), "seckey_tweak_mul")
         }
-        return Data(buf)
+        return takeAndZero(&buf)
     }
 
     // MARK: ECDSA
@@ -237,7 +291,7 @@ public final class UfsecpContext {
                     pub.baseAddress!.assumingMemoryBound(to: UInt8.self), &out), "ecdh")
             }
         }
-        return Data(out)
+        return takeAndZero(&out)
     }
 
     public func ecdhXonly(privkey: Data, pubkey: Data) throws -> Data {
@@ -250,7 +304,7 @@ public final class UfsecpContext {
                     pub.baseAddress!.assumingMemoryBound(to: UInt8.self), &out), "ecdh_xonly")
             }
         }
-        return Data(out)
+        return takeAndZero(&out)
     }
 
     public func ecdhRaw(privkey: Data, pubkey: Data) throws -> Data {
@@ -263,7 +317,7 @@ public final class UfsecpContext {
                     pub.baseAddress!.assumingMemoryBound(to: UInt8.self), &out), "ecdh_raw")
             }
         }
-        return Data(out)
+        return takeAndZero(&out)
     }
 
     // MARK: ECDSA DER
@@ -350,9 +404,12 @@ public final class UfsecpContext {
     public func addrP2pkh(pubkey: Data, network: Network = .mainnet) throws -> String {
         try chk(pubkey, 33, "pubkey"); try alive()
         var buf = [CChar](repeating: 0, count: 64)
+        var len = buf.count
         try pubkey.withUnsafeBytes { pk in
-            try throwRC(ufsecp_addr_p2pkh(ctx!,
-                pk.baseAddress!.assumingMemoryBound(to: UInt8.self), &buf, 64, network.rawValue), "addr_p2pkh")
+            try buf.withUnsafeMutableBufferPointer { addr in
+                try throwRC(ufsecp_addr_p2pkh(ctx!,
+                    pk.baseAddress!.assumingMemoryBound(to: UInt8.self), network.rawValue, addr.baseAddress, &len), "addr_p2pkh")
+            }
         }
         return String(cString: buf)
     }
@@ -360,9 +417,12 @@ public final class UfsecpContext {
     public func addrP2wpkh(pubkey: Data, network: Network = .mainnet) throws -> String {
         try chk(pubkey, 33, "pubkey"); try alive()
         var buf = [CChar](repeating: 0, count: 128)
+        var len = buf.count
         try pubkey.withUnsafeBytes { pk in
-            try throwRC(ufsecp_addr_p2wpkh(ctx!,
-                pk.baseAddress!.assumingMemoryBound(to: UInt8.self), &buf, 128, network.rawValue), "addr_p2wpkh")
+            try buf.withUnsafeMutableBufferPointer { addr in
+                try throwRC(ufsecp_addr_p2wpkh(ctx!,
+                    pk.baseAddress!.assumingMemoryBound(to: UInt8.self), network.rawValue, addr.baseAddress, &len), "addr_p2wpkh")
+            }
         }
         return String(cString: buf)
     }
@@ -370,9 +430,12 @@ public final class UfsecpContext {
     public func addrP2tr(xonly: Data, network: Network = .mainnet) throws -> String {
         try chk(xonly, 32, "xonly"); try alive()
         var buf = [CChar](repeating: 0, count: 128)
+        var len = buf.count
         try xonly.withUnsafeBytes { x in
-            try throwRC(ufsecp_addr_p2tr(ctx!,
-                x.baseAddress!.assumingMemoryBound(to: UInt8.self), &buf, 128, network.rawValue), "addr_p2tr")
+            try buf.withUnsafeMutableBufferPointer { addr in
+                try throwRC(ufsecp_addr_p2tr(ctx!,
+                    x.baseAddress!.assumingMemoryBound(to: UInt8.self), network.rawValue, addr.baseAddress, &len), "addr_p2tr")
+            }
         }
         return String(cString: buf)
     }
@@ -382,10 +445,13 @@ public final class UfsecpContext {
     public func wifEncode(privkey: Data, compressed: Bool = true, network: Network = .mainnet) throws -> String {
         try chk(privkey, 32, "privkey"); try alive()
         var buf = [CChar](repeating: 0, count: 64)
+        var len = buf.count
         try privkey.withUnsafeBytes { pk in
-            try throwRC(ufsecp_wif_encode(ctx!,
-                pk.baseAddress!.assumingMemoryBound(to: UInt8.self), compressed ? 1 : 0,
-                network.rawValue, &buf, 64), "wif_encode")
+            try buf.withUnsafeMutableBufferPointer { wif in
+                try throwRC(ufsecp_wif_encode(ctx!,
+                    pk.baseAddress!.assumingMemoryBound(to: UInt8.self), compressed ? 1 : 0,
+                    network.rawValue, wif.baseAddress, &len), "wif_encode")
+            }
         }
         return String(cString: buf)
     }
@@ -396,7 +462,8 @@ public final class UfsecpContext {
         var compressed: Int32 = 0
         var net: Int32 = 0
         try throwRC(ufsecp_wif_decode(ctx!, wif, &privkey, &compressed, &net), "wif_decode")
-        return WifDecoded(privkey: Data(privkey), compressed: compressed == 1,
+        let out = takeAndZero(&privkey)
+        return WifDecoded(privkey: out, compressed: compressed == 1,
                           network: Network(rawValue: net) ?? .mainnet)
     }
 
@@ -404,51 +471,47 @@ public final class UfsecpContext {
 
     public func bip32Master(seed: Data) throws -> Data {
         try alive()
-        var out = [UInt8](repeating: 0, count: 64)
+        var out = ufsecp_bip32_key()
         try seed.withUnsafeBytes { s in
             try throwRC(ufsecp_bip32_master(ctx!,
                 s.baseAddress!.assumingMemoryBound(to: UInt8.self), seed.count, &out), "bip32_master")
         }
-        return Data(out)
+        return takeAndZero(&out)
     }
 
     public func bip32Derive(parent: Data, index: UInt32) throws -> Data {
-        try chk(parent, 64, "parent"); try alive()
-        var out = [UInt8](repeating: 0, count: 64)
-        try parent.withUnsafeBytes { p in
-            try throwRC(ufsecp_bip32_derive(ctx!,
-                p.baseAddress!.assumingMemoryBound(to: UInt8.self), index, &out), "bip32_derive")
-        }
-        return Data(out)
+        try chk(parent, 82, "parent"); try alive()
+        var parentKey = decodeBip32Key(parent)
+        defer { secureZero(&parentKey) }
+        var out = ufsecp_bip32_key()
+        try throwRC(ufsecp_bip32_derive(ctx!, &parentKey, index, &out), "bip32_derive")
+        return takeAndZero(&out)
     }
 
     public func bip32DerivePath(master: Data, path: String) throws -> Data {
-        try chk(master, 64, "master"); try alive()
-        var out = [UInt8](repeating: 0, count: 64)
-        try master.withUnsafeBytes { m in
-            try throwRC(ufsecp_bip32_derive_path(ctx!,
-                m.baseAddress!.assumingMemoryBound(to: UInt8.self), path, &out), "bip32_derive_path")
-        }
-        return Data(out)
+        try chk(master, 82, "master"); try alive()
+        var masterKey = decodeBip32Key(master)
+        defer { secureZero(&masterKey) }
+        var out = ufsecp_bip32_key()
+        try throwRC(ufsecp_bip32_derive_path(ctx!, &masterKey, path, &out), "bip32_derive_path")
+        return takeAndZero(&out)
     }
 
     public func bip32Privkey(key: Data) throws -> Data {
-        try chk(key, 64, "key"); try alive()
+        try chk(key, 82, "key"); try alive()
+        var bip32Key = decodeBip32Key(key)
+        defer { secureZero(&bip32Key) }
         var out = [UInt8](repeating: 0, count: 32)
-        try key.withUnsafeBytes { k in
-            try throwRC(ufsecp_bip32_privkey(ctx!,
-                k.baseAddress!.assumingMemoryBound(to: UInt8.self), &out), "bip32_privkey")
-        }
-        return Data(out)
+        try throwRC(ufsecp_bip32_privkey(ctx!, &bip32Key, &out), "bip32_privkey")
+        return takeAndZero(&out)
     }
 
     public func bip32Pubkey(key: Data) throws -> Data {
-        try chk(key, 64, "key"); try alive()
+        try chk(key, 82, "key"); try alive()
+        var bip32Key = decodeBip32Key(key)
+        defer { secureZero(&bip32Key) }
         var out = [UInt8](repeating: 0, count: 33)
-        try key.withUnsafeBytes { k in
-            try throwRC(ufsecp_bip32_pubkey(ctx!,
-                k.baseAddress!.assumingMemoryBound(to: UInt8.self), &out), "bip32_pubkey")
-        }
+        try throwRC(ufsecp_bip32_pubkey(ctx!, &bip32Key, &out), "bip32_pubkey")
         return Data(out)
     }
 
@@ -492,7 +555,7 @@ public final class UfsecpContext {
                     pk.baseAddress!.assumingMemoryBound(to: UInt8.self), nil, &out), "taproot_tweak_seckey")
             }
         }
-        return Data(out)
+        return takeAndZero(&out)
     }
 
     public func taprootVerify(outputX: Data, parity: Int32, internalX: Data, merkleRoot: Data?) throws -> Bool {

@@ -9,6 +9,7 @@ import ctypes
 import ctypes.util
 import os
 import platform
+import warnings
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -76,6 +77,12 @@ class Secp256k1:
         Args:
             lib_path: Path to the shared library. Auto-detected if None.
         """
+        warnings.warn(
+            "ultrafast_secp256k1._ffi is a legacy stateless wrapper over the variable-time c_api surface. "
+            "Use bindings/python/ufsecp for the standardized context-based security model.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         path = lib_path or _find_library()
         self._lib = ctypes.CDLL(path)
         self._setup_prototypes()

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stable binding validation closure** -- aligned the shared `validate_bindings.sh` flow and wrapper smoke suites across C#, Java, Swift, Python, Go, Rust, Node.js, PHP, Ruby, Dart, and the default React Native contract lane. Fixed wrapper/API drift, zero-length FFI buffer edge cases, Dart `NativeFinalizer` usage, and local Dart smoke-runner execution issues uncovered during the pass.
 - **CUDA `jacobian_add_mixed_unchecked` infinity flag** — missing `r->infinity = false` assignment
   in the normal (non-infinity-input) code path caused generator table entries `table[3..15]` built
   by `build_generator_table` to carry uninitialized infinity flags. Scalars with many consecutive
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Binding docs and packaging notes** -- synchronized canonical binding docs, examples, package names, and validation framing to the verified state: Dart is documented as `ultrafast_secp256k1`, React Native as `react-native-ultrafast-secp256k1`, and the central bindings matrix now reflects smoke-validated coverage instead of stale compile-only/optional wording.
 - **CUDA signing paths — `scalar_mul_generator_const` → `scalar_mul_generator_w8`** across all
   signing kernels (`ecdsa.cuh`, `schnorr.cuh`, `bip32.cuh`, `pedersen.cuh`, `zk.cuh`).
   w=8 uses 32 windows of 8-bit lookups instead of 64 windows of 4-bit lookups (w=4):

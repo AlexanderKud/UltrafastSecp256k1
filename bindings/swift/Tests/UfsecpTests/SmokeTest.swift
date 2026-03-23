@@ -45,7 +45,7 @@ final class SmokeTest: XCTestCase {
     // ── Tests ───────────────────────────────────────────────────────────
 
     func testCtxCreateAbi() throws {
-        let abi = ctx.abiVersion
+        let abi = UfsecpContext.abiVersion
         XCTAssertGreaterThanOrEqual(abi, 1, "ABI version < 1")
     }
 
@@ -88,7 +88,7 @@ final class SmokeTest: XCTestCase {
     }
 
     func testSha256Golden() throws {
-        let digest = try ctx.sha256(Data())
+        let digest = try UfsecpContext.sha256(Data())
         XCTAssertEqual(digest, Self.SHA256_EMPTY, "SHA-256 empty mismatch")
     }
 

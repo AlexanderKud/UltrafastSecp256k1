@@ -12,23 +12,24 @@
  *   4. No internal GPU types leak -- all I/O is `uint8_t[]` with fixed strides.
  *   5. Thread safety: each gpu_ctx is single-thread. Create one per thread or
  *      protect externally.
- *   6. All first-wave operations are PUBLIC-DATA ONLY (verification, hashing,
- *      generator mul). ECDH is secret-bearing and documented as such.
+ *   6. On the stable public GPU C ABI declared in this header, all operations
+ *      are PUBLIC-DATA ONLY except ECDH. ECDH is secret-bearing and documented
+ *      as such.
  *
  * ## Feature maturity
  *
  *   This header defines the stable GPU API surface. Backend support
- *   per-operation varies:
+ *   per-operation varies. Internal kernels, benchmarks, or backend test code
+ *   may cover broader primitives; that does not by itself make those
+ *   primitives part of the stable secret-bearing GPU ABI.
  *
  *     CUDA   -- all 8 GPU ops implemented
- *     OpenCL -- 7/8 GPU ops implemented; `ecrecover_batch` currently returns
- *               UNSUPPORTED via a documented temporary stub
- *     Metal  -- 7/8 GPU ops implemented; `ecrecover_batch` currently returns
- *               UNSUPPORTED via a documented temporary stub
+ *     OpenCL -- all 8 GPU ops implemented
+ *     Metal  -- all 8 GPU ops implemented
  *
  *   Operations that a backend does not implement return
- *   UFSECP_ERR_GPU_UNSUPPORTED (104). Callers MUST handle this gracefully.
- *   Backend coverage will expand over subsequent releases.
+ *   UFSECP_ERR_GPU_UNSUPPORTED (104). This is no longer expected for the
+ *   stable 8-op GPU C ABI on compiled CUDA/OpenCL/Metal backends.
  *
  *   Guarantees:
  *     - Discovery + lifecycle functions work on all compiled backends.
@@ -142,7 +143,10 @@ UFSECP_API void ufsecp_gpu_ctx_destroy(ufsecp_gpu_ctx* ctx);
 /** Return the last error code from this GPU context. */
 UFSECP_API ufsecp_error_t ufsecp_gpu_last_error(const ufsecp_gpu_ctx* ctx);
 
-/** Return the last error message from this GPU context (never NULL). */
+/** Return the last error message from this GPU context (never NULL).
+ *  The returned pointer is borrowed storage owned by ctx/backend state.
+ *  It remains valid until the next call that mutates the same ctx, or until
+ *  ufsecp_gpu_ctx_destroy(ctx). Copy it if it must outlive the context/call. */
 UFSECP_API const char* ufsecp_gpu_last_error_msg(const ufsecp_gpu_ctx* ctx);
 
 /* ============================================================================

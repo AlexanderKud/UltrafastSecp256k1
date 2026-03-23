@@ -2,7 +2,7 @@
 
 **Version**: v3.22.0
 **Audit Runner**: `unified_audit_runner`
-**Verdict**: **AUDIT-READY** -- 55/55 modules passed
+**Verdict**: **AUDIT-READY** -- 56/56 modules passed
 **Total Checks**: ~1,000,000+ (audit) + 1.3M+ (nightly differential)
 **Runtime**: ~36.5 seconds (X64, Clang 21.1.0, Release)
 
@@ -13,12 +13,12 @@
 | Metric               | Value                                       |
 |----------------------|---------------------------------------------|
 | Audit Sections       | 8                                           |
-| Audit Modules        | 55 (54 + parse strictness) |
+| Audit Modules        | 56 (55 + dedicated C ABI thread stress) |
 | Audit assertions     | ~1,000,000+ (parser fuzz 530K, CT deep 120K, field Fp 264K, ZK ~1.5K, ...) |
 | Nightly differential | ~1,300,000+ additional random checks (daily) |
 | CI Workflows         | 23 GitHub Actions workflows                 |
 | CI Build Matrix      | 17 configurations, 7 architectures, 5 OSes  |
-| Sanitizers           | ASan+UBSan, TSan, Valgrind memcheck         |
+| Sanitizers           | ASan+UBSan, TSan, Valgrind memcheck + dedicated C ABI thread stress         |
 | Fuzzing              | 3 libFuzzer harnesses + 530K deterministic   |
 | Static Analysis      | CodeQL, SonarCloud, clang-tidy, -Werror      |
 | Language Bindings    | 12 (Python, C#, Rust, Node, PHP, Go, Java, Swift, RN, Ruby, Dart, C API) |
@@ -861,24 +861,33 @@ ctest --test-dir build_rel --output-on-failure
 
 ## CI/CD Pipeline -- Full Infrastructure
 
-### 14 GitHub Actions Workflows
+### 23 GitHub Actions Workflows
 
 | # | Workflow | Trigger | What it does |
 |---|---------|---------|--------------|
-| 1 | **CI** | push/PR dev,main | Core build+test matrix (see below) |
-| 2 | **Security Audit** | push main, weekly | ASan+UBSan, Valgrind, dudect smoke, -Werror build |
-| 3 | **Nightly** | daily 03:00 UTC | Extended differential (1.3M+ checks), dudect full (30 min) |
-| 4 | **Bindings** | push dev/main (bindings/) | 12 language bindings compile-check |
-| 5 | **Benchmark Dashboard** | push dev/main | Performance tracking (Linux + Windows), regression alerts |
-| 6 | **CodeQL** | push dev/main, weekly | GitHub SAST (security-and-quality queries) |
-| 7 | **SonarCloud** | push dev/main | Static analysis + coverage upload |
-| 8 | **Clang-Tidy** | push dev/main (cpu/) | Static analysis (clang-tidy-17) |
-| 9 | **OpenSSF Scorecard** | push main, weekly | Supply-chain security score |
-| 10 | **Dependency Review** | PRs | Known-vulnerable dependency scanning |
-| 11 | **Linux Packages** | release tags | .deb (amd64+arm64) + .rpm (x86_64) packaging |
-| 12 | **Release** | release tags | Multi-platform binaries + all binding packages |
-| 13 | **Docs** | push main (cpu/include/) | Doxygen API docs to GitHub Pages |
-| 14 | **Discord Commits** | push | Commit notifications |
+| 1 | **CI** | push/PR dev,main | Core build+test matrix, including ARM64 + RISC-V cross-build/QEMU smoke |
+| 2 | **Security Audit** | push main, weekly | -Werror, ASan+UBSan, Valgrind, dudect smoke |
+| 3 | **Nightly** | daily 03:00 UTC | Extended differential (1.3M+ checks), longer dudect, sanitizer expansion |
+| 4 | **Audit Report** | push/manual | `unified_audit_runner` structured report |
+| 5 | **CT Verification** | push/PR | ct-verif formal pass |
+| 6 | **CT ARM64** | push/PR | Native ARM64 dudect |
+| 7 | **Valgrind CT** | push/PR | CT taint analysis |
+| 8 | **Bindings** | push/PR | binding compile + smoke coverage |
+| 9 | **Benchmark Dashboard** | push | benchmark publication |
+| 10 | **Bench Regression** | push/PR | perf regression gate |
+| 11 | **CodeQL** | push/PR/weekly | GitHub SAST |
+| 12 | **SonarCloud** | push/PR | static analysis + quality hotspots |
+| 13 | **Clang-Tidy** | push/PR | static analysis |
+| 14 | **CPPCheck** | push/PR | static analysis |
+| 15 | **ClusterFuzz-Lite** | push | continuous fuzzing integration |
+| 16 | **Mutation** | scheduled | mutation score checks |
+| 17 | **Dependency Review** | PRs | vulnerable dependency scan |
+| 18 | **OpenSSF Scorecard** | weekly | supply-chain security score |
+| 19 | **Docs** | push main | docs publication |
+| 20 | **Packaging** | push/PR | package validation |
+| 21 | **Release** | release tags | signed multi-platform artifacts |
+| 22 | **Preflight** | PR | fast pre-merge smoke gate |
+| 23 | **Discord Commits** | push | commit notifications |
 
 ---
 
@@ -888,14 +897,15 @@ ctest --test-dir build_rel --output-on-failure
 |----------|----------|---------|-------|
 | Linux x64 | gcc-13 | Debug, Release | CTest (all except ct_sidechannel) |
 | Linux x64 | clang-17 | Debug, Release | CTest (all except ct_sidechannel) |
-| Linux ARM64 | aarch64-linux-gnu-g++-13 | Release (cross) | Binary verification |
+| Linux ARM64 | aarch64-linux-gnu-g++-13 | Release (cross) | QEMU smoke: `run_selftest smoke`, `test_bip324_standalone`, `bench_kP`, `bench_bip324` |
+| Linux RISC-V 64 | riscv64-linux-gnu-g++-13 | Release (cross) | QEMU smoke: `run_selftest smoke`, `test_bip324_standalone`, `bench_kP`, `bench_bip324` |
 | Windows x64 | MSVC 2022 | Release | CTest |
 | macOS ARM64 | Apple Clang | Release | CTest + Metal GPU benchmarks |
 | iOS | Xcode | OS, SIMULATOR | Static library build |
 | iOS XCFramework | Xcode | Universal | XCFramework artifact |
 | ROCm/HIP | hipcc (gfx906-gfx1100) | Release | CPU tests (compile-check GPU) |
 | WASM | Emscripten 3.1.51 | Release | Node.js benchmark |
-| Android | NDK r27c | arm64-v8a, armeabi-v7a, x86_64 | Binary verification + JNI |
+| Android | NDK r27c | arm64-v8a, armeabi-v7a, x86_64 | Binary verification + JNI; ARM64 also verifies `bench_kP` + `bench_bip324` outputs exist |
 | Sanitizers | clang-17 | ASan+UBSan | CTest under sanitizers |
 | Sanitizers | clang-17 | TSan | CTest under thread sanitizer |
 | Coverage | clang-17 | Debug + profiling | LLVM source-based coverage -> Codecov |

@@ -99,9 +99,9 @@ BIP-340 test vectors (0-14).
 
 ---
 
-## Self-audit vs independent audit
+## Self-audit and external reproducibility
 
 The unified audit runner (`unified_audit_runner`) is a **self-assessment**
-tool. It does NOT replace independent third-party cryptographic audit.
+tool. It is designed to be reproducible by outside reviewers as well; the goal is open verification, not a paperwork substitute.
 See [SECURITY.md](../SECURITY.md) for the project's security posture and
 audit status.

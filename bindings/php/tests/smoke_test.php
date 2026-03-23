@@ -93,14 +93,14 @@ check('schnorr_sign_verify', function () use ($ctx, $MSG32, $KNOWN_PRIVKEY, $KNO
 });
 
 check('ecdsa_recover', function () use ($ctx, $MSG32, $KNOWN_PRIVKEY, $KNOWN_PUBKEY) {
-    $rec = $ctx->ecdsaSignRecoverable($MSG32, $KNOWN_PRIVKEY);
-    assertTrue($rec['recid'] >= 0 && $rec['recid'] <= 3, 'recid range');
-    $pub = $ctx->ecdsaRecover($MSG32, $rec['sig'], $rec['recid']);
+    [$sig, $recid] = $ctx->ecdsaSignRecoverable($MSG32, $KNOWN_PRIVKEY);
+    assertTrue($recid >= 0 && $recid <= 3, 'recid range');
+    $pub = $ctx->ecdsaRecover($MSG32, $sig, $recid);
     assertEq($pub, $KNOWN_PUBKEY, 'recovered pubkey');
 });
 
 check('sha256_golden', function () use ($ctx, $SHA256_EMPTY) {
-    $digest = Ufsecp::sha256('');
+    $digest = $ctx->sha256('');
     assertEq($digest, $SHA256_EMPTY, 'SHA-256 empty');
 });
 

@@ -40,6 +40,14 @@ let sig = try ctx.ecdsaSign(msgHash: msgHash, privkey: privkey)
 let valid = try ctx.ecdsaVerify(msgHash: msgHash, sig: sig, pubkey: pubkey)
 ```
 
+## Local Smoke Validation
+
+```bash
+bash libs/UltrafastSecp256k1/scripts/validate_bindings.sh
+```
+
+This runs the current C#, Java, and Swift smoke suites against the local build tree on a prepared developer machine.
+
 ## ECDSA Recovery
 
 ```swift

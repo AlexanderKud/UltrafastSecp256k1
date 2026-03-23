@@ -24,6 +24,10 @@ const NativeSecp256k1 =
     }
   );
 
+console.warn(
+  'react-native-ultrafast-secp256k1/lib/index.js is a legacy stateless bridge with weaker secret-handling guarantees. Use the context-based react-native ufsecp binding for the standardized security model.'
+);
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function toHex(data) {

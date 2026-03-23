@@ -1,3 +1,6 @@
+//go:build ultrafast_legacy
+// +build ultrafast_legacy
+
 // Package secp256k1 provides Go bindings for the UltrafastSecp256k1 C library.
 //
 // High-performance secp256k1 elliptic curve cryptography: key operations,

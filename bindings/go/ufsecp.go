@@ -31,6 +31,7 @@ import (
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const (
+	ExpectedABI        = 1
 	PrivkeyLen         = 32
 	PubkeyCompressedLen = 33
 	PubkeyUncompressedLen = 65
@@ -102,6 +103,9 @@ type Context struct {
 
 // NewContext creates a new ufsecp context (runs selftest on first call).
 func NewContext() (*Context, error) {
+	if abi := ABIVersion(); abi != ExpectedABI {
+		return nil, fmt.Errorf("ufsecp: ABI mismatch: wrapper expects ABI %d, lib reports ABI %d", ExpectedABI, abi)
+	}
 	var ctx *C.ufsecp_ctx
 	rc := C.ufsecp_ctx_create(&ctx)
 	if rc != C.UFSECP_OK {
@@ -127,6 +131,7 @@ func (c *Context) Clone() (*Context, error) {
 // Destroy frees the context. Safe to call multiple times.
 func (c *Context) Destroy() {
 	if c.ctx != nil {
+		runtime.SetFinalizer(c, nil)
 		C.ufsecp_ctx_destroy(c.ctx)
 		c.ctx = nil
 	}
@@ -399,7 +404,8 @@ func (c *Context) ECDHRaw(privkey [32]byte, pubkey [33]byte) ([32]byte, error) {
 // SHA256 computes a SHA-256 digest (hardware-accelerated when available).
 func SHA256(data []byte) ([32]byte, error) {
 	var out [32]byte
-	var p *C.uint8_t
+	var placeholder C.uint8_t
+	var p *C.uint8_t = &placeholder
 	if len(data) > 0 {
 		p = (*C.uint8_t)(unsafe.Pointer(&data[0]))
 	}
@@ -410,7 +416,8 @@ func SHA256(data []byte) ([32]byte, error) {
 // Hash160 computes RIPEMD160(SHA256(data)).
 func Hash160(data []byte) ([20]byte, error) {
 	var out [20]byte
-	var p *C.uint8_t
+	var placeholder C.uint8_t
+	var p *C.uint8_t = &placeholder
 	if len(data) > 0 {
 		p = (*C.uint8_t)(unsafe.Pointer(&data[0]))
 	}
@@ -423,7 +430,8 @@ func TaggedHash(tag string, data []byte) ([32]byte, error) {
 	var out [32]byte
 	cTag := C.CString(tag)
 	defer C.free(unsafe.Pointer(cTag))
-	var p *C.uint8_t
+	var placeholder C.uint8_t
+	var p *C.uint8_t = &placeholder
 	if len(data) > 0 {
 		p = (*C.uint8_t)(unsafe.Pointer(&data[0]))
 	}

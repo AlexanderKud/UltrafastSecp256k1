@@ -168,6 +168,7 @@ int audit_zk_run();
 int test_secp256k1_spec_run();    // SEC2 v2.0 curve constant oracle
 int audit_invariants_run();       // Post-operation on-curve invariant checker
 int test_c_abi_negative_run();    // C ABI null/bad-input contract tests
+int test_c_abi_thread_stress_run(); // C ABI thread stress using one ctx per thread
 
 // ============================================================================
 // Forward declarations -- Security audit modules (new)
@@ -320,6 +321,7 @@ static const AuditModule ALL_MODULES[] = {
     { "abi_gate",          "ABI version gate (compile-time)",              "memory_safety",  test_abi_gate_run, false },
     { "ffi_round_trip",    "Cross-ABI/FFI round-trip (ufsecp C API)",     "memory_safety",  test_ffi_round_trip_run, false },
     { "c_abi_negative",    "C ABI null/bad-key/bad-sig contract tests",   "memory_safety",  test_c_abi_negative_run, false },
+    { "c_abi_thread_stress", "C ABI thread stress (one ctx per thread)",  "memory_safety",  test_c_abi_thread_stress_run, false },
     { "secure_erase",      "Secure memory erasure (volatile readback)",   "memory_safety",  audit_secure_erase_run, false },
     { "ct_namespace",      "CT namespace discipline (source-level scan)", "memory_safety",  audit_ct_namespace_run, false },
     { "kat_all_ops",       "KAT: ECDH/WIF/P2PKH/P2WPKH/P2TR/hash/arith","standard_vectors", test_kat_all_operations_run, false },

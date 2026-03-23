@@ -9,6 +9,7 @@
 
 #nullable enable
 using System;
+using System.Security.Cryptography;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -134,23 +135,38 @@ namespace Ultrafast.Ufsecp
     /// </summary>
     public sealed class Ufsecp : IDisposable
     {
+        private const uint ExpectedAbi = 1;
         private IntPtr _ctx;
         private bool _disposed;
 
         public Ufsecp()
         {
+	        var abi = Native.ufsecp_abi_version();
+	        if (abi != ExpectedAbi)
+	            throw new InvalidOperationException($"ABI mismatch: wrapper expects ABI {ExpectedAbi}, lib reports ABI {abi}.");
             Throw(Native.ufsecp_ctx_create(out _ctx), "ctx_create");
         }
 
+	    ~Ufsecp()
+	    {
+	        Dispose(false);
+	    }
+
         public void Dispose()
         {
-            if (!_disposed && _ctx != IntPtr.Zero)
-            {
-                Native.ufsecp_ctx_destroy(_ctx);
-                _ctx = IntPtr.Zero;
-                _disposed = true;
-            }
+	        Dispose(true);
+	        GC.SuppressFinalize(this);
         }
+
+	    private void Dispose(bool disposing)
+	    {
+	        if (!_disposed && _ctx != IntPtr.Zero)
+	        {
+	            Native.ufsecp_ctx_destroy(_ctx);
+	            _ctx = IntPtr.Zero;
+	        }
+	        _disposed = true;
+	    }
 
         // ── Version ────────────────────────────────────────────────────
 
@@ -200,25 +216,46 @@ namespace Ultrafast.Ufsecp
         public byte[] SeckeyNegate(byte[] privkey)
         {
             Chk(privkey, 32, nameof(privkey)); Alive();
-            var buf = (byte[])privkey.Clone();
-            Throw(Native.ufsecp_seckey_negate(_ctx, buf), nameof(SeckeyNegate));
-            return buf;
+            var buf = CloneSensitive(privkey);
+            try {
+                Throw(Native.ufsecp_seckey_negate(_ctx, buf), nameof(SeckeyNegate));
+                return buf;
+            } catch {
+                ZeroSensitive(buf);
+                throw;
+            }
         }
 
         public byte[] SeckeyTweakAdd(byte[] privkey, byte[] tweak)
         {
             Chk(privkey, 32, nameof(privkey)); Chk(tweak, 32, nameof(tweak)); Alive();
-            var buf = (byte[])privkey.Clone();
-            Throw(Native.ufsecp_seckey_tweak_add(_ctx, buf, tweak), nameof(SeckeyTweakAdd));
-            return buf;
+            var buf = CloneSensitive(privkey);
+            var tweakCopy = CloneSensitive(tweak);
+            try {
+                Throw(Native.ufsecp_seckey_tweak_add(_ctx, buf, tweakCopy), nameof(SeckeyTweakAdd));
+                return buf;
+            } catch {
+                ZeroSensitive(buf);
+                throw;
+            } finally {
+                ZeroSensitive(tweakCopy);
+            }
         }
 
         public byte[] SeckeyTweakMul(byte[] privkey, byte[] tweak)
         {
             Chk(privkey, 32, nameof(privkey)); Chk(tweak, 32, nameof(tweak)); Alive();
-            var buf = (byte[])privkey.Clone();
-            Throw(Native.ufsecp_seckey_tweak_mul(_ctx, buf, tweak), nameof(SeckeyTweakMul));
-            return buf;
+            var buf = CloneSensitive(privkey);
+            var tweakCopy = CloneSensitive(tweak);
+            try {
+                Throw(Native.ufsecp_seckey_tweak_mul(_ctx, buf, tweakCopy), nameof(SeckeyTweakMul));
+                return buf;
+            } catch {
+                ZeroSensitive(buf);
+                throw;
+            } finally {
+                ZeroSensitive(tweakCopy);
+            }
         }
 
         // ── ECDSA ──────────────────────────────────────────────────────
@@ -226,9 +263,14 @@ namespace Ultrafast.Ufsecp
         public byte[] EcdsaSign(byte[] msgHash, byte[] privkey)
         {
             Chk(msgHash, 32, nameof(msgHash)); Chk(privkey, 32, nameof(privkey)); Alive();
+            var keyCopy = CloneSensitive(privkey);
             var sig = new byte[64];
-            Throw(Native.ufsecp_ecdsa_sign(_ctx, msgHash, privkey, sig), nameof(EcdsaSign));
-            return sig;
+            try {
+                Throw(Native.ufsecp_ecdsa_sign(_ctx, msgHash, keyCopy, sig), nameof(EcdsaSign));
+                return sig;
+            } finally {
+                ZeroSensitive(keyCopy);
+            }
         }
 
         public bool EcdsaVerify(byte[] msgHash, byte[] sig, byte[] pubkey)
@@ -258,9 +300,14 @@ namespace Ultrafast.Ufsecp
         public RecoverableSignature EcdsaSignRecoverable(byte[] msgHash, byte[] privkey)
         {
             Chk(msgHash, 32, nameof(msgHash)); Chk(privkey, 32, nameof(privkey)); Alive();
+            var keyCopy = CloneSensitive(privkey);
             var sig = new byte[64];
-            Throw(Native.ufsecp_ecdsa_sign_recoverable(_ctx, msgHash, privkey, sig, out int recid), nameof(EcdsaSignRecoverable));
-            return new RecoverableSignature(sig, recid);
+            try {
+                Throw(Native.ufsecp_ecdsa_sign_recoverable(_ctx, msgHash, keyCopy, sig, out int recid), nameof(EcdsaSignRecoverable));
+                return new RecoverableSignature(sig, recid);
+            } finally {
+                ZeroSensitive(keyCopy);
+            }
         }
 
         public byte[] EcdsaRecover(byte[] msgHash, byte[] sig, int recid)
@@ -276,9 +323,16 @@ namespace Ultrafast.Ufsecp
         public byte[] SchnorrSign(byte[] msg, byte[] privkey, byte[] auxRand)
         {
             Chk(msg, 32, nameof(msg)); Chk(privkey, 32, nameof(privkey)); Chk(auxRand, 32, nameof(auxRand)); Alive();
+            var keyCopy = CloneSensitive(privkey);
+            var auxCopy = CloneSensitive(auxRand);
             var sig = new byte[64];
-            Throw(Native.ufsecp_schnorr_sign(_ctx, msg, privkey, auxRand, sig), nameof(SchnorrSign));
-            return sig;
+            try {
+                Throw(Native.ufsecp_schnorr_sign(_ctx, msg, keyCopy, auxCopy, sig), nameof(SchnorrSign));
+                return sig;
+            } finally {
+                ZeroSensitive(keyCopy);
+                ZeroSensitive(auxCopy);
+            }
         }
 
         public bool SchnorrVerify(byte[] msg, byte[] sig, byte[] pubkeyX)
@@ -292,19 +346,34 @@ namespace Ultrafast.Ufsecp
         public byte[] Ecdh(byte[] privkey, byte[] pubkey)
         {
             Chk(privkey, 32, nameof(privkey)); Chk(pubkey, 33, nameof(pubkey)); Alive();
-            var o = new byte[32]; Throw(Native.ufsecp_ecdh(_ctx, privkey, pubkey, o), nameof(Ecdh)); return o;
+            var keyCopy = CloneSensitive(privkey);
+            try {
+                var o = new byte[32]; Throw(Native.ufsecp_ecdh(_ctx, keyCopy, pubkey, o), nameof(Ecdh)); return o;
+            } finally {
+                ZeroSensitive(keyCopy);
+            }
         }
 
         public byte[] EcdhXonly(byte[] privkey, byte[] pubkey)
         {
             Chk(privkey, 32, nameof(privkey)); Chk(pubkey, 33, nameof(pubkey)); Alive();
-            var o = new byte[32]; Throw(Native.ufsecp_ecdh_xonly(_ctx, privkey, pubkey, o), nameof(EcdhXonly)); return o;
+            var keyCopy = CloneSensitive(privkey);
+            try {
+                var o = new byte[32]; Throw(Native.ufsecp_ecdh_xonly(_ctx, keyCopy, pubkey, o), nameof(EcdhXonly)); return o;
+            } finally {
+                ZeroSensitive(keyCopy);
+            }
         }
 
         public byte[] EcdhRaw(byte[] privkey, byte[] pubkey)
         {
             Chk(privkey, 32, nameof(privkey)); Chk(pubkey, 33, nameof(pubkey)); Alive();
-            var o = new byte[32]; Throw(Native.ufsecp_ecdh_raw(_ctx, privkey, pubkey, o), nameof(EcdhRaw)); return o;
+            var keyCopy = CloneSensitive(privkey);
+            try {
+                var o = new byte[32]; Throw(Native.ufsecp_ecdh_raw(_ctx, keyCopy, pubkey, o), nameof(EcdhRaw)); return o;
+            } finally {
+                ZeroSensitive(keyCopy);
+            }
         }
 
         // ── Hashing ────────────────────────────────────────────────────
@@ -343,9 +412,14 @@ namespace Ultrafast.Ufsecp
         public string WifEncode(byte[] privkey, bool compressed = true, Network net = Network.Mainnet)
         {
             Chk(privkey, 32, nameof(privkey)); Alive();
+            var keyCopy = CloneSensitive(privkey);
             var buf = new byte[128]; nuint len = 128;
-            Throw(Native.ufsecp_wif_encode(_ctx, privkey, compressed ? 1 : 0, (int)net, buf, ref len), nameof(WifEncode));
-            return Encoding.UTF8.GetString(buf, 0, (int)len);
+            try {
+                Throw(Native.ufsecp_wif_encode(_ctx, keyCopy, compressed ? 1 : 0, (int)net, buf, ref len), nameof(WifEncode));
+                return Encoding.UTF8.GetString(buf, 0, (int)len);
+            } finally {
+                ZeroSensitive(keyCopy);
+            }
         }
 
         public WifDecoded WifDecode(string wif)
@@ -362,18 +436,50 @@ namespace Ultrafast.Ufsecp
         {
             if (seed.Length < 16 || seed.Length > 64) throw new ArgumentException("Seed must be 16-64 bytes");
             Alive(); var k = new byte[82];
-            Throw(Native.ufsecp_bip32_master(_ctx, seed, (nuint)seed.Length, k), nameof(Bip32Master));
-            return k;
+            var seedCopy = CloneSensitive(seed);
+            try {
+                Throw(Native.ufsecp_bip32_master(_ctx, seedCopy, (nuint)seedCopy.Length, k), nameof(Bip32Master));
+                return k;
+            } finally {
+                ZeroSensitive(seedCopy);
+            }
         }
 
         public byte[] Bip32Derive(byte[] parent, uint index)
-        { Chk(parent, 82, nameof(parent)); Alive(); var c = new byte[82]; Throw(Native.ufsecp_bip32_derive(_ctx, parent, index, c), nameof(Bip32Derive)); return c; }
+        {
+            Chk(parent, 82, nameof(parent)); Alive(); var c = new byte[82];
+            var parentCopy = CloneSensitive(parent);
+            try {
+                Throw(Native.ufsecp_bip32_derive(_ctx, parentCopy, index, c), nameof(Bip32Derive));
+                return c;
+            } finally {
+                ZeroSensitive(parentCopy);
+            }
+        }
 
         public byte[] Bip32DerivePath(byte[] master, string path)
-        { Chk(master, 82, nameof(master)); Alive(); var k = new byte[82]; Throw(Native.ufsecp_bip32_derive_path(_ctx, master, path, k), nameof(Bip32DerivePath)); return k; }
+        {
+            Chk(master, 82, nameof(master)); Alive(); var k = new byte[82];
+            var masterCopy = CloneSensitive(master);
+            try {
+                Throw(Native.ufsecp_bip32_derive_path(_ctx, masterCopy, path, k), nameof(Bip32DerivePath));
+                return k;
+            } finally {
+                ZeroSensitive(masterCopy);
+            }
+        }
 
         public byte[] Bip32Privkey(byte[] key)
-        { Chk(key, 82, nameof(key)); Alive(); var p = new byte[32]; Throw(Native.ufsecp_bip32_privkey(_ctx, key, p), nameof(Bip32Privkey)); return p; }
+        {
+            Chk(key, 82, nameof(key)); Alive(); var p = new byte[32];
+            var keyCopy = CloneSensitive(key);
+            try {
+                Throw(Native.ufsecp_bip32_privkey(_ctx, keyCopy, p), nameof(Bip32Privkey));
+                return p;
+            } finally {
+                ZeroSensitive(keyCopy);
+            }
+        }
 
         public byte[] Bip32Pubkey(byte[] key)
         { Chk(key, 82, nameof(key)); Alive(); var p = new byte[33]; Throw(Native.ufsecp_bip32_pubkey(_ctx, key, p), nameof(Bip32Pubkey)); return p; }
@@ -391,9 +497,14 @@ namespace Ultrafast.Ufsecp
         public byte[] TaprootTweakSeckey(byte[] privkey, byte[]? merkleRoot = null)
         {
             Chk(privkey, 32, nameof(privkey)); Alive();
+            var keyCopy = CloneSensitive(privkey);
             var o = new byte[32];
-            Throw(Native.ufsecp_taproot_tweak_seckey(_ctx, privkey, merkleRoot, o), nameof(TaprootTweakSeckey));
-            return o;
+            try {
+                Throw(Native.ufsecp_taproot_tweak_seckey(_ctx, keyCopy, merkleRoot, o), nameof(TaprootTweakSeckey));
+                return o;
+            } finally {
+                ZeroSensitive(keyCopy);
+            }
         }
 
         public bool TaprootVerify(byte[] outputKeyX, int parity, byte[] internalKeyX, byte[]? merkleRoot = null)
@@ -418,6 +529,17 @@ namespace Ultrafast.Ufsecp
         }
 
         private delegate int AddrFn(IntPtr ctx, byte[] key, int network, byte[] addr, ref nuint len);
+
+        private static byte[] CloneSensitive(byte[] input)
+        {
+            return (byte[])input.Clone();
+        }
+
+        private static void ZeroSensitive(byte[]? buffer)
+        {
+            if (buffer is { Length: > 0 })
+                CryptographicOperations.ZeroMemory(buffer);
+        }
 
         private string GetAddr(AddrFn fn, byte[] key, Network net)
         {

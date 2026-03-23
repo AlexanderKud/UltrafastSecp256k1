@@ -124,9 +124,43 @@ const { outputKeyX, parity } = secp.taprootOutputKey(xOnlyPub);
 const tweakedPriv = secp.taprootTweakPrivkey(privkey);
 ```
 
+## Security Notes
+
+- Secret-bearing operations in the stable `ufsecp_*` C ABI route through the
+	native constant-time CPU paths. Public verification and serialization routes
+	stay on the native fast paths.
+- JavaScript cannot guarantee full secret erasure. V8/Node may keep Buffer
+	copies alive longer than expected, and helper methods may create additional
+	copies in JS memory.
+- Treat caller-owned `Buffer` and `Uint8Array` objects as sensitive material:
+	minimize copies, overwrite them after use, and avoid long-lived references.
+- If you use the lower-level context-based wrapper in `lib/ufsecp.js`, destroy
+	each context explicitly and do not share one context across worker threads
+	without external synchronization.
+- To minimize human error, the Node bindings now support `autoZeroInputs: true`
+	and `SensitiveBytes.take(...)`. In secure mode, secret-bearing input buffers
+	are wiped in a `finally` block after the native call returns, even on error.
+- This is still best-effort hygiene, not a formal guarantee against all JS/V8
+	copies. It reduces operational mistakes, but it cannot erase unknown aliases
+	or already-copied data elsewhere in the process.
+
+### Secure Usage
+
+```js
+const { Secp256k1, SensitiveBytes } = require('ultrafast-secp256k1');
+const crypto = require('crypto');
+
+const secp = new Secp256k1({ autoZeroInputs: true });
+const privkey = SensitiveBytes.take(crypto.randomBytes(32));
+const msgHash = crypto.randomBytes(32);
+
+const sig = secp.ecdsaSign(msgHash, privkey);
+// privkey is wiped automatically in the finally path
+```
+
 ## Architecture Note
 
-Built on hand-optimized C/C++ with platform-specific acceleration (AVX2, SHA-NI, BMI2 on x86; NEON on ARM). The C ABI layer uses the **fast** (variable-time) implementation for maximum throughput. A constant-time (CT) layer with identical mathematical operations is available via the C++ headers for applications requiring timing-attack resistance.
+Built on hand-optimized C/C++ with platform-specific acceleration (AVX2, SHA-NI, BMI2 on x86; NEON on ARM). The native library contains both fast and constant-time (CT) paths. In the stable `ufsecp_*` C ABI, secret-bearing CPU operations are routed through CT internals, while public verification/serialization operations stay on the optimized fast paths. This improves native-side timing safety, but it does not eliminate caller-side secret-copy risks in JavaScript memory.
 
 | Operation | x86-64 | ARM64 | RISC-V |
 |-----------|--------|-------|--------|
@@ -149,6 +183,12 @@ cmake -S . -B build -DSECP256K1_GLV_WINDOW_WIDTH=6
 | w=6 | -- | Larger tables, fewer additions |
 
 See [docs/PERFORMANCE_GUIDE.md](../../docs/PERFORMANCE_GUIDE.md) for detailed benchmarks and per-platform tuning advice.
+
+## Smoke Validation
+
+```bash
+bash libs/UltrafastSecp256k1/scripts/validate_bindings.sh
+```
 
 ## License
 

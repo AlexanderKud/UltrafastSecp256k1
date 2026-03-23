@@ -43,6 +43,14 @@ try (Ufsecp ctx = Ufsecp.create()) {
 }
 ```
 
+## Local Smoke Validation
+
+```bash
+bash libs/UltrafastSecp256k1/scripts/validate_bindings.sh
+```
+
+This runs the current C#, Java, and Swift smoke suites against the local build tree on a prepared developer machine.
+
 ## ECDSA Recovery
 
 ```java

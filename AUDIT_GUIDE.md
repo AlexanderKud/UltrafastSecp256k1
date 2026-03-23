@@ -1,9 +1,13 @@
 # Audit Guide
 
-**UltrafastSecp256k1 v3.21.0** -- Independent Auditor Navigation
+**UltrafastSecp256k1 v3.22.0** -- Independent Auditor Navigation
 
 > This document is for auditors. Here you will find everything needed
 > to evaluate the library's security, correctness, and quality.
+>
+> The project is open to external audit and keeps the repository audit-ready,
+> but it does not wait for a formal third-party engagement before improving assurance.
+> Internal audit and verification are expected to run continuously on every build and every commit.
 
 ---
 
@@ -28,13 +32,13 @@
 
 ```bash
 # Clone and build
-git clone https://github.com/AvraSasmo/UltrafastSecp256k1.git
+git clone https://github.com/shrec/UltrafastSecp256k1.git
 cd UltrafastSecp256k1
 
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
-# Run all tests (641,194 checks, 20 CTest targets)
+# Run all tests (31+ CTest targets plus unified audit and standalone vectors)
 ctest --test-dir build --output-on-failure
 
 # Run with sanitizers
@@ -220,12 +224,12 @@ UltrafastSecp256k1/
 
 | Gap | Priority | Notes |
 |-----|----------|-------|
-| No independent third-party audit | High | Seeking funding |
+| External reviewer reproducibility | Medium | Keep audit playbooks, traces, and commands easy for any outside reviewer to reproduce |
 | No formal verification | Medium | Fiat-Crypto / Cryptol planned |
-| FROST protocol-level tests | Medium | Multi-party simulation needed |
-| MuSig2 extended test vectors | Medium | Reference impl vectors needed |
-| Cross-ABI / FFI tests | Low | Different calling conventions |
-| Hardware timing analysis | Low | Multiple uarch planned |
+| CT proof for branch/memory independence | Medium | CT5/CT6 remain partial; dudect, Valgrind CT, and review exist, but no full formal proof |
+| Dedicated multi-threaded C ABI stress harness | Medium | TSan runs in CI, but traceability item C7 is still partial |
+| Native Android device automation | Medium | Manual Android ARM64 reruns exist; no device-farm CI lane yet |
+| Hardware timing analysis | Low | More microarchitectures still useful |
 | GPU constant-time | N/A | By design: GPU is for public data |
 
 ---
@@ -311,7 +315,7 @@ clang++ -fsanitize=fuzzer,address -O2 -std=c++20 \
 ## 8. Checklist for Auditors
 
 - [ ] **Build succeeds** with `-Werror -Wall -Wextra -Wpedantic`
-- [ ] **All 47 audit modules pass** (0 failures expected) -- `./unified_audit_runner`
+- [ ] **All 55 audit modules pass** (0 failures expected) -- `./unified_audit_runner`
 - [ ] **ASan + UBSan**: no memory errors or undefined behavior
 - [ ] **MSan**: no uninitialized reads (`security-audit.yml` MSan job)
 - [ ] **TSan**: no data races
@@ -329,8 +333,9 @@ clang++ -fsanitize=fuzzer,address -O2 -std=c++20 \
 - [ ] **ZK proofs**: `audit_zk` passes -- knowledge, DLEQ, range proof, serialization, rejection
 - [ ] **Wycheproof**: all 89 ECDSA + 36 ECDH adversarial vectors correctly rejected/accepted
 - [ ] **Fiat-Crypto linkage**: field arithmetic matches formally-verified reference
+- [ ] **BIP-324**: handshake/encrypt/decrypt/tamper tests pass in `test_bip324_standalone` and FFI coverage passes in `test_ffi_coverage`
 - [ ] **GPU kernels**: verify arithmetic matches CPU reference (note: no CT guarantee on GPU)
-- [ ] **FROST / MuSig2**: note these are experimental; test vectors per BIP-327 and FROST spec
+- [ ] **FROST / MuSig2**: verify protocol/adversarial suites and reference vectors remain green
 - [ ] **Ethereum layer**: EIP-155 chain ID encoding, ecrecover, personal_sign round-trip
 
 ---

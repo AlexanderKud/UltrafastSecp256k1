@@ -11,7 +11,28 @@
  */
 package com.ultrafast.ufsecp;
 
+import java.lang.ref.Cleaner;
+
 public final class Ufsecp implements AutoCloseable {
+
+    private static final int EXPECTED_ABI = 1;
+    private static final Cleaner CLEANER = Cleaner.create();
+
+    private static final class State implements Runnable {
+        private long ptr;
+
+        private State(long ptr) {
+            this.ptr = ptr;
+        }
+
+        @Override
+        public void run() {
+            if (ptr != 0) {
+                nativeDestroy(ptr);
+                ptr = 0;
+            }
+        }
+    }
 
     static {
         System.loadLibrary("ufsecp_jni");
@@ -25,12 +46,22 @@ public final class Ufsecp implements AutoCloseable {
     // ── Instance ─────────────────────────────────────────────────────
 
     private long ptr;
+    private final State state;
+    private final Cleaner.Cleanable cleanable;
 
     private Ufsecp(long ptr) {
         this.ptr = ptr;
+        this.state = new State(ptr);
+        this.cleanable = CLEANER.register(this, state);
     }
 
     public static Ufsecp create() {
+        int abi = nativeAbiVersion();
+        if (abi != EXPECTED_ABI) {
+            throw new IllegalStateException(
+                "ABI mismatch: wrapper expects ABI " + EXPECTED_ABI + ", lib reports ABI " + abi + "."
+            );
+        }
         long p = nativeCreate();
         return new Ufsecp(p);
     }
@@ -38,7 +69,7 @@ public final class Ufsecp implements AutoCloseable {
     @Override
     public void close() {
         if (ptr != 0) {
-            nativeDestroy(ptr);
+            cleanable.clean();
             ptr = 0;
         }
     }

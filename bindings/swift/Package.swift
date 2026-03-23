@@ -2,24 +2,29 @@
 import PackageDescription
 
 let package = Package(
-    name: "UltrafastSecp256k1",
+    name: "Ufsecp",
     platforms: [.macOS(.v12), .iOS(.v15)],
     products: [
-        .library(name: "UltrafastSecp256k1", targets: ["UltrafastSecp256k1"]),
+        .library(name: "Ufsecp", targets: ["Ufsecp"]),
     ],
     targets: [
         .systemLibrary(
-            name: "CUltrafastSecp256k1",
-            path: "Sources/CUltrafastSecp256k1",
-            pkgConfig: "ultrafast_secp256k1",
+            name: "CUfsecp",
+            path: "Sources/CUfsecp",
+            pkgConfig: "ufsecp",
             providers: [
-                .brew(["ultrafast_secp256k1"]),
+                .brew(["ufsecp"]),
             ]
         ),
         .target(
-            name: "UltrafastSecp256k1",
-            dependencies: ["CUltrafastSecp256k1"],
-            path: "Sources/UltrafastSecp256k1"
+            name: "Ufsecp",
+            dependencies: ["CUfsecp"],
+            path: "Sources/Ufsecp"
         ),
+        .testTarget(
+            name: "UfsecpTests",
+            dependencies: ["Ufsecp"],
+            path: "Tests/UfsecpTests"
+        )
     ]
 )

@@ -213,6 +213,31 @@ Conclusion: `opt3` is kept because it is measurably faster in raw verify.
 `unified_audit_runner` verdict: `AUDIT-READY`  
 Summary: `53/54 modules passed -- ALL PASSED (1 advisory warnings)`.
 
+### VisionFive 2 Device Rerun (2026-03-22, v3.3.0 dev)
+
+This rerun was executed on the physical StarFive VisionFive 2 board over SSH.
+Validation covered `run_selftest smoke`, `test_bip324_standalone`, `bench_kP`,
+`bench_unified --quick`, and dedicated `bench_bip324`.
+
+| Measurement | Result |
+|-------------|--------|
+| `run_selftest smoke` | 30/30 modules passed, `ALL TESTS PASSED` |
+| `test_bip324_standalone` | `BIP-324: 62/62 passed` |
+| `bench_kP`: scalar_mul(K) | 200.06 us |
+| `bench_kP`: scalar_mul_with_plan(K) | 191.47 us |
+| `bench_unified --quick`: scalar_mul (k*P) | 199.99 us |
+| `bench_unified --quick`: scalar_mul_with_plan | 193.30 us |
+| `bench_unified --quick`: silent_payment_scan (single output set) | 415.22 us |
+| `bench_unified --quick`: scalar_mul_P (k*P, tweak_mul) | 200.36 us |
+| `bench_bip324`: full_handshake (both sides) | 1444.56 us |
+| `bench_bip324`: session_encrypt 1024 B | 19.14 us, 51.0 MB/s |
+| `bench_bip324`: session_roundtrip 1024 B | 38.36 us, 25.5 MB/s |
+| `bench_bip324`: session_roundtrip 4096 B | 137.81 us, 28.3 MB/s |
+
+Retained optimization: `Point::scalar_mul_with_plan()` now leaves the result lazy-affine.
+On this board, that moved `bench_unified --quick` `scalar_mul_with_plan` from the earlier
+`199652.6 ns` baseline to `193301.2 ns`, a measured improvement of about `3.2%`.
+
 ### RISC-V Optimization Gains (vs generic RV64GC build)
 
 | Optimization | Speedup | Applied To |
@@ -539,6 +564,30 @@ instruction path in `hash_accel.cpp` for `sha256_33`, `sha256_32`, `hash160_33`,
 No meaningful win was found from forcing `SECP256K1_USE_4X64_POINT_OPS`, from changing
 `SECP256K1_GLV_WINDOW_WIDTH` to 4 or 6, or from keeping PGO as the default Android path.
 Those variants were measured and rejected.
+
+### Android ARM64 RK3588 Device Rerun (2026-03-22)
+
+This rerun used the connected `YF_022A` RK3588 Android device over USB. Two new
+device-side benchmarks were added to the Android build for this pass:
+`bench_kP` for the BIP-352 fixed-K / variable-Q hotspot and `bench_bip324` for the
+dedicated BIP-324 transport stack.
+
+| Measurement | Result |
+|-------------|--------|
+| `android_test`: fast scalar_mul (k*G) | 5.93 us |
+| `android_test`: fast scalar_mul (k*P) | 57.67 us |
+| `android_test`: ct::scalar_mul (k*P) | 150.26 us |
+| `android_test`: field_mul / field_sqr | 80 ns / 61 ns |
+| `bench_kP`: scalar_mul(K) | 130.90 us |
+| `bench_kP`: scalar_mul_with_plan(K) | 127.24 us |
+| `bench_kP`: K*G | 15.69 us |
+| `bench_bip324`: full_handshake (both sides) | 727.24 us |
+| `bench_bip324`: session_encrypt 1024 B | 5.96 us, 163.9 MB/s |
+| `bench_bip324`: session_roundtrip 1024 B | 12.05 us, 81.0 MB/s |
+| `bench_bip324`: session_roundtrip 4096 B | 43.72 us, 89.3 MB/s |
+
+Run note: the on-device execution used the NDK `libomp.so` alongside the pushed
+binaries so the existing OpenMP-enabled CPU build could run unchanged.
 
 ---
 

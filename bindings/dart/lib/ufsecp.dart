@@ -2,7 +2,8 @@
 ///
 /// High-performance secp256k1 elliptic curve cryptography with dual-layer
 /// constant-time architecture. Context-based API: one `UfsecpContext` per
-/// isolate; `destroy()` is automatic via `Finalizer`.
+/// isolate; `destroy()` is recommended and a `NativeFinalizer` provides a
+/// best-effort fallback.
 ///
 /// ```dart
 /// import 'package:ufsecp/ufsecp.dart';
@@ -178,8 +179,11 @@ typedef _TaprootVerifyDart = int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi
 ///
 /// Finalizer will call `ufsecp_ctx_destroy` when GCed, but explicit `destroy()`
 /// is recommended for deterministic cleanup.
-class UfsecpContext {
+class UfsecpContext implements ffi.Finalizable {
+  static const int expectedAbi = 1;
+
   late final ffi.DynamicLibrary _lib;
+  late final ffi.NativeFinalizer _ctxFinalizer;
   ffi.Pointer<ffi.Void> _ctx = ffi.nullptr;
   bool _destroyed = false;
 
@@ -232,6 +236,16 @@ class UfsecpContext {
   UfsecpContext({String? libraryPath}) {
     _lib = ffi.DynamicLibrary.open(libraryPath ?? _defaultLibName());
     _bindAll();
+    _ctxFinalizer = ffi.NativeFinalizer(
+      _lib.lookup<ffi.NativeFunction<_CtxDestroyC>>('ufsecp_ctx_destroy'),
+    );
+
+    final abi = _abiVersion();
+    if (abi != expectedAbi) {
+      throw StateError(
+        'ABI mismatch: wrapper expects ABI $expectedAbi, lib reports ABI $abi.',
+      );
+    }
 
     final pp = calloc<ffi.Pointer<ffi.Void>>();
     try {
@@ -241,6 +255,7 @@ class UfsecpContext {
         throw UfsecpException('ctx_create', UfsecpError.fromCode(rc));
       }
       _ctx = pp.value;
+      _ctxFinalizer.attach(this, _ctx, detach: this);
     } finally {
       calloc.free(pp);
     }
@@ -255,6 +270,7 @@ class UfsecpContext {
   /// Explicitly destroy the context. Safe to call multiple times.
   void destroy() {
     if (!_destroyed && _ctx != ffi.nullptr) {
+      _ctxFinalizer.detach(this);
       _ctxDestroy(_ctx);
       _ctx = ffi.nullptr;
       _destroyed = true;
@@ -264,6 +280,10 @@ class UfsecpContext {
   /// Deep-copy this context into a new independent context.
   UfsecpContext._fromPointer(this._lib, this._ctx) {
     _bindAll();
+    _ctxFinalizer = ffi.NativeFinalizer(
+      _lib.lookup<ffi.NativeFunction<_CtxDestroyC>>('ufsecp_ctx_destroy'),
+    );
+    _ctxFinalizer.attach(this, _ctx, detach: this);
   }
 
   UfsecpContext cloneCtx() {
@@ -935,8 +955,10 @@ class UfsecpContext {
   }
 
   static ffi.Pointer<ffi.Uint8> _allocCopy(Uint8List data) {
-    final p = calloc<ffi.Uint8>(data.length);
-    p.asTypedList(data.length).setAll(0, data);
+    final p = calloc<ffi.Uint8>(data.isEmpty ? 1 : data.length);
+    if (data.isNotEmpty) {
+      p.asTypedList(data.length).setAll(0, data);
+    }
     return p;
   }
 

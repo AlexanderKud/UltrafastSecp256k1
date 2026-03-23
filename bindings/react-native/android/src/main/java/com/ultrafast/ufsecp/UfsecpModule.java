@@ -13,6 +13,8 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 
+import java.util.Arrays;
+
 public class UfsecpModule extends ReactContextBaseJavaModule {
 
     static {
@@ -43,6 +45,12 @@ public class UfsecpModule extends ReactContextBaseJavaModule {
         return out;
     }
 
+    private static void zero(byte[] bytes) {
+        if (bytes != null) {
+            Arrays.fill(bytes, (byte) 0);
+        }
+    }
+
     private static String bytesToHex(byte[] b) {
         StringBuilder sb = new StringBuilder(b.length * 2);
         for (byte v : b) sb.append(String.format("%02x", v & 0xff));
@@ -54,6 +62,7 @@ public class UfsecpModule extends ReactContextBaseJavaModule {
     private static native long nativeCreate();
     private static native void nativeDestroy(long ptr);
     private static native int nativeVersion();
+    private static native int nativeAbiVersion();
     private static native String nativeVersionString();
     private static native byte[] nativePubkeyCreate(long ctx, byte[] privkey);
     private static native byte[] nativePubkeyCreateUncompressed(long ctx, byte[] privkey);
@@ -91,117 +100,177 @@ public class UfsecpModule extends ReactContextBaseJavaModule {
     public void version(Promise promise) { promise.resolve(nativeVersion()); }
 
     @ReactMethod
+    public void abiVersion(Promise promise) { promise.resolve(nativeAbiVersion()); }
+
+    @ReactMethod
     public void versionString(Promise promise) { promise.resolve(nativeVersionString()); }
 
     @ReactMethod
     public void pubkeyCreate(double handle, String privkeyHex, Promise promise) {
-        try { promise.resolve(bytesToHex(nativePubkeyCreate((long) handle, hexToBytes(privkeyHex)))); }
-        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        byte[] privkey = hexToBytes(privkeyHex);
+        try { promise.resolve(bytesToHex(nativePubkeyCreate((long) handle, privkey))); }
+        finally { zero(privkey); }
     }
 
     @ReactMethod
     public void pubkeyCreateUncompressed(double handle, String privkeyHex, Promise promise) {
-        try { promise.resolve(bytesToHex(nativePubkeyCreateUncompressed((long) handle, hexToBytes(privkeyHex)))); }
-        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        byte[] privkey = hexToBytes(privkeyHex);
+        try { promise.resolve(bytesToHex(nativePubkeyCreateUncompressed((long) handle, privkey))); }
+        finally { zero(privkey); }
     }
 
     @ReactMethod
     public void seckeyVerify(double handle, String privkeyHex, Promise promise) {
-        try { promise.resolve(nativeSeckeyVerify((long) handle, hexToBytes(privkeyHex))); }
-        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        byte[] privkey = hexToBytes(privkeyHex);
+        try { promise.resolve(nativeSeckeyVerify((long) handle, privkey)); }
+        finally { zero(privkey); }
     }
 
     @ReactMethod
     public void ecdsaSign(double handle, String msgHashHex, String privkeyHex, Promise promise) {
+        byte[] msgHash = hexToBytes(msgHashHex);
+        byte[] privkey = hexToBytes(privkeyHex);
         try {
-            byte[] sig = nativeEcdsaSign((long) handle, hexToBytes(msgHashHex), hexToBytes(privkeyHex));
+            byte[] sig = nativeEcdsaSign((long) handle, msgHash, privkey);
             promise.resolve(bytesToHex(sig));
         } catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally {
+            zero(msgHash);
+            zero(privkey);
+        }
     }
 
     @ReactMethod
     public void ecdsaVerify(double handle, String msgHashHex, String sigHex, String pubkeyHex, Promise promise) {
+        byte[] msgHash = hexToBytes(msgHashHex);
+        byte[] sig = hexToBytes(sigHex);
+        byte[] pubkey = hexToBytes(pubkeyHex);
         try {
-            boolean ok = nativeEcdsaVerify((long) handle, hexToBytes(msgHashHex), hexToBytes(sigHex), hexToBytes(pubkeyHex));
+            boolean ok = nativeEcdsaVerify((long) handle, msgHash, sig, pubkey);
             promise.resolve(ok);
         } catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally {
+            zero(msgHash);
+            zero(sig);
+            zero(pubkey);
+        }
     }
 
     @ReactMethod
     public void schnorrSign(double handle, String msgHex, String privkeyHex, String auxRandHex, Promise promise) {
+        byte[] msg = hexToBytes(msgHex);
+        byte[] privkey = hexToBytes(privkeyHex);
+        byte[] auxRand = hexToBytes(auxRandHex);
         try {
-            byte[] sig = nativeSchnorrSign((long) handle, hexToBytes(msgHex), hexToBytes(privkeyHex), hexToBytes(auxRandHex));
+            byte[] sig = nativeSchnorrSign((long) handle, msg, privkey, auxRand);
             promise.resolve(bytesToHex(sig));
         } catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally {
+            zero(msg);
+            zero(privkey);
+            zero(auxRand);
+        }
     }
 
     @ReactMethod
     public void schnorrVerify(double handle, String msgHex, String sigHex, String pubkeyXHex, Promise promise) {
+        byte[] msg = hexToBytes(msgHex);
+        byte[] sig = hexToBytes(sigHex);
+        byte[] pubkeyX = hexToBytes(pubkeyXHex);
         try {
-            boolean ok = nativeSchnorrVerify((long) handle, hexToBytes(msgHex), hexToBytes(sigHex), hexToBytes(pubkeyXHex));
+            boolean ok = nativeSchnorrVerify((long) handle, msg, sig, pubkeyX);
             promise.resolve(ok);
         } catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally {
+            zero(msg);
+            zero(sig);
+            zero(pubkeyX);
+        }
     }
 
     @ReactMethod
     public void ecdh(double handle, String privkeyHex, String pubkeyHex, Promise promise) {
+        byte[] privkey = hexToBytes(privkeyHex);
+        byte[] pubkey = hexToBytes(pubkeyHex);
         try {
-            byte[] sec = nativeEcdh((long) handle, hexToBytes(privkeyHex), hexToBytes(pubkeyHex));
+            byte[] sec = nativeEcdh((long) handle, privkey, pubkey);
             promise.resolve(bytesToHex(sec));
         } catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
-    }
-
-    @ReactMethod
-    public void sha256(String dataHex, Promise promise) {
-        try { promise.resolve(bytesToHex(nativeSha256(hexToBytes(dataHex)))); }
-        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
-    }
-
-    @ReactMethod
-    public void hash160(String dataHex, Promise promise) {
-        try { promise.resolve(bytesToHex(nativeHash160(hexToBytes(dataHex)))); }
-        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
-    }
-
-    @ReactMethod
-    public void addrP2pkh(double handle, String pubkeyHex, int network, Promise promise) {
-        try { promise.resolve(nativeAddrP2pkh((long) handle, hexToBytes(pubkeyHex), network)); }
-        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
-    }
-
-    @ReactMethod
-    public void addrP2wpkh(double handle, String pubkeyHex, int network, Promise promise) {
-        try { promise.resolve(nativeAddrP2wpkh((long) handle, hexToBytes(pubkeyHex), network)); }
-        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
-    }
-
-    @ReactMethod
-    public void addrP2tr(double handle, String xonlyHex, int network, Promise promise) {
-        try { promise.resolve(nativeAddrP2tr((long) handle, hexToBytes(xonlyHex), network)); }
-        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally {
+            zero(privkey);
+            zero(pubkey);
+        }
     }
 
     @ReactMethod
     public void wifEncode(double handle, String privkeyHex, boolean compressed, int network, Promise promise) {
-        try { promise.resolve(nativeWifEncode((long) handle, hexToBytes(privkeyHex), compressed, network)); }
+        byte[] privkey = hexToBytes(privkeyHex);
+        try { promise.resolve(nativeWifEncode((long) handle, privkey, compressed, network)); }
         catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally { zero(privkey); }
     }
 
     @ReactMethod
     public void bip32Master(double handle, String seedHex, Promise promise) {
-        try { promise.resolve(bytesToHex(nativeBip32Master((long) handle, hexToBytes(seedHex)))); }
+        byte[] seed = hexToBytes(seedHex);
+        try { promise.resolve(bytesToHex(nativeBip32Master((long) handle, seed))); }
         catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally { zero(seed); }
     }
 
     @ReactMethod
     public void bip32Derive(double handle, String parentHex, int index, Promise promise) {
-        try { promise.resolve(bytesToHex(nativeBip32Derive((long) handle, hexToBytes(parentHex), index))); }
+        byte[] parent = hexToBytes(parentHex);
+        try { promise.resolve(bytesToHex(nativeBip32Derive((long) handle, parent, index))); }
         catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally { zero(parent); }
     }
 
     @ReactMethod
     public void bip32DerivePath(double handle, String masterHex, String path, Promise promise) {
-        try { promise.resolve(bytesToHex(nativeBip32DerivePath((long) handle, hexToBytes(masterHex), path))); }
+        byte[] master = hexToBytes(masterHex);
+        try { promise.resolve(bytesToHex(nativeBip32DerivePath((long) handle, master, path))); }
         catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally { zero(master); }
+    }
+
+    @ReactMethod
+    public void sha256(String dataHex, Promise promise) {
+        byte[] data = hexToBytes(dataHex);
+        try { promise.resolve(bytesToHex(nativeSha256(data))); }
+        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally { zero(data); }
+    }
+
+    @ReactMethod
+    public void hash160(String dataHex, Promise promise) {
+        byte[] data = hexToBytes(dataHex);
+        try { promise.resolve(bytesToHex(nativeHash160(data))); }
+        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally { zero(data); }
+    }
+
+    @ReactMethod
+    public void addrP2pkh(double handle, String pubkeyHex, int network, Promise promise) {
+        byte[] pubkey = hexToBytes(pubkeyHex);
+        try { promise.resolve(nativeAddrP2pkh((long) handle, pubkey, network)); }
+        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally { zero(pubkey); }
+    }
+
+    @ReactMethod
+    public void addrP2wpkh(double handle, String pubkeyHex, int network, Promise promise) {
+        byte[] pubkey = hexToBytes(pubkeyHex);
+        try { promise.resolve(nativeAddrP2wpkh((long) handle, pubkey, network)); }
+        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally { zero(pubkey); }
+    }
+
+    @ReactMethod
+    public void addrP2tr(double handle, String xonlyHex, int network, Promise promise) {
+        byte[] xonly = hexToBytes(xonlyHex);
+        try { promise.resolve(nativeAddrP2tr((long) handle, xonly, network)); }
+        catch (Exception e) { promise.reject("UFSECP", e.getMessage()); }
+        finally { zero(xonly); }
     }
 }

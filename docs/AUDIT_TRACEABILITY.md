@@ -171,7 +171,22 @@ Each row in this matrix links:
 
 ---
 
-## 9. BIP-32 HD Derivation
+## 9. BIP-324 Encrypted Transport
+
+| ID | Invariant | Implementation | Validation | Test Location | Status |
+|----|-----------|---------------|------------|---------------|--------|
+| **T3241** | Initiator/responder derive matching session state from the same handshake transcript | `cpu/include/secp256k1/bip324.hpp`, `cpu/src/bip324.cpp` | Deterministic handshake round-trip | `cpu/tests/test_bip324.cpp` -> `test_bip324_session()` | [OK] |
+| **T3242** | Post-handshake encrypt/decrypt are inverse operations across message sequences | `cpu/include/secp256k1/bip324.hpp`, `cpu/src/bip324.cpp` | Multi-message round-trip | `cpu/tests/test_bip324.cpp` -> `test_bip324_sequence()` | [OK] |
+| **T3243** | Fixed-key sessions remain deterministic across repeated runs | `cpu/include/secp256k1/bip324.hpp`, `cpu/src/bip324.cpp` | Repeatability check | `cpu/tests/test_bip324.cpp` -> `test_bip324_determinism()` | [OK] |
+| **T3244** | Empty, short, and 4 KiB payloads survive transport round-trip | `cpu/include/secp256k1/bip324.hpp`, `cpu/src/bip324.cpp` | Size sweep | `cpu/tests/test_bip324.cpp` -> `test_bip324_sizes()` | [OK] |
+| **T3245** | Tampered ciphertext, tag, or transcript inputs are rejected | `cpu/include/secp256k1/bip324.hpp`, `cpu/src/bip324.cpp` | Tamper matrix + wrong-peer checks | `cpu/tests/test_bip324.cpp` -> `test_bip324_tamper()` | [OK] |
+| **T3246** | Public C ABI create/handshake/encrypt/decrypt surface matches C++ transport behavior | `include/ufsecp/ufsecp.h`, `include/ufsecp/ufsecp_impl.cpp` | FFI round-trip coverage | `cpu/tests/test_ffi_coverage.cpp` -> `test_bip324_session()` | [OK] |
+
+**BIP-324 Subtotal: 6/6 [OK]**
+
+---
+
+## 10. BIP-32 HD Derivation
 
 | ID | Invariant | Implementation | Validation | Test Location | Status |
 |----|-----------|---------------|------------|---------------|--------|
@@ -187,7 +202,7 @@ Each row in this matrix links:
 
 ---
 
-## 10. Address Generation
+## 11. Address Generation
 
 | ID | Invariant | Implementation | Validation | Test Location | Status |
 |----|-----------|---------------|------------|---------------|--------|
@@ -202,7 +217,7 @@ Each row in this matrix links:
 
 ---
 
-## 11. C ABI (`ufsecp` shim)
+## 12. C ABI (`ufsecp` shim)
 
 | ID | Invariant | Implementation | Validation | Test Location | Status |
 |----|-----------|---------------|------------|---------------|--------|
@@ -218,7 +233,7 @@ Each row in this matrix links:
 
 ---
 
-## 12. Constant-Time (Side-Channel Resistance)
+## 13. Constant-Time (Side-Channel Resistance)
 
 | ID | Invariant | Implementation | Validation | Test Location | Status |
 |----|-----------|---------------|------------|---------------|--------|
@@ -233,7 +248,7 @@ Each row in this matrix links:
 
 ---
 
-## 13. Batch / Performance
+## 14. Batch / Performance
 
 | ID | Invariant | Implementation | Validation | Test Location | Status |
 |----|-----------|---------------|------------|---------------|--------|
@@ -245,7 +260,7 @@ Each row in this matrix links:
 
 ---
 
-## 14. Serialization / Parsing
+## 15. Serialization / Parsing
 
 | ID | Invariant | Implementation | Validation | Test Location | Status |
 |----|-----------|---------------|------------|---------------|--------|
@@ -259,7 +274,7 @@ Each row in this matrix links:
 
 ---
 
-## 15. ECIES Hardening
+## 16. ECIES Hardening
 
 | ID | Invariant | Implementation | Validation | Test Location | Status |
 |----|-----------|---------------|------------|---------------|--------|
@@ -314,6 +329,7 @@ All core arithmetic operations are tested on boundary values:
 | Address encoder fuzz | `test_fuzz_address_bip32_ffi.cpp` | 10K per suite | Suites 1-4 |
 | BIP32 path fuzz | `test_fuzz_address_bip32_ffi.cpp` | 10K per suite | Suites 5-7 |
 | FFI boundary fuzz | `test_fuzz_address_bip32_ffi.cpp` | 10K per suite | Suites 8-13 |
+| BIP-324 transport checks | `cpu/tests/test_bip324.cpp` | 62 checks | handshake, sequence, determinism, sizes, tamper, random-key paths |
 | ECIES regression | `test_ecies_regression.cpp` | 85 tests | Categories A-H |
 
 ### Negative Testing (Adversarial Inputs)
@@ -335,6 +351,7 @@ All core arithmetic operations are tested on boundary values:
 | MuSig2 malicious aggregator | Tampered aggnonce | `test_adversarial_protocol.cpp` A.7 |
 | FROST malicious coordinator | Inconsistent commit sets to signers | `test_adversarial_protocol.cpp` B.4 |
 | FROST duplicate nonce | Same commitment submitted twice | `test_adversarial_protocol.cpp` B.5 |
+| BIP-324 tampered packet | Ciphertext/tag/transcript mutation must fail | `cpu/tests/test_bip324.cpp` -> `test_bip324_tamper()` |
 | Adaptor transcript mismatch | Sign msg1, verify msg2 -> reject | `test_adversarial_protocol.cpp` D.5 |
 | Adaptor extraction misuse | Extract from unrelated sig pair | `test_adversarial_protocol.cpp` D.6 |
 | DLEQ malformed proof | 6 corruption strategies + zero proof | `test_adversarial_protocol.cpp` E.4 |
@@ -357,6 +374,7 @@ All core arithmetic operations are tested on boundary values:
 | Schnorr (B) | 6 | 6 | 0 | 0 |
 | MuSig2 (M) | 10 | 10 | 0 | 0 |
 | FROST (FR) | 11 | 11 | 0 | 0 |
+| BIP-324 (T324) | 6 | 6 | 0 | 0 |
 | BIP-32 (H) | 7 | 7 | 0 | 0 |
 | Address (A) | 6 | 6 | 0 | 0 |
 | C ABI (C) | 7 | 6 | 1 | 0 |
@@ -364,7 +382,7 @@ All core arithmetic operations are tested on boundary values:
 | Batch (BP) | 3 | 3 | 0 | 0 |
 | Parsing (SP) | 5 | 5 | 0 | 0 |
 | ECIES (EC) | 8 | 8 | 0 | 0 |
-| **Total** | **122** | **119** | **3** | **0** |
+| **Total** | **128** | **125** | **3** | **0** |
 
 **Partial items** (3):
 - **C7**: Thread-safety (TSan in CI, but no dedicated multi-threaded stress test)

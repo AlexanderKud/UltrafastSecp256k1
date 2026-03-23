@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nicenemo/ufsecp"
+	ufsecp "github.com/UltrafastSecp256k1/go-ufsecp"
 )
 
 // ── Golden Vectors ──────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ func TestSmokeCtxCreateAbi(t *testing.T) {
 	}
 	defer ctx.Destroy()
 
-	abi := ctx.AbiVersion()
+	abi := ufsecp.ABIVersion()
 	if abi < 1 {
 		t.Fatalf("ABI %d < 1", abi)
 	}
@@ -181,7 +181,7 @@ func TestSmokeAddrP2wpkh(t *testing.T) {
 	}
 	defer ctx.Destroy()
 
-	addr, err := ctx.AddrP2WPKH(knownPubkey, ufsecp.NetworkMainnet)
+	addr, err := ctx.AddrP2WPKH(knownPubkey, ufsecp.Mainnet)
 	if err != nil {
 		t.Fatalf("AddrP2WPKH: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestSmokeWifRoundtrip(t *testing.T) {
 	}
 	defer ctx.Destroy()
 
-	wif, err := ctx.WIFEncode(knownPrivkey, true, ufsecp.NetworkMainnet)
+	wif, err := ctx.WIFEncode(knownPrivkey, true, ufsecp.Mainnet)
 	if err != nil {
 		t.Fatalf("WIFEncode: %v", err)
 	}

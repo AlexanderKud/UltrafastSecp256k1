@@ -14,6 +14,7 @@
     "README.md"
   ],
   "scripts": {
+    "test:contract": "node tests/mock_bridge_smoke.cjs",
     "typescript": "tsc --noEmit",
     "lint": "eslint lib/"
   },

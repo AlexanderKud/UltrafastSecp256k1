@@ -13,6 +13,7 @@
 import { NativeModules, Platform } from 'react-native';
 
 const { Ufsecp: NativeUfsecp } = NativeModules;
+const EXPECTED_ABI = 1;
 
 if (!NativeUfsecp) {
   throw new Error(
@@ -43,6 +44,10 @@ class UfsecpContext {
   }
 
   static async create() {
+    const abi = await NativeUfsecp.abiVersion();
+    if (abi !== EXPECTED_ABI) {
+      throw new UfsecpError('init', `ABI mismatch: wrapper expects ABI ${EXPECTED_ABI}, lib reports ABI ${abi}.`);
+    }
     const h = await NativeUfsecp.create();
     return new UfsecpContext(h);
   }

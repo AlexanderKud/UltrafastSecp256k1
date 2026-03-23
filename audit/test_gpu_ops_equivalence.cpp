@@ -271,7 +271,76 @@ cleanup:
 }
 
 /* ============================================================================
- * 6. msm equivalence
+ * 6. ecrecover_batch equivalence
+ * ============================================================================ */
+static void test_ecrecover_equiv(ufsecp_gpu_ctx* ctx) {
+    std::printf("[gpu_equiv] ecrecover_batch\n");
+
+    constexpr size_t N = 4;
+    ufsecp_ctx* cpu_ctx = nullptr;
+    ufsecp_ctx_create(&cpu_ctx);
+
+    uint8_t msg_hashes[N * 32];
+    uint8_t privkeys[N * 32];
+    uint8_t sigs[N * 64];
+    int recids[N] = {};
+    uint8_t expected_pubs[N * 33];
+    ufsecp_error_t err = UFSECP_OK;
+
+    fill_deterministic(msg_hashes, sizeof(msg_hashes), 0x91);
+    fill_deterministic(privkeys, sizeof(privkeys), 0xA7);
+
+    for (size_t i = 0; i < N; ++i) {
+        privkeys[i * 32] &= 0x7F;
+        auto perr = ufsecp_pubkey_create(cpu_ctx, privkeys + i * 32, expected_pubs + i * 33);
+        CHECK(perr == UFSECP_OK, "CPU pubkey_create succeeds");
+        if (perr != UFSECP_OK) goto cleanup;
+
+        auto serr = ufsecp_ecdsa_sign_recoverable(cpu_ctx,
+                                                  msg_hashes + i * 32,
+                                                  privkeys + i * 32,
+                                                  sigs + i * 64,
+                                                  &recids[i]);
+        CHECK(serr == UFSECP_OK, "CPU ecdsa_sign_recoverable succeeds");
+        if (serr != UFSECP_OK) goto cleanup;
+    }
+
+    uint8_t gpu_pubs[N * 33];
+    uint8_t gpu_valid[N];
+    err = ufsecp_gpu_ecrecover_batch(ctx, msg_hashes, sigs, recids, N, gpu_pubs, gpu_valid);
+    if (err == UFSECP_ERR_GPU_UNSUPPORTED) { SKIP("ecrecover_batch unsupported"); goto cleanup; }
+    CHECK(err == UFSECP_OK, "GPU ecrecover_batch succeeds");
+    if (err != UFSECP_OK) goto cleanup;
+
+    for (size_t i = 0; i < N; ++i) {
+        uint8_t cpu_pub[33];
+        auto rerr = ufsecp_ecdsa_recover(cpu_ctx,
+                                         msg_hashes + i * 32,
+                                         sigs + i * 64,
+                                         recids[i],
+                                         cpu_pub);
+        CHECK(rerr == UFSECP_OK, "CPU ecdsa_recover succeeds");
+        if (rerr != UFSECP_OK) continue;
+
+        char msg_valid[128];
+        std::snprintf(msg_valid, sizeof(msg_valid), "ecrecover[%zu] valid flag set", i);
+        CHECK(gpu_valid[i] == 1, msg_valid);
+
+        char msg_gpu_cpu[128];
+        std::snprintf(msg_gpu_cpu, sizeof(msg_gpu_cpu), "ecrecover[%zu] GPU == CPU recover", i);
+        CHECK(std::memcmp(gpu_pubs + i * 33, cpu_pub, 33) == 0, msg_gpu_cpu);
+
+        char msg_expected[128];
+        std::snprintf(msg_expected, sizeof(msg_expected), "ecrecover[%zu] recovered pubkey matches signer", i);
+        CHECK(std::memcmp(gpu_pubs + i * 33, expected_pubs + i * 33, 33) == 0, msg_expected);
+    }
+
+cleanup:
+    ufsecp_ctx_destroy(cpu_ctx);
+}
+
+/* ============================================================================
+ * 7. msm equivalence
  * ============================================================================ */
 static void test_msm_equiv(ufsecp_gpu_ctx* ctx) {
     std::printf("[gpu_equiv] msm\n");
@@ -353,6 +422,7 @@ int main() {
     test_schnorr_verify_equiv(ctx);
     test_ecdh_equiv(ctx);
     test_hash160_equiv(ctx);
+    test_ecrecover_equiv(ctx);
     test_msm_equiv(ctx);
 
     ufsecp_gpu_ctx_destroy(ctx);

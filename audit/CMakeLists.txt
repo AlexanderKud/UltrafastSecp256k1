@@ -16,6 +16,8 @@ if(NOT BUILD_TESTING)
     return()
 endif()
 
+find_package(Threads REQUIRED)
+
 # Shorthand for cpu/tests/ -- core library test sources reused by unified runner
 set(CPU_TESTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cpu/tests)
 
@@ -269,6 +271,20 @@ target_include_directories(test_nonce_uniqueness_standalone PRIVATE
 target_compile_definitions(test_nonce_uniqueness_standalone PRIVATE UFSECP_BUILDING)
 add_test(NAME nonce_uniqueness COMMAND test_nonce_uniqueness_standalone)
 set_tests_properties(nonce_uniqueness PROPERTIES TIMEOUT 120)
+
+# -- C ABI thread stress audit ---------------------------------------------
+add_executable(test_c_abi_thread_stress_standalone
+    test_c_abi_thread_stress.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_c_abi_thread_stress_standalone)
+target_link_libraries(test_c_abi_thread_stress_standalone PRIVATE Threads::Threads)
+target_include_directories(test_c_abi_thread_stress_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_c_abi_thread_stress_standalone PRIVATE UFSECP_BUILDING)
+add_test(NAME c_abi_thread_stress COMMAND test_c_abi_thread_stress_standalone)
+set_tests_properties(c_abi_thread_stress PROPERTIES TIMEOUT 300)
 
 # -- Formal CT verification via Valgrind/MSAN (Track I5-1) ----------------
 add_executable(test_ct_verif_formal_standalone test_ct_verif_formal.cpp)
@@ -550,6 +566,7 @@ add_executable(unified_audit_runner
     audit_invariants.cpp
     # -- C ABI negative contract tests --
     test_c_abi_negative.cpp
+    test_c_abi_thread_stress.cpp
     # -- Security audit modules --
     audit_secure_erase.cpp
     audit_ct_namespace.cpp
@@ -601,6 +618,7 @@ add_test(NAME unified_audit COMMAND unified_audit_runner)
 set_tests_properties(unified_audit PROPERTIES TIMEOUT 1200)
 
 # ===========================================================================
+target_link_libraries(unified_audit_runner PRIVATE Threads::Threads)
 # Full Audit Orchestrator (custom target)
 # ===========================================================================
 # "cmake --build <dir> --target run_full_audit" runs the orchestrator script.

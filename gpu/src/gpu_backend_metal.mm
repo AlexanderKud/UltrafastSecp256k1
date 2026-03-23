@@ -92,6 +92,12 @@ static void metal_affine_to_sec1(const MetalAffinePoint& pt, uint8_t out33[33]) 
     metal_fe_to_be32(pt.x, out33 + 1);
 }
 
+/** Compress 64-byte uncompressed big-endian pubkey (x||y) → SEC1 33-byte. */
+static void be64_to_sec1(const uint8_t in64[64], uint8_t out33[33]) {
+    out33[0] = (in64[63] & 1) ? 0x03 : 0x02;
+    std::memcpy(out33 + 1, in64, 32);
+}
+
 /** Decompress SEC1 33-byte pubkey to 64-byte uncompressed (x||y) big-endian,
  *  for the ecdsa_verify_batch Metal kernel which wants N×64 uncompressed. */
 static bool sec1_33_to_be64(const uint8_t pub33[33], uint8_t out64[64]) {
@@ -559,15 +565,56 @@ public:
         return GpuError::Ok;
     }
 
-    // TODO(parity): Metal ecrecover_batch — no recovery kernel in Metal shaders yet.
-    // tracking: ecrecover_batch Metal parity — see BACKEND_ASSURANCE_MATRIX.md
     GpuError ecrecover_batch(
-        const uint8_t* /*msg_hashes32*/, const uint8_t* /*sigs64*/,
-        const int* /*recids*/, size_t /*count*/,
-        uint8_t* /*out_pubkeys33*/, uint8_t* /*out_valid*/) override
+        const uint8_t* msg_hashes32, const uint8_t* sigs64,
+        const int* recids, size_t count,
+        uint8_t* out_pubkeys33, uint8_t* out_valid) override
     {
-        return set_error(GpuError::Unsupported,
-                         "ecrecover_batch not yet implemented on Metal backend");
+        if (!is_ready()) return set_error(GpuError::Device, "context not initialised");
+        if (count == 0) { clear_error(); return GpuError::Ok; }
+        if (!msg_hashes32 || !sigs64 || !recids || !out_pubkeys33 || !out_valid)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        auto err = ensure_library();
+        if (err != GpuError::Ok) return err;
+
+        auto buf_msgs = runtime_->alloc_buffer_shared(count * 32);
+        std::memcpy(buf_msgs.contents(), msg_hashes32, count * 32);
+
+        auto buf_sigs = runtime_->alloc_buffer_shared(count * 64);
+        std::memcpy(buf_sigs.contents(), sigs64, count * 64);
+
+        std::vector<uint32_t> h_recids(count);
+        for (size_t i = 0; i < count; ++i)
+            h_recids[i] = static_cast<uint32_t>(recids[i]);
+        auto buf_recids = runtime_->alloc_buffer_shared(count * sizeof(uint32_t));
+        std::memcpy(buf_recids.contents(), h_recids.data(), count * sizeof(uint32_t));
+
+        auto buf_pubs = runtime_->alloc_buffer_shared(count * 64);
+        auto buf_valid = runtime_->alloc_buffer_shared(count * sizeof(uint32_t));
+
+        uint32_t n32 = (uint32_t)count;
+        auto buf_count = runtime_->alloc_buffer_shared(sizeof(uint32_t));
+        std::memcpy(buf_count.contents(), &n32, sizeof(n32));
+
+        auto pipe = runtime_->make_pipeline("ecrecover_batch");
+        runtime_->dispatch_sync(pipe, (uint32_t)count, 64u,
+                                {&buf_msgs, &buf_sigs, &buf_recids, &buf_pubs,
+                                 &buf_valid, &buf_count});
+
+        const auto* pubs = static_cast<const uint8_t*>(buf_pubs.contents());
+        const auto* valid = static_cast<const uint32_t*>(buf_valid.contents());
+        for (size_t i = 0; i < count; ++i) {
+            out_valid[i] = valid[i] ? 1 : 0;
+            if (valid[i]) {
+                be64_to_sec1(pubs + i * 64, out_pubkeys33 + i * 33);
+            } else {
+                std::memset(out_pubkeys33 + i * 33, 0, 33);
+            }
+        }
+
+        clear_error();
+        return GpuError::Ok;
     }
 
     GpuError msm(

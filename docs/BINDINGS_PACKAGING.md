@@ -209,11 +209,11 @@ ufsecp = { version = "3.14.0", features = ["vendored"] }
 
 ```yaml
 dependencies:
-  ufsecp: ^3.14.0
+  ultrafast_secp256k1: ^1.0.0
 ```
 
 ```bash
-dart pub add ufsecp
+dart pub add ultrafast_secp256k1
 ```
 
 **Platform detection**: `dart:ffi` with runtime library name resolution:
@@ -261,7 +261,7 @@ gem 'ufsecp', '~> 3.14.0'
 ### 2.12 React Native (npm)
 
 ```bash
-npm install react-native-ufsecp
+npm install react-native-ultrafast-secp256k1
 cd ios && pod install
 ```
 
@@ -292,10 +292,10 @@ The `bindings.yml` workflow validates packaging for all ecosystems:
 | Swift | `swift build` | SPM package resolution |
 | Go | `go vet` + `go build` | CGo builds, types match |
 | Rust | `cargo check` | FFI types, lifetimes |
-| Dart | `dart analyze` | FFI type safety |
+| Dart | `dart analyze` + smoke runner | FFI type safety + known-answer validation |
 | PHP | `php -l` (lint) | Syntax check |
 | Ruby | `ruby -c` (syntax) | Syntax check |
-| React Native | `npx tsc --noEmit` | TypeScript types |
+| React Native | `node tests/mock_bridge_smoke.cjs` | JS bridge contract smoke |
 
 ---
 

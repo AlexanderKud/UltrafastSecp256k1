@@ -4,11 +4,10 @@
 
 | Version | Supported |
 |---------|-----------|
-| 3.16.x  | [OK] Active  |
-| 3.15.x  | [OK] Maintained |
-| 3.14.x  | [!] Critical fixes only |
-| 3.11.x  | [!] Critical fixes only |
-| < 3.11  | [FAIL] Unsupported |
+| 3.22.x  | [OK] Active |
+| 3.21.x  | [OK] Maintained |
+| 3.20.x  | [!] Critical fixes only |
+| < 3.20  | [FAIL] Unsupported |
 
 Security fixes apply to the latest release on the `main` branch.
 
@@ -38,25 +37,27 @@ We will acknowledge within **72 hours** and provide a fix timeline.
 - Memory safety issues (buffer overflows, use-after-free)
 - GPU kernel correctness issues (CUDA, ROCm, OpenCL, Metal)
 - BIP-32 / BIP-44 HD derivation errors
-- Coin-specific address generation errors (27-coin dispatch)
+- Coin-specific address generation errors (28-coin dispatch)
 - Undefined behavior affecting cryptographic correctness
 
 ---
 
 ## Audit Status
 
-This library has **not undergone an independent security audit**.
+This library has **not undergone a paid external security audit**.
+That fact is not the center of the project's assurance model.
+The primary security posture is an open, reproducible self-audit program that any outside reviewer can rerun.
+We are open to external audit and prepare for it continuously, but we do not wait for a formal third-party process before tightening correctness and security ourselves.
+The project philosophy is to strengthen assurance through internal audit on every build and every commit.
 It is provided for research, educational, and experimental purposes.
 
-> **Seeking Sponsors for Independent Audit & Bug Bounty**
+> **Open self-audit and reproducible review**
 >
-> We are actively looking for sponsors, grants, and funding partners to commission a professional
-> third-party cryptographic audit and establish a funded bug bounty program.
-> If your organization uses secp256k1 and would benefit from a second high-quality audited implementation,
-> please consider sponsoring via [GitHub Sponsors](https://github.com/sponsors/shrec)
-> or contact [payysoon@gmail.com](mailto:payysoon@gmail.com).
->
-> See the [README](README.md#seeking-sponsors----audit-bug-bounty--development) for full details.
+> The project prioritizes transparent audit artifacts, reproducible commands,
+> public traceability documents, and CI-backed verification that other engineers
+> can independently rerun without waiting for a formal audit engagement.
+> External review is welcome, and the repository is prepared so outside auditors can step in at any time.
+> Meanwhile, the internal goal is to keep assurance work active, continuous, and verifiable in the open on every build and every commit.
 
 ### Audit Documentation
 
@@ -100,7 +101,7 @@ The following automated security measures are in place:
 
 ### Planned Security Improvements
 
-- [ ] **Independent third-party cryptographic audit** -- actively seeking sponsors ([GitHub Sponsors](https://github.com/sponsors/shrec) | [payysoon@gmail.com](mailto:payysoon@gmail.com))
+- [ ] Expand external reproducibility packs for outside reviewers (one-command audit replay, artifact bundles, and reviewer checklists)
 - [ ] **Funded bug bounty program** -- seeking sponsors to offer financial rewards for vulnerability reports
 - [ ] Formal verification of field/scalar arithmetic (Fiat-Crypto / Cryptol)
 - [x] ct-verif LLVM pass integration for compile-time CT verification (`.github/workflows/ct-verif.yml`)

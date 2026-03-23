@@ -1,6 +1,6 @@
 # UltrafastSecp256k1 -- Project Roadmap
 
-> Last updated: 2026-03-22
+> Last updated: 2026-03-23
 > Covers: March 2026 - February 2027
 
 This roadmap describes what the project intends to do -- and explicitly not do -- over the next 12 months. It is organized into four phases.
@@ -25,7 +25,7 @@ This roadmap describes what the project intends to do -- and explicitly not do -
 
 ---
 
-## Phase II: Protocol & Production Hardening (Q3-Q4 2026) — ACTIVE
+## Phase II: Protocol & Production Hardening (Q2-Q4 2026) — ACTIVE
 
 **Goal**: Harden advanced protocols, expand fuzzing, prepare for production deployments.
 
@@ -35,10 +35,16 @@ This roadmap describes what the project intends to do -- and explicitly not do -
 - **FROST threshold signatures**: DKG simulation, signing round-trip tests, malicious participant simulation
 - **Fuzzing expansion**: DER parsing, Schnorr parsing, pubkey serialize/parse, BIP-32 path parser, address encoders (bech32/base58)
 - **ABI stability**: Versioning policy document, symbol visibility controls
-- **Language bindings**: Python and Rust bindings with CI (Go and C# stretch goals)
+- **Language bindings**: keep the stable `ufsecp` binding matrix green across C#, Java, Swift, Python, Go, Rust, Node.js, PHP, Ruby, Dart, and the default React Native contract-smoke lane
 - **Reproducible builds**: Deterministic Docker verification, GPG-signed tags, cosign-signed release binaries
 - **SBOM**: CycloneDX or SPDX bill-of-materials generation in CI
 - **Multi-backend equivalence**: Formalized CPU vs CUDA, CPU vs OpenCL, CPU vs WASM output equivalence tests
+
+### Completed During Phase II
+
+- **Stable binding validation closure**: shared `validate_bindings.sh` smoke matrix now covers C#, Java, Swift, Python, Go, Rust, Node.js, PHP, Ruby, and Dart.
+- **React Native validation baseline**: default mock-bridge contract smoke path added, with full native RN smoke retained as an explicit opt-in lane.
+- **Binding documentation alignment**: canonical bindings docs, examples, packaging notes, and README surfaces now match the validated package names and current context-based APIs.
 
 ### Won't Do (Phase II)
 
@@ -135,8 +141,8 @@ These items are **intentionally out of scope** for the 2026-2027 roadmap:
 | Phase | Status | Key Milestone |
 |-------|--------|---------------|
 | **Phase I** -- Core Assurance | **COMPLETE** | 49+ audit modules, 4-layer CT verification, SafeGCD, 1.2M+ automated checks |
-| **Phase II** -- Protocol Hardening | **ACTIVE (Q2 2026)** | CUDA w8 signing complete, infinity flag fixed; MuSig2/FROST tests exist, bindings + SBOM remaining |
-| **Phase III** -- Platform Parity | **Planned (Q4 2026)** | CUDA has ECDSA/Schnorr; OpenCL/Metal/WASM need parity |
+| **Phase II** -- Protocol Hardening | **ACTIVE (Q2 2026)** | CUDA w8 signing complete, infinity flag fixed, stable binding matrix validated; SBOM and remaining protocol hardening still open |
+| **Phase III** -- Platform Parity | **ACTIVE** | CUDA parity is ahead; OpenCL/Metal/WASM parity and native-device platform coverage remain open |
 | **Phase IV** -- Bug Bounty & Audit | **Planned (Q1-Q2 2027)** | Bug bounty first, then external audit engagement |
 
 ---

@@ -492,7 +492,7 @@ Backend-neutral GPU acceleration surface (`ufsecp_gpu.h`). Separate opaque conte
 | `ufsecp_gpu_hash160_pubkey_batch` | Y | Y | Y | - | SHA-256+RIPEMD-160 |
 | `ufsecp_gpu_msm` | Y | Y | Y | - | Multi-scalar multiplication |
 | `ufsecp_gpu_frost_verify_partial_batch` | Y | Y | Y | - | Batch FROST partial verification |
-| `ufsecp_gpu_ecrecover_batch` | temporary stub | Y | temporary stub | - | Recover compressed pubkeys from recoverable ECDSA sigs |
+| `ufsecp_gpu_ecrecover_batch` | Y | Y | Y | - | Recover compressed pubkeys from recoverable ECDSA sigs |
 
 **Test file:** `audit/test_gpu_abi_gate.cpp` (39 assertions)
 

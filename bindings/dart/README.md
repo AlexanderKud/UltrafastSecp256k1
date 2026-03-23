@@ -30,13 +30,16 @@ Dart FFI binding for [UltrafastSecp256k1](https://github.com/shrec/UltrafastSecp
 ## Quick Start
 
 ```dart
-import 'package:ufsecp/ufsecp.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:ultrafast_secp256k1/ufsecp.dart';
 
 final ctx = UfsecpContext();
 
 final privkey = Uint8List(32)..[31] = 1;
 final pubkey = ctx.pubkeyCreate(privkey);
-final msgHash = UfsecpContext.sha256(utf8.encode('hello'));
+final msgHash = ctx.sha256(Uint8List.fromList(utf8.encode('hello')));
 final sig = ctx.ecdsaSign(msgHash, privkey);
 final valid = ctx.ecdsaVerify(msgHash, sig, pubkey);
 
@@ -77,6 +80,16 @@ cmake -S . -B build -DSECP256K1_GLV_WINDOW_WIDTH=6
 | w=6 | -- | Larger tables, fewer additions |
 
 See [docs/PERFORMANCE_GUIDE.md](../../docs/PERFORMANCE_GUIDE.md) for detailed benchmarks and per-platform tuning advice.
+
+## Smoke Validation
+
+```bash
+bash libs/UltrafastSecp256k1/scripts/validate_bindings.sh
+```
+
+The validator runs the standalone Dart smoke runner when the Dart SDK is installed and reports a skip otherwise.
+
+If your local SDK is installed at `~/.local/dart-sdk/bin/dart`, the shared validator picks it up automatically.
 
 ## License
 

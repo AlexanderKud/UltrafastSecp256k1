@@ -221,7 +221,7 @@ static void test_unsupported_ops(ufsecp_gpu_ctx* ctx) {
 
     uint8_t buf[128] = {};
 
-    /* Test each op -- if it returns UNSUPPORTED, that's a valid response */
+      /* Test each op -- if it returns UNSUPPORTED, that's a valid response */
     auto ops_tested = 0;
     auto e1 = ufsecp_gpu_generator_mul_batch(ctx, buf, 1, buf);
     if (e1 == UFSECP_ERR_GPU_UNSUPPORTED) ops_tested++;
@@ -241,9 +241,13 @@ static void test_unsupported_ops(ufsecp_gpu_ctx* ctx) {
     auto e6 = ufsecp_gpu_msm(ctx, buf, buf, 1, buf);
     if (e6 == UFSECP_ERR_GPU_UNSUPPORTED) ops_tested++;
 
+      int recid = 0;
+      auto e7 = ufsecp_gpu_ecrecover_batch(ctx, buf, buf, &recid, 1, buf, buf + 64);
+      if (e7 == UFSECP_ERR_GPU_UNSUPPORTED) ops_tested++;
+
     /* At least verify that UNSUPPORTED returns are well-formed */
     CHECK(1, "All unsupported ops return valid error codes");
-    std::printf("    (%d of 6 ops returned UNSUPPORTED on this backend)\n", ops_tested);
+      std::printf("    (%d of 7 ops returned UNSUPPORTED on this backend)\n", ops_tested);
 }
 
 /* ============================================================================

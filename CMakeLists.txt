@@ -42,6 +42,7 @@ option(SECP256K1_BUILD_METAL "Build Apple Metal GPU support" OFF)
 option(SECP256K1_BUILD_TESTS "Build test suite" ON)
 option(SECP256K1_BUILD_BENCH "Build benchmarks" ON)
 option(SECP256K1_BUILD_EXAMPLES "Build example programs" ON)
+option(SECP256K1_BUILD_JAVA "Build Java JNI bindings" ON)
 option(SECP256K1_USE_ASM "Enable assembly optimizations (x64/RISC-V)" ON)
 
 # Installation options
@@ -287,6 +288,16 @@ if(SECP256K1_BUILD_CABI AND SECP256K1_BUILD_CPU)
     message(STATUS "  C ABI (ufsecp):   ON")
 endif()
 
+if(SECP256K1_BUILD_JAVA AND SECP256K1_BUILD_CABI AND SECP256K1_BUILD_CPU)
+    find_package(JNI QUIET)
+    if(JNI_FOUND)
+        add_subdirectory(bindings/java)
+        message(STATUS "  Java JNI:         ON")
+    else()
+        message(STATUS "  Java JNI:         OFF (JNI not found)")
+    endif()
+endif()
+
 # -- Audit infrastructure (standalone CTest targets + unified runner) -------
 # All audit-specific targets live in audit/ to keep the library source clean.
 if(SECP256K1_BUILD_CPU AND BUILD_TESTING)
@@ -438,6 +449,7 @@ message(STATUS "    Tests:          ${SECP256K1_BUILD_TESTS}")
 message(STATUS "    Benchmarks:     ${SECP256K1_BUILD_BENCH}")
 
 message(STATUS "    Examples:       ${SECP256K1_BUILD_EXAMPLES}")
+message(STATUS "    Java JNI:       ${SECP256K1_BUILD_JAVA}")
 message(STATUS "")
 message(STATUS "  Optimizations:")
 message(STATUS "    Assembly:       ${SECP256K1_USE_ASM}")

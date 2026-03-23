@@ -28,9 +28,9 @@ it was designed in parallel with the cryptographic implementation, as a first-cl
 | ABI gate | FFI round-trip stability, C ABI regression detection | Full suite |
 | Performance regression | Automated micro-benchmark gate — fails CI if throughput regresses | Every push |
 | **Nightly differential** | Random round-trip differential tests against reference implementations | **~1,300,000+/night** |
-| **Total (audit runner)** | **unified_audit_runner** across 46 modules, 8 sections | **~1,000,000+** |
+| **Total (audit runner)** | **unified_audit_runner** across 55 modules plus standalone audit surfaces | **~1,000,000+** |
 
-All 46 modules across all tested platforms return **AUDIT-READY**. Zero failures.
+All 55 audit modules across all tested platforms return **AUDIT-READY**. Zero failures.
 
 ### Self-Audit Documents
 
@@ -171,21 +171,25 @@ Every benchmark number in this project is:
 
 ---
 
-## 7. What "Independently Unaudited" Actually Means Here
+## 7. What "Not Paid-Externally Audited" Actually Means Here
 
-UltrafastSecp256k1 has **not yet undergone a paid third-party professional audit** (by firms such as NCC Group, Trail of Bits, or Cure53). That goal requires funding — see [Seeking Sponsors](README.md#seeking-sponsors----audit-bug-bounty--development).
+UltrafastSecp256k1 has **not yet undergone a paid third-party professional audit**.
+That is a factual status note, not the center of the project's security philosophy.
+The project is open to external audit and continuously prepares evidence so outside reviewers can audit it at any time.
+At the same time, it does not wait for a third party to begin strengthening correctness and security.
 
 However, "not externally audited" does **not** mean "unverified." The internal quality infrastructure described in this document represents a systematic, multi-layer correctness assurance program that most open-source cryptographic libraries do not have:
 
 - Over **1,000,000 internal audit assertions** executed on every build
-- **23 CI/CD workflows** enforcing correctness, security, and performance
+- **23 CI/CD workflows** enforcing correctness, security, and performance on every commit
 - **Formal constant-time verification** on two independent platforms
 - **Supply-chain hardening** at the OpenSSF standard
 - **Nightly differential testing** at 1.3M+ additional random checks per night
 
 The honest summary:
-> This library is **not** production-certified by a third party.
-> It **is** built with the level of engineering rigor that makes a professional audit meaningful — and worth funding.
+> This library does **not** rely on a paid-audit badge as its primary trust story.
+> It **does** rely on open self-audit, reproducible evidence, and reviewer-friendly verification so anyone can inspect and challenge the implementation.
+> External audit is welcomed, but assurance work already happens continuously through internal audit on every build and every commit.
 
 ---
 

@@ -1,6 +1,9 @@
 # Bindings Memory & Secret Handling Model
 ## UltrafastSecp256k1 Cross-Language Security Boundary Contract
 
+> **Canonical operational standard**: see `docs/BINDINGS_USAGE_STANDARD.md`.
+> This file remains the detailed runtime-boundary and threat-model reference.
+
 > **Scope**: Documents how secret material (private keys, nonces, shared secrets) crosses FFI boundaries in each binding.  
 > **Honest policy**: States what IS guaranteed and what IS NOT -- no overclaiming.
 

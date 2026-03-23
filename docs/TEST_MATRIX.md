@@ -255,6 +255,8 @@ Machine-checked proofs (Fiat-Crypto/Vale/Jasmin) are not yet applied.
 |----------|----------|------------|-------|
 | Linux x86-64 | GCC 12+ | ASan, UBSan, TSan | Full suite |
 | Linux x86-64 | Clang 15+ | ASan, UBSan | Full suite |
+| Linux ARM64 | aarch64-linux-gnu + QEMU | -- | Cross-build + `run_selftest smoke` + `test_bip324_standalone` + `bench_kP` + `bench_bip324` |
+| Linux RISC-V 64 | riscv64-linux-gnu + QEMU | -- | Cross-build + `run_selftest smoke` + `test_bip324_standalone` + `bench_kP` + `bench_bip324` |
 | Windows x86-64 | MSVC 2022 | -- | Full suite |
 | macOS ARM64 | AppleClang | -- | Full suite |
 | macOS x86-64 | AppleClang | -- | Full suite |
@@ -289,6 +291,24 @@ clang++ -fsanitize=fuzzer,address -O2 -std=c++20 \
 
 # Selftest (smoke/ci/stress modes)
 ./build/cpu/tests/run_selftest
+
+# Linux ARM64 smoke under QEMU (cross-compiled)
+bash ./scripts/run-qemu-smoke.sh arm64
+
+# Or run the commands manually
+qemu-aarch64 -L /usr/aarch64-linux-gnu ./build-arm64/cpu/run_selftest smoke
+qemu-aarch64 -L /usr/aarch64-linux-gnu ./build-arm64/cpu/test_bip324_standalone
+qemu-aarch64 -L /usr/aarch64-linux-gnu ./build-arm64/cpu/bench_kP
+qemu-aarch64 -L /usr/aarch64-linux-gnu ./build-arm64/cpu/bench_bip324
+
+# Linux RISC-V smoke under QEMU (cross-compiled)
+bash ./scripts/run-qemu-smoke.sh riscv64
+
+# Or run the commands manually
+qemu-riscv64 -L /usr/riscv64-linux-gnu ./build-riscv64/cpu/run_selftest smoke
+qemu-riscv64 -L /usr/riscv64-linux-gnu ./build-riscv64/cpu/test_bip324_standalone
+qemu-riscv64 -L /usr/riscv64-linux-gnu ./build-riscv64/cpu/bench_kP
+qemu-riscv64 -L /usr/riscv64-linux-gnu ./build-riscv64/cpu/bench_bip324
 ```
 
 ---

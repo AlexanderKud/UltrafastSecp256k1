@@ -86,6 +86,12 @@ cmake -S . -B build -DSECP256K1_GLV_WINDOW_WIDTH=6
 
 See [docs/PERFORMANCE_GUIDE.md](../../docs/PERFORMANCE_GUIDE.md) for detailed benchmarks and per-platform tuning advice.
 
+## Smoke Validation
+
+```bash
+bash libs/UltrafastSecp256k1/scripts/validate_bindings.sh
+```
+
 ## License
 
 MIT

@@ -22,15 +22,15 @@
 **Current State:**
 - ✅ Apple Silicon (M1/M2/M3) - full CI with dudect
 - ✅ Android ARM64 (Cortex-A55) - real hardware benchmark
-- ✅ Linux ARM64 - cross-compile only (no runtime)
+- ✅ Linux ARM64 - cross-build + QEMU smoke (`run_selftest smoke`, `test_bip324_standalone`, `bench_kP`, `bench_bip324`)
 
 **Gaps:**
-- ❌ Linux ARM64 native execution in CI (QEMU skipped due to overhead)
+- ❌ Linux ARM64 native hardware execution in CI (QEMU smoke is not a microarchitecture benchmark)
 - ❌ Raspberry Pi 4/5 (Cortex-A72/A76) - community hardware
 - ❌ AWS Graviton2/3 (Neoverse N1/V1) - cloud ARM64
 - ❌ Ampere Altra (Neoverse N1) - server ARM64
 
-**Impact:** Low priority - Cross-compile + Apple Silicon coverage sufficient for correctness. Native benchmarks on diverse ARM cores would reveal microarchitecture-specific performance characteristics.
+**Impact:** Low-Medium priority - QEMU smoke closes the runtime blind spot for correctness, but native benchmarks on diverse ARM cores are still needed for trustworthy optimization data.
 
 **Recommendation:** Add GitHub Actions self-hosted runner on Raspberry Pi 4 or use AWS CodeBuild with Graviton2 instance.
 
@@ -79,13 +79,13 @@ cmake -DSECP256K1_USE_NEON=ON -DSECP256K1_TEST_NEON_EQUIVALENCE=ON
 **Current State:**
 - ✅ Android NDK cross-compile in CI (see `.github/workflows/release.yml`)
 - ✅ Benchmark data from real hardware (YF_022A device)
-- ❌ No automated Android device farm integration (Firebase Test Lab, BrowserStack, AWS Device Farm)
+- ❌ No automated Android device farm integration or ARM64 native runtime lane in CI (Firebase Test Lab, BrowserStack, AWS Device Farm)
 
 **Gaps:**
 - No per-PR verification on real Android hardware
 - Benchmark regression detection relies on manual runs
 
-**Impact:** Low-Medium priority - Cross-compile + manual verification sufficient for releases. Automated device testing would catch ARM-specific runtime bugs.
+**Impact:** Low-Medium priority - Cross-compile + QEMU smoke + manual verification now cover build/runtime correctness. Automated native device testing would still improve real-core regression detection.
 
 **Recommendation:** Add GitHub Actions workflow with Firebase Test Lab (free tier: 10 tests/day, $5/day beyond):  
 ```yaml

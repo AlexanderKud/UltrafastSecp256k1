@@ -74,7 +74,7 @@ public class SmokeTest {
         System.out.println("UltrafastSecp256k1 Java Smoke Test");
         System.out.println("============================================================");
 
-        try (Ufsecp ctx = new Ufsecp()) {
+        try (Ufsecp ctx = Ufsecp.create()) {
 
             check("ctx_create_abi", () -> {
                 int abi = ctx.abiVersion();
@@ -116,7 +116,7 @@ public class SmokeTest {
             check("ecdsa_recover", () -> {
                 var rec = ctx.ecdsaSignRecoverable(MSG32, KNOWN_PRIVKEY);
                 assertTrue(rec != null, "recoverable sign returned null");
-                byte[] pub = ctx.ecdsaRecover(MSG32, rec.signature, rec.recoveryId);
+                byte[] pub = ctx.ecdsaRecover(MSG32, rec.getSignature(), rec.getRecid());
                 assertTrue(pub != null, "recovery returned null");
                 assertArrayEquals(pub, KNOWN_PUBKEY, "recovered pubkey");
             });
@@ -138,9 +138,9 @@ public class SmokeTest {
                 assertTrue(wif != null, "wifEncode returned null");
                 var decoded = ctx.wifDecode(wif);
                 assertTrue(decoded != null, "wifDecode returned null");
-                assertArrayEquals(decoded.privkey, KNOWN_PRIVKEY, "WIF privkey");
-                assertTrue(decoded.compressed, "WIF compressed");
-                assertTrue(decoded.network == 0, "WIF mainnet");
+                assertArrayEquals(decoded.getPrivkey(), KNOWN_PRIVKEY, "WIF privkey");
+                assertTrue(decoded.isCompressed(), "WIF compressed");
+                assertTrue(decoded.getNetwork() == 0, "WIF mainnet");
             });
 
             check("ecdh_symmetric", () -> {

@@ -12,32 +12,33 @@ test modules and produces a structured JSON + TXT audit report. It covers
 cryptographic correctness, constant-time behavior, cross-platform KATs
 (Known Answer Tests), fault injection, differential testing, and more.
 
-### What It Tests (50 modules, 9 sections)
+The project is open to external audit and keeps these audit surfaces reproducible for outside reviewers.
+It does not wait for a formal third-party engagement before strengthening assurance internally.
+Internal audit is part of normal development and is expected to run on every build and every commit through the CI and local audit workflow.
+
+### What It Tests (55 modules + standalone audit surfaces)
 
 | Section | Modules | Focus |
 |---------|---------|-------|
-| 1. Core Arithmetic | 5 | Field mul, square, add, inversion, carry propagation |
-| 2. ECC Operations | 5 | Point add, double, scalar mul, generator mul, properties |
-| 3. Signing & Verification | 5 | ECDSA, Schnorr, RFC 6979 vectors, BIP-340 vectors, BIP-340 strict |
-| 4. Advanced Protocols | 6 | ECDH, key recovery, taproot, MuSig2, BIP-32, BIP-39 |
-| 5. Batch & SIMD | 3 | Batch (affine, multi-scalar), SIMD batch |
-| 6. Safety & Robustness | 8 | CT equivalence, fault injection, debug invariants, ABI gate, differential |
-| 7. Cross-Platform | 4 | Fiat-crypto vectors, cross-platform KAT, exhaustive small-group, comprehensive |
-| 8. Side-Channel | 2 | CT mode verification, dudect smoke test |
-| 9. Zero-Knowledge | 3 | Knowledge proof, DLEQ proof, Bulletproof (prove + verify) |
+| 1. Mathematical Invariants | 15 | SEC2 oracle, field/scalar/point laws, exhaustive checks |
+| 2. Constant-Time | 5 | CT correctness, namespace parity, timing sanity |
+| 3. Fuzzing & Adversarial | 7 | malformed inputs, parser boundaries, rejection paths |
+| 4. Performance & Security | 7 | perf smoke, nonce, zeroization, hardening |
+| 5. Integration & Protocols | 8 | ECDSA, Schnorr, ECDH, recovery, Taproot, BIP-32/39, BIP-324 |
+| 6. Zero-Knowledge | 6 | knowledge, DLEQ, range proof, serialization, rejection |
+| 7. Parse Strictness | 1 | public parse path strictness |
+| 8. Cross-Platform Evidence | separate standalone tests | Wycheproof, Fiat-Crypto, differential, FFI, protocol vectors |
 
-### Platform Support Matrix
+### Platform Validation Matrix
 
-| Platform | Modules Run | Expected Result |
-|----------|------------|----------------|
-| x86-64 (any OS) | 50 | 49/50 PASS (1 advisory: dudect smoke) |
-| RISC-V 64 (real HW) | 50 | 49/50 PASS (1 advisory: dudect smoke) |
-| ARM64 (Linux/Android) | 50 | 49/50 PASS (1 advisory: dudect smoke) |
-| ESP32-S3 (ESP-IDF) | 42 | 41/42 PASS (8 skipped: platform-incompatible) |
+| Platform | Current Evidence | Expected Result |
+|----------|------------------|----------------|
+| x86-64 (native) | `unified_audit_runner` + full CTest | 55/55 audit, CTest green |
+| RISC-V 64 (real HW) | `unified_audit_runner` on board + QEMU smoke in CI | 55/55 audit on hardware, smoke green in CI |
+| ARM64 (Linux/Android) | QEMU smoke in CI + native Android validation + ARM64 audit report | smoke green, native validation green |
+| ESP32-S3 (ESP-IDF) | dedicated ESP32 audit port | platform-specific audit-ready report |
 
-The **dudect smoke** module is always advisory -- it performs a statistical
-side-channel timing test that may show variance on real hardware without
-indicating a real vulnerability.
+`dudect` remains statistical evidence, not a formal proof. Current assurance combines unified audit, standalone vectors, dudect, Valgrind CT, differential testing, and platform reruns.
 
 ---
 
@@ -139,11 +140,11 @@ stream between `JSON_BEGIN` and `JSON_END` markers.
     "cpu": "Intel Core i7-11700"
   },
   "summary": {
-    "total_modules": 49,
-    "passed": 48,
+    "total_modules": 55,
+    "passed": 55,
     "failed": 0,
     "skipped": 0,
-    "advisory": 1,
+    "advisory": 0,
     "verdict": "AUDIT-READY"
   },
   "sections": [
@@ -257,6 +258,15 @@ Requires Apple Silicon or discrete AMD GPU on macOS.
 | 6. Protocol Security | 2 | ECDSA multi-key (10x), Schnorr multi-key (10x) |
 | 7. Fuzzing | 3 | Edge scalars, ECDSA zero key (advisory), Schnorr zero key (advisory) |
 | 8. Performance Smoke | 2 | ECDSA 50-iter stress, Schnorr 25-iter stress |
+
+### Current Known Gaps
+
+| Gap | Status |
+|-----|--------|
+| External reviewer reproducibility and onboarding | keep audit playbooks, traces, and commands easy to rerun outside the core team |
+| CT branch/memory formal proof (beyond dudect + Valgrind CT + review) | still partial |
+| Dedicated multi-threaded C ABI stress harness | still partial |
+| Native Android device-farm audit automation | still open |
 
 ---
 

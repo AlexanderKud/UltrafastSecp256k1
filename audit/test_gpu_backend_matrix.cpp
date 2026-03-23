@@ -40,7 +40,8 @@ static void probe_ops(ufsecp_gpu_ctx* ctx, const char* backend_name) {
     uint8_t pub33[33] = {0x02};
     uint8_t sig64[64] = {};
     uint8_t hash32[32] = {};
-    uint8_t out[64] = {};
+    uint8_t out[128] = {};
+    int recid = 0;
 
     auto e1 = ufsecp_gpu_generator_mul_batch(ctx, scalar, 1, out);
     auto e2 = ufsecp_gpu_ecdsa_verify_batch(ctx, hash32, pub33, sig64, 1, out);
@@ -48,6 +49,7 @@ static void probe_ops(ufsecp_gpu_ctx* ctx, const char* backend_name) {
     auto e4 = ufsecp_gpu_ecdh_batch(ctx, scalar, pub33, 1, out);
     auto e5 = ufsecp_gpu_hash160_pubkey_batch(ctx, pub33, 1, out);
     auto e6 = ufsecp_gpu_msm(ctx, scalar, pub33, 1, out);
+    auto e7 = ufsecp_gpu_ecrecover_batch(ctx, hash32, sig64, &recid, 1, out, out + 64);
 
     std::printf("  +----------------------------------------+\n");
     std::printf("  | %-12s | %-24s |\n", "Operation", "Status");
@@ -58,6 +60,7 @@ static void probe_ops(ufsecp_gpu_ctx* ctx, const char* backend_name) {
     std::printf("  | %-12s | %-24s |\n", "ecdh",        probe_status(e4));
     std::printf("  | %-12s | %-24s |\n", "hash160",     probe_status(e5));
     std::printf("  | %-12s | %-24s |\n", "msm",         probe_status(e6));
+    std::printf("  | %-12s | %-24s |\n", "ecrecover",   probe_status(e7));
     std::printf("  +----------------------------------------+\n");
 }
 

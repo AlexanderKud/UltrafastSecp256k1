@@ -64,6 +64,7 @@ module Ufsecp
 
   NET_MAINNET = 0
   NET_TESTNET = 1
+  EXPECTED_ABI = 1
 
   class Error < StandardError
     attr_reader :code, :operation
@@ -148,20 +149,35 @@ module Ufsecp
   class Context
     attr_reader :ptr
 
+    def self.finalizer(ptr)
+      proc do
+        Ufsecp.ufsecp_ctx_destroy(ptr) if ptr && !ptr.null?
+      end
+    end
+
     def initialize(lib_path: nil)
+      abi = Ufsecp.ufsecp_abi_version
+      if abi != EXPECTED_ABI
+        raise Ufsecp::Error.new('init', ERR_INTERNAL), "ABI mismatch: wrapper expects ABI #{EXPECTED_ABI}, lib reports ABI #{abi}."
+      end
       ctx_ptr = FFI::MemoryPointer.new(:pointer)
       rc = Ufsecp.ufsecp_ctx_create(ctx_ptr)
       raise Ufsecp::Error.new('ctx_create', rc) unless rc == OK
       @ptr = ctx_ptr.read_pointer
       @destroyed = false
+      @finalizer = self.class.finalizer(@ptr)
+      ObjectSpace.define_finalizer(self, @finalizer)
     end
 
     def destroy
       unless @destroyed
+        ObjectSpace.undefine_finalizer(self)
         Ufsecp.ufsecp_ctx_destroy(@ptr) if @ptr && !@ptr.null?
         @ptr = nil; @destroyed = true
       end
     end
+
+    alias close destroy
 
     # ── Version ────────────────────────────────────────────────────────
 

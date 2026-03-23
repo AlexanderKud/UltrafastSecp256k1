@@ -1,6 +1,9 @@
 # ABI Compatibility & Version Gates
 ## UltrafastSecp256k1 Cross-Language ABI Contract
 
+> **Canonical operational standard**: see `docs/BINDINGS_USAGE_STANDARD.md`.
+> This file remains the ABI-gating and wrapper-version reference.
+
 > **Canonical header**: `include/ufsecp/ufsecp_version.h`  
 > **Current ABI version**: 1
 

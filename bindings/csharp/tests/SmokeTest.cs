@@ -10,6 +10,7 @@
 
 using System;
 using System.Linq;
+using Ultrafast.Ufsecp;
 
 namespace UltrafastSecp256k1.SmokeTest
 {
@@ -58,52 +59,49 @@ namespace UltrafastSecp256k1.SmokeTest
 
             Test("ctx_create_abi", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
-                var abi = ctx.AbiVersion;
+                using var ctx = new Ufsecp();
+                var abi = Ufsecp.AbiVersion;
                 Assert(abi >= 1, $"ABI {abi} < 1");
             });
 
             Test("pubkey_create_golden", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
+                using var ctx = new Ufsecp();
                 var pub = ctx.PubkeyCreate(KNOWN_PRIVKEY);
                 AssertEqual(pub, KNOWN_PUBKEY, "compressed pubkey");
             });
 
             Test("pubkey_xonly_golden", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
+                using var ctx = new Ufsecp();
                 var xonly = ctx.PubkeyXonly(KNOWN_PRIVKEY);
                 AssertEqual(xonly, KNOWN_XONLY, "x-only pubkey");
             });
 
             Test("ecdsa_sign_verify", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
+                using var ctx = new Ufsecp();
                 var sig = ctx.EcdsaSign(MSG32, KNOWN_PRIVKEY);
                 Assert(sig.Length == 64, "sig length");
-                ctx.EcdsaVerify(MSG32, sig, KNOWN_PUBKEY);
+                Assert(ctx.EcdsaVerify(MSG32, sig, KNOWN_PUBKEY), "valid sig should verify");
 
-                // Mutated → fail
+                // Mutated -> fail
                 var bad = (byte[])sig.Clone();
                 bad[0] ^= 0x01;
-                bool threw = false;
-                try { ctx.EcdsaVerify(MSG32, bad, KNOWN_PUBKEY); }
-                catch { threw = true; }
-                Assert(threw, "mutated sig should fail");
+                Assert(!ctx.EcdsaVerify(MSG32, bad, KNOWN_PUBKEY), "mutated sig should fail");
             });
 
             Test("schnorr_sign_verify", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
+                using var ctx = new Ufsecp();
                 var sig = ctx.SchnorrSign(MSG32, KNOWN_PRIVKEY, AUX32);
                 Assert(sig.Length == 64, "sig length");
-                ctx.SchnorrVerify(MSG32, sig, KNOWN_XONLY);
+                Assert(ctx.SchnorrVerify(MSG32, sig, KNOWN_XONLY), "valid schnorr sig should verify");
             });
 
             Test("ecdsa_recover", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
+                using var ctx = new Ufsecp();
                 var (sig, recid) = ctx.EcdsaSignRecoverable(MSG32, KNOWN_PRIVKEY);
                 Assert(recid >= 0 && recid <= 3, "recid range");
                 var pub = ctx.EcdsaRecover(MSG32, sig, recid);
@@ -112,31 +110,30 @@ namespace UltrafastSecp256k1.SmokeTest
 
             Test("sha256_golden", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
-                var digest = ctx.Sha256(Array.Empty<byte>());
+                var digest = Ufsecp.Sha256(Array.Empty<byte>());
                 AssertEqual(digest, SHA256_EMPTY, "SHA-256 empty");
             });
 
             Test("addr_p2wpkh", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
-                var addr = ctx.AddrP2wpkh(KNOWN_PUBKEY, 0);
+                using var ctx = new Ufsecp();
+                var addr = ctx.AddrP2WPKH(KNOWN_PUBKEY, Network.Mainnet);
                 Assert(addr.StartsWith("bc1q"), $"Expected bc1q..., got {addr}");
             });
 
             Test("wif_roundtrip", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
-                var wif = ctx.WifEncode(KNOWN_PRIVKEY, true, 0);
+                using var ctx = new Ufsecp();
+                var wif = ctx.WifEncode(KNOWN_PRIVKEY, true, Network.Mainnet);
                 var (key, comp, net) = ctx.WifDecode(wif);
                 AssertEqual(key, KNOWN_PRIVKEY, "WIF privkey");
-                Assert(comp == 1, "compressed");
-                Assert(net == 0, "mainnet");
+                Assert(comp, "compressed");
+                Assert(net == Network.Mainnet, "mainnet");
             });
 
             Test("ecdh_symmetric", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
+                using var ctx = new Ufsecp();
                 var k2 = HexToBytes("0000000000000000000000000000000000000000000000000000000000000002");
                 var pub1 = ctx.PubkeyCreate(KNOWN_PRIVKEY);
                 var pub2 = ctx.PubkeyCreate(k2);
@@ -147,16 +144,13 @@ namespace UltrafastSecp256k1.SmokeTest
 
             Test("error_path", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
-                bool threw = false;
-                try { ctx.SeckeyVerify(new byte[32]); }
-                catch { threw = true; }
-                Assert(threw, "zero key should throw");
+                using var ctx = new Ufsecp();
+                Assert(!ctx.SeckeyVerify(new byte[32]), "zero key should fail verification");
             });
 
             Test("ecdsa_deterministic", () =>
             {
-                using var ctx = new Ufsecp.Ufsecp();
+                using var ctx = new Ufsecp();
                 var sig1 = ctx.EcdsaSign(MSG32, KNOWN_PRIVKEY);
                 var sig2 = ctx.EcdsaSign(MSG32, KNOWN_PRIVKEY);
                 AssertEqual(sig1, sig2, "RFC 6979 deterministic");

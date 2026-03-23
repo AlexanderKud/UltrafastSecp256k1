@@ -4,6 +4,14 @@
  * High-performance secp256k1 elliptic curve cryptography with dual-layer
  * constant-time architecture. Context-based API.
  *
+ * Security notes:
+ *   - Each context is single-thread; create one per worker/thread or
+ *     synchronize externally.
+ *   - Call destroy() when finished. A FinalizationRegistry fallback exists,
+ *     but explicit destroy remains the safe lifecycle contract.
+ *   - Native code erases its transient secret buffers, but JavaScript callers
+ *     must still wipe their own Buffer/Uint8Array copies.
+ *
  * Usage:
  *   const { Ufsecp } = require('ufsecp');
  *   const ctx = new Ufsecp();
@@ -23,6 +31,16 @@ const voidPtrPtr = ref.refType(voidPtr);
 const uint8Ptr = ref.refType(ref.types.uint8);
 const int32Ptr = ref.refType(ref.types.int32);
 const sizeTPtr = ref.refType(ref.types.size_t);
+
+const CTX_FINALIZER = typeof FinalizationRegistry === 'function'
+  ? new FinalizationRegistry(({ lib, ctx }) => {
+      try {
+        lib.ufsecp_ctx_destroy(ctx);
+      } catch {
+        // Best-effort finalizer only.
+      }
+    })
+  : null;
 
 // ── Error codes ────────────────────────────────────────────────────────
 
@@ -151,24 +169,115 @@ const LIB_SPEC = {
 const NET_MAINNET = 0;
 const NET_TESTNET = 1;
 
+function bestEffortZero(buf) {
+  if (!Buffer.isBuffer(buf) && !(buf instanceof Uint8Array)) {
+    throw new TypeError('buf must be a Buffer or Uint8Array');
+  }
+  buf.fill(0);
+  return buf;
+}
+
+class SensitiveBytes {
+  constructor(buf, { copy = false } = {}) {
+    if (!Buffer.isBuffer(buf) && !(buf instanceof Uint8Array)) {
+      throw new TypeError('buf must be a Buffer or Uint8Array');
+    }
+    this._buf = copy
+      ? Buffer.from(buf)
+      : Buffer.isBuffer(buf)
+        ? buf
+        : Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength);
+    this._destroyed = false;
+  }
+
+  static take(buf) {
+    return new SensitiveBytes(buf, { copy: false });
+  }
+
+  static copy(buf) {
+    return new SensitiveBytes(buf, { copy: true });
+  }
+
+  get bytes() {
+    if (this._destroyed) {
+      throw new Error('SensitiveBytes already destroyed');
+    }
+    return this._buf;
+  }
+
+  destroy() {
+    if (!this._destroyed) {
+      bestEffortZero(this._buf);
+      this._destroyed = true;
+    }
+  }
+}
+
+if (typeof Symbol.dispose === 'symbol') {
+  SensitiveBytes.prototype[Symbol.dispose] = SensitiveBytes.prototype.destroy;
+}
+
+function _normalizeSecretInput(value) {
+  return value instanceof SensitiveBytes ? value.bytes : value;
+}
+
+function _wipeSecretInput(value) {
+  if (value instanceof SensitiveBytes) {
+    value.destroy();
+    return;
+  }
+  bestEffortZero(value);
+}
+
+function _ffiBytes(value) {
+  return value.length === 0 ? Buffer.alloc(1) : value;
+}
+
+function _parseConstructorArgs(libPathOrOptions, maybeOptions) {
+  if (typeof libPathOrOptions === 'string' || libPathOrOptions == null) {
+    return {
+      libPath: libPathOrOptions || undefined,
+      autoZeroInputs: Boolean(maybeOptions && maybeOptions.autoZeroInputs),
+    };
+  }
+  if (typeof libPathOrOptions === 'object') {
+    return {
+      libPath: libPathOrOptions.libPath,
+      autoZeroInputs: Boolean(libPathOrOptions.autoZeroInputs),
+    };
+  }
+  throw new TypeError('constructor expects a library path string or options object');
+}
+
 // ── Ufsecp class ───────────────────────────────────────────────────────
 
 class Ufsecp {
   /**
-   * @param {string} [libPath] Path to the ufsecp shared library.
+   * @param {string|object} [libPathOrOptions] Path to the ufsecp shared library,
+   *   or options: { libPath?: string, autoZeroInputs?: boolean }.
+   * @param {object} [maybeOptions] Optional options when the first arg is a path.
    */
-  constructor(libPath) {
-    this._lib = ffi.Library(libPath || findLibrary(), LIB_SPEC);
+  constructor(libPathOrOptions, maybeOptions) {
+    const opts = _parseConstructorArgs(libPathOrOptions, maybeOptions);
+    this._lib = ffi.Library(opts.libPath || findLibrary(), LIB_SPEC);
     const pp = ref.alloc(voidPtr);
     const rc = this._lib.ufsecp_ctx_create(pp);
     if (rc !== UFSECP_OK) throw new UfsecpError('ctx_create', rc);
     this._ctx = pp.deref();
     this._destroyed = false;
+    this._autoZeroInputs = opts.autoZeroInputs;
+    this._finalizerToken = {};
+    if (CTX_FINALIZER) {
+      CTX_FINALIZER.register(this, { lib: this._lib, ctx: this._ctx }, this._finalizerToken);
+    }
   }
 
   /** Explicitly destroy the context. Safe to call multiple times. */
   destroy() {
     if (!this._destroyed && this._ctx) {
+      if (CTX_FINALIZER) {
+        CTX_FINALIZER.unregister(this._finalizerToken);
+      }
       this._lib.ufsecp_ctx_destroy(this._ctx);
       this._ctx = null;
       this._destroyed = true;
@@ -181,24 +290,30 @@ class Ufsecp {
   abiVersion()    { return this._lib.ufsecp_abi_version(); }
   versionString() { return this._lib.ufsecp_version_string(); }
   lastError()     { this._alive(); return this._lib.ufsecp_last_error(this._ctx); }
-  lastErrorMsg()  { this._alive(); return this._lib.ufsecp_last_error_msg(this._ctx); }
+  lastErrorMsg()  { this._alive(); return String(this._lib.ufsecp_last_error_msg(this._ctx)); }
 
   // ── Key operations ────────────────────────────────────────────────────
 
   /** Compressed public key (33 bytes). */
   pubkeyCreate(privkey) {
-    _chk(privkey, 32, 'privkey'); this._alive();
-    const out = Buffer.alloc(33);
-    this._throw(this._lib.ufsecp_pubkey_create(this._ctx, privkey, out), 'pubkey_create');
-    return out;
+    const raw = _normalizeSecretInput(privkey);
+    _chk(raw, 32, 'privkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const out = Buffer.alloc(33);
+      this._throw(this._lib.ufsecp_pubkey_create(this._ctx, raw, out), 'pubkey_create');
+      return out;
+    });
   }
 
   /** Uncompressed public key (65 bytes). */
   pubkeyCreateUncompressed(privkey) {
-    _chk(privkey, 32, 'privkey'); this._alive();
-    const out = Buffer.alloc(65);
-    this._throw(this._lib.ufsecp_pubkey_create_uncompressed(this._ctx, privkey, out), 'pubkey_create_uncompressed');
-    return out;
+    const raw = _normalizeSecretInput(privkey);
+    _chk(raw, 32, 'privkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const out = Buffer.alloc(65);
+      this._throw(this._lib.ufsecp_pubkey_create_uncompressed(this._ctx, raw, out), 'pubkey_create_uncompressed');
+      return out;
+    });
   }
 
   /** Parse compressed/uncompressed → compressed 33 bytes. */
@@ -211,42 +326,63 @@ class Ufsecp {
 
   /** X-only (32 bytes, BIP-340) from private key. */
   pubkeyXonly(privkey) {
-    _chk(privkey, 32, 'privkey'); this._alive();
-    const out = Buffer.alloc(32);
-    this._throw(this._lib.ufsecp_pubkey_xonly(this._ctx, privkey, out), 'pubkey_xonly');
-    return out;
+    const raw = _normalizeSecretInput(privkey);
+    _chk(raw, 32, 'privkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const out = Buffer.alloc(32);
+      this._throw(this._lib.ufsecp_pubkey_xonly(this._ctx, raw, out), 'pubkey_xonly');
+      return out;
+    });
   }
 
-  seckeyVerify(privkey)  { _chk(privkey, 32, 'privkey'); this._alive(); return this._lib.ufsecp_seckey_verify(this._ctx, privkey) === UFSECP_OK; }
+  seckeyVerify(privkey)  {
+    const raw = _normalizeSecretInput(privkey);
+    _chk(raw, 32, 'privkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => this._lib.ufsecp_seckey_verify(this._ctx, raw) === UFSECP_OK);
+  }
 
   seckeyNegate(privkey) {
-    _chk(privkey, 32, 'privkey'); this._alive();
-    const buf = Buffer.from(privkey);
-    this._throw(this._lib.ufsecp_seckey_negate(this._ctx, buf), 'seckey_negate');
-    return buf;
+    const raw = _normalizeSecretInput(privkey);
+    _chk(raw, 32, 'privkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const buf = Buffer.from(raw);
+      this._throw(this._lib.ufsecp_seckey_negate(this._ctx, buf), 'seckey_negate');
+      return buf;
+    });
   }
 
   seckeyTweakAdd(privkey, tweak) {
-    _chk(privkey, 32, 'privkey'); _chk(tweak, 32, 'tweak'); this._alive();
-    const buf = Buffer.from(privkey);
-    this._throw(this._lib.ufsecp_seckey_tweak_add(this._ctx, buf, tweak), 'seckey_tweak_add');
-    return buf;
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    const rawTweak = _normalizeSecretInput(tweak);
+    _chk(rawPrivkey, 32, 'privkey'); _chk(rawTweak, 32, 'tweak'); this._alive();
+    return this._withSecretCleanup([privkey, tweak], () => {
+      const buf = Buffer.from(rawPrivkey);
+      this._throw(this._lib.ufsecp_seckey_tweak_add(this._ctx, buf, rawTweak), 'seckey_tweak_add');
+      return buf;
+    });
   }
 
   seckeyTweakMul(privkey, tweak) {
-    _chk(privkey, 32, 'privkey'); _chk(tweak, 32, 'tweak'); this._alive();
-    const buf = Buffer.from(privkey);
-    this._throw(this._lib.ufsecp_seckey_tweak_mul(this._ctx, buf, tweak), 'seckey_tweak_mul');
-    return buf;
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    const rawTweak = _normalizeSecretInput(tweak);
+    _chk(rawPrivkey, 32, 'privkey'); _chk(rawTweak, 32, 'tweak'); this._alive();
+    return this._withSecretCleanup([privkey, tweak], () => {
+      const buf = Buffer.from(rawPrivkey);
+      this._throw(this._lib.ufsecp_seckey_tweak_mul(this._ctx, buf, rawTweak), 'seckey_tweak_mul');
+      return buf;
+    });
   }
 
   // ── ECDSA ─────────────────────────────────────────────────────────────
 
   ecdsaSign(msgHash, privkey) {
-    _chk(msgHash, 32, 'msgHash'); _chk(privkey, 32, 'privkey'); this._alive();
-    const sig = Buffer.alloc(64);
-    this._throw(this._lib.ufsecp_ecdsa_sign(this._ctx, msgHash, privkey, sig), 'ecdsa_sign');
-    return sig;
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    _chk(msgHash, 32, 'msgHash'); _chk(rawPrivkey, 32, 'privkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const sig = Buffer.alloc(64);
+      this._throw(this._lib.ufsecp_ecdsa_sign(this._ctx, msgHash, rawPrivkey, sig), 'ecdsa_sign');
+      return sig;
+    });
   }
 
   ecdsaVerify(msgHash, sig, pubkey) {
@@ -272,11 +408,14 @@ class Ufsecp {
   // ── Recovery ──────────────────────────────────────────────────────────
 
   ecdsaSignRecoverable(msgHash, privkey) {
-    _chk(msgHash, 32, 'msgHash'); _chk(privkey, 32, 'privkey'); this._alive();
-    const sig = Buffer.alloc(64);
-    const recid = ref.alloc('int');
-    this._throw(this._lib.ufsecp_ecdsa_sign_recoverable(this._ctx, msgHash, privkey, sig, recid), 'ecdsa_sign_recoverable');
-    return { signature: sig, recoveryId: recid.deref() };
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    _chk(msgHash, 32, 'msgHash'); _chk(rawPrivkey, 32, 'privkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const sig = Buffer.alloc(64);
+      const recid = ref.alloc('int');
+      this._throw(this._lib.ufsecp_ecdsa_sign_recoverable(this._ctx, msgHash, rawPrivkey, sig, recid), 'ecdsa_sign_recoverable');
+      return { signature: sig, recoveryId: recid.deref() };
+    });
   }
 
   ecdsaRecover(msgHash, sig, recid) {
@@ -289,10 +428,14 @@ class Ufsecp {
   // ── Schnorr ───────────────────────────────────────────────────────────
 
   schnorrSign(msg, privkey, auxRand) {
-    _chk(msg, 32, 'msg'); _chk(privkey, 32, 'privkey'); _chk(auxRand, 32, 'auxRand'); this._alive();
-    const sig = Buffer.alloc(64);
-    this._throw(this._lib.ufsecp_schnorr_sign(this._ctx, msg, privkey, auxRand, sig), 'schnorr_sign');
-    return sig;
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    const rawAuxRand = _normalizeSecretInput(auxRand);
+    _chk(msg, 32, 'msg'); _chk(rawPrivkey, 32, 'privkey'); _chk(rawAuxRand, 32, 'auxRand'); this._alive();
+    return this._withSecretCleanup([privkey, auxRand], () => {
+      const sig = Buffer.alloc(64);
+      this._throw(this._lib.ufsecp_schnorr_sign(this._ctx, msg, rawPrivkey, rawAuxRand, sig), 'schnorr_sign');
+      return sig;
+    });
   }
 
   schnorrVerify(msg, sig, pubkeyX) {
@@ -303,43 +446,52 @@ class Ufsecp {
   // ── ECDH ──────────────────────────────────────────────────────────────
 
   ecdh(privkey, pubkey) {
-    _chk(privkey, 32, 'privkey'); _chk(pubkey, 33, 'pubkey'); this._alive();
-    const out = Buffer.alloc(32);
-    this._throw(this._lib.ufsecp_ecdh(this._ctx, privkey, pubkey, out), 'ecdh');
-    return out;
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    _chk(rawPrivkey, 32, 'privkey'); _chk(pubkey, 33, 'pubkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const out = Buffer.alloc(32);
+      this._throw(this._lib.ufsecp_ecdh(this._ctx, rawPrivkey, pubkey, out), 'ecdh');
+      return out;
+    });
   }
 
   ecdhXonly(privkey, pubkey) {
-    _chk(privkey, 32, 'privkey'); _chk(pubkey, 33, 'pubkey'); this._alive();
-    const out = Buffer.alloc(32);
-    this._throw(this._lib.ufsecp_ecdh_xonly(this._ctx, privkey, pubkey, out), 'ecdh_xonly');
-    return out;
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    _chk(rawPrivkey, 32, 'privkey'); _chk(pubkey, 33, 'pubkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const out = Buffer.alloc(32);
+      this._throw(this._lib.ufsecp_ecdh_xonly(this._ctx, rawPrivkey, pubkey, out), 'ecdh_xonly');
+      return out;
+    });
   }
 
   ecdhRaw(privkey, pubkey) {
-    _chk(privkey, 32, 'privkey'); _chk(pubkey, 33, 'pubkey'); this._alive();
-    const out = Buffer.alloc(32);
-    this._throw(this._lib.ufsecp_ecdh_raw(this._ctx, privkey, pubkey, out), 'ecdh_raw');
-    return out;
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    _chk(rawPrivkey, 32, 'privkey'); _chk(pubkey, 33, 'pubkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const out = Buffer.alloc(32);
+      this._throw(this._lib.ufsecp_ecdh_raw(this._ctx, rawPrivkey, pubkey, out), 'ecdh_raw');
+      return out;
+    });
   }
 
   // ── Hashing ───────────────────────────────────────────────────────────
 
   sha256(data) {
     const out = Buffer.alloc(32);
-    this._throw(this._lib.ufsecp_sha256(data, data.length, out), 'sha256');
+    this._throw(this._lib.ufsecp_sha256(_ffiBytes(data), data.length, out), 'sha256');
     return out;
   }
 
   hash160(data) {
     const out = Buffer.alloc(20);
-    this._throw(this._lib.ufsecp_hash160(data, data.length, out), 'hash160');
+    this._throw(this._lib.ufsecp_hash160(_ffiBytes(data), data.length, out), 'hash160');
     return out;
   }
 
   taggedHash(tag, data) {
     const out = Buffer.alloc(32);
-    this._throw(this._lib.ufsecp_tagged_hash(tag, data, data.length, out), 'tagged_hash');
+    this._throw(this._lib.ufsecp_tagged_hash(tag, _ffiBytes(data), data.length, out), 'tagged_hash');
     return out;
   }
 
@@ -360,11 +512,14 @@ class Ufsecp {
   // ── WIF ───────────────────────────────────────────────────────────────
 
   wifEncode(privkey, compressed = true, network = NET_MAINNET) {
-    _chk(privkey, 32, 'privkey'); this._alive();
-    const buf = Buffer.alloc(128);
-    const len = ref.alloc('size_t', 128);
-    this._throw(this._lib.ufsecp_wif_encode(this._ctx, privkey, compressed ? 1 : 0, network, buf, len), 'wif_encode');
-    return buf.toString('utf8', 0, len.deref());
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    _chk(rawPrivkey, 32, 'privkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const buf = Buffer.alloc(128);
+      const len = ref.alloc('size_t', 128);
+      this._throw(this._lib.ufsecp_wif_encode(this._ctx, rawPrivkey, compressed ? 1 : 0, network, buf, len), 'wif_encode');
+      return buf.toString('utf8', 0, len.deref());
+    });
   }
 
   wifDecode(wif) {
@@ -379,11 +534,14 @@ class Ufsecp {
   // ── BIP-32 ────────────────────────────────────────────────────────────
 
   bip32Master(seed) {
+    const raw = _normalizeSecretInput(seed);
     this._alive();
-    if (seed.length < 16 || seed.length > 64) throw new RangeError('Seed must be 16-64 bytes');
-    const key = Buffer.alloc(82);
-    this._throw(this._lib.ufsecp_bip32_master(this._ctx, seed, seed.length, key), 'bip32_master');
-    return key;
+    if (raw.length < 16 || raw.length > 64) throw new RangeError('Seed must be 16-64 bytes');
+    return this._withSecretCleanup([seed], () => {
+      const key = Buffer.alloc(82);
+      this._throw(this._lib.ufsecp_bip32_master(this._ctx, raw, raw.length, key), 'bip32_master');
+      return key;
+    });
   }
 
   bip32Derive(parent, index) {
@@ -425,10 +583,13 @@ class Ufsecp {
   }
 
   taprootTweakSeckey(privkey, merkleRoot = null) {
-    _chk(privkey, 32, 'privkey'); this._alive();
-    const out = Buffer.alloc(32);
-    this._throw(this._lib.ufsecp_taproot_tweak_seckey(this._ctx, privkey, merkleRoot, out), 'taproot_tweak_seckey');
-    return out;
+    const rawPrivkey = _normalizeSecretInput(privkey);
+    _chk(rawPrivkey, 32, 'privkey'); this._alive();
+    return this._withSecretCleanup([privkey], () => {
+      const out = Buffer.alloc(32);
+      this._throw(this._lib.ufsecp_taproot_tweak_seckey(this._ctx, rawPrivkey, merkleRoot, out), 'taproot_tweak_seckey');
+      return out;
+    });
   }
 
   taprootVerify(outputKeyX, parity, internalKeyX, merkleRoot = null) {
@@ -447,6 +608,18 @@ class Ufsecp {
     if (rc !== UFSECP_OK) throw new UfsecpError(op, rc);
   }
 
+  _withSecretCleanup(values, fn) {
+    try {
+      return fn();
+    } finally {
+      for (const value of values) {
+        if (value instanceof SensitiveBytes || (this._autoZeroInputs && value && (Buffer.isBuffer(value) || value instanceof Uint8Array))) {
+          _wipeSecretInput(value);
+        }
+      }
+    }
+  }
+
   _getAddr(fnName, key, network) {
     this._alive();
     const buf = Buffer.alloc(128);
@@ -456,13 +629,17 @@ class Ufsecp {
   }
 }
 
+if (typeof Symbol.dispose === 'symbol') {
+  Ufsecp.prototype[Symbol.dispose] = Ufsecp.prototype.destroy;
+}
+
 function _chk(buf, expected, name) {
   if (!Buffer.isBuffer(buf) && !(buf instanceof Uint8Array)) {
-    throw new TypeError(`${name} must be a Buffer`);
+    throw new TypeError(`${name} must be a Buffer or Uint8Array`);
   }
   if (buf.length !== expected) {
     throw new RangeError(`${name} must be ${expected} bytes, got ${buf.length}`);
   }
 }
 
-module.exports = { Ufsecp, UfsecpError, NET_MAINNET, NET_TESTNET };
+module.exports = { Ufsecp, UfsecpError, NET_MAINNET, NET_TESTNET, SensitiveBytes, bestEffortZero };

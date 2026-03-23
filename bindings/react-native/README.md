@@ -39,55 +39,55 @@ cd ios && pod install
 ## Quick Start
 
 ```js
-import { Secp256k1 } from 'react-native-ultrafast-secp256k1';
+import { UfsecpContext } from 'react-native-ultrafast-secp256k1/lib/ufsecp';
 
-const secp = new Secp256k1();
+const ctx = await UfsecpContext.create();
 
 // Generate public key from 32-byte private key
 const privkey = Buffer.from('...', 'hex'); // use secure random source
-const pubkey = secp.ecPubkeyCreate(privkey);
+const pubkey = await ctx.pubkeyCreate(privkey.toString('hex'));
 ```
+
+The package root entrypoint is a legacy stateless bridge. Prefer the context-based `UfsecpContext` API for the standardized binding security model.
 
 ## ECDSA Sign & Verify
 
 ```js
-const msgHash = secp.sha256(Buffer.from('hello world'));
+const msgHash = await UfsecpContext.sha256(Buffer.from('hello world').toString('hex'));
 
 // Sign
-const sig = secp.ecdsaSign(msgHash, privkey);
+const sig = await ctx.ecdsaSign(msgHash, privkey.toString('hex'));
 
 // Verify
-const valid = secp.ecdsaVerify(msgHash, sig, pubkey);
+const valid = await ctx.ecdsaVerify(msgHash, sig, pubkey);
 console.log('valid:', valid); // true
 ```
 
 ## Schnorr (BIP-340)
 
 ```js
-const xOnlyPub = secp.schnorrPubkey(privkey);
-const msg = secp.sha256(Buffer.from('schnorr message'));
+const xOnlyPub = await ctx.pubkeyXonly(privkey.toString('hex'));
+const msg = await UfsecpContext.sha256(Buffer.from('schnorr message').toString('hex'));
 const auxRand = Buffer.alloc(32); // use crypto.getRandomValues in production
 
-const schnorrSig = secp.schnorrSign(msg, privkey, auxRand);
-const ok = secp.schnorrVerify(msg, schnorrSig, xOnlyPub);
+const schnorrSig = await ctx.schnorrSign(msg, privkey.toString('hex'), auxRand.toString('hex'));
+const ok = await ctx.schnorrVerify(msg, schnorrSig, xOnlyPub);
 ```
 
 ## Bitcoin Addresses
 
 ```js
-import { NETWORK_MAINNET } from 'react-native-ultrafast-secp256k1';
-
-const p2wpkh = secp.addressP2WPKH(pubkey, NETWORK_MAINNET); // bc1q...
-const p2tr = secp.addressP2TR(xOnlyPub, NETWORK_MAINNET);   // bc1p...
+const p2wpkh = await ctx.addrP2wpkh(pubkey, 0);   // bc1q...
+const p2tr = await ctx.addrP2tr(xOnlyPub, 0);     // bc1p...
 ```
 
 ## BIP-32 HD Derivation
 
 ```js
 const seed = Buffer.alloc(64); // use proper entropy
-const master = secp.bip32MasterKey(seed);
-const child = secp.bip32DerivePath(master, "m/44'/0'/0'/0/0");
-const childPriv = secp.bip32GetPrivkey(child);
+const master = await ctx.bip32Master(seed.toString('hex'));
+const child = await ctx.bip32DerivePath(master, "m/44'/0'/0'/0/0");
+const childPriv = await ctx.bip32Privkey(child);
 ```
 
 ## Platform Requirements
@@ -97,6 +97,16 @@ const childPriv = secp.bip32GetPrivkey(child);
 | Android | NDK, minSdkVersion 21+ |
 | iOS | iOS 13+, CocoaPods |
 | React Native | >= 0.71.0 |
+
+## Smoke Validation
+
+```bash
+bash libs/UltrafastSecp256k1/scripts/validate_bindings.sh
+```
+
+The validator runs a default mock-bridge contract smoke in plain Node.js to verify the JavaScript bridge surface without requiring Android/iOS bootstrapping.
+
+Set `UFSECP_VALIDATE_REACT_NATIVE=1` and provide a React Native/Jest test harness to additionally run the native React Native smoke suite against a real bridge.
 
 ## Architecture Note
 

@@ -28,13 +28,12 @@ operations. Backend support varies, and operations returning
 | `hash160_pubkey_batch` | implemented | implemented | implemented | PUBLIC |
 | `msm` | implemented | implemented | implemented | PUBLIC |
 | `frost_verify_partial_batch` | implemented | implemented | implemented | PUBLIC |
-| `ecrecover_batch` | implemented | temporary stub (`UFSECP_ERR_GPU_UNSUPPORTED`) | temporary stub (`UFSECP_ERR_GPU_UNSUPPORTED`) | PUBLIC |
-| **Total (unified GPU C ABI)** | **8/8** | **7/8** | **7/8** | |
+| `ecrecover_batch` | implemented | implemented | implemented | PUBLIC |
+| **Total (unified GPU C ABI)** | **8/8** | **8/8** | **8/8** | |
 
 ### Expansion Roadmap
 
-- **OpenCL next in the unified GPU C ABI**: `ecrecover_batch` (the native OpenCL backend already has the recovery device function; the remaining work is wiring a batch kernel through the shared host ABI layer)
-- **Metal next in the unified GPU C ABI**: `ecrecover_batch` shader/kernel parity
+- Unified 8/8 GPU C ABI parity is now closed across CUDA, OpenCL, and Metal.
 
 ### C ABI Test Coverage
 

@@ -92,6 +92,27 @@ target_compile_options(android_test PRIVATE -O3)
 target_link_options(android_test PRIVATE -static-libstdc++)
 
 # ============================================================================
+# On-device focused CPU hotspot benchmarks
+# ============================================================================
+add_executable(bench_kP ../cpu/tests/bench_kP.cpp)
+target_link_libraries(bench_kP PRIVATE fastsecp256k1)
+target_include_directories(bench_kP PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../cpu/include
+)
+target_compile_features(bench_kP PRIVATE cxx_std_20)
+target_compile_options(bench_kP PRIVATE -O3)
+target_link_options(bench_kP PRIVATE -static-libstdc++)
+
+add_executable(bench_bip324 ../cpu/bench/bench_bip324.cpp)
+target_link_libraries(bench_bip324 PRIVATE fastsecp256k1)
+target_include_directories(bench_bip324 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../cpu/include
+)
+target_compile_features(bench_bip324 PRIVATE cxx_std_20)
+target_compile_options(bench_bip324 PRIVATE -O3)
+target_link_options(bench_bip324 PRIVATE -static-libstdc++)
+
+# ============================================================================
 # Bench Hornet (Bitcoin Consensus full benchmark with libsecp256k1 apple-to-apple)
 # Requires libsecp256k1 source tree -- skip gracefully when absent (e.g. CI)
 # ============================================================================
@@ -124,4 +145,6 @@ message(STATUS "Targets available:")
 message(STATUS "  fastsecp256k1      - Static library (link into your native code)")
 message(STATUS "  secp256k1_jni      - Shared JNI library (for Java/Kotlin apps)")
 message(STATUS "  android_test       - On-device test binary (adb push + adb shell)")
+message(STATUS "  bench_kP           - On-device BIP-352 k*P hotspot benchmark")
+message(STATUS "  bench_bip324       - On-device BIP-324 protocol benchmark")
 message(STATUS "  ${_bench_hornet_status}")

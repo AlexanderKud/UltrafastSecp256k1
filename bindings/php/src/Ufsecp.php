@@ -27,6 +27,7 @@ use InvalidArgumentException;
 
 class Ufsecp
 {
+    public const EXPECTED_ABI = 1;
     public const NET_MAINNET = 0;
     public const NET_TESTNET = 1;
 
@@ -129,6 +130,13 @@ class Ufsecp
         $path = $libPath ?? self::findLibrary();
         $this->ffi = FFI::cdef(self::C_HEADER, $path);
 
+        $abi = $this->ffi->ufsecp_abi_version();
+        if ($abi !== self::EXPECTED_ABI) {
+            throw new RuntimeException(
+                "ABI mismatch: wrapper expects ABI " . self::EXPECTED_ABI . ", lib reports ABI $abi."
+            );
+        }
+
         $ctxPtr = $this->ffi->new('ufsecp_ctx*');
         $rc = $this->ffi->ufsecp_ctx_create(FFI::addr($ctxPtr));
         if ($rc !== self::OK) {
@@ -139,8 +147,14 @@ class Ufsecp
 
     public function __destruct()
     {
+        $this->close();
+    }
+
+    public function close(): void
+    {
         if (isset($this->ctx)) {
             $this->ffi->ufsecp_ctx_destroy($this->ctx);
+            unset($this->ctx);
         }
     }
 
@@ -586,8 +600,10 @@ class Ufsecp
     private static function buf(string $data): FFI\CData
     {
         $len = strlen($data);
-        $b = FFI::new("uint8_t[$len]");
-        FFI::memcpy($b, $data, $len);
+        $b = FFI::new('uint8_t[' . max(1, $len) . ']');
+        if ($len > 0) {
+            FFI::memcpy($b, $data, $len);
+        }
         return $b;
     }
 

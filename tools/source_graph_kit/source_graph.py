@@ -121,6 +121,8 @@ def _apply_project_dir(project_dir: str):
 # ---------- Config-driven project settings ----------
 # These are set by load_config() at startup, with fallback defaults.
 SOURCE_DIRS = []          # list of (label, Path, [extensions])
+SOURCE_DIR_ADAPTERS = {}  # label -> LanguageAdapter override
+SOURCE_DIR_RECURSIVE = {} # label -> bool
 CATEGORY_RULES = []       # list of dicts: {match, pattern, category, source_dir?}
 EXTERNAL_PATHS = {}       # e.g. {"runtime_data": Path(...), "research_dir": Path(...)}
 SEED_DATA = {}            # e.g. {"singletons": [...], "events": [...], ...}
@@ -134,6 +136,17 @@ RESEARCH_DIR = REPO_ROOT / "ReversingResearch"
 
 # Active language adapter — set by load_config()
 LANG_ADAPTER = None  # type: LanguageAdapter
+_NON_RECURSIVE_SOURCE_DIRS = set()
+_ORIGINAL_PATH_RGLOB = Path.rglob
+
+
+def _path_rglob_with_source_dir_policy(self, pattern):
+    if str(self.resolve()) in _NON_RECURSIVE_SOURCE_DIRS:
+        return self.glob(pattern)
+    return _ORIGINAL_PATH_RGLOB(self, pattern)
+
+
+Path.rglob = _path_rglob_with_source_dir_policy
 
 # ---------- AI output control ----------
 # Set to True by --quiet / -q global flag to suppress decorative headers.
@@ -2209,9 +2222,11 @@ def _auto_detect_config():
 
 def load_config():
     """Load project config and set global variables."""
-    global SOURCE_DIRS, CATEGORY_RULES, EXTERNAL_PATHS, SEED_DATA, CONFIG_PATH
+    global SOURCE_DIRS, SOURCE_DIR_ADAPTERS, SOURCE_DIR_RECURSIVE
+    global CATEGORY_RULES, EXTERNAL_PATHS, SEED_DATA, CONFIG_PATH
     global GAME_DIR, COMMON_DIR, RUNTIME_DATA_ROOT, RESEARCH_DIR
     global LANG_ADAPTER
+    global _NON_RECURSIVE_SOURCE_DIRS
 
     config_path = _find_config_file()
     CONFIG_PATH = config_path
@@ -2232,6 +2247,9 @@ def load_config():
 
     # Source directories
     SOURCE_DIRS = []
+    SOURCE_DIR_ADAPTERS = {}
+    SOURCE_DIR_RECURSIVE = {}
+    _NON_RECURSIVE_SOURCE_DIRS = set()
     default_exts = LANG_ADAPTER.extensions
     for sd in cfg.get("source_dirs", []):
         label = sd["label"]
@@ -2240,8 +2258,18 @@ def load_config():
             path = REPO_ROOT / path
         exts = sd.get("extensions", default_exts)
         optional = sd.get("optional", False)
+        adapter = get_adapter(sd["language"]) if sd.get("language") else LANG_ADAPTER
+        recursive = sd.get("recursive", True)
         if path.exists() or not optional:
             SOURCE_DIRS.append((label, path, exts))
+            SOURCE_DIR_ADAPTERS[label] = adapter
+            SOURCE_DIR_RECURSIVE[label] = recursive
+            if not recursive and path.exists():
+                _NON_RECURSIVE_SOURCE_DIRS.add(str(path.resolve()))
+
+
+def _project_adapter(project):
+    return SOURCE_DIR_ADAPTERS.get(project, LANG_ADAPTER)
 
     # Category rules
     if "category_rules" in cfg:
@@ -3175,11 +3203,12 @@ def scan_research_assets(conn):
 
 def scan_includes(conn):
     """Scan import/include directives to build dependency graph."""
-    import_re = LANG_ADAPTER.import_pattern()
-    if not import_re:
-        return
     for project, base_dir, exts in SOURCE_DIRS:
         if not base_dir.exists():
+            continue
+        adapter = _project_adapter(project)
+        import_re = adapter.import_pattern()
+        if not import_re:
             continue
         for ext in exts:
             for f in base_dir.rglob(ext):
@@ -3237,14 +3266,14 @@ def scan_singleton_usage(conn):
 
 def scan_enums(conn):
     """Scan source files for enum declarations and extract values."""
-    enum_re = LANG_ADAPTER.enum_pattern()
-    if not enum_re:
-        return
-    # For non-brace languages (Python), scan all files; for C++ scan headers too
-    header_exts = LANG_ADAPTER.header_extensions or LANG_ADAPTER.extensions
     for project, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
+        adapter = _project_adapter(project)
+        enum_re = adapter.enum_pattern()
+        if not enum_re:
+            continue
+        header_exts = adapter.header_extensions or adapter.extensions
         scan_exts = header_exts if header_exts else _exts
         for ext in scan_exts:
             for f in base_dir.rglob(ext):
@@ -3258,7 +3287,7 @@ def scan_enums(conn):
                             enum_name = m.group(1)
                             enum_line = i + 1
                             values = []
-                            if LANG_ADAPTER.uses_braces:
+                            if adapter.uses_braces:
                                 j = i + 1
                                 brace_found = '{' in lines[i]
                                 while not brace_found and j < min(i + 3, len(lines)):
@@ -3311,13 +3340,14 @@ def scan_enums(conn):
 
 def scan_structs(conn):
     """Scan source files for struct/dataclass/record declarations."""
-    struct_re = LANG_ADAPTER.struct_pattern()
-    if not struct_re:
-        return
-    scan_exts = LANG_ADAPTER.header_extensions or LANG_ADAPTER.extensions
     for project, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
+        adapter = _project_adapter(project)
+        struct_re = adapter.struct_pattern()
+        if not struct_re:
+            continue
+        scan_exts = adapter.header_extensions or adapter.extensions
         for ext in (scan_exts if scan_exts else _exts):
             for f in base_dir.rglob(ext):
                 try:
@@ -3328,7 +3358,7 @@ def scan_structs(conn):
                     while i < len(lines):
                         line = lines[i].strip()
                         # Track C++ #pragma pack state
-                        if LANG_ADAPTER.name == "cpp" and '#pragma' in line and 'pack' in line:
+                        if adapter.name == "cpp" and '#pragma' in line and 'pack' in line:
                             if 'pack(1)' in line or 'pack(push' in line:
                                 in_pack = True
                             elif 'pack()' in line or 'pack(pop' in line:
@@ -3340,7 +3370,7 @@ def scan_structs(conn):
                             struct_name = m.group(1)
                             struct_line = i + 1
                             fields = []
-                            if LANG_ADAPTER.uses_braces:
+                            if adapter.uses_braces:
                                 j = i + 1
                                 brace_found = '{' in lines[i]
                                 while not brace_found and j < min(i + 3, len(lines)):
@@ -3395,13 +3425,14 @@ def scan_structs(conn):
 
 def scan_classes(conn):
     """Scan source files for class/interface/impl declarations and inheritance."""
-    class_re = LANG_ADAPTER.class_pattern()
-    if not class_re:
-        return
-    scan_exts = LANG_ADAPTER.header_extensions or LANG_ADAPTER.extensions
     for project, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
+        adapter = _project_adapter(project)
+        class_re = adapter.class_pattern()
+        if not class_re:
+            continue
+        scan_exts = adapter.header_extensions or adapter.extensions
         for ext in (scan_exts if scan_exts else _exts):
             for f in base_dir.rglob(ext):
                 try:
@@ -3412,7 +3443,7 @@ def scan_classes(conn):
                                 class_name = m.group(1)
                                 parent = m.group(2) if m.lastindex and m.lastindex >= 2 else None
                                 # Try to find a companion implementation file
-                                impl_ext = ".cpp" if LANG_ADAPTER.name == "cpp" else f.suffix
+                                impl_ext = ".cpp" if adapter.name == "cpp" else f.suffix
                                 impl_name = f.stem + impl_ext
                                 impl_path = f.parent / impl_name
                                 try:
@@ -3428,16 +3459,16 @@ def scan_classes(conn):
 
 def scan_methods(conn):
     """Scan source files for method/function declarations in classes."""
-    method_re = LANG_ADAPTER.method_pattern()
-    class_re = LANG_ADAPTER.class_pattern()
-    if not method_re:
-        return
-    skip_names = LANG_ADAPTER.method_skip_names()
-    scan_exts = LANG_ADAPTER.header_extensions or LANG_ADAPTER.extensions
-
     for project, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
+        adapter = _project_adapter(project)
+        method_re = adapter.method_pattern()
+        class_re = adapter.class_pattern()
+        if not method_re:
+            continue
+        skip_names = adapter.method_skip_names()
+        scan_exts = adapter.header_extensions or adapter.extensions
         for ext in (scan_exts if scan_exts else _exts):
             for f in base_dir.rglob(ext):
                 try:
@@ -3469,10 +3500,10 @@ def scan_methods(conn):
 
 def scan_todos(conn):
     """Scan source files for TODO, FIXME, HACK, BUG, XXX, NOTE comments."""
-    todo_re = LANG_ADAPTER.todo_pattern()
     for project, base_dir, exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
+        todo_re = _project_adapter(project).todo_pattern()
         for ext in exts:
             for f in base_dir.rglob(ext):
                 try:
@@ -3606,17 +3637,16 @@ def scan_config_keys(conn):
 
 def scan_defines(conn):
     """Scan source files for constant/define declarations."""
-    define_re = LANG_ADAPTER.define_pattern()
-    if not define_re:
-        return
-    # C++ scans headers; other languages scan all source files
-    scan_exts = LANG_ADAPTER.header_extensions if LANG_ADAPTER.header_extensions else LANG_ADAPTER.extensions
-    # C++ guard skip patterns
     cpp_skip_patterns = {'_H', '_H_', 'INCLUDED', 'GUARD'}
 
     for project, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
+        adapter = _project_adapter(project)
+        define_re = adapter.define_pattern()
+        if not define_re:
+            continue
+        scan_exts = adapter.header_extensions if adapter.header_extensions else adapter.extensions
         for ext in (scan_exts if scan_exts else _exts):
             for f in base_dir.rglob(ext):
                 try:
@@ -3629,7 +3659,7 @@ def scan_defines(conn):
                                 if not name:
                                     continue
                                 # C++ specific: skip include guards and function-like macros
-                                if LANG_ADAPTER.name == "cpp":
+                                if adapter.name == "cpp":
                                     if any(name.endswith(s) for s in cpp_skip_patterns):
                                         continue
                                     if name.startswith('_') and name.endswith('_'):
@@ -3685,23 +3715,18 @@ def scan_file_lines(conn):
 
 def scan_leak_risks(conn):
     """Analyze resource alloc/dealloc balance per file to find potential leaks."""
-    patterns = LANG_ADAPTER.leak_patterns()
-    if not patterns:
-        return
-    alloc_re = patterns['alloc']
-    dealloc_re = patterns['dealloc']
-    smart1_re = patterns.get('smart_unique')
-    smart2_re = patterns.get('smart_shared')
-
-    # Scan implementation files (not headers)
-    impl_exts = [e for e in LANG_ADAPTER.extensions if e not in LANG_ADAPTER.header_extensions]
-    if not impl_exts:
-        impl_exts = LANG_ADAPTER.extensions
-
     for project, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
-        scan_exts = [e for e in _exts if e not in (LANG_ADAPTER.header_extensions or [])]
+        adapter = _project_adapter(project)
+        patterns = adapter.leak_patterns()
+        if not patterns:
+            continue
+        alloc_re = patterns['alloc']
+        dealloc_re = patterns['dealloc']
+        smart1_re = patterns.get('smart_unique')
+        smart2_re = patterns.get('smart_shared')
+        scan_exts = [e for e in _exts if e not in (adapter.header_extensions or [])]
         if not scan_exts:
             scan_exts = _exts
         for ext in scan_exts:
@@ -3731,23 +3756,18 @@ def scan_leak_risks(conn):
 
 def scan_null_risks(conn):
     """Find nullable-returning calls used without null checks."""
-    risky_calls = LANG_ADAPTER.null_risk_calls()
-    if not risky_calls:
-        return
-    call_pattern = re.compile(
-        r'(?:\w+\s*(?:->|\.)\s*)?(' + '|'.join(re.escape(c) for c in risky_calls) + r')\s*\([^)]*\)'
-    )
-    # For C++ use -> dereference check; for others use attribute access
-    deref_op = '->' if LANG_ADAPTER.name == "cpp" else '.'
-
-    scan_exts = [e for e in LANG_ADAPTER.extensions if e not in (LANG_ADAPTER.header_extensions or [])]
-    if not scan_exts:
-        scan_exts = LANG_ADAPTER.extensions
-
     for project, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
-        for ext in [e for e in _exts if e not in (LANG_ADAPTER.header_extensions or [])]:
+        adapter = _project_adapter(project)
+        risky_calls = adapter.null_risk_calls()
+        if not risky_calls:
+            continue
+        call_pattern = re.compile(
+            r'(?:\w+\s*(?:->|\.)\s*)?(' + '|'.join(re.escape(c) for c in risky_calls) + r')\s*\([^)]*\)'
+        )
+        deref_op = '->' if adapter.name == "cpp" else '.'
+        for ext in [e for e in _exts if e not in (adapter.header_extensions or [])]:
             for f in base_dir.rglob(ext):
                 try:
                     with open(f, "r", encoding="utf-8", errors="ignore") as fh:
@@ -3759,7 +3779,7 @@ def scan_null_risks(conn):
                             ptr_var = assign_match.group(1) if assign_match else None
                             if ptr_var:
                                 window = "".join(lines[i+1:i+4]) if i+1 < len(lines) else ""
-                                null_re = LANG_ADAPTER.null_check_pattern(ptr_var)
+                                null_re = adapter.null_check_pattern(ptr_var)
                                 has_check = bool(null_re.search(window)) if null_re else False
                                 if not has_check and 'if' not in line and '?' not in line:
                                     conn.execute(
@@ -3779,14 +3799,15 @@ def scan_null_risks(conn):
 
 def scan_raw_pointers(conn):
     """Find raw pointer / unmanaged resource class members (RAII/ownership candidates)."""
-    member_re = LANG_ADAPTER.raw_pointer_pattern()
-    class_re = LANG_ADAPTER.class_pattern()
-    if not member_re:
-        return
-    scan_exts = LANG_ADAPTER.header_extensions or LANG_ADAPTER.extensions
     for _label, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
+        adapter = _project_adapter(_label)
+        member_re = adapter.raw_pointer_pattern()
+        class_re = adapter.class_pattern()
+        if not member_re:
+            continue
+        scan_exts = adapter.header_extensions or adapter.extensions
         for ext in (scan_exts if scan_exts else _exts):
             for f in base_dir.rglob(ext):
                 try:
@@ -3814,12 +3835,12 @@ def scan_raw_pointers(conn):
 
 def scan_unsafe_casts(conn):
     """Find unsafe type casts (language-specific)."""
-    cast_re = LANG_ADAPTER.unsafe_cast_pattern()
-    if not cast_re:
-        return
     safe_types = {'void', 'char', 'unsigned', 'const', 'BYTE', 'LPBYTE', 'LPSTR', 'LPCSTR', 'LPVOID'}
     for project, base_dir, exts in SOURCE_DIRS:
         if not base_dir.exists():
+            continue
+        cast_re = _project_adapter(project).unsafe_cast_pattern()
+        if not cast_re:
             continue
         for ext in exts:
             for f in base_dir.rglob(ext):
@@ -4493,7 +4514,10 @@ CALL_SKIP_NAMES = frozenset({
 
 def _get_call_skip_names():
     """Return the union of the global C++ skip names and the adapter-specific skip names."""
-    return CALL_SKIP_NAMES | LANG_ADAPTER.call_skip_names()
+    names = set(CALL_SKIP_NAMES)
+    for adapter in SOURCE_DIR_ADAPTERS.values():
+        names.update(adapter.call_skip_names())
+    return frozenset(names)
 
 
 def _resolve_call_target(caller_row, scope_name, callee_name, by_name):
@@ -5032,10 +5056,7 @@ def scan_call_edges(conn):
         by_name[row["function_name"]].append(row)
 
     file_cache = {}
-    call_pats = LANG_ADAPTER.call_patterns()
-    plain_call_re = call_pats.get('plain', re.compile(r'\b([A-Za-z_~]\w*)\s*\('))
-    scoped_call_re = call_pats.get('scoped', re.compile(r'\b([A-Za-z_]\w*)::([A-Za-z_~]\w*)\s*\('))
-    member_call_re = call_pats.get('member', re.compile(r'(?:->|\.)\s*([A-Za-z_~]\w*)\s*\('))
+    call_pattern_cache = {}
     skip_names = _get_call_skip_names()
 
     for row in rows:
@@ -5047,7 +5068,15 @@ def scan_call_edges(conn):
         if not body:
             continue
 
-        sanitized = LANG_ADAPTER.strip_comments_and_strings(body)
+        adapter = _project_adapter(row["project"])
+        if row["project"] not in call_pattern_cache:
+            call_pattern_cache[row["project"]] = adapter.call_patterns()
+        call_pats = call_pattern_cache[row["project"]]
+        plain_call_re = call_pats.get('plain', re.compile(r'\b([A-Za-z_~]\w*)\s*\('))
+        scoped_call_re = call_pats.get('scoped', re.compile(r'\b([A-Za-z_]\w*)::([A-Za-z_~]\w*)\s*\('))
+        member_call_re = call_pats.get('member', re.compile(r'(?:->|\.)\s*([A-Za-z_~]\w*)\s*\('))
+
+        sanitized = adapter.strip_comments_and_strings(body)
         counts = defaultdict(int)
         scoped_counts = {}
 
@@ -5513,13 +5542,13 @@ def scan_ai_tasks(conn):
 
 def scan_function_index(conn):
     """Scan source files for function definitions with exact line ranges."""
-    dirs = [(label, path) for label, path, _exts in SOURCE_DIRS]
+    dirs = [(label, path, exts) for label, path, exts in SOURCE_DIRS]
 
     count = 0
-    for project, base_dir in dirs:
+    for project, base_dir, exts in dirs:
         if not base_dir.exists():
             continue
-        for ext in ("*.cpp", "*.h", "*.hpp", "*.cu", "*.cuh", "*.cl", "*.metal"):
+        for ext in exts:
             for filepath in base_dir.rglob(ext):
                 try:
                     n = _scan_file_functions(conn, filepath, project, base_dir)
@@ -5540,13 +5569,13 @@ def _scan_file_functions(conn, filepath, project, base_dir=None):
     fname = _rel_name(filepath, base_dir) if base_dir else filepath.name
     count = 0
 
-    # Preprocess: strip block/line comments using the language adapter
-    cleaned = LANG_ADAPTER.strip_block_comments_from_lines(lines)
+    adapter = _project_adapter(project)
+    cleaned = adapter.strip_block_comments_from_lines(lines)
 
     # Get patterns from adapter
-    func_sig_re = LANG_ADAPTER.function_sig_pattern()
-    ctor_re = LANG_ADAPTER.constructor_pattern()
-    skip_names = LANG_ADAPTER.function_skip_names()
+    func_sig_re = adapter.function_sig_pattern()
+    ctor_re = adapter.constructor_pattern()
+    skip_names = adapter.function_skip_names()
 
     if not func_sig_re:
         return 0
@@ -5592,19 +5621,19 @@ def _scan_file_functions(conn, filepath, project, base_dir=None):
             continue
 
         # Find the opening scope marker (brace for C++/Java/etc., colon for Python)
-        scope_line = LANG_ADAPTER.find_opening_scope(cleaned, i)
+        scope_line = adapter.find_opening_scope(cleaned, i)
         if scope_line is None or scope_line - i > 15:
             i += 1
             continue
 
         # For brace-based languages, check it's not a forward declaration
-        if LANG_ADAPTER.is_declaration_not_definition(cleaned, i, scope_line):
+        if adapter.is_declaration_not_definition(cleaned, i, scope_line):
             i += 1
             continue
 
         # Found a function definition — find the end of its scope
         start_line = i + 1  # 1-based
-        end_line = LANG_ADAPTER.find_scope_end(cleaned, scope_line)
+        end_line = adapter.find_scope_end(cleaned, scope_line)
         if end_line is None:
             i += 1
             continue
@@ -7492,15 +7521,112 @@ def _research_matches(conn, term, limit=20):
     ).fetchall()
 
 
+def _fts_safe_query(term):
+    """Convert a user term into a conservative FTS5 query.
+
+    Bare FTS input treats punctuation like '.', '/', '-', and ':' as syntax in
+    some positions, which breaks filename and path searches such as
+    'SECURITY.md' or 'docs/ROADMAP.md'. Quote any token containing non-word
+    characters so literal filename/path lookups stay inside the graph path.
+    """
+    tokens = (term or "").split()
+    if not tokens:
+        return '""'
+
+    safe_tokens = []
+    for token in tokens:
+        if re.fullmatch(r"[A-Za-z0-9_]+", token):
+            safe_tokens.append(token)
+            continue
+        safe_tokens.append('"' + token.replace('"', '""') + '"')
+    return " ".join(safe_tokens)
+
+
+def _ai_file_matches(conn, term, limit=30):
+    """Prioritize exact/basename/path-hint file matches before generic FTS.
+
+    The AI commonly searches by dotted filenames or source-dir-qualified paths
+    like 'docs/README.md'. The graph stores paths relative to each source dir,
+    so use the files table plus a small scorer to recover the intended repo file
+    before falling back to noisier FTS results.
+    """
+    raw = (term or "").strip()
+    if not raw:
+        return []
+
+    needle = raw.lower()
+    basename = needle.rsplit("/", 1)[-1]
+    project_hint = needle.split("/", 1)[0] if "/" in needle else None
+
+    like_terms = [
+        f"%{needle}%",
+        f"%{basename}%",
+    ]
+
+    rows = conn.execute(
+        "SELECT path, project, category, description FROM files "
+        "WHERE lower(path) LIKE ? OR lower(path) LIKE ?",
+        tuple(like_terms),
+    ).fetchall()
+
+    scored = []
+    for path, project, category, description in rows:
+        path_l = (path or "").lower()
+        project_l = (project or "").lower()
+        score = 100
+
+        if path_l == needle:
+            score = 0
+        elif project_hint and project_l == project_hint and path_l == basename:
+            score = 1
+        elif path_l == basename:
+            score = 2
+        elif path_l.endswith("/" + basename):
+            score = 3
+        elif needle in path_l:
+            score = 4
+        elif basename in path_l:
+            score = 5
+
+        noise_penalty = 10 if "node_modules/" in path_l or path_l.startswith("build") else 0
+        scored.append((score + noise_penalty, len(path_l), path, project, category, description))
+
+    scored.sort(key=lambda item: (item[0], item[1], item[2]))
+    results = []
+    seen = set()
+    for _score, _path_len, path, _project, category, description in scored:
+        if path in seen:
+            continue
+        seen.add(path)
+        results.append(("file", path, path, category or "", description or ""))
+        if len(results) >= limit:
+            break
+    return results
+
+
 def find_cmd(term):
     """Search everything using FTS."""
-    conn = get_conn()
     # FTS5 needs simple conn without row_factory for proper fetch
     conn2 = sqlite3.connect(str(DB_PATH))
-    rows = conn2.execute(
-        "SELECT entity_type, name, file, category, description FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT 30",
-        (term,)
-    ).fetchall()
+    rows = _ai_file_matches(conn2, term)
+    query = _fts_safe_query(term)
+    if len(rows) < 30:
+        try:
+            fts_rows = conn2.execute(
+                "SELECT entity_type, name, file, category, description FROM fts_index WHERE fts_index MATCH ? ORDER BY rank LIMIT 30",
+                (query,)
+            ).fetchall()
+        except sqlite3.OperationalError:
+            fts_rows = []
+        seen = {(row[0], row[1], row[2]) for row in rows}
+        for row in fts_rows:
+            key = (row[0], row[1], row[2])
+            if key in seen:
+                continue
+            rows.append(row)
+            seen.add(key)
+            if len(rows) >= 30:
+                break
     if not rows:
         # Fallback to LIKE search
         pattern = f"%{term}%"

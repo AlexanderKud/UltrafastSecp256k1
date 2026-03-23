@@ -4,13 +4,15 @@
  * Implements gpu::GpuBackend for OpenCL.
  * Wraps the existing secp256k1::opencl::Context class.
  *
- * Supports all 6 GPU C ABI operations:
+ * Supports all 8 GPU C ABI operations:
  *   - generator_mul_batch  (via batch_scalar_mul_generator + batch_jacobian_to_affine)
  *   - hash160_pubkey_batch (CPU-side SIMD hash160 -- GPU hash kernel not yet wired)
  *   - ecdh_batch           (GPU batch_scalar_mul + CPU SHA-256 finalization)
  *   - msm                  (GPU batch_scalar_mul + CPU-side affine summation)
  *   - ecdsa_verify_batch   (GPU via secp256k1_extended.cl kernel)
  *   - schnorr_verify_batch (GPU via secp256k1_extended.cl kernel)
+ *   - frost_verify_partial_batch (GPU via secp256k1_frost.cl kernel)
+ *   - ecrecover_batch      (GPU via secp256k1_extended.cl kernel + affine compression)
  *
  * Compiled ONLY when SECP256K1_HAVE_OPENCL is set (via CMake).
  * ============================================================================ */
@@ -132,6 +134,7 @@ public:
 
     void shutdown() override {
         if (ext_ecdsa_verify_)   { clReleaseKernel(ext_ecdsa_verify_);   ext_ecdsa_verify_   = nullptr; }
+        if (ext_ecrecover_)      { clReleaseKernel(ext_ecrecover_);      ext_ecrecover_      = nullptr; }
         if (ext_schnorr_verify_) { clReleaseKernel(ext_schnorr_verify_); ext_schnorr_verify_ = nullptr; }
         if (ext_program_)        { clReleaseProgram(ext_program_);       ext_program_        = nullptr; }
         ext_init_attempted_ = false;
@@ -204,22 +207,23 @@ public:
                                        32 * count, const_cast<uint8_t*>(msg_hashes32), &clerr);
         if (clerr != CL_SUCCESS) return set_error(GpuError::Memory, "msg buffer alloc");
 
-        /* pubkeys: decompress 33-byte → JacobianPoint (3×FieldElement = 96 bytes) */
-        struct JacPoint { uint64_t x[4]; uint64_t y[4]; uint64_t z[4]; };
-        std::vector<JacPoint> h_pubs(count);
+        /* pubkeys: decompress 33-byte → full JacobianPoint host layout */
+        std::vector<secp256k1::opencl::JacobianPoint> h_pubs(count);
         for (size_t i = 0; i < count; ++i) {
             secp256k1::opencl::AffinePoint aff;
             if (!pubkey33_to_affine(pubkeys33 + i * 33, &aff)) {
                 clReleaseMemObject(d_msgs);
                 return set_error(GpuError::BadKey, "invalid pubkey");
             }
-            std::memcpy(h_pubs[i].x, aff.x.limbs, 32);
-            std::memcpy(h_pubs[i].y, aff.y.limbs, 32);
-            std::memset(h_pubs[i].z, 0, 32);
-            h_pubs[i].z[0] = 1; /* Z = 1 (affine → Jacobian) */
+            std::memcpy(h_pubs[i].x.limbs, aff.x.limbs, 32);
+            std::memcpy(h_pubs[i].y.limbs, aff.y.limbs, 32);
+            std::memset(h_pubs[i].z.limbs, 0, 32);
+            h_pubs[i].z.limbs[0] = 1; /* Z = 1 (affine → Jacobian) */
+            h_pubs[i].infinity = 0;
         }
         cl_mem d_pubs = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                                       sizeof(JacPoint) * count, h_pubs.data(), &clerr);
+                                       sizeof(secp256k1::opencl::JacobianPoint) * count,
+                                       h_pubs.data(), &clerr);
 
         /* sigs: 64 bytes (r[32] | s[32]) → ECDSASig (r:Scalar, s:Scalar = 64 bytes LE limbs) */
         struct ECDSASig { uint64_t r[4]; uint64_t s[4]; };
@@ -475,16 +479,115 @@ public:
         return GpuError::Ok;
     }
 
-    // TODO(parity): OpenCL recovery kernel -- secp256k1_recovery.cl has ecdsa_recover_impl
-    // device function but no batch kernel wired through this backend yet.
-    // tracking: ecrecover_batch OpenCL parity — see BACKEND_ASSURANCE_MATRIX.md
     GpuError ecrecover_batch(
-        const uint8_t* /*msg_hashes32*/, const uint8_t* /*sigs64*/,
-        const int* /*recids*/, size_t /*count*/,
-        uint8_t* /*out_pubkeys33*/, uint8_t* /*out_valid*/) override
+        const uint8_t* msg_hashes32, const uint8_t* sigs64,
+        const int* recids, size_t count,
+        uint8_t* out_pubkeys33, uint8_t* out_valid) override
     {
-        return set_error(GpuError::Unsupported,
-                         "ecrecover_batch not yet implemented on OpenCL backend");
+        if (!is_ready()) return set_error(GpuError::Device, "context not initialised");
+        if (count == 0) { clear_error(); return GpuError::Ok; }
+        if (!msg_hashes32 || !sigs64 || !recids || !out_pubkeys33 || !out_valid)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        auto err = ensure_extended_kernels();
+        if (err != GpuError::Ok) return err;
+
+        auto* cl_ctx = static_cast<cl_context>(ctx_->native_context());
+        auto* queue  = static_cast<cl_command_queue>(ctx_->native_queue());
+        cl_int clerr;
+
+        cl_mem d_msgs = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                       32 * count, const_cast<uint8_t*>(msg_hashes32), &clerr);
+        if (clerr != CL_SUCCESS) return set_error(GpuError::Memory, "msg buffer alloc");
+
+        struct ECDSASig { uint64_t r[4]; uint64_t s[4]; };
+        std::vector<ECDSASig> h_sigs(count);
+        for (size_t i = 0; i < count; ++i) {
+            be32_to_le_limbs(sigs64 + i * 64,      h_sigs[i].r);
+            be32_to_le_limbs(sigs64 + i * 64 + 32, h_sigs[i].s);
+        }
+        cl_mem d_sigs = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                       sizeof(ECDSASig) * count, h_sigs.data(), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_msgs);
+            return set_error(GpuError::Memory, "sig buffer alloc");
+        }
+
+        cl_mem d_recids = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                         sizeof(int) * count, const_cast<int*>(recids), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_sigs);
+            clReleaseMemObject(d_msgs);
+            return set_error(GpuError::Memory, "recid buffer alloc");
+        }
+
+        cl_mem d_keys = clCreateBuffer(cl_ctx, CL_MEM_WRITE_ONLY,
+                                       sizeof(secp256k1::opencl::JacobianPoint) * count, nullptr, &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_recids);
+            clReleaseMemObject(d_sigs);
+            clReleaseMemObject(d_msgs);
+            return set_error(GpuError::Memory, "key buffer alloc");
+        }
+
+        cl_mem d_res = clCreateBuffer(cl_ctx, CL_MEM_WRITE_ONLY,
+                                      sizeof(int) * count, nullptr, &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_keys);
+            clReleaseMemObject(d_recids);
+            clReleaseMemObject(d_sigs);
+            clReleaseMemObject(d_msgs);
+            return set_error(GpuError::Memory, "result buffer alloc");
+        }
+
+        cl_uint cl_count = static_cast<cl_uint>(count);
+        clSetKernelArg(ext_ecrecover_, 0, sizeof(cl_mem), &d_msgs);
+        clSetKernelArg(ext_ecrecover_, 1, sizeof(cl_mem), &d_sigs);
+        clSetKernelArg(ext_ecrecover_, 2, sizeof(cl_mem), &d_recids);
+        clSetKernelArg(ext_ecrecover_, 3, sizeof(cl_mem), &d_keys);
+        clSetKernelArg(ext_ecrecover_, 4, sizeof(cl_mem), &d_res);
+        clSetKernelArg(ext_ecrecover_, 5, sizeof(cl_uint), &cl_count);
+
+        size_t global = count;
+        clerr = clEnqueueNDRangeKernel(queue, ext_ecrecover_, 1, nullptr,
+                                       &global, nullptr, 0, nullptr, nullptr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_res);
+            clReleaseMemObject(d_keys);
+            clReleaseMemObject(d_recids);
+            clReleaseMemObject(d_sigs);
+            clReleaseMemObject(d_msgs);
+            return set_error(GpuError::Launch, "ecrecover kernel launch failed");
+        }
+        clFinish(queue);
+
+        std::vector<secp256k1::opencl::JacobianPoint> h_jac(count);
+        std::vector<int> h_res(count);
+        clEnqueueReadBuffer(queue, d_keys, CL_TRUE, 0,
+                            sizeof(secp256k1::opencl::JacobianPoint) * count,
+                            h_jac.data(), 0, nullptr, nullptr);
+        clEnqueueReadBuffer(queue, d_res, CL_TRUE, 0,
+                            sizeof(int) * count, h_res.data(), 0, nullptr, nullptr);
+
+        std::vector<secp256k1::opencl::AffinePoint> h_aff(count);
+        ctx_->batch_jacobian_to_affine(h_jac.data(), h_aff.data(), count);
+
+        for (size_t i = 0; i < count; ++i) {
+            out_valid[i] = h_res[i] ? 1 : 0;
+            if (h_res[i]) {
+                affine_to_compressed(&h_aff[i], out_pubkeys33 + i * 33);
+            } else {
+                std::memset(out_pubkeys33 + i * 33, 0, 33);
+            }
+        }
+
+        clReleaseMemObject(d_res);
+        clReleaseMemObject(d_keys);
+        clReleaseMemObject(d_recids);
+        clReleaseMemObject(d_sigs);
+        clReleaseMemObject(d_msgs);
+        clear_error();
+        return GpuError::Ok;
     }
 
     GpuError msm(
@@ -595,6 +698,7 @@ private:
     cl_program ext_program_         = nullptr;
     cl_kernel  ext_ecdsa_verify_    = nullptr;
     cl_kernel  ext_schnorr_verify_  = nullptr;
+    cl_kernel  ext_ecrecover_       = nullptr;
     bool       ext_init_attempted_  = false;
 
     /* FROST kernel handles (lazy-loaded) */
@@ -633,7 +737,7 @@ private:
 
     /* -- Lazy-load extended OpenCL program for verify kernels -------------- */
     GpuError ensure_extended_kernels() {
-        if (ext_ecdsa_verify_ && ext_schnorr_verify_) return GpuError::Ok;
+        if (ext_ecdsa_verify_ && ext_schnorr_verify_ && ext_ecrecover_) return GpuError::Ok;
         if (ext_init_attempted_)
             return set_error(GpuError::Launch, "extended kernel init previously failed");
         ext_init_attempted_ = true;
@@ -646,11 +750,12 @@ private:
 
         /* Search for secp256k1_extended.cl */
         const char* search_paths[] = {
-            "kernels/secp256k1_extended.cl",
-            "../kernels/secp256k1_extended.cl",
             "../../opencl/kernels/secp256k1_extended.cl",
+            "../opencl/kernels/secp256k1_extended.cl",
             "../../../opencl/kernels/secp256k1_extended.cl",
             "opencl/kernels/secp256k1_extended.cl",
+            "kernels/secp256k1_extended.cl",
+            "../kernels/secp256k1_extended.cl",
         };
 
         std::string src;
@@ -704,6 +809,14 @@ private:
             return set_error(GpuError::Launch, "schnorr_verify kernel not found");
         }
 
+        ext_ecrecover_ = clCreateKernel(ext_program_, "ecrecover_batch", &err);
+        if (err != CL_SUCCESS) {
+            clReleaseKernel(ext_schnorr_verify_); ext_schnorr_verify_ = nullptr;
+            clReleaseKernel(ext_ecdsa_verify_); ext_ecdsa_verify_ = nullptr;
+            clReleaseProgram(ext_program_); ext_program_ = nullptr;
+            return set_error(GpuError::Launch, "ecrecover_batch kernel not found");
+        }
+
         return GpuError::Ok;
     }
 
@@ -719,11 +832,12 @@ private:
         clGetContextInfo(cl_ctx, CL_CONTEXT_DEVICES, sizeof(device), &device, nullptr);
 
         const char* search_paths[] = {
-            "kernels/secp256k1_frost.cl",
-            "../kernels/secp256k1_frost.cl",
             "../../opencl/kernels/secp256k1_frost.cl",
+            "../opencl/kernels/secp256k1_frost.cl",
             "../../../opencl/kernels/secp256k1_frost.cl",
             "opencl/kernels/secp256k1_frost.cl",
+            "kernels/secp256k1_frost.cl",
+            "../kernels/secp256k1_frost.cl",
         };
 
         std::string src;
