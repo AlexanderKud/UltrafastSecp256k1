@@ -1643,6 +1643,30 @@ __device__ inline void jacobian_add_mixed_unchecked(const JacobianPoint* p, cons
     r->infinity = false;  // must be explicit: unchecked variant doesn't guarantee this
 }
 
+// ---------------------------------------------------------------------------
+// Constant-time conditional move: dst = (mask==~0ULL) ? src : dst
+// mask must be 0 or ~0ULL (all-zeros or all-ones). No branch, no warp divergence.
+// ---------------------------------------------------------------------------
+__device__ inline void jacobian_cmov(JacobianPoint* __restrict__ dst,
+                                     const JacobianPoint* __restrict__ src,
+                                     uint64_t mask) {
+    uint32_t mask32 = (uint32_t)(mask & 0xFFFFFFFFULL);
+    dst->x.limbs[0] = (mask & src->x.limbs[0]) | (~mask & dst->x.limbs[0]);
+    dst->x.limbs[1] = (mask & src->x.limbs[1]) | (~mask & dst->x.limbs[1]);
+    dst->x.limbs[2] = (mask & src->x.limbs[2]) | (~mask & dst->x.limbs[2]);
+    dst->x.limbs[3] = (mask & src->x.limbs[3]) | (~mask & dst->x.limbs[3]);
+    dst->y.limbs[0] = (mask & src->y.limbs[0]) | (~mask & dst->y.limbs[0]);
+    dst->y.limbs[1] = (mask & src->y.limbs[1]) | (~mask & dst->y.limbs[1]);
+    dst->y.limbs[2] = (mask & src->y.limbs[2]) | (~mask & dst->y.limbs[2]);
+    dst->y.limbs[3] = (mask & src->y.limbs[3]) | (~mask & dst->y.limbs[3]);
+    dst->z.limbs[0] = (mask & src->z.limbs[0]) | (~mask & dst->z.limbs[0]);
+    dst->z.limbs[1] = (mask & src->z.limbs[1]) | (~mask & dst->z.limbs[1]);
+    dst->z.limbs[2] = (mask & src->z.limbs[2]) | (~mask & dst->z.limbs[2]);
+    dst->z.limbs[3] = (mask & src->z.limbs[3]) | (~mask & dst->z.limbs[3]);
+    dst->infinity = (bool)((mask32 & (uint32_t)src->infinity) |
+                           (~mask32 & (uint32_t)dst->infinity));
+}
+
 // Using madd-2004-hmv formula (8M + 3S) - original baseline
 __device__ inline void jacobian_add_mixed_h(const JacobianPoint* p, const AffinePoint* q, JacobianPoint* r, FieldElement& h_out) {
     if (p->infinity) {
@@ -2367,6 +2391,54 @@ __device__ inline void scalar_mul(const JacobianPoint* p, const Scalar* k, Jacob
                     jacobian_add_mixed(r, &base, r);
                 }
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Constant-time scalar multiplication: r = k * P
+// Uses "always double + always add + branchless cmov select" to eliminate
+// all secret-dependent branches. Required for ECDH and any path where k is
+// a private key. No warp divergence on GPU regardless of thread-specific k.
+// Cost: 256 checked doubles + 256 checked mixed-adds + 256 cmovs.
+// ---------------------------------------------------------------------------
+__device__ inline void scalar_mul_ct(const JacobianPoint* p, const Scalar* k, JacobianPoint* r) {
+    // Normalize base point P to affine (same logic as scalar_mul)
+    AffinePoint base;
+    if (p->z.limbs[0] == 1 && p->z.limbs[1] == 0 &&
+        p->z.limbs[2] == 0 && p->z.limbs[3] == 0) {
+        base.x = p->x;
+        base.y = p->y;
+    } else {
+        FieldElement z_inv, z_inv2, z_inv3;
+        field_inv(&p->z, &z_inv);
+        field_sqr(&z_inv, &z_inv2);
+        field_mul(&z_inv2, &z_inv, &z_inv3);
+        field_mul(&p->x, &z_inv2, &base.x);
+        field_mul(&p->y, &z_inv3, &base.y);
+    }
+
+    // Initialize accumulator to the point at infinity
+    r->infinity = true;
+    field_set_zero(&r->x);
+    field_set_one(&r->y);
+    field_set_zero(&r->z);
+
+    JacobianPoint r_add;
+    #pragma unroll 1
+    for (int limb = 3; limb >= 0; limb--) {
+        uint64_t w = k->limbs[limb];
+        #pragma unroll 1
+        for (int bit = 63; bit >= 0; bit--) {
+            // Always double: jacobian_double handles r->infinity correctly
+            jacobian_double(r, r);
+
+            // Always compute r + P into r_add (checked, handles r->infinity)
+            jacobian_add_mixed(r, &base, &r_add);
+
+            // Branchless select: r = bit ? r_add : r  (no branch, no warp divergence)
+            uint64_t mask = -(uint64_t)((w >> bit) & 1ULL);
+            jacobian_cmov(r, &r_add, mask);
         }
     }
 }
@@ -3638,6 +3710,57 @@ __device__ inline void scalar_mul_generator_w8(const Scalar* k, JacobianPoint* r
                     jacobian_add_mixed_unchecked(r, &GENERATOR_TABLE_W8[idx], r);
                 }
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Constant-time generator scalar multiplication: r = k * G
+// Fixed-window w=8: same cost as scalar_mul_generator_w8 in the average case,
+// but fully branchless — no secret-dependent if/branch, no warp divergence.
+// Required for signing (ECDSA nonce k*G, Schnorr nonce k*G, key gen k*G).
+//
+// Technique:
+//   - Always perform all 8 doublings per window (checked double handles infinity).
+//   - Always load TABLE_W8[safe_idx], where safe_idx = idx | (idx==0) to avoid
+//     TABLE_W8[0] (table entry 0 is undefined; safe_idx maps 0 -> 1).
+//   - Compute r_add = r + TABLE[safe_idx] (checked add: handles r->infinity).
+//   - Branchless cmov: r = (idx != 0) ? r_add : r  (no branch, CUDA SELP insn).
+// ---------------------------------------------------------------------------
+__device__ inline void scalar_mul_generator_ct(const Scalar* k, JacobianPoint* r) {
+    r->infinity = true;
+    field_set_zero(&r->x);
+    field_set_one(&r->y);
+    field_set_zero(&r->z);
+
+    JacobianPoint r_add;
+    #pragma unroll 1
+    for (int limb = 3; limb >= 0; limb--) {
+        uint64_t w = k->limbs[limb];
+        #pragma unroll 1
+        for (int byte_idx = 7; byte_idx >= 0; byte_idx--) {
+            uint32_t idx = (uint32_t)((w >> (byte_idx * 8)) & 0xFFULL);
+
+            // Always double 8x (checked: handles r->infinity without branch divergence)
+            jacobian_double(r, r);
+            jacobian_double(r, r);
+            jacobian_double(r, r);
+            jacobian_double(r, r);
+            jacobian_double(r, r);
+            jacobian_double(r, r);
+            jacobian_double(r, r);
+            jacobian_double(r, r);
+
+            // safe_idx: map 0 -> 1 so we always read a valid table entry.
+            // (idx == 0) evaluates to 0 or 1 as integer — no branch in PTX.
+            uint32_t safe_idx = idx | (uint32_t)(idx == 0);
+
+            // Always compute the addition (checked: handles r->infinity)
+            jacobian_add_mixed(r, &GENERATOR_TABLE_W8[safe_idx], &r_add);
+
+            // Branchless select: r = (idx != 0) ? r_add : r
+            uint64_t mask = -(uint64_t)(idx != 0);
+            jacobian_cmov(r, &r_add, mask);
         }
     }
 }
