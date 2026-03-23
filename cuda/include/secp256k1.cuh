@@ -2665,15 +2665,15 @@ __device__ inline void scalar_mul_generator_windowed(
             uint32_t idx = (uint32_t)((w >> (nib * 4)) & 0xFULL);
 
             if (started) {
-                // Guard: jacobian_double_unchecked is unsafe on infinity points.
-                // jacobian_add can produce infinity (R = -table[idx]), so we must
-                // skip unchecked doubles and let jacobian_add recover from infinity.
-                if (!r->infinity) {
-                    jacobian_double_unchecked(r, r);
-                    jacobian_double_unchecked(r, r);
-                    jacobian_double_unchecked(r, r);
-                    jacobian_double_unchecked(r, r);
-                }
+                // Infinity is a valid intermediate result (P + (-P) = O).
+                // jacobian_double handles infinity correctly (returns O).
+                // We must NOT skip the 4 doublings on infinity, or the
+                // window shift is lost and the result is wrong (bug: a single
+                // P + (-P) mid-stream shifted all remaining windows by 4 bits).
+                jacobian_double(r, r);
+                jacobian_double(r, r);
+                jacobian_double(r, r);
+                jacobian_double(r, r);
             }
 
             if (idx != 0) {
