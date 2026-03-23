@@ -339,14 +339,14 @@ bool Context::Impl::init(const DeviceConfig& cfg) {
     }
 
     // Create context
-    std::cerr << "[DEBUG] Creating OpenCL context for device: " << device_info.name << std::endl;
+    if (cfg.verbose) std::cerr << "[DEBUG] Creating OpenCL context for device: " << device_info.name << std::endl;
     context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
     if (err != CL_SUCCESS) {
         last_error = std::string("Failed to create OpenCL context: ") + cl_error_string(err);
-        std::cerr << "[DEBUG] " << last_error << std::endl;
+        if (cfg.verbose) std::cerr << "[DEBUG] " << last_error << std::endl;
         return false;
     }
-    std::cerr << "[DEBUG] Context created successfully" << std::endl;
+    if (cfg.verbose) std::cerr << "[DEBUG] Context created successfully" << std::endl;
 
     // Create command queue with profiling enabled
 #ifdef CL_VERSION_2_0
@@ -361,24 +361,24 @@ bool Context::Impl::init(const DeviceConfig& cfg) {
 
     if (err != CL_SUCCESS) {
         last_error = std::string("Failed to create command queue: ") + cl_error_string(err);
-        std::cerr << "[DEBUG] " << last_error << std::endl;
+        if (cfg.verbose) std::cerr << "[DEBUG] " << last_error << std::endl;
         return false;
     }
-    std::cerr << "[DEBUG] Command queue created successfully" << std::endl;
+    if (cfg.verbose) std::cerr << "[DEBUG] Command queue created successfully" << std::endl;
 
     // Build program
     if (!build_program()) {
-        std::cerr << "[DEBUG] build_program failed: " << last_error << std::endl;
+        if (cfg.verbose) std::cerr << "[DEBUG] build_program failed: " << last_error << std::endl;
         return false;
     }
-    std::cerr << "[DEBUG] Program built successfully" << std::endl;
+    if (cfg.verbose) std::cerr << "[DEBUG] Program built successfully" << std::endl;
 
     // Create kernels
     if (!create_kernels()) {
-        std::cerr << "[DEBUG] create_kernels failed: " << last_error << std::endl;
+        if (cfg.verbose) std::cerr << "[DEBUG] create_kernels failed: " << last_error << std::endl;
         return false;
     }
-    std::cerr << "[DEBUG] Kernels created successfully" << std::endl;
+    if (cfg.verbose) std::cerr << "[DEBUG] Kernels created successfully" << std::endl;
 
     return true;
 }
@@ -2359,6 +2359,7 @@ void Context::batch_field_inv(const FieldElement* inputs, FieldElement* outputs,
 
 void Context::batch_jacobian_to_affine(const JacobianPoint* jacobians, AffinePoint* affines, std::size_t count) {
     if (count == 0) return;
+    if (!impl_->kernel_batch_jacobian_to_affine) return;
 
     cl_int err;
 

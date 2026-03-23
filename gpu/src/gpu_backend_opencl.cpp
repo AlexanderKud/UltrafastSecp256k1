@@ -25,6 +25,7 @@
 #include <string>
 #include <fstream>
 #include <filesystem>
+#include <algorithm>
 
 /* -- OpenCL Context (Layer 1) ---------------------------------------------- */
 #include "secp256k1_opencl.hpp"
@@ -224,6 +225,10 @@ public:
         cl_mem d_pubs = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                        sizeof(secp256k1::opencl::JacobianPoint) * count,
                                        h_pubs.data(), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_msgs);
+            return set_error(GpuError::Memory, "pub buffer alloc");
+        }
 
         /* sigs: 64 bytes (r[32] | s[32]) → ECDSASig (r:Scalar, s:Scalar = 64 bytes LE limbs) */
         struct ECDSASig { uint64_t r[4]; uint64_t s[4]; };
@@ -234,10 +239,21 @@ public:
         }
         cl_mem d_sigs = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                        sizeof(ECDSASig) * count, h_sigs.data(), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_pubs);
+            clReleaseMemObject(d_msgs);
+            return set_error(GpuError::Memory, "sig buffer alloc");
+        }
 
         /* results: int per item */
         cl_mem d_res = clCreateBuffer(cl_ctx, CL_MEM_WRITE_ONLY,
                                       sizeof(int) * count, nullptr, &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_sigs);
+            clReleaseMemObject(d_pubs);
+            clReleaseMemObject(d_msgs);
+            return set_error(GpuError::Memory, "result buffer alloc");
+        }
 
         cl_uint cl_count = static_cast<cl_uint>(count);
         clSetKernelArg(ext_ecdsa_verify_, 0, sizeof(cl_mem), &d_msgs);
@@ -247,8 +263,15 @@ public:
         clSetKernelArg(ext_ecdsa_verify_, 4, sizeof(cl_uint), &cl_count);
 
         size_t global = count;
-        clEnqueueNDRangeKernel(queue, ext_ecdsa_verify_, 1, nullptr,
+        clerr = clEnqueueNDRangeKernel(queue, ext_ecdsa_verify_, 1, nullptr,
                                &global, nullptr, 0, nullptr, nullptr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_res);
+            clReleaseMemObject(d_sigs);
+            clReleaseMemObject(d_pubs);
+            clReleaseMemObject(d_msgs);
+            return set_error(GpuError::Launch, "ecdsa_verify kernel launch failed");
+        }
         clFinish(queue);
 
         /* Read results */
@@ -288,10 +311,16 @@ public:
         /* pubkeys_x: 32 bytes each, passed flat */
         cl_mem d_pks = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       32 * count, const_cast<uint8_t*>(pubkeys_x32), &clerr);
+        if (clerr != CL_SUCCESS)
+            return set_error(GpuError::Memory, "schnorr pk buffer alloc");
 
         /* messages: 32 bytes each, passed flat */
         cl_mem d_msgs = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                        32 * count, const_cast<uint8_t*>(msg_hashes32), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_pks);
+            return set_error(GpuError::Memory, "schnorr msg buffer alloc");
+        }
 
         /* sigs: 64 bytes (r[32] | s[32]) → SchnorrSig (r:uint8_t[32], s:Scalar = 64 bytes) */
         struct SchnorrSig { uint8_t r[32]; uint64_t s[4]; };
@@ -302,10 +331,21 @@ public:
         }
         cl_mem d_sigs = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                        sizeof(SchnorrSig) * count, h_sigs.data(), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_msgs);
+            clReleaseMemObject(d_pks);
+            return set_error(GpuError::Memory, "schnorr sig buffer alloc");
+        }
 
         /* results: int per item */
         cl_mem d_res = clCreateBuffer(cl_ctx, CL_MEM_WRITE_ONLY,
                                       sizeof(int) * count, nullptr, &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_sigs);
+            clReleaseMemObject(d_msgs);
+            clReleaseMemObject(d_pks);
+            return set_error(GpuError::Memory, "schnorr result buffer alloc");
+        }
 
         cl_uint cl_count = static_cast<cl_uint>(count);
         clSetKernelArg(ext_schnorr_verify_, 0, sizeof(cl_mem), &d_pks);
@@ -315,8 +355,15 @@ public:
         clSetKernelArg(ext_schnorr_verify_, 4, sizeof(cl_uint), &cl_count);
 
         size_t global = count;
-        clEnqueueNDRangeKernel(queue, ext_schnorr_verify_, 1, nullptr,
+        clerr = clEnqueueNDRangeKernel(queue, ext_schnorr_verify_, 1, nullptr,
                                &global, nullptr, 0, nullptr, nullptr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_res);
+            clReleaseMemObject(d_sigs);
+            clReleaseMemObject(d_msgs);
+            clReleaseMemObject(d_pks);
+            return set_error(GpuError::Launch, "schnorr_verify kernel launch failed");
+        }
         clFinish(queue);
 
         /* Read results */
@@ -373,6 +420,11 @@ public:
             std::memcpy(out_secrets32 + i * 32, digest.data(), 32);
         }
 
+        /* Securely erase private key scalars from host memory */
+        volatile uint8_t* p = reinterpret_cast<volatile uint8_t*>(h_scalars.data());
+        for (size_t i = 0; i < h_scalars.size() * sizeof(h_scalars[0]); ++i)
+            p[i] = 0;
+
         clear_error();
         return GpuError::Ok;
     }
@@ -424,22 +476,92 @@ public:
         /* Allocate GPU buffers for all inputs -------------------------------- */
         cl_mem d_z   = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       32 * count, const_cast<uint8_t*>(z_i32), &clerr);
+        if (clerr != CL_SUCCESS)
+            return set_error(GpuError::Memory, "frost z buffer alloc");
+
         cl_mem d_D   = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       33 * count, const_cast<uint8_t*>(D_i33), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_z);
+            return set_error(GpuError::Memory, "frost D buffer alloc");
+        }
+
         cl_mem d_E   = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       33 * count, const_cast<uint8_t*>(E_i33), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_D);
+            clReleaseMemObject(d_z);
+            return set_error(GpuError::Memory, "frost E buffer alloc");
+        }
+
         cl_mem d_Y   = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       33 * count, const_cast<uint8_t*>(Y_i33), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_E);
+            clReleaseMemObject(d_D);
+            clReleaseMemObject(d_z);
+            return set_error(GpuError::Memory, "frost Y buffer alloc");
+        }
+
         cl_mem d_rho = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       32 * count, const_cast<uint8_t*>(rho_i32), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_Y);
+            clReleaseMemObject(d_E);
+            clReleaseMemObject(d_D);
+            clReleaseMemObject(d_z);
+            return set_error(GpuError::Memory, "frost rho buffer alloc");
+        }
+
         cl_mem d_lam = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       32 * count, const_cast<uint8_t*>(lambda_ie32), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_rho);
+            clReleaseMemObject(d_Y);
+            clReleaseMemObject(d_E);
+            clReleaseMemObject(d_D);
+            clReleaseMemObject(d_z);
+            return set_error(GpuError::Memory, "frost lambda buffer alloc");
+        }
+
         cl_mem d_nR  = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       1 * count, const_cast<uint8_t*>(negate_R), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_lam);
+            clReleaseMemObject(d_rho);
+            clReleaseMemObject(d_Y);
+            clReleaseMemObject(d_E);
+            clReleaseMemObject(d_D);
+            clReleaseMemObject(d_z);
+            return set_error(GpuError::Memory, "frost nR buffer alloc");
+        }
+
         cl_mem d_nK  = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                       1 * count, const_cast<uint8_t*>(negate_key), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_nR);
+            clReleaseMemObject(d_lam);
+            clReleaseMemObject(d_rho);
+            clReleaseMemObject(d_Y);
+            clReleaseMemObject(d_E);
+            clReleaseMemObject(d_D);
+            clReleaseMemObject(d_z);
+            return set_error(GpuError::Memory, "frost nK buffer alloc");
+        }
+
         cl_mem d_res = clCreateBuffer(cl_ctx, CL_MEM_WRITE_ONLY,
                                       sizeof(int) * count, nullptr, &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_nK);
+            clReleaseMemObject(d_nR);
+            clReleaseMemObject(d_lam);
+            clReleaseMemObject(d_rho);
+            clReleaseMemObject(d_Y);
+            clReleaseMemObject(d_E);
+            clReleaseMemObject(d_D);
+            clReleaseMemObject(d_z);
+            return set_error(GpuError::Memory, "frost result buffer alloc");
+        }
 
         cl_uint cl_count = static_cast<cl_uint>(count);
         clSetKernelArg(frost_kernel_, 0, sizeof(cl_mem),  &d_z);
@@ -454,8 +576,20 @@ public:
         clSetKernelArg(frost_kernel_, 9, sizeof(cl_uint), &cl_count);
 
         size_t global = count;
-        clEnqueueNDRangeKernel(queue, frost_kernel_, 1, nullptr,
+        clerr = clEnqueueNDRangeKernel(queue, frost_kernel_, 1, nullptr,
                                &global, nullptr, 0, nullptr, nullptr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_res);
+            clReleaseMemObject(d_nK);
+            clReleaseMemObject(d_nR);
+            clReleaseMemObject(d_lam);
+            clReleaseMemObject(d_rho);
+            clReleaseMemObject(d_Y);
+            clReleaseMemObject(d_E);
+            clReleaseMemObject(d_D);
+            clReleaseMemObject(d_z);
+            return set_error(GpuError::Launch, "frost_verify kernel launch failed");
+        }
         clFinish(queue);
 
         std::vector<int> h_res(count);
@@ -931,6 +1065,9 @@ private:
         auto x3 = x2 * fe_x;
         auto y2 = x3 + secp256k1::fast::FieldElement::from_uint64(7);
         auto fe_y = y2.sqrt();
+
+        /* Validate: sqrt must satisfy y² == x³+7 (not all field elements have a square root) */
+        if ((fe_y * fe_y) != y2) return false;
 
         /* Choose correct parity */
         auto yb = fe_y.to_bytes();
