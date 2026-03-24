@@ -578,6 +578,18 @@ target_compile_definitions(test_exploit_bip144_serialization_standalone PRIVATE 
 add_test(NAME exploit_bip144_serialization COMMAND test_exploit_bip144_serialization_standalone)
 set_tests_properties(exploit_bip144_serialization PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bip144")
 
+add_executable(test_exploit_musig2_key_agg_standalone test_exploit_musig2_key_agg.cpp)
+audit_target_defaults(test_exploit_musig2_key_agg_standalone)
+target_compile_definitions(test_exploit_musig2_key_agg_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_musig2_key_agg COMMAND test_exploit_musig2_key_agg_standalone)
+set_tests_properties(exploit_musig2_key_agg PROPERTIES TIMEOUT 60 LABELS "audit;exploit;musig2")
+
+add_executable(test_exploit_bip32_derivation_standalone test_exploit_bip32_derivation.cpp)
+audit_target_defaults(test_exploit_bip32_derivation_standalone)
+target_compile_definitions(test_exploit_bip32_derivation_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_bip32_derivation COMMAND test_exploit_bip32_derivation_standalone)
+set_tests_properties(exploit_bip32_derivation PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bip32")
+
 # -- ECIES regression + C ABI prefix enforcement ----------------------------
 add_executable(test_ecies_regression_standalone test_ecies_regression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
@@ -948,6 +960,7 @@ set_tests_properties(
     exploit_segwit_encoding exploit_private_key exploit_bip143_sighash
     exploit_ecies_roundtrip exploit_ecdh_variants exploit_glv_endomorphism
     exploit_sha_kat exploit_bip144_serialization
+    exploit_musig2_key_agg exploit_bip32_derivation
     PROPERTIES LABELS "audit"
 )
 if(SECP256K1_BUILD_PROTOCOL_TESTS)
