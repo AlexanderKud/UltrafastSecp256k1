@@ -823,6 +823,40 @@ public:
         return GpuError::Ok;
     }
 
+    /* -- ZK / BIP-324 stubs (not yet implemented on OpenCL) ---------------- */
+
+    // TODO(parity): knowledge verify — CUDA kernel exists in zk.cuh, needs OpenCL port
+    GpuError zk_knowledge_verify_batch(
+        const uint8_t*, const uint8_t*, const uint8_t*,
+        size_t, uint8_t*) override
+    { return set_error(GpuError::Unsupported, "ZK knowledge verify not implemented on OpenCL"); }
+
+    // TODO(parity): DLEQ verify — CUDA kernel exists in zk.cuh, needs OpenCL port
+    GpuError zk_dleq_verify_batch(
+        const uint8_t*, const uint8_t*, const uint8_t*,
+        const uint8_t*, const uint8_t*,
+        size_t, uint8_t*) override
+    { return set_error(GpuError::Unsupported, "ZK DLEQ verify not implemented on OpenCL"); }
+
+    // TODO(parity): bulletproof verify — CUDA kernel exists in zk.cuh, needs OpenCL port
+    GpuError bulletproof_verify_batch(
+        const uint8_t*, const uint8_t*, const uint8_t*,
+        size_t, uint8_t*) override
+    { return set_error(GpuError::Unsupported, "bulletproof verify not implemented on OpenCL"); }
+
+    // TODO(parity): BIP-324 AEAD encrypt — CUDA kernel exists in bip324.cuh, needs OpenCL port
+    GpuError bip324_aead_encrypt_batch(
+        const uint8_t*, const uint8_t*, const uint8_t*,
+        const uint32_t*, uint32_t, size_t, uint8_t*) override
+    { return set_error(GpuError::Unsupported, "BIP-324 AEAD encrypt not implemented on OpenCL"); }
+
+    // TODO(parity): BIP-324 AEAD decrypt — CUDA kernel exists in bip324.cuh, needs OpenCL port
+    GpuError bip324_aead_decrypt_batch(
+        const uint8_t*, const uint8_t*, const uint8_t*,
+        const uint32_t*, uint32_t, size_t,
+        uint8_t*, uint8_t*) override
+    { return set_error(GpuError::Unsupported, "BIP-324 AEAD decrypt not implemented on OpenCL"); }
+
 private:
     std::unique_ptr<secp256k1::opencl::Context> ctx_;
     GpuError last_err_ = GpuError::Ok;

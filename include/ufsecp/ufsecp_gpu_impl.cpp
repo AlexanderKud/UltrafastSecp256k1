@@ -324,6 +324,122 @@ ufsecp_error_t ufsecp_gpu_ecrecover_batch(
 }
 
 /* ===========================================================================
+ * ZK proof batch operations
+ * =========================================================================== */
+
+ufsecp_error_t ufsecp_gpu_zk_knowledge_verify_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* proofs64,
+    const uint8_t* pubkeys65,
+    const uint8_t* messages32,
+    size_t count,
+    uint8_t* out_results)
+{
+    if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!proofs64 || !pubkeys65 || !messages32 || !out_results)
+        return UFSECP_ERR_NULL_ARG;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+    return to_abi_error(
+        ctx->backend->zk_knowledge_verify_batch(
+            proofs64, pubkeys65, messages32, count, out_results));
+    } UFSECP_GPU_CATCH
+}
+
+ufsecp_error_t ufsecp_gpu_zk_dleq_verify_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* proofs64,
+    const uint8_t* G_pts65,
+    const uint8_t* H_pts65,
+    const uint8_t* P_pts65,
+    const uint8_t* Q_pts65,
+    size_t count,
+    uint8_t* out_results)
+{
+    if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!proofs64 || !G_pts65 || !H_pts65 || !P_pts65 || !Q_pts65 || !out_results)
+        return UFSECP_ERR_NULL_ARG;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+    return to_abi_error(
+        ctx->backend->zk_dleq_verify_batch(
+            proofs64, G_pts65, H_pts65, P_pts65, Q_pts65, count, out_results));
+    } UFSECP_GPU_CATCH
+}
+
+ufsecp_error_t ufsecp_gpu_bulletproof_verify_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* proofs324,
+    const uint8_t* commitments65,
+    const uint8_t* H_generator65,
+    size_t count,
+    uint8_t* out_results)
+{
+    if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!proofs324 || !commitments65 || !H_generator65 || !out_results)
+        return UFSECP_ERR_NULL_ARG;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+    return to_abi_error(
+        ctx->backend->bulletproof_verify_batch(
+            proofs324, commitments65, H_generator65, count, out_results));
+    } UFSECP_GPU_CATCH
+}
+
+/* ===========================================================================
+ * BIP-324 transport batch operations
+ * =========================================================================== */
+
+ufsecp_error_t ufsecp_gpu_bip324_aead_encrypt_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t*  keys32,
+    const uint8_t*  nonces12,
+    const uint8_t*  plaintexts,
+    const uint32_t* sizes,
+    uint32_t max_payload,
+    size_t count,
+    uint8_t* wire_out)
+{
+    if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!keys32 || !nonces12 || !plaintexts || !sizes || !wire_out)
+        return UFSECP_ERR_NULL_ARG;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+    return to_abi_error(
+        ctx->backend->bip324_aead_encrypt_batch(
+            keys32, nonces12, plaintexts, sizes, max_payload, count, wire_out));
+    } UFSECP_GPU_CATCH
+}
+
+ufsecp_error_t ufsecp_gpu_bip324_aead_decrypt_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t*  keys32,
+    const uint8_t*  nonces12,
+    const uint8_t*  wire_in,
+    const uint32_t* sizes,
+    uint32_t max_payload,
+    size_t count,
+    uint8_t*  plaintext_out,
+    uint8_t*  out_valid)
+{
+    if (!ctx) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (!keys32 || !nonces12 || !wire_in || !sizes || !plaintext_out || !out_valid)
+        return UFSECP_ERR_NULL_ARG;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+    return to_abi_error(
+        ctx->backend->bip324_aead_decrypt_batch(
+            keys32, nonces12, wire_in, sizes, max_payload, count,
+            plaintext_out, out_valid));
+    } UFSECP_GPU_CATCH
+}
+
+/* ===========================================================================
  * GPU error string
  * =========================================================================== */
 
