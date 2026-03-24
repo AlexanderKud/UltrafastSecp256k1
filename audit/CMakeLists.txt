@@ -662,6 +662,12 @@ target_compile_definitions(test_exploit_sha512_kat_standalone PRIVATE STANDALONE
 add_test(NAME exploit_sha512_kat COMMAND test_exploit_sha512_kat_standalone)
 set_tests_properties(exploit_sha512_kat PROPERTIES TIMEOUT 60 LABELS "audit;exploit;hash")
 
+add_executable(test_exploit_sha256_kat_standalone test_exploit_sha256_kat.cpp)
+audit_target_defaults(test_exploit_sha256_kat_standalone)
+target_compile_definitions(test_exploit_sha256_kat_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_sha256_kat COMMAND test_exploit_sha256_kat_standalone)
+set_tests_properties(exploit_sha256_kat PROPERTIES TIMEOUT 60 LABELS "audit;exploit;hash")
+
 add_executable(test_exploit_keccak256_kat_standalone test_exploit_keccak256_kat.cpp)
 audit_target_defaults(test_exploit_keccak256_kat_standalone)
 target_compile_definitions(test_exploit_keccak256_kat_standalone PRIVATE STANDALONE_TEST)
@@ -709,6 +715,24 @@ audit_target_defaults(test_exploit_taproot_scripts_standalone)
 target_compile_definitions(test_exploit_taproot_scripts_standalone PRIVATE STANDALONE_TEST)
 add_test(NAME exploit_taproot_scripts COMMAND test_exploit_taproot_scripts_standalone)
 set_tests_properties(exploit_taproot_scripts PROPERTIES TIMEOUT 60 LABELS "audit;exploit;taproot")
+
+add_executable(test_exploit_hkdf_kat_standalone test_exploit_hkdf_kat.cpp)
+audit_target_defaults(test_exploit_hkdf_kat_standalone)
+target_compile_definitions(test_exploit_hkdf_kat_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_hkdf_kat COMMAND test_exploit_hkdf_kat_standalone)
+set_tests_properties(exploit_hkdf_kat PROPERTIES TIMEOUT 60 LABELS "audit;exploit;hash;hkdf")
+
+add_executable(test_exploit_ellswift_ecdh_standalone test_exploit_ellswift_ecdh.cpp)
+audit_target_defaults(test_exploit_ellswift_ecdh_standalone)
+target_compile_definitions(test_exploit_ellswift_ecdh_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ellswift_ecdh COMMAND test_exploit_ellswift_ecdh_standalone)
+set_tests_properties(exploit_ellswift_ecdh PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bip324;ellswift")
+
+add_executable(test_exploit_address_encoding_standalone test_exploit_address_encoding.cpp)
+audit_target_defaults(test_exploit_address_encoding_standalone)
+target_compile_definitions(test_exploit_address_encoding_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_address_encoding COMMAND test_exploit_address_encoding_standalone)
+set_tests_properties(exploit_address_encoding PROPERTIES TIMEOUT 60 LABELS "audit;exploit;address;bip352")
 
 # -- ECIES regression + C ABI prefix enforcement ----------------------------
 add_executable(test_ecies_regression_standalone test_ecies_regression.cpp
