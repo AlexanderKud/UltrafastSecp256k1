@@ -548,6 +548,18 @@ target_compile_definitions(test_exploit_bip143_sighash_standalone PRIVATE STANDA
 add_test(NAME exploit_bip143_sighash COMMAND test_exploit_bip143_sighash_standalone)
 set_tests_properties(exploit_bip143_sighash PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bip143")
 
+add_executable(test_exploit_ecies_roundtrip_standalone test_exploit_ecies_roundtrip.cpp)
+audit_target_defaults(test_exploit_ecies_roundtrip_standalone)
+target_compile_definitions(test_exploit_ecies_roundtrip_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecies_roundtrip COMMAND test_exploit_ecies_roundtrip_standalone)
+set_tests_properties(exploit_ecies_roundtrip PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecies")
+
+add_executable(test_exploit_ecdh_variants_standalone test_exploit_ecdh_variants.cpp)
+audit_target_defaults(test_exploit_ecdh_variants_standalone)
+target_compile_definitions(test_exploit_ecdh_variants_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdh_variants COMMAND test_exploit_ecdh_variants_standalone)
+set_tests_properties(exploit_ecdh_variants PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdh")
+
 # -- ECIES regression + C ABI prefix enforcement ----------------------------
 add_executable(test_ecies_regression_standalone test_ecies_regression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
@@ -916,6 +928,7 @@ set_tests_properties(
     exploit_address_generation exploit_bip324_session exploit_multiscalar
     exploit_pedersen_homomorphism exploit_hkdf_security exploit_batch_schnorr
     exploit_segwit_encoding exploit_private_key exploit_bip143_sighash
+    exploit_ecies_roundtrip exploit_ecdh_variants
     PROPERTIES LABELS "audit"
 )
 if(SECP256K1_BUILD_PROTOCOL_TESTS)
