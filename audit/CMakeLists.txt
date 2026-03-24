@@ -650,6 +650,12 @@ target_compile_definitions(test_exploit_bitcoin_message_signing_standalone PRIVA
 add_test(NAME exploit_bitcoin_message_signing COMMAND test_exploit_bitcoin_message_signing_standalone)
 set_tests_properties(exploit_bitcoin_message_signing PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bitcoin")
 
+add_executable(test_exploit_coin_hd_derivation_standalone test_exploit_coin_hd_derivation.cpp)
+audit_target_defaults(test_exploit_coin_hd_derivation_standalone)
+target_compile_definitions(test_exploit_coin_hd_derivation_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_coin_hd_derivation COMMAND test_exploit_coin_hd_derivation_standalone)
+set_tests_properties(exploit_coin_hd_derivation PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bip44")
+
 # -- ECIES regression + C ABI prefix enforcement ----------------------------
 add_executable(test_ecies_regression_standalone test_ecies_regression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
