@@ -318,6 +318,35 @@ target_compile_definitions(test_adversarial_protocol_standalone PRIVATE UFSECP_B
 add_test(NAME adversarial_protocol COMMAND test_adversarial_protocol_standalone)
 set_tests_properties(adversarial_protocol PROPERTIES TIMEOUT 600)
 
+# ===========================================================================
+# Security Exploit PoC Tests (regression gates for discovered vulnerabilities)
+# ===========================================================================
+# Each test FAILS on the buggy code and PASSES after the fix is applied.
+# They serve as living documentation of vulnerabilities found in audit round 5.
+
+# -- PoC: CT violation in ct::ecdsa_sign_recoverable (secret-dependent branches)
+add_executable(test_exploit_ct_recov_standalone test_exploit_ct_recov.cpp)
+audit_target_defaults(test_exploit_ct_recov_standalone)
+target_compile_definitions(test_exploit_ct_recov_standalone PRIVATE
+    STANDALONE_TEST DUDECT_SMOKE)
+add_test(NAME exploit_ct_recov COMMAND test_exploit_ct_recov_standalone)
+set_tests_properties(exploit_ct_recov PROPERTIES TIMEOUT 300 LABELS "audit;exploit;ct")
+
+# -- PoC: BIP-32 depth uint8_t silent overflow (255 -> 0 wrap)
+add_executable(test_exploit_bip32_depth_standalone test_exploit_bip32_depth.cpp)
+audit_target_defaults(test_exploit_bip32_depth_standalone)
+target_compile_definitions(test_exploit_bip32_depth_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_bip32_depth COMMAND test_exploit_bip32_depth_standalone)
+set_tests_properties(exploit_bip32_depth PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bip32")
+
+# -- PoC: MuSig2 key aggregation order dependence (ordering attack)
+add_executable(test_exploit_musig2_ordering_standalone test_exploit_musig2_ordering.cpp)
+audit_target_defaults(test_exploit_musig2_ordering_standalone)
+target_compile_definitions(test_exploit_musig2_ordering_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_musig2_ordering COMMAND test_exploit_musig2_ordering_standalone)
+set_tests_properties(exploit_musig2_ordering PROPERTIES
+    TIMEOUT 120 LABELS "audit;exploit;musig2")
+
 # -- ECIES regression + C ABI prefix enforcement ----------------------------
 add_executable(test_ecies_regression_standalone test_ecies_regression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
@@ -674,6 +703,7 @@ set_tests_properties(
     audit_secure_erase audit_ct_namespace kat_all_operations nonce_uniqueness
     parse_strictness
     unified_audit
+    exploit_ct_recov exploit_bip32_depth exploit_musig2_ordering
     PROPERTIES LABELS "audit"
 )
 if(SECP256K1_BUILD_PROTOCOL_TESTS)
