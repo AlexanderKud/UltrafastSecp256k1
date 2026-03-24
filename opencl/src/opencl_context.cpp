@@ -1488,12 +1488,20 @@ R"KERNEL(
 // ---- Affine point addition kernels ----
 
 // affine_add_impl: P + Q -> R, all affine (2M + 1S + inv)
+// OCL-H-03: branchlessly handles H == 0 (P.x == Q.x degenerate case);
+// returns (0,0) identity sentinel when H == 0 instead of wrong garbage values.
 inline void affine_add_impl(AffinePoint* r,
                              const FieldElement* px, const FieldElement* py,
                              const FieldElement* qx, const FieldElement* qy) {
     FieldElement h, rr, t, lam;
     field_sub_impl(&h, qx, px);
     field_sub_impl(&rr, qy, py);
+
+    // OCL-H-03: detect H == 0 (P.x == Q.x); field_inv(0) = 0 via Fermat LT,
+    // which produces wrong X3/Y3.  Mask out the result to (0,0) when degenerate.
+    uint64_t h_all = h.limbs[0] | h.limbs[1] | h.limbs[2] | h.limbs[3];
+    uint64_t h_nonzero_mask = (h_all != 0ULL) ? ~UINT64_C(0) : UINT64_C(0);
+
     field_inv_impl(&t, &h);
     field_mul_impl(&lam, &rr, &t);
     field_sqr_impl(&r->x, &lam);
@@ -1502,6 +1510,12 @@ inline void affine_add_impl(AffinePoint* r,
     field_sub_impl(&r->y, px, &r->x);
     field_mul_impl(&r->y, &lam, &r->y);
     field_sub_impl(&r->y, &r->y, py);
+
+    // Zero out result when H was 0 (identity sentinel)
+    r->x.limbs[0] &= h_nonzero_mask; r->x.limbs[1] &= h_nonzero_mask;
+    r->x.limbs[2] &= h_nonzero_mask; r->x.limbs[3] &= h_nonzero_mask;
+    r->y.limbs[0] &= h_nonzero_mask; r->y.limbs[1] &= h_nonzero_mask;
+    r->y.limbs[2] &= h_nonzero_mask; r->y.limbs[3] &= h_nonzero_mask;
 }
 
 // affine_add_lambda_impl: with pre-inverted H (2M + 1S)
