@@ -518,6 +518,24 @@ target_compile_definitions(test_exploit_pedersen_homomorphism_standalone PRIVATE
 add_test(NAME exploit_pedersen_homomorphism COMMAND test_exploit_pedersen_homomorphism_standalone)
 set_tests_properties(exploit_pedersen_homomorphism PROPERTIES TIMEOUT 60 LABELS "audit;exploit;pedersen")
 
+add_executable(test_exploit_hkdf_security_standalone test_exploit_hkdf_security.cpp)
+audit_target_defaults(test_exploit_hkdf_security_standalone)
+target_compile_definitions(test_exploit_hkdf_security_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_hkdf_security COMMAND test_exploit_hkdf_security_standalone)
+set_tests_properties(exploit_hkdf_security PROPERTIES TIMEOUT 60 LABELS "audit;exploit;hkdf")
+
+add_executable(test_exploit_batch_schnorr_standalone test_exploit_batch_schnorr.cpp)
+audit_target_defaults(test_exploit_batch_schnorr_standalone)
+target_compile_definitions(test_exploit_batch_schnorr_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_batch_schnorr COMMAND test_exploit_batch_schnorr_standalone)
+set_tests_properties(exploit_batch_schnorr PROPERTIES TIMEOUT 60 LABELS "audit;exploit;schnorr")
+
+add_executable(test_exploit_segwit_encoding_standalone test_exploit_segwit_encoding.cpp)
+audit_target_defaults(test_exploit_segwit_encoding_standalone)
+target_compile_definitions(test_exploit_segwit_encoding_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_segwit_encoding COMMAND test_exploit_segwit_encoding_standalone)
+set_tests_properties(exploit_segwit_encoding PROPERTIES TIMEOUT 60 LABELS "audit;exploit;segwit")
+
 # -- ECIES regression + C ABI prefix enforcement ----------------------------
 add_executable(test_ecies_regression_standalone test_ecies_regression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
@@ -884,7 +902,8 @@ set_tests_properties(
     exploit_chacha20_nonce_reuse exploit_zk_proofs
     exploit_frost_signing exploit_bip39_entropy exploit_ellswift
     exploit_address_generation exploit_bip324_session exploit_multiscalar
-    exploit_pedersen_homomorphism
+    exploit_pedersen_homomorphism exploit_hkdf_security exploit_batch_schnorr
+    exploit_segwit_encoding
     PROPERTIES LABELS "audit"
 )
 if(SECP256K1_BUILD_PROTOCOL_TESTS)
