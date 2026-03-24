@@ -19,11 +19,11 @@
 | Keccak-256 | Y | - | Y | Y | Y |
 | Pedersen commitment | Y | Y | Y | Y | Y |
 | ZK proofs | Y | Y | Y | Y | Y |
-| ZK knowledge verify batch | - | - | Y | stub | stub |
-| ZK DLEQ verify batch | - | - | Y | stub | stub |
+| ZK knowledge verify batch | - | - | Y | Y | Y |
+| ZK DLEQ verify batch | - | - | Y | Y | Y |
 | Bulletproof verify batch | - | - | Y | stub | stub |
-| BIP-324 AEAD encrypt batch | - | - | Y | stub | stub |
-| BIP-324 AEAD decrypt batch | - | - | Y | stub | stub |
+| BIP-324 AEAD encrypt batch | - | - | Y | Y | Y |
+| BIP-324 AEAD decrypt batch | - | - | Y | Y | Y |
 | Multi-scalar mul | Y | - | Y | Y | Y |
 | CT field ops | - | Y | Y | Y | Y |
 | CT scalar ops | - | Y | Y | Y | Y |
@@ -44,11 +44,12 @@
 
 | Operation | Backend | Tracking note |
 |-----------|---------|---------------|
-| `zk_knowledge_verify_batch` | OpenCL, Metal | CUDA implemented; OCL/Metal stubs — kernel port needed |
-| `zk_dleq_verify_batch` | OpenCL, Metal | CUDA implemented; OCL/Metal stubs — kernel port needed |
-| `bulletproof_verify_batch` | OpenCL, Metal | CUDA implemented; OCL/Metal stubs — kernel port needed |
-| `bip324_aead_encrypt_batch` | OpenCL, Metal | CUDA implemented; OCL/Metal stubs — kernel port needed |
-| `bip324_aead_decrypt_batch` | OpenCL, Metal | CUDA implemented; OCL/Metal stubs — kernel port needed |
+| `bulletproof_verify_batch` | OpenCL, Metal | CUDA implemented; OpenCL/Metal blocked by address-space qualifier issues in kernel — tracked as PARITY-EXCEPTION |
+
+> All other ZK and BIP-324 batch operations (`zk_knowledge_verify_batch`,
+> `zk_dleq_verify_batch`, `bip324_aead_encrypt_batch`, `bip324_aead_decrypt_batch`)
+> are now **fully implemented on all three GPU backends** (CUDA, OpenCL, Metal).
+> Resolved 2026-03-24.
 
 ### Current permanent exceptions
 

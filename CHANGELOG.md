@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### GPU Backend
 - **OpenCL parity**: wired `zk_knowledge_verify_batch`, `zk_dleq_verify_batch`, `bip324_aead_encrypt_batch`, `bip324_aead_decrypt_batch` in `gpu_backend_opencl.cpp` — 4 new kernels matching CUDA surface. Closes assurance gap **#5/#6** (partial; bulletproof batch remains PARITY-EXCEPTION, documented in `BACKEND_ASSURANCE_MATRIX.md`).
-- **Metal stubs** documented with `PARITY-EXCEPTION` / `TODO(parity)` markers for bulletproof batch; other 4 ops have PARITY-EXCEPTION with architectural rationale.
+- **Metal parity**: wired `zk_knowledge_verify_batch`, `zk_dleq_verify_batch`, `bip324_aead_encrypt_batch`, `bip324_aead_decrypt_batch` in `gpu_backend_metal.mm` — all four Metal kernels were already present in `secp256k1_kernels.metal`; dispatch code now connected. Also fixed `zk_knowledge_verify_batch` Metal kernel: was incorrectly treating pubkey buffer as a scalar (scalar×G); corrected to `lift_x` to recover the full point from x-coordinate. Full CUDA ↔ OpenCL ↔ Metal parity on all ZK and BIP-324 batch ops. `bulletproof_verify_batch` remains PARITY-EXCEPTION on all GPU backends.
+- **CUDA 13 compatibility**: replaced deprecated `cudaDeviceProp::clockRate` / `::memoryClockRate` fields (removed in CUDA 13) with `cudaDeviceGetAttribute(cudaDevAttrClockRate/MemoryClockRate)` under `#if CUDART_VERSION >= 13000` guard. Backward-compatible with CUDA 12. Reported by @craigraw compiling with CUDA 13 on RTX 5080.
 
 
 
