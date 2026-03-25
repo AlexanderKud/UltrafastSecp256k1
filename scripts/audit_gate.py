@@ -25,6 +25,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from audit_gap_report import build_report as build_audit_gap_report
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 LIB_ROOT = SCRIPT_DIR.parent
 DB_PATH = LIB_ROOT / ".project_graph.db"
@@ -112,6 +114,41 @@ def check_abi_completeness(conn):
         findings.append(('PASS', f'All {len(header_fns)} header functions in graph and ledger'))
 
     return 'P1: ABI Completeness', findings
+
+
+# ---------------------------------------------------------------------------
+# P0 — Failure-Class Matrix
+# ---------------------------------------------------------------------------
+def check_failure_class_matrix(conn):
+    findings = []
+    report, has_fail = build_audit_gap_report(strict=True)
+    counts = report.get('counts', {})
+
+    findings.append((
+        'INFO',
+        'Failure-class matrix counts: '
+        f"covered={counts.get('covered', 0)}, "
+        f"partial={counts.get('partial', 0)}, "
+        f"deferred={counts.get('deferred', 0)}, "
+        f"unknown={counts.get('unknown', 0)}"
+    ))
+
+    for issue in report.get('issues', []):
+        findings.append(('FAIL', f"{issue['failure_class']}: {'; '.join(issue['issues'])}"))
+
+    owner_grade_residuals = [
+        row for row in report.get('rows', [])
+        if row.get('status') in ('partial', 'unknown')
+    ]
+    if owner_grade_residuals:
+        names = ', '.join(row['failure_class'] for row in owner_grade_residuals[:5])
+        findings.append(('FAIL', f'{len(owner_grade_residuals)} owner-grade residual failure classes remain: {names}'))
+    elif has_fail:
+        findings.append(('FAIL', 'Failure-class matrix gate reported blocking issues'))
+    else:
+        findings.append(('PASS', 'Failure-class matrix is structurally valid and clear of owner-grade residual blockers'))
+
+    return 'P0: Failure-Class Matrix', findings
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +520,7 @@ def check_doc_pairing(conn):
 # Main
 # ---------------------------------------------------------------------------
 CHECK_MAP = {
+    '--failure-matrix': check_failure_class_matrix,
     '--abi-completeness': check_abi_completeness,
     '--test-coverage': check_test_coverage,
     '--security-patterns': check_security_patterns,
@@ -496,6 +534,7 @@ CHECK_MAP = {
 }
 
 ALL_CHECKS = [
+    check_failure_class_matrix,
     check_abi_completeness,
     check_test_coverage,
     check_security_patterns,

@@ -52,6 +52,7 @@ Current progress:
 1. `scripts/audit_gap_report.py` now exists and parses `docs/SELF_AUDIT_FAILURE_MATRIX.md`.
 2. Normal mode validates matrix structure and repository evidence references.
 3. `--strict` mode exposes the current owner-grade residual set instead of hiding it behind aggregate coverage language.
+4. `scripts/audit_gate.py` now includes a `P0: Failure-Class Matrix` check and `--failure-matrix` mode, so the owner-grade residual set is visible in the main audit gate instead of only in the standalone report.
 
 ### 2. CT Evidence Aggregator
 
