@@ -182,7 +182,8 @@ public:
             return GpuError::Device;
 
         std::memset(&out, 0, sizeof(out));
-        std::snprintf(out.name, sizeof(out.name), "%s", prop.name);
+        std::memcpy(out.name, prop.name, sizeof(out.name) - 1);
+        out.name[sizeof(out.name) - 1] = '\0';
         out.global_mem_bytes       = prop.totalGlobalMem;
         out.compute_units          = static_cast<uint32_t>(prop.multiProcessorCount);
 #if CUDART_VERSION >= 13000

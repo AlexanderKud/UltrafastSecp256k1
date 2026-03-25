@@ -16,12 +16,14 @@ Usage:
 import json
 import re
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 LIB_ROOT = SCRIPT_DIR.parent
 SOURCE_GRAPH_DB = LIB_ROOT / 'tools' / 'source_graph_kit' / 'source_graph.db'
+SOURCE_GRAPH_TOOL = LIB_ROOT / 'tools' / 'source_graph_kit' / 'source_graph.py'
 
 RED = '\033[91m'
 GREEN = '\033[92m'
@@ -191,13 +193,37 @@ def _expand_surface(surface: str):
     return []
 
 
+def ensure_source_graph_db():
+    if SOURCE_GRAPH_DB.exists():
+        return None
+    if not SOURCE_GRAPH_TOOL.exists():
+        return f"source graph DB not found at {SOURCE_GRAPH_DB}"
+    try:
+        subprocess.run(
+            ['python3', str(SOURCE_GRAPH_TOOL), 'build', '-i'],
+            cwd=str(LIB_ROOT),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or '').strip()
+        if detail:
+            return f"failed to build source graph DB via {SOURCE_GRAPH_TOOL}: {detail}"
+        return f"failed to build source graph DB via {SOURCE_GRAPH_TOOL}"
+    if not SOURCE_GRAPH_DB.exists():
+        return f"source graph DB not found at {SOURCE_GRAPH_DB} after build"
+    return None
+
+
 def check_claim_surface_indexing():
     """Check that path-like claim surfaces resolve to real indexed graph files."""
     issues = []
     checked = []
 
-    if not SOURCE_GRAPH_DB.exists():
-        issues.append(f"  {RED}MISSING{RESET} source graph DB not found at {SOURCE_GRAPH_DB}")
+    ensure_error = ensure_source_graph_db()
+    if ensure_error:
+        issues.append(f"  {RED}MISSING{RESET} {ensure_error}")
         return {
             'checked_surfaces': [],
             'missing_surfaces': ['source_graph.db'],
