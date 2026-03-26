@@ -76,7 +76,7 @@ static void test_musig2_key_agg_random(ufsecp_ctx* ctx) {
 
     int no_crash = 0;
     for (int i = 0; i < N; ++i) {
-        int n_keys = (rng() % 3) + 1;
+        int n_keys = static_cast<int>(rng() % 3u) + 1;
         auto keys = rand_blob(static_cast<size_t>(n_keys) * 32);
         ufsecp_musig2_key_agg(ctx, keys.data(), static_cast<size_t>(n_keys), keyagg_out, agg_pk32);
         ++no_crash;
@@ -109,7 +109,7 @@ static void test_musig2_nonce_agg_random(ufsecp_ctx* ctx) {
     uint8_t agg_nonce_out[UFSECP_MUSIG2_AGGNONCE_LEN];
     int no_crash = 0;
     for (int i = 0; i < N; ++i) {
-        int n = (rng() % 3) + 1;
+        int n = static_cast<int>(rng() % 3u) + 1;
         auto nonces = rand_blob(static_cast<size_t>(n) * UFSECP_MUSIG2_PUBNONCE_LEN);
         ufsecp_musig2_nonce_agg(ctx, nonces.data(), static_cast<size_t>(n), agg_nonce_out);
         ++no_crash;
@@ -166,7 +166,7 @@ static void test_musig2_partial_sig_agg_random(ufsecp_ctx* ctx) {
 
     int no_crash = 0;
     for (int i = 0; i < N; ++i) {
-        int n = (rng() % 3) + 1;
+        int n = static_cast<int>(rng() % 3u) + 1;
         auto partial_sigs = rand_blob(static_cast<size_t>(n) * 32);
 
         auto pks_flat = rand_blob(64);  // 2*32 x-only

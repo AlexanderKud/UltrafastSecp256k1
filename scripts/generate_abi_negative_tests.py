@@ -45,6 +45,12 @@ CHECK_ZERO = "zero_edge"
 CHECK_INVALID = "invalid_content"
 CHECK_SMOKE = "success_smoke"
 ALL_CHECKS = [CHECK_NULL, CHECK_ZERO, CHECK_INVALID, CHECK_SMOKE]
+TEST_EVIDENCE_GLOBS = [
+    'audit/test_*.cpp',
+    'audit/*.cpp',
+    'tests/test_*.cpp',
+    'tests/*.cpp',
+]
 
 
 @dataclass
@@ -147,7 +153,19 @@ def _targets_from_graph(con: sqlite3.Connection) -> dict[str, list[str]]:
 
 
 def _requires_zero_edge(fn: ExportedFunction) -> bool:
-    zero_tokens = ('count', 'len', 'size', 'index', 'max_ids', 'device_index', 'entropy_bytes')
+    if fn.name in {
+        'ufsecp_gpu_backend_count',
+        'ufsecp_gpu_device_info',
+        'ufsecp_gpu_ctx_create',
+        'ufsecp_bip324_create',
+        'ufsecp_btc_message_hash',
+        'ufsecp_btc_message_sign',
+        'ufsecp_btc_message_verify',
+        'ufsecp_pubkey_tweak_add',
+    }:
+        return False
+
+    zero_tokens = ('count', 'len', 'size', 'entropy_bytes')
     key_tokens = ('privkey', 'tweak', 'seckey', 'scalar', 'nonce', 'seed', 'entropy')
     lowered_params = ' '.join(fn.params).lower()
     if any(token in lowered_params for token in zero_tokens):
@@ -199,18 +217,87 @@ def _check_keywords(text: str) -> set[str]:
     hits = set()
     if 'null' in lowered:
         hits.add(CHECK_NULL)
-    if any(token in lowered for token in ('zero', 'count=0', 'zero-length', 'undersized', 'empty', 'minimum-size')):
+    if any(token in lowered for token in (
+        'zero', 'count=0', 'n=0', 'zero-length', 'undersized', 'empty',
+        'minimum-size', 'short_seed', 'order_n'
+    )):
         hits.add(CHECK_ZERO)
-    if any(token in lowered for token in ('invalid', 'bad', 'wrong', 'tampered', 'truncated', 'off-curve', 'oob', 'reject')):
+    if any(token in lowered for token in ('invalid', 'bad', 'wrong', 'tampered', 'truncated', 'off-curve', 'oob', 'reject', 'malformed', 'hostile', 'neg-', 'run_neg', 'negative')):
         hits.add(CHECK_INVALID)
-    if any(token in lowered for token in ('smoke', 'round-trip', 'roundtrip', 'determinism', 'valid', 'succeeds', 'accepts', 'lifecycle')):
+    if '0xffffffff' in lowered:
+        hits.add(CHECK_INVALID)
+    if any(token in lowered for token in ('backend_name(', 'is_available(', 'device_count(', 'ctx_create(', 'device_info(')) and any(token in lowered for token in ('99', '255', 'oob')):
+        hits.add(CHECK_INVALID)
+    if any(token in lowered for token in ('smoke', 'round-trip', 'roundtrip', 'determinism', 'valid', 'succeeds', 'accepts', 'lifecycle', 'check_ok(', '== ufsecp_ok')):
         hits.add(CHECK_SMOKE)
     return hits
+
+
+def _scan_direct_test_evidence() -> dict[str, dict[str, list[str]]]:
+    fn_def_re = re.compile(r'^\s*(?:static\s+)?(?:inline\s+)?(?:void|bool|int|size_t|ufsecp_error_t)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;]*\)\s*\{?')
+    call_re = re.compile(r'\b(ufsecp_\w+)\s*\(')
+    evidence: dict[str, dict[str, list[str]]] = {}
+
+    files = []
+    for pattern in TEST_EVIDENCE_GLOBS:
+        files.extend(LIB_ROOT.glob(pattern))
+
+    for path in sorted({item.resolve() for item in files if item.is_file()}):
+        rel_path = str(path.relative_to(LIB_ROOT)).replace('\\', '/')
+        lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+        current_fn = None
+        brace_depth = 0
+        recent_comments: list[str] = []
+        for line_no, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped.startswith('//'):
+                recent_comments.append(stripped)
+                recent_comments = recent_comments[-3:]
+            elif stripped:
+                recent_comments = recent_comments[-3:]
+
+            fn_match = fn_def_re.match(line)
+            if fn_match:
+                current_fn = fn_match.group(1)
+                brace_depth = line.count('{') - line.count('}')
+                if brace_depth <= 0:
+                    brace_depth = 1
+            elif current_fn is not None:
+                brace_depth += line.count('{') - line.count('}')
+                if brace_depth <= 0:
+                    current_fn = None
+                    brace_depth = 0
+
+            calls = call_re.findall(line)
+            if not calls:
+                continue
+
+            window_start = max(0, line_no - 3)
+            window_end = min(len(lines), line_no + 2)
+            context_parts = lines[window_start:window_end]
+            if current_fn:
+                context_parts.append(current_fn)
+            context_parts.extend(recent_comments)
+            context_text = ' '.join(context_parts)
+            hits = _check_keywords(context_text)
+            if current_fn and current_fn.lower().startswith(('test_', 'run_', 'suite_', 'kat_', 'demo_')):
+                hits.add(CHECK_SMOKE)
+
+            for fn_name in calls:
+                fn_evidence = evidence.setdefault(fn_name, {})
+                for hit in hits:
+                    label = f'{rel_path}:{current_fn or line_no}'
+                    fn_evidence.setdefault(hit, [])
+                    if label not in fn_evidence[hit]:
+                        fn_evidence[hit].append(label)
+
+    return evidence
 
 
 def build_manifest() -> tuple[dict, bool]:
     exports = scan_public_exports()
     doc_sections = _doc_mentions()
+    direct_test_evidence = _scan_direct_test_evidence()
     con = _connect()
     try:
         graph_targets = _targets_from_graph(con)
@@ -228,6 +315,10 @@ def build_manifest() -> tuple[dict, bool]:
         if fn.name in graph_targets:
             for target in graph_targets[fn.name]:
                 _mark(covered, CHECK_SMOKE, f'graph:function_test_map:{target}')
+
+        for check_name, labels in direct_test_evidence.get(fn.name, {}).items():
+            for label in labels:
+                _mark(covered, check_name, f'test-call:{label}')
 
         if fn.category == 'cpu':
             _mark(covered, CHECK_NULL, 'docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions')

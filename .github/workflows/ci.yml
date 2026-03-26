@@ -329,6 +329,8 @@ jobs:
             -DSECP256K1_BUILD_FUZZ_TESTS=ON \
             -DSECP256K1_BUILD_PROTOCOL_TESTS=ON \
             -DSECP256K1_USE_ASM=OFF \
+            -DSECP256K1_BUILD_EXAMPLES=OFF \
+            -DSECP256K1_BUILD_JAVA=OFF \
             ${{ matrix.cmake_flags }}
 
       - name: Build

@@ -8,7 +8,7 @@
 
 | Category | Tests | Status |
 |----------|-------|--------|
-| **CTest targets** | 41 | [OK] All passing |
+| **CTest targets** | 71 | [OK] All passing |
 | **Audit suite checks** | 641,194+ | [OK] 0 failures |
 | **Exploit PoC test files** | **78 tests, 14 categories** | [OK] 0 failures |
 | **Fuzz harnesses** | 3 | [OK] Active |
@@ -132,6 +132,43 @@ These standalone CTest entries are part of the active validation surface and are
 | `kat_all_operations` | Known-answer tests | Broad deterministic vectors across exposed operations |
 | `nonce_uniqueness` | Security audit | Nonce uniqueness and replay-resistance regression coverage |
 | `secp256k1_spec` | Spec conformance | Specification-oriented secp256k1 behavior checks |
+
+### Supplemental Active CTest Targets
+
+The following active CTest targets are also part of the documented validation
+surface and are named here explicitly so the matrix matches the generated
+CTest inventory exactly:
+
+- `[=[metal_host_test]=]`
+- `audit_ct_namespace`
+- `bip324_transport`
+- `bip32_vectors`
+- `bip340_strict`
+- `bip340_vectors`
+- `ct_equivalence`
+- `ct_sidechannel_smoke`
+- `ct_verif_formal`
+- `diag_scalar_mul`
+- `exploit_bip324_counter_desync`
+- `exploit_bip324_transcript_splice`
+- `exploit_ethereum_differential`
+- `exploit_musig2_transcript_fork`
+- `exploit_zk_adversarial`
+- `fault_injection`
+- `fiat_crypto_vectors`
+- `fuzz_musig2_frost`
+- `gpu_ct_smoke`
+- `musig2_bip327_vectors`
+- `musig2_frost`
+- `musig2_frost_advanced`
+- `opencl_selftest`
+- `parse_strictness`
+- `rfc6979_vectors`
+- `secp256k1_ecdh_example`
+- `secp256k1_ecdsa_example`
+- `secp256k1_ellswift_example`
+- `secp256k1_musig_example`
+- `secp256k1_schnorr_example`
 
 ---
 

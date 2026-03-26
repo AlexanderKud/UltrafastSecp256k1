@@ -101,6 +101,23 @@ def _discover_latest_audit_summary() -> dict:
     }
 
 
+def _discover_runner_binary() -> str | None:
+    patterns = [
+        'build/audit/unified_audit_runner',
+        'build/*/audit/unified_audit_runner',
+        'build*/audit/unified_audit_runner',
+    ]
+    candidates = []
+    for pattern in patterns:
+        for path in LIB_ROOT.glob(pattern):
+            if path.is_file() and path.exists():
+                candidates.append(path)
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda item: item.stat().st_mtime)
+    return str(newest.relative_to(LIB_ROOT)).replace('\\', '/')
+
+
 def _parse_workflow_threshold(text: str) -> int | None:
     match = re.search(r"alert-threshold:\s*'?(\d+)%'?", text)
     return int(match.group(1)) if match else None
@@ -252,10 +269,14 @@ def main() -> int:
     validate_assurance = _run_json_command(['python3', 'scripts/validate_assurance.py', '--json'])
     failure_matrix = _run_json_command(['python3', 'scripts/audit_gap_report.py', '--json'])
     failure_matrix_strict = _run_json_command(['python3', 'scripts/audit_gap_report.py', '--json', '--strict'])
+    runner_binary = _discover_runner_binary()
 
     ct_dir = output_dir / 'ct_evidence'
+    ct_command = ['python3', 'scripts/collect_ct_evidence.py', '--output-dir', str(ct_dir)]
+    if runner_binary:
+        ct_command.extend(['--runner-binary', runner_binary])
     ct_collection = subprocess.run(
-        ['python3', 'scripts/collect_ct_evidence.py', '--output-dir', str(ct_dir)],
+        ct_command,
         cwd=str(LIB_ROOT),
         capture_output=True,
         text=True,
@@ -337,6 +358,7 @@ def main() -> int:
         'benchmark_publishability': benchmark_publishability,
         'audit_summary': audit_summary,
         'inputs': {
+            'runner_binary': runner_binary,
             'ct_collection_exit_code': ct_collection.returncode,
             'ct_collection_stdout': (ct_collection.stdout or '').strip(),
             'ct_collection_stderr': (ct_collection.stderr or '').strip(),

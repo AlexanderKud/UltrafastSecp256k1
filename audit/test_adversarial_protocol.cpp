@@ -325,6 +325,24 @@ static void test_musig2_hostile_args() {
         uint8_t pubnonces_all[2 * UFSECP_MUSIG2_PUBNONCE_LEN] = {};
         std::memcpy(pubnonces_all, pubnonce, UFSECP_MUSIG2_PUBNONCE_LEN);
         std::memcpy(pubnonces_all + UFSECP_MUSIG2_PUBNONCE_LEN, pubnonce2, UFSECP_MUSIG2_PUBNONCE_LEN);
+        CHECK_OK(ufsecp_musig2_nonce_agg(ctx, pubnonces_all, 2, aggnonce),
+             "nonce_agg valid pair");
+        uint8_t zero_aggnonce[UFSECP_MUSIG2_AGGNONCE_LEN] = {};
+        CHECK(ufsecp_musig2_start_sign_session(ctx, zero_aggnonce, keyagg, msg32, session) != UFSECP_OK,
+            "start_session zero aggregate nonce rejected");
+        CHECK_OK(ufsecp_musig2_start_sign_session(ctx, aggnonce, keyagg, msg32, session),
+             "start_session valid transcript");
+        uint8_t zero_session[UFSECP_MUSIG2_SESSION_LEN] = {};
+        uint8_t zero_secnonce[UFSECP_MUSIG2_SECNONCE_LEN] = {};
+        uint8_t zero_pubnonce[UFSECP_MUSIG2_PUBNONCE_LEN] = {};
+        CHECK(ufsecp_musig2_partial_sign(ctx, zero_secnonce, priv1, keyagg, session, 0, psig) != UFSECP_OK,
+            "partial_sign zero secnonce rejected");
+        CHECK(ufsecp_musig2_partial_sign(ctx, secnonce, priv1, keyagg, zero_session, 0, psig) != UFSECP_OK,
+            "partial_sign zero session rejected");
+        CHECK(ufsecp_musig2_partial_verify(ctx, psig, zero_pubnonce, xonly1, keyagg, session, 0) != UFSECP_OK,
+            "partial_verify zero pubnonce rejected");
+        CHECK(ufsecp_musig2_partial_verify(ctx, psig, pubnonce, xonly1, keyagg, zero_session, 0) != UFSECP_OK,
+            "partial_verify zero session rejected");
         uint8_t malformed_pubnonces[2 * UFSECP_MUSIG2_PUBNONCE_LEN] = {};
         std::memcpy(malformed_pubnonces, pubnonces_all, sizeof(pubnonces_all));
         malformed_pubnonces[0] = 0x04;
@@ -2080,6 +2098,23 @@ static void test_sp_hostile_args() {
           found_idx, found_keys, &n_found)
           != UFSECP_OK, "sp_scan null ctx");
 
+        uint8_t scan_priv[32], spend_priv[32];
+        uint8_t scan_pub33[33], spend_pub33[33];
+        hex_to_bytes(PRIVKEY1_HEX, scan_priv, 32);
+        hex_to_bytes(PRIVKEY2_HEX, spend_priv, 32);
+        addr_len = sizeof(addr);
+        CHECK_OK(ufsecp_silent_payment_address(ctx, scan_priv, spend_priv,
+             scan_pub33, spend_pub33, addr, &addr_len),
+             "sp_address valid setup");
+        CHECK(ufsecp_silent_payment_create_output(ctx, scan_priv, 0,
+            scan_pub33, spend_pub33, 0, out, tweak) != UFSECP_OK,
+            "sp_create zero input count rejected");
+        n_found = 4;
+        CHECK(ufsecp_silent_payment_scan(ctx, scan_priv, spend_priv,
+            scan_pub33, 0, spend_pub33 + 1, 1,
+            found_idx, found_keys, &n_found) != UFSECP_OK,
+            "sp_scan zero input pubkeys rejected");
+
     ufsecp_ctx_destroy(ctx);
 }
 
@@ -2249,6 +2284,21 @@ static void test_ecdsa_adaptor_hostile_args() {
     CHECK(ufsecp_ecdsa_adaptor_extract(nullptr, pre_sig, sig64, secret) != UFSECP_OK,
           "ecdsa_adaptor_extract null ctx");
 
+        uint8_t priv[32], pub33[33], msg32[32];
+        uint8_t adaptor_secret[32], adaptor_point[33];
+        uint8_t zero_secret[32] = {};
+        hex_to_bytes(PRIVKEY1_HEX, priv, 32);
+        hex_to_bytes(PRIVKEY2_HEX, adaptor_secret, 32);
+        hex_to_bytes(MSG_HEX, msg32, 32);
+        CHECK_OK(ufsecp_pubkey_create(ctx, priv, pub33), "ecdsa_adaptor hostile pubkey");
+        CHECK_OK(ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point), "ecdsa_adaptor hostile adaptor point");
+        CHECK(ufsecp_ecdsa_adaptor_verify(ctx, pre_sig, pub33, msg32, adaptor_point) != UFSECP_OK,
+            "ecdsa_adaptor_verify zero pre_sig rejected");
+        CHECK(ufsecp_ecdsa_adaptor_adapt(ctx, pre_sig, zero_secret, sig64) != UFSECP_OK,
+            "ecdsa_adaptor_adapt zero adaptor secret rejected");
+        CHECK(ufsecp_ecdsa_adaptor_extract(ctx, pre_sig, sig64, secret) != UFSECP_OK,
+            "ecdsa_adaptor_extract zero pre_sig rejected");
+
     ufsecp_ctx_destroy(ctx);
 }
 
@@ -2396,6 +2446,10 @@ static void test_schnorr_adaptor_wrong_point() {
     uint8_t pre_sig[UFSECP_SCHNORR_ADAPTOR_SIG_LEN];
     ufsecp_schnorr_adaptor_sign(ctx, priv, msg32, adaptor_point, aux, pre_sig);
 
+        uint8_t zero_pre_sig[UFSECP_SCHNORR_ADAPTOR_SIG_LEN] = {};
+        CHECK(ufsecp_schnorr_adaptor_verify(ctx, zero_pre_sig, xonly, msg32, adaptor_point) != UFSECP_OK,
+            "schnorr_adaptor_verify zero pre_sig rejected");
+
     // Verify with different adaptor point (scalar=5)
     uint8_t wrong_secret[32] = {};
     wrong_secret[31] = 5;
@@ -2432,9 +2486,12 @@ static void test_schnorr_adaptor_wrong_secret() {
     ufsecp_schnorr_adaptor_sign(ctx, priv, msg32, adaptor_point, aux, pre_sig);
 
     // Adapt with wrong secret (scalar=5 instead of scalar=2)
+        uint8_t bad_sig[64];
+        uint8_t zero_secret[32] = {};
+        CHECK(ufsecp_schnorr_adaptor_adapt(ctx, pre_sig, zero_secret, bad_sig) != UFSECP_OK,
+            "schnorr_adaptor_adapt zero adaptor secret rejected");
     uint8_t wrong_secret[32] = {};
     wrong_secret[31] = 5;
-    uint8_t bad_sig[64];
     const ufsecp_error_t rc = ufsecp_schnorr_adaptor_adapt(ctx, pre_sig, wrong_secret, bad_sig);
 
     if (rc == UFSECP_OK) {
@@ -2782,6 +2839,8 @@ static void test_hostile_pedersen() {
     uint8_t sum[32];
     CHECK(ufsecp_pedersen_blind_sum(nullptr, buf, 1, buf, 1, sum) != UFSECP_OK,
           "pedersen_blind_sum null ctx");
+    CHECK_OK(ufsecp_pedersen_verify_sum(ctx, nullptr, 0, nullptr, 0),
+             "pedersen_verify_sum zero counts empty sets OK");
 
     ufsecp_ctx_destroy(ctx);
 }
@@ -2808,6 +2867,20 @@ static void test_hostile_zk() {
     CHECK(ufsecp_zk_dleq_verify(nullptr, buf, buf, buf, buf, buf) != UFSECP_OK,
           "dleq_verify null ctx");
 
+        uint8_t secret[32];
+        hex_to_bytes(PRIVKEY1_HEX, secret, 32);
+        uint8_t pubkey33[33] = {};
+        CHECK_OK(ufsecp_pubkey_create(ctx, secret, pubkey33),
+             "pubkey_create for hostile zk checks");
+
+        uint8_t zero_secret[32] = {};
+        CHECK(ufsecp_zk_knowledge_prove(ctx, zero_secret, pubkey33, buf, buf, buf) != UFSECP_OK,
+            "knowledge_prove zero secret rejected");
+
+        uint8_t zero_knowledge_proof[UFSECP_ZK_KNOWLEDGE_PROOF_LEN] = {};
+        CHECK(ufsecp_zk_knowledge_verify(ctx, zero_knowledge_proof, pubkey33, buf) != UFSECP_OK,
+            "knowledge_verify zero proof rejected");
+
         const uint64_t value = 7;
         uint8_t value_scalar[32] = {};
         value_scalar[31] = 7; /* big-endian encoding of value=7 */
@@ -2820,8 +2893,13 @@ static void test_hostile_zk() {
 
         uint8_t proof[700] = {};
         size_t proof_len = sizeof(proof);
+       size_t zero_proof_len = 0;
+       CHECK(ufsecp_zk_range_prove(ctx, value, blinding, commit, aux_rand, proof, &zero_proof_len) != UFSECP_OK,
+           "range_prove zero proof buffer rejected");
         CHECK_OK(ufsecp_zk_range_prove(ctx, value, blinding, commit, aux_rand, proof, &proof_len),
              "range_prove for trailing-byte regression");
+       CHECK(ufsecp_zk_range_verify(ctx, commit, proof, 0) != UFSECP_OK,
+          "range_verify zero proof length rejected");
         proof[proof_len] = 0xA5;
         CHECK(ufsecp_zk_range_verify(ctx, commit, proof, proof_len + 1) != UFSECP_OK,
             "range_verify rejects trailing bytes");
@@ -3938,6 +4016,9 @@ static void test_h10_bip144() {
               "H.10j: witness_commitment NULL nonce rejected");
     CHECK_ERR(ufsecp_bip144_witness_commitment(root32, nonce32, nullptr),
               "H.10k: witness_commitment NULL output rejected");
+    static const uint8_t zero_nonce32[32] = {0};
+    CHECK_OK(ufsecp_bip144_witness_commitment(root32, zero_nonce32, commit),
+             "H.10ka: witness_commitment zero nonce is valid");
     // --- valid witness_commitment ---
     CHECK_OK(ufsecp_bip144_witness_commitment(root32, nonce32, commit),
              "H.10l: witness_commitment valid OK");

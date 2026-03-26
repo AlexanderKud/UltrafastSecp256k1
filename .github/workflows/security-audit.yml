@@ -58,7 +58,9 @@ jobs:
             -DSECP256K1_MARCH=x86-64-v3 \
             -DSECP256K1_WERROR=ON \
             -DSECP256K1_BUILD_BENCH=OFF \
-            -DSECP256K1_BUILD_TESTS=ON
+            -DSECP256K1_BUILD_TESTS=ON \
+            -DSECP256K1_BUILD_EXAMPLES=OFF \
+            -DSECP256K1_BUILD_JAVA=OFF
 
       - name: Build (zero warnings required)
         run: cmake --build build -j"$(nproc)"
@@ -105,7 +107,9 @@ jobs:
             -DSECP256K1_MARCH=x86-64-v3 \
             -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
-            -DSECP256K1_BUILD_TESTS=ON
+            -DSECP256K1_BUILD_TESTS=ON \
+            -DSECP256K1_BUILD_EXAMPLES=OFF \
+            -DSECP256K1_BUILD_JAVA=OFF
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
@@ -194,7 +198,9 @@ jobs:
             -DCMAKE_CXX_FLAGS="-fsanitize=memory -fno-omit-frame-pointer -fsanitize-memory-track-origins=2 -stdlib=libc++ -nostdinc++ -isystem ${MSAN_LIBCXX}/include/c++/v1" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=memory -stdlib=libc++ -L${MSAN_LIBCXX}/lib -lc++abi -Wl,-rpath,${MSAN_LIBCXX}/lib" \
             -DSECP256K1_USE_ASM=OFF \
-            -DSECP256K1_BUILD_TESTS=ON
+            -DSECP256K1_BUILD_TESTS=ON \
+            -DSECP256K1_BUILD_EXAMPLES=OFF \
+            -DSECP256K1_BUILD_JAVA=OFF
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
@@ -256,7 +262,9 @@ jobs:
             -DSECP256K1_MARCH=x86-64-v3 \
             -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
-            -DSECP256K1_BUILD_TESTS=ON
+            -DSECP256K1_BUILD_TESTS=ON \
+            -DSECP256K1_BUILD_EXAMPLES=OFF \
+            -DSECP256K1_BUILD_JAVA=OFF
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
@@ -305,7 +313,9 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DSECP256K1_MARCH=x86-64-v3 \
-            -DSECP256K1_BUILD_TESTS=ON
+            -DSECP256K1_BUILD_TESTS=ON \
+            -DSECP256K1_BUILD_EXAMPLES=OFF \
+            -DSECP256K1_BUILD_JAVA=OFF
 
       - name: Build
         run: cmake --build build -j"$(nproc)"

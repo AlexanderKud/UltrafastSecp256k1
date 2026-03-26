@@ -20,6 +20,7 @@
 #include <cstdint>
 
 #include "ufsecp/ufsecp_gpu.h"
+#include "ufsecp/ufsecp.h"
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -145,6 +146,80 @@ static void test_null_buffers_nonzero_count(ufsecp_gpu_ctx* ctx) {
 }
 
 /* ============================================================================
+ * 4. Invalid content on core ops
+ * ============================================================================ */
+static void test_invalid_content_core_ops(ufsecp_gpu_ctx* ctx) {
+    std::printf("[gpu_negative] Invalid content on core ops\n");
+
+    if (!ctx) {
+        std::printf("  (skipped -- no GPU context)\n");
+        return;
+    }
+
+    ufsecp_ctx* cpu_ctx = nullptr;
+    CHECK(ufsecp_ctx_create(&cpu_ctx) == UFSECP_OK, "cpu ctx for invalid-content setup");
+    if (!cpu_ctx) {
+        return;
+    }
+
+    uint8_t msg32[32] = {};
+    uint8_t seckey32[32] = {};
+    uint8_t aux32[32] = {};
+    uint8_t valid_pub33[33] = {};
+    uint8_t invalid_pub33[33] = {};
+    uint8_t xonly_pub32[32] = {};
+    uint8_t ecdsa_sig64[64] = {};
+    uint8_t schnorr_sig64[64] = {};
+    uint8_t out_result[1] = {1};
+    uint8_t out_pub33[33] = {};
+    uint8_t out_hash20[20] = {};
+    uint8_t out_secret32[32] = {};
+
+    msg32[0] = 0x42;
+    seckey32[31] = 1;
+    aux32[0] = 7;
+
+    CHECK(ufsecp_pubkey_create(cpu_ctx, seckey32, valid_pub33) == UFSECP_OK,
+          "cpu pubkey_create for invalid-content setup");
+    CHECK(ufsecp_pubkey_xonly(cpu_ctx, seckey32, xonly_pub32) == UFSECP_OK,
+          "cpu pubkey_xonly for invalid-content setup");
+    CHECK(ufsecp_ecdsa_sign(cpu_ctx, msg32, seckey32, ecdsa_sig64) == UFSECP_OK,
+          "cpu ecdsa_sign for invalid-content setup");
+    CHECK(ufsecp_schnorr_sign(cpu_ctx, msg32, seckey32, aux32, schnorr_sig64) == UFSECP_OK,
+          "cpu schnorr_sign for invalid-content setup");
+
+    std::memcpy(invalid_pub33, valid_pub33, sizeof(valid_pub33));
+    invalid_pub33[0] = 0x05;
+
+    std::memset(out_pub33, 0, sizeof(out_pub33));
+    auto e1 = ufsecp_gpu_generator_mul_batch(ctx, msg32, 1, out_pub33);
+    CHECK(e1 == UFSECP_ERR_GPU_UNSUPPORTED || e1 != UFSECP_OK,
+          "generator_mul_batch invalid zero scalar rejects malformed input");
+
+    out_result[0] = 1;
+    auto e2 = ufsecp_gpu_ecdsa_verify_batch(ctx, msg32, invalid_pub33, ecdsa_sig64, 1, out_result);
+    CHECK(e2 == UFSECP_ERR_GPU_UNSUPPORTED || e2 != UFSECP_OK || out_result[0] == 0,
+          "ecdsa_verify_batch invalid pubkey rejects or marks invalid");
+
+    schnorr_sig64[0] ^= 0x80;
+    out_result[0] = 1;
+    auto e3 = ufsecp_gpu_schnorr_verify_batch(ctx, msg32, xonly_pub32, schnorr_sig64, 1, out_result);
+    CHECK(e3 == UFSECP_ERR_GPU_UNSUPPORTED || e3 != UFSECP_OK || out_result[0] == 0,
+          "schnorr_verify_batch invalid signature rejects or marks invalid");
+    schnorr_sig64[0] ^= 0x80;
+
+    auto e4 = ufsecp_gpu_ecdh_batch(ctx, seckey32, invalid_pub33, 1, out_secret32);
+    CHECK(e4 == UFSECP_ERR_GPU_UNSUPPORTED || e4 != UFSECP_OK,
+          "ecdh_batch invalid peer pubkey rejects malformed input");
+
+    auto e5 = ufsecp_gpu_hash160_pubkey_batch(ctx, invalid_pub33, 1, out_hash20);
+    CHECK(e5 == UFSECP_ERR_GPU_UNSUPPORTED || e5 != UFSECP_OK,
+          "hash160_pubkey_batch invalid compressed pubkey rejects malformed input");
+
+    ufsecp_ctx_destroy(cpu_ctx);
+}
+
+/* ============================================================================
  * 4. Invalid backend
  * ============================================================================ */
 static void test_invalid_backend() {
@@ -209,7 +284,135 @@ static void test_invalid_device() {
 }
 
 /* ============================================================================
- * 6. Unsupported op behavior
+ * 6. ecrecover zero-edge and invalid content
+ * ============================================================================ */
+static void test_ecrecover_zero_and_invalid(ufsecp_gpu_ctx* ctx) {
+    std::printf("[gpu_negative] ecrecover count=0 and invalid recid\n");
+
+    if (!ctx) {
+        std::printf("  (skipped -- no GPU context)\n");
+        return;
+    }
+
+    CHECK(ufsecp_gpu_ecrecover_batch(ctx, nullptr, nullptr, nullptr, 0, nullptr, nullptr) == UFSECP_OK,
+          "ecrecover_batch(count=0) = OK");
+
+    ufsecp_ctx* cpu_ctx = nullptr;
+    CHECK(ufsecp_ctx_create(&cpu_ctx) == UFSECP_OK, "cpu ctx for invalid ecrecover setup");
+    if (!cpu_ctx) {
+        return;
+    }
+
+    uint8_t msg32[32] = {};
+    uint8_t seckey32[32] = {};
+    uint8_t sig64[64] = {};
+    uint8_t out_pub33[33] = {};
+    uint8_t out_valid[1] = {1};
+    int recid = 0;
+    int invalid_recid = 9;
+
+    msg32[0] = 0x33;
+    seckey32[31] = 1;
+
+    CHECK(ufsecp_ecdsa_sign_recoverable(cpu_ctx, msg32, seckey32, sig64, &recid) == UFSECP_OK,
+          "cpu recoverable sign for invalid ecrecover setup");
+
+    auto err = ufsecp_gpu_ecrecover_batch(ctx, msg32, sig64, &invalid_recid, 1, out_pub33, out_valid);
+    CHECK(err == UFSECP_ERR_GPU_UNSUPPORTED || err != UFSECP_OK || out_valid[0] == 0,
+          "ecrecover_batch invalid recid rejects or marks invalid");
+
+    ufsecp_ctx_destroy(cpu_ctx);
+}
+
+/* ============================================================================
+ * 7. Extended ops zero-edge and invalid content
+ * ============================================================================ */
+static void test_extended_ops_zero_and_invalid(ufsecp_gpu_ctx* ctx) {
+    std::printf("[gpu_negative] Extended ops count=0 and invalid content\n");
+
+    if (!ctx) {
+        std::printf("  (skipped -- no GPU context)\n");
+        return;
+    }
+
+    uint8_t scalar32[32] = {};
+    uint8_t compressed33[33] = {0x02};
+    uint8_t invalid_compressed33[33] = {0x05};
+    uint8_t proof64[64] = {};
+    uint8_t point65[65] = {0x04};
+    uint8_t invalid_point65[65] = {0x05};
+    uint8_t proof324[324] = {};
+    uint8_t out_result[1] = {1};
+    uint8_t out_valid[1] = {1};
+    uint8_t key32[32] = {};
+    uint8_t nonce12[12] = {};
+    uint8_t plaintext32[32] = {};
+    uint8_t wire51[51] = {};
+    uint8_t plain_out32[32] = {};
+    uint32_t size_ok[1] = {4};
+    uint32_t size_too_big[1] = {33};
+
+    proof324[0] = 0x05;
+    proof324[65] = 0x04;
+    proof324[130] = 0x04;
+    proof324[195] = 0x04;
+
+      CHECK(ufsecp_gpu_frost_verify_partial_batch(ctx, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                                                        nullptr, nullptr, nullptr, 0, nullptr) == UFSECP_OK,
+          "frost_verify_partial_batch(count=0) = OK");
+    CHECK(ufsecp_gpu_zk_knowledge_verify_batch(ctx, nullptr, nullptr, nullptr, 0, nullptr) == UFSECP_OK,
+          "zk_knowledge_verify_batch(count=0) = OK");
+    CHECK(ufsecp_gpu_zk_dleq_verify_batch(ctx, nullptr, nullptr, nullptr, nullptr, nullptr, 0, nullptr) == UFSECP_OK,
+          "zk_dleq_verify_batch(count=0) = OK");
+    CHECK(ufsecp_gpu_bulletproof_verify_batch(ctx, nullptr, nullptr, nullptr, 0, nullptr) == UFSECP_OK,
+          "bulletproof_verify_batch(count=0) = OK");
+    CHECK(ufsecp_gpu_bip324_aead_encrypt_batch(ctx, nullptr, nullptr, nullptr, nullptr, 32, 0, nullptr) == UFSECP_OK,
+          "bip324_aead_encrypt_batch(count=0) = OK");
+    CHECK(ufsecp_gpu_bip324_aead_decrypt_batch(ctx, nullptr, nullptr, nullptr, nullptr, 32, 0, nullptr, nullptr) == UFSECP_OK,
+          "bip324_aead_decrypt_batch(count=0) = OK");
+
+    auto e1 = ufsecp_gpu_frost_verify_partial_batch(ctx, scalar32, invalid_compressed33, compressed33,
+                                                    compressed33, scalar32, scalar32, out_result,
+                                                    out_result, 1, out_result);
+    CHECK(e1 == UFSECP_ERR_GPU_UNSUPPORTED || e1 != UFSECP_OK || out_result[0] == 0,
+          "frost_verify_partial_batch invalid compressed point rejects or marks invalid");
+
+    out_result[0] = 1;
+    auto e2 = ufsecp_gpu_zk_knowledge_verify_batch(ctx, proof64, invalid_point65, scalar32, 1, out_result);
+    CHECK(e2 == UFSECP_ERR_GPU_UNSUPPORTED || e2 != UFSECP_OK || out_result[0] == 0,
+          "zk_knowledge_verify_batch invalid pubkey rejects or marks invalid");
+
+    out_result[0] = 1;
+    auto e3 = ufsecp_gpu_zk_dleq_verify_batch(ctx, proof64, invalid_point65, point65,
+                                              point65, point65, 1, out_result);
+    CHECK(e3 == UFSECP_ERR_GPU_UNSUPPORTED || e3 != UFSECP_OK || out_result[0] == 0,
+          "zk_dleq_verify_batch invalid proof point rejects or marks invalid");
+
+    out_result[0] = 1;
+    auto e4 = ufsecp_gpu_bulletproof_verify_batch(ctx, proof324, point65, point65, 1, out_result);
+    CHECK(e4 == UFSECP_ERR_GPU_UNSUPPORTED || e4 != UFSECP_OK || out_result[0] == 0,
+          "bulletproof_verify_batch invalid proof point rejects or marks invalid");
+
+    auto e5 = ufsecp_gpu_bip324_aead_encrypt_batch(ctx, key32, nonce12, plaintext32,
+                                                   size_too_big, 32, 1, wire51);
+    CHECK(e5 == UFSECP_ERR_GPU_UNSUPPORTED || e5 != UFSECP_OK,
+          "bip324_aead_encrypt_batch invalid oversized packet rejects malformed input");
+
+    out_valid[0] = 1;
+    auto e6 = ufsecp_gpu_bip324_aead_decrypt_batch(ctx, key32, nonce12, wire51,
+                                                   size_too_big, 32, 1, plain_out32, out_valid);
+    CHECK(e6 == UFSECP_ERR_GPU_UNSUPPORTED || e6 != UFSECP_OK || out_valid[0] == 0,
+          "bip324_aead_decrypt_batch invalid oversized packet rejects or marks invalid");
+
+    out_valid[0] = 1;
+    auto e7 = ufsecp_gpu_bip324_aead_decrypt_batch(ctx, key32, nonce12, wire51,
+                                                   size_ok, 32, 1, plain_out32, out_valid);
+    CHECK(e7 == UFSECP_ERR_GPU_UNSUPPORTED || e7 != UFSECP_OK || out_valid[0] == 0,
+          "bip324_aead_decrypt_batch invalid tag rejects or marks invalid");
+}
+
+/* ============================================================================
+ * 8. Unsupported op behavior
  * ============================================================================ */
 static void test_unsupported_ops(ufsecp_gpu_ctx* ctx) {
     std::printf("[gpu_negative] Unsupported op behavior\n");
@@ -251,7 +454,7 @@ static void test_unsupported_ops(ufsecp_gpu_ctx* ctx) {
 }
 
 /* ============================================================================
- * 7. Error string completeness
+ * 9. Error string completeness
  * ============================================================================ */
 static void test_error_strings() {
     std::printf("[gpu_negative] Error strings\n");
@@ -280,7 +483,7 @@ static void test_error_strings() {
 }
 
 /* ============================================================================
- * 8. Backend name edge cases
+ * 10. Backend name edge cases
  * ============================================================================ */
 static void test_backend_names() {
     std::printf("[gpu_negative] Backend names\n");
@@ -320,7 +523,10 @@ int test_gpu_host_api_negative_run() {
 
     test_count_zero(ctx);
     test_null_buffers_nonzero_count(ctx);
+      test_invalid_content_core_ops(ctx);
     test_invalid_device();
+      test_ecrecover_zero_and_invalid(ctx);
+      test_extended_ops_zero_and_invalid(ctx);
     test_unsupported_ops(ctx);
 
     if (ctx) ufsecp_gpu_ctx_destroy(ctx);

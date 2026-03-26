@@ -50,6 +50,53 @@ static inline ufsecp_error_t to_abi_error(GpuError e) {
     return static_cast<ufsecp_error_t>(static_cast<int>(e));
 }
 
+static bool has_valid_compressed_pubkeys(const uint8_t* pubkeys33, size_t count) {
+    for (size_t index = 0; index < count; ++index) {
+        const uint8_t prefix = pubkeys33[index * 33];
+        if (prefix != 0x02 && prefix != 0x03) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool has_valid_uncompressed_pubkeys(const uint8_t* pubkeys65, size_t count) {
+    for (size_t index = 0; index < count; ++index) {
+        if (pubkeys65[index * 65] != 0x04) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool has_valid_recovery_ids(const int* recids, size_t count) {
+    for (size_t index = 0; index < count; ++index) {
+        if (recids[index] < 0 || recids[index] > 3) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool has_valid_bip324_sizes(const uint32_t* sizes, size_t count, uint32_t max_payload) {
+    for (size_t index = 0; index < count; ++index) {
+        if (sizes[index] > max_payload) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool has_valid_bulletproof_prefixes(const uint8_t* proofs324, size_t count) {
+    for (size_t index = 0; index < count; ++index) {
+        const uint8_t* proof = proofs324 + (index * 324);
+        if (proof[0] != 0x04 || proof[65] != 0x04 || proof[130] != 0x04 || proof[195] != 0x04) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /* ===========================================================================
  * Backend & device discovery
  * =========================================================================== */
@@ -232,6 +279,9 @@ ufsecp_error_t ufsecp_gpu_ecdh_batch(
     if (!privkeys32 || !peer_pubkeys33 || !out_secrets32) {
         return UFSECP_ERR_NULL_ARG;
     }
+    if (!has_valid_compressed_pubkeys(peer_pubkeys33, count)) {
+        return UFSECP_ERR_BAD_PUBKEY;
+    }
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
     return to_abi_error(
@@ -249,6 +299,9 @@ ufsecp_error_t ufsecp_gpu_hash160_pubkey_batch(
     if (!ctx) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
     if (!pubkeys33 || !out_hash160) return UFSECP_ERR_NULL_ARG;
+    if (!has_valid_compressed_pubkeys(pubkeys33, count)) {
+        return UFSECP_ERR_BAD_PUBKEY;
+    }
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
     return to_abi_error(
@@ -292,6 +345,11 @@ ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
         !lambda_ie32 || !negate_R || !negate_key || !out_results) {
         return UFSECP_ERR_NULL_ARG;
     }
+    if (!has_valid_compressed_pubkeys(D_i33, count) ||
+        !has_valid_compressed_pubkeys(E_i33, count) ||
+        !has_valid_compressed_pubkeys(Y_i33, count)) {
+        return UFSECP_ERR_BAD_PUBKEY;
+    }
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
     return to_abi_error(
@@ -314,6 +372,9 @@ ufsecp_error_t ufsecp_gpu_ecrecover_batch(
     if (count == 0) return UFSECP_OK;
     if (!msg_hashes32 || !sigs64 || !recids || !out_pubkeys33 || !out_valid) {
         return UFSECP_ERR_NULL_ARG;
+    }
+    if (!has_valid_recovery_ids(recids, count)) {
+        return UFSECP_ERR_BAD_INPUT;
     }
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
@@ -339,6 +400,9 @@ ufsecp_error_t ufsecp_gpu_zk_knowledge_verify_batch(
     if (count == 0) return UFSECP_OK;
     if (!proofs64 || !pubkeys65 || !messages32 || !out_results)
         return UFSECP_ERR_NULL_ARG;
+    if (!has_valid_uncompressed_pubkeys(pubkeys65, count)) {
+        return UFSECP_ERR_BAD_PUBKEY;
+    }
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
     return to_abi_error(
@@ -361,6 +425,12 @@ ufsecp_error_t ufsecp_gpu_zk_dleq_verify_batch(
     if (count == 0) return UFSECP_OK;
     if (!proofs64 || !G_pts65 || !H_pts65 || !P_pts65 || !Q_pts65 || !out_results)
         return UFSECP_ERR_NULL_ARG;
+    if (!has_valid_uncompressed_pubkeys(G_pts65, count) ||
+        !has_valid_uncompressed_pubkeys(H_pts65, count) ||
+        !has_valid_uncompressed_pubkeys(P_pts65, count) ||
+        !has_valid_uncompressed_pubkeys(Q_pts65, count)) {
+        return UFSECP_ERR_BAD_PUBKEY;
+    }
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
     return to_abi_error(
@@ -381,6 +451,11 @@ ufsecp_error_t ufsecp_gpu_bulletproof_verify_batch(
     if (count == 0) return UFSECP_OK;
     if (!proofs324 || !commitments65 || !H_generator65 || !out_results)
         return UFSECP_ERR_NULL_ARG;
+    if (!has_valid_bulletproof_prefixes(proofs324, count) ||
+        !has_valid_uncompressed_pubkeys(commitments65, count) ||
+        !has_valid_uncompressed_pubkeys(H_generator65, 1)) {
+        return UFSECP_ERR_BAD_PUBKEY;
+    }
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
     return to_abi_error(
@@ -407,6 +482,9 @@ ufsecp_error_t ufsecp_gpu_bip324_aead_encrypt_batch(
     if (count == 0) return UFSECP_OK;
     if (!keys32 || !nonces12 || !plaintexts || !sizes || !wire_out)
         return UFSECP_ERR_NULL_ARG;
+    if (!has_valid_bip324_sizes(sizes, count, max_payload)) {
+        return UFSECP_ERR_BAD_INPUT;
+    }
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
     return to_abi_error(
@@ -430,6 +508,9 @@ ufsecp_error_t ufsecp_gpu_bip324_aead_decrypt_batch(
     if (count == 0) return UFSECP_OK;
     if (!keys32 || !nonces12 || !wire_in || !sizes || !plaintext_out || !out_valid)
         return UFSECP_ERR_NULL_ARG;
+    if (!has_valid_bip324_sizes(sizes, count, max_payload)) {
+        return UFSECP_ERR_BAD_INPUT;
+    }
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
     return to_abi_error(

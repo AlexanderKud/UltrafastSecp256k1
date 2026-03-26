@@ -28,6 +28,67 @@ and `docs/SECURITY_CLAIMS.md` whenever CT-layer secret surfaces change.
 
 ---
 
+## CT-Routed C ABI Surface
+
+The audit gate treats the graph's `abi_routing` table as the routing source of
+truth for secret-bearing C ABI entry points. The functions below are the
+currently documented CT-routed ABI surface together with the routed internal
+operation recorded by the graph.
+
+| C ABI Function | Routed Internal Operation |
+|----------------|---------------------------|
+| `ufsecp_bip32_derive` | `CKD_priv or CKD_pub` |
+| `ufsecp_bip32_derive_path` | `multi-level CKD` |
+| `ufsecp_bip32_master` | `HMAC-SHA512(seed)` |
+| `ufsecp_bip32_privkey` | `ExtendedKey::privkey()` |
+| `ufsecp_bip39_generate` | `bip39_generate(strength)` |
+| `ufsecp_bip39_to_seed` | `PBKDF2-SHA512(mnemonic, passphrase)` |
+| `ufsecp_btc_message_sign` | `btc_message_sign(msg, sk)` |
+| `ufsecp_coin_hd_derive` | `coin_hd_derive(coin, xprv, path)` |
+| `ufsecp_ecdh` | `ct::scalar_mul(pubkey, sk)` |
+| `ufsecp_ecdh_raw` | `ct::scalar_mul + raw output` |
+| `ufsecp_ecdh_xonly` | `ct::scalar_mul + x-only output` |
+| `ufsecp_ecdsa_adaptor_adapt` | `ecdsa_adaptor_adapt` |
+| `ufsecp_ecdsa_adaptor_sign` | `ct::ecdsa_adaptor_sign(sk)` |
+| `ufsecp_ecdsa_sign` | `ct::ecdsa_sign(msg, sk)` |
+| `ufsecp_ecdsa_sign_recoverable` | `ct::ecdsa_sign + recovery_id` |
+| `ufsecp_ecdsa_sign_verified` | `ct::ecdsa_sign + ecdsa_verify` |
+| `ufsecp_ecies_decrypt` | `ecies_decrypt(sk, ciphertext)` |
+| `ufsecp_ecies_encrypt` | `ecies_encrypt(pubkey, msg)` |
+| `ufsecp_eth_sign` | `ct::ecdsa_sign(keccak(msg), sk) + v` |
+| `ufsecp_frost_keygen_begin` | `frost_keygen_begin` |
+| `ufsecp_frost_sign` | `ct::frost_sign(sk, nonce)` |
+| `ufsecp_frost_sign_nonce_gen` | `frost_sign_nonce_gen` |
+| `ufsecp_musig2_nonce_gen` | `musig2_nonce_gen(sk)` |
+| `ufsecp_musig2_partial_sign` | `ct::musig2_partial_sign(sk)` |
+| `ufsecp_musig2_start_sign_session` | `musig2_session_init` |
+| `ufsecp_pedersen_blind_sum` | `blind factor sum` |
+| `ufsecp_pubkey_create` | `ct::generator_mul(sk)` |
+| `ufsecp_pubkey_create_uncompressed` | `ct::generator_mul(sk)` |
+| `ufsecp_pubkey_xonly` | `schnorr_pubkey(sk)` |
+| `ufsecp_schnorr_adaptor_adapt` | `adaptor_adapt(pre_sig, secret)` |
+| `ufsecp_schnorr_adaptor_sign` | `ct::adaptor_sign(sk)` |
+| `ufsecp_schnorr_keypair` | `generate_schnorr_keypair(sk)` |
+| `ufsecp_schnorr_sign` | `ct::schnorr_sign(msg, sk)` |
+| `ufsecp_schnorr_sign_verified` | `ct::schnorr_sign + schnorr_verify` |
+| `ufsecp_seckey_negate` | `Scalar::negate` |
+| `ufsecp_seckey_tweak_add` | `ct scalar add + validate` |
+| `ufsecp_seckey_tweak_mul` | `ct scalar mul + validate` |
+| `ufsecp_seckey_verify` | `Scalar::parse_bytes_strict_nonzero` |
+| `ufsecp_silent_payment_create_output` | `silent_payment_create_output` |
+| `ufsecp_silent_payment_scan` | `silent_payment_scan` |
+| `ufsecp_taproot_tweak_seckey` | `taproot_tweak_seckey(sk, merkle)` |
+| `ufsecp_zk_dleq_prove` | `dleq_prove(sk)` |
+| `ufsecp_zk_knowledge_prove` | `prove_knowledge(sk)` |
+| `ufsecp_zk_range_proof_create` | `create_range_proof` |
+
+These entries are routing and review anchors, not stand-alone proof claims.
+They document which exported secret-bearing APIs are expected to stay on the CT
+path and which internal CT-sensitive primitive or wrapper currently implements
+that route.
+
+---
+
 ## CT Layer Architecture
 
 ### CPU CT Layer
