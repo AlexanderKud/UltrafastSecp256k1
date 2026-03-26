@@ -172,9 +172,11 @@ stated.
 
 ### 5. Owner-Grade Evidence Bundle Builder
 
-Need:
+Current progress:
 
-- `scripts/build_owner_audit_bundle.py`
+1. `scripts/build_owner_audit_bundle.py` now composes the current audit gate, assurance validation, failure-matrix reports, CT evidence summary, benchmark publishability state, GPU backend evidence, and latest available audit summary into one JSON + text bundle.
+2. The bundle builder fails closed when mandatory artifacts such as `audit_report.json` or the composed JSON summaries are missing.
+3. Benchmark publishability drift is now surfaced alongside the owner-grade bundle so policy-vs-workflow mismatches are visible in the same report instead of being buried across docs and workflows.
 
 What it should do:
 

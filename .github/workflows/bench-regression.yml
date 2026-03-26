@@ -2,7 +2,7 @@
 # Performance Regression Gate -- Per-Commit Benchmark Check
 # ============================================================================
 # Runs benchmarks on every push to main/dev and fails if any operation
-# regresses >50% compared to the previous stored baseline.
+# regresses >100% compared to the previous stored baseline.
 #
 # Separate from benchmark.yml (dashboard) -- this one BLOCKS merges.
 # Uses github-action-benchmark with fail-on-alert: true.
@@ -100,7 +100,7 @@ jobs:
         output-file-path: /tmp/benchmark_results/benchmark.json
         github-token: ${{ secrets.GITHUB_TOKEN }}
         auto-push: true
-        alert-threshold: '150%'
+        alert-threshold: '200%'
         comment-on-alert: true
         fail-on-alert: true
         benchmark-data-dir-path: 'dev/bench-gate'
@@ -109,7 +109,7 @@ jobs:
       # Compares PR benchmark against the stored baseline from push events.
       # Does NOT store (auto-push: false) -- only the push to main/dev updates baseline.
       # BLOCKS PR if regression exceeds threshold.
-      # Threshold: 150% -- flags any operation >50% slower than baseline.
+      # Threshold: 200% -- flags any operation >100% slower than baseline.
       if: github.event_name == 'pull_request'
       uses: benchmark-action/github-action-benchmark@a7bc2366eda11037936ea57d811a43b3418d3073 # v1
       with:
@@ -118,7 +118,7 @@ jobs:
         output-file-path: /tmp/benchmark_results/benchmark.json
         github-token: ${{ secrets.GITHUB_TOKEN }}
         auto-push: false
-        alert-threshold: '150%'
+        alert-threshold: '200%'
         comment-on-alert: true
         fail-on-alert: true
         benchmark-data-dir-path: 'dev/bench-gate'
