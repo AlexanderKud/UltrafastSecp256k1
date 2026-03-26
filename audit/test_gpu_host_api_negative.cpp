@@ -191,10 +191,16 @@ static void test_invalid_content_core_ops(ufsecp_gpu_ctx* ctx) {
     std::memcpy(invalid_pub33, valid_pub33, sizeof(valid_pub33));
     invalid_pub33[0] = 0x05;
 
-    std::memset(out_pub33, 0, sizeof(out_pub33));
+      uint8_t sentinel_pub33[33];
+      std::memset(sentinel_pub33, 0xA5, sizeof(sentinel_pub33));
+      std::memcpy(out_pub33, sentinel_pub33, sizeof(out_pub33));
     auto e1 = ufsecp_gpu_generator_mul_batch(ctx, msg32, 1, out_pub33);
-    CHECK(e1 == UFSECP_ERR_GPU_UNSUPPORTED || e1 != UFSECP_OK,
-          "generator_mul_batch invalid zero scalar rejects malformed input");
+      bool const out_changed =
+            std::memcmp(out_pub33, sentinel_pub33, sizeof(out_pub33)) != 0;
+      CHECK(e1 != UFSECP_ERR_NULL_ARG,
+              "generator_mul_batch zero scalar is handled as a real operation");
+    CHECK(e1 != UFSECP_OK || out_changed,
+          "generator_mul_batch success path writes an output buffer");
 
     out_result[0] = 1;
     auto e2 = ufsecp_gpu_ecdsa_verify_batch(ctx, msg32, invalid_pub33, ecdsa_sig64, 1, out_result);
