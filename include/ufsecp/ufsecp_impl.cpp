@@ -2332,6 +2332,8 @@ ufsecp_error_t ufsecp_musig2_key_agg(ufsecp_ctx* ctx,
                                      uint8_t keyagg_out[UFSECP_MUSIG2_KEYAGG_LEN],
                                      uint8_t agg_pubkey32_out[32]) {
     if (!ctx || !pubkeys || !keyagg_out || !agg_pubkey32_out) return UFSECP_ERR_NULL_ARG;
+    std::memset(keyagg_out, 0, UFSECP_MUSIG2_KEYAGG_LEN);
+    std::memset(agg_pubkey32_out, 0, 32);
     if (n < 2) return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "need >= 2 pubkeys");
     if (n > kMuSig2MaxKeyAggParticipants) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "too many pubkeys for keyagg blob");
@@ -2396,6 +2398,7 @@ ufsecp_error_t ufsecp_musig2_nonce_agg(ufsecp_ctx* ctx,
                                        const uint8_t* pubnonces, size_t n,
                                        uint8_t aggnonce_out[UFSECP_MUSIG2_AGGNONCE_LEN]) {
     if (!ctx || !pubnonces || !aggnonce_out) return UFSECP_ERR_NULL_ARG;
+    std::memset(aggnonce_out, 0, UFSECP_MUSIG2_AGGNONCE_LEN);
     if (n < 2) return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "need >= 2 nonces");
     if (n > kMaxBatchN) return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "nonce count too large");
     ctx_clear_err(ctx);
@@ -2432,6 +2435,7 @@ ufsecp_error_t ufsecp_musig2_start_sign_session(
     const uint8_t msg32[32],
     uint8_t session_out[UFSECP_MUSIG2_SESSION_LEN]) {
     if (!ctx || !aggnonce || !keyagg || !msg32 || !session_out) return UFSECP_ERR_NULL_ARG;
+    std::memset(session_out, 0, UFSECP_MUSIG2_SESSION_LEN);
     ctx_clear_err(ctx);
     /* Deserialize agg nonce */
     secp256k1::MuSig2AggNonce an;

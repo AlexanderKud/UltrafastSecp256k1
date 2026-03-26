@@ -31,7 +31,9 @@ std::array<std::uint8_t, 32> hmac_sha256(
         auto h = SHA256::hash(key, key_len);
         std::memcpy(k_buf, h.data(), 32);
     } else {
-        std::memcpy(k_buf, key, key_len);
+        if (key_len > 0) {
+            std::memcpy(k_buf, key, key_len);
+        }
     }
 
     std::uint8_t ipad[64], opad[64];
@@ -43,7 +45,9 @@ std::array<std::uint8_t, 32> hmac_sha256(
     // inner = SHA256(ipad || data)
     SHA256 inner;
     inner.update(ipad, 64);
-    inner.update(data, data_len);
+    if (data_len > 0) {
+        inner.update(data, data_len);
+    }
     auto inner_hash = inner.finalize();
 
     // outer = SHA256(opad || inner_hash)
