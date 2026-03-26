@@ -1,0 +1,3792 @@
+{
+  "generated_at": "2026-03-26T14:40:50.006162+00:00",
+  "header_count": 155,
+  "blocking_function_count": 131,
+  "coverage_counts": {
+    "null_rejection": 155,
+    "zero_edge": 15,
+    "invalid_content": 25,
+    "success_smoke": 132
+  },
+  "functions": [
+    {
+      "function": "ufsecp_addr_p2pkh",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_addr_p2pkh(ufsecp_ctx* ctx, const uint8_t pubkey33[33], int network, char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_addr_p2tr",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_addr_p2tr(ufsecp_ctx* ctx, const uint8_t internal_key_x[32], int network, char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_addr_p2wpkh",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_addr_p2wpkh(ufsecp_ctx* ctx, const uint8_t pubkey33[33], int network, char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_aead_chacha20_poly1305_decrypt",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_aead_chacha20_poly1305_decrypt( const uint8_t key[32], const uint8_t nonce[12], const uint8_t* aad, size_t aad_len, const uint8_t* ciphertext, size_t ciphertext_len, const uint8_t tag[16], uint8_t* out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_aead_chacha20_poly1305_encrypt",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_aead_chacha20_poly1305_encrypt( const uint8_t key[32], const uint8_t nonce[12], const uint8_t* aad, size_t aad_len, const uint8_t* plaintext, size_t plaintext_len, uint8_t* out, uint8_t tag[16])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_bip143_p2wpkh_script_code",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip143_p2wpkh_script_code( const uint8_t pubkey_hash[20], uint8_t script_code_out[25])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip143_sighash",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip143_sighash( ufsecp_ctx* ctx, uint32_t version, const uint8_t hash_prevouts[32], const uint8_t hash_sequence[32], const uint8_t outpoint_txid[32], uint32_t outpoint_vout, const uint8_t* script_code, size_t script_code_len, uint64_t value, uint32_t sequence, const uint8_t hash_outputs[32], uint32_t locktime, uint32_t sighash_type, uint8_t sighash_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip144_txid",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip144_txid( ufsecp_ctx* ctx, const uint8_t* raw_tx, size_t raw_tx_len, uint8_t txid_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip144_witness_commitment",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip144_witness_commitment( const uint8_t witness_root[32], const uint8_t witness_nonce[32], uint8_t commitment_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip144_wtxid",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip144_wtxid( ufsecp_ctx* ctx, const uint8_t* raw_tx, size_t raw_tx_len, uint8_t wtxid_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip324_create",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip324_create( ufsecp_ctx* ctx, int initiator, ufsecp_bip324_session** session_out, uint8_t ellswift64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip324_decrypt",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip324_decrypt( ufsecp_bip324_session* session, const uint8_t* encrypted, size_t encrypted_len, uint8_t* plaintext_out, size_t* plaintext_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip324_destroy",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "void ufsecp_bip324_destroy(ufsecp_bip324_session* session)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip324_encrypt",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip324_encrypt( ufsecp_bip324_session* session, const uint8_t* plaintext, size_t plaintext_len, uint8_t* out, size_t* out_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip324_handshake",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip324_handshake( ufsecp_bip324_session* session, const uint8_t peer_ellswift64[64], uint8_t session_id32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_bip32_derive",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip32_derive(ufsecp_ctx* ctx, const ufsecp_bip32_key* parent, uint32_t index, ufsecp_bip32_key* child_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip32_derive_path",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip32_derive_path(ufsecp_ctx* ctx, const ufsecp_bip32_key* master, const char* path, ufsecp_bip32_key* key_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip32_master",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip32_master(ufsecp_ctx* ctx, const uint8_t* seed, size_t seed_len, ufsecp_bip32_key* key_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip32_privkey",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip32_privkey(ufsecp_ctx* ctx, const ufsecp_bip32_key* key, uint8_t privkey32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip32_pubkey",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip32_pubkey(ufsecp_ctx* ctx, const ufsecp_bip32_key* key, uint8_t pubkey33_out[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip39_generate",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip39_generate(ufsecp_ctx* ctx, size_t entropy_bytes, const uint8_t* entropy_in, char* mnemonic_out, size_t* mnemonic_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip39_to_entropy",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip39_to_entropy(ufsecp_ctx* ctx, const char* mnemonic, uint8_t* entropy_out, size_t* entropy_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip39_to_seed",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip39_to_seed(ufsecp_ctx* ctx, const char* mnemonic, const char* passphrase, uint8_t seed64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_bip39_validate",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip39_validate(const ufsecp_ctx* ctx, const char* mnemonic)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_btc_message_hash",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_btc_message_hash( const uint8_t* msg, size_t msg_len, uint8_t digest32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_btc_message_sign",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_btc_message_sign( ufsecp_ctx* ctx, const uint8_t* msg, size_t msg_len, const uint8_t privkey[32], char* base64_out, size_t* base64_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_btc_message_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_btc_message_verify( ufsecp_ctx* ctx, const uint8_t* msg, size_t msg_len, const uint8_t pubkey33[33], const char* base64_sig)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_coin_address",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_coin_address( ufsecp_ctx* ctx, const uint8_t pubkey33[33], uint32_t coin_type, int testnet, char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_coin_derive_from_seed",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_coin_derive_from_seed( ufsecp_ctx* ctx, const uint8_t* seed, size_t seed_len, uint32_t coin_type, uint32_t account, int change, uint32_t index, int testnet, uint8_t* privkey32_out, uint8_t* pubkey33_out, char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_coin_wif_encode",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_coin_wif_encode( ufsecp_ctx* ctx, const uint8_t privkey[32], uint32_t coin_type, int testnet, char* wif_out, size_t* wif_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ctx_clone",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ctx_clone(const ufsecp_ctx* src, ufsecp_ctx** ctx_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_ctx_create",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ctx_create(ufsecp_ctx** ctx_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ctx_destroy",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "void ufsecp_ctx_destroy(ufsecp_ctx* ctx)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_ctx_size",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "size_t ufsecp_ctx_size(void)",
+      "required_checks": [
+        "success_smoke"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_ecdh",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdh(ufsecp_ctx* ctx, const uint8_t privkey[32], const uint8_t pubkey33[33], uint8_t secret32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdh_raw",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdh_raw(ufsecp_ctx* ctx, const uint8_t privkey[32], const uint8_t pubkey33[33], uint8_t secret32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdh_xonly",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdh_xonly(ufsecp_ctx* ctx, const uint8_t privkey[32], const uint8_t pubkey33[33], uint8_t secret32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_adaptor_adapt",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_adaptor_adapt( ufsecp_ctx* ctx, const uint8_t pre_sig[UFSECP_ECDSA_ADAPTOR_SIG_LEN], const uint8_t adaptor_secret[32], uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_adaptor_extract",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_adaptor_extract( ufsecp_ctx* ctx, const uint8_t pre_sig[UFSECP_ECDSA_ADAPTOR_SIG_LEN], const uint8_t sig64[64], uint8_t secret32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_adaptor_sign",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_adaptor_sign( ufsecp_ctx* ctx, const uint8_t privkey[32], const uint8_t msg32[32], const uint8_t adaptor_point33[33], uint8_t pre_sig_out[UFSECP_ECDSA_ADAPTOR_SIG_LEN])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_adaptor_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_adaptor_verify( ufsecp_ctx* ctx, const uint8_t pre_sig[UFSECP_ECDSA_ADAPTOR_SIG_LEN], const uint8_t pubkey33[33], const uint8_t msg32[32], const uint8_t adaptor_point33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_batch_identify_invalid",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_batch_identify_invalid( ufsecp_ctx* ctx, const uint8_t* entries, size_t n, size_t* invalid_out, size_t* invalid_count)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_batch_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_batch_verify( ufsecp_ctx* ctx, const uint8_t* entries, size_t n)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_ecdsa_recover",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_recover(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t sig64[64], int recid, uint8_t pubkey33_out[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_ecdsa_sig_from_der",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_sig_from_der(ufsecp_ctx* ctx, const uint8_t* der, size_t der_len, uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_sig_to_der",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_sig_to_der(ufsecp_ctx* ctx, const uint8_t sig64[64], uint8_t* der_out, size_t* der_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_sign",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_sign(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t privkey[32], uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_sign_batch",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_sign_batch( ufsecp_ctx* ctx, size_t count, const uint8_t* msgs32, const uint8_t* privkeys32, uint8_t* sigs64_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_sign_recoverable",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_sign_recoverable( ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t privkey[32], uint8_t sig64_out[64], int* recid_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_sign_verified",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_sign_verified(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t privkey[32], uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecdsa_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecdsa_verify(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t sig64[64], const uint8_t pubkey33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecies_decrypt",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecies_decrypt( ufsecp_ctx* ctx, const uint8_t privkey[32], const uint8_t* envelope, size_t envelope_len, uint8_t* plaintext_out, size_t* plaintext_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ecies_encrypt",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ecies_encrypt( ufsecp_ctx* ctx, const uint8_t recipient_pubkey33[33], const uint8_t* plaintext, size_t plaintext_len, uint8_t* envelope_out, size_t* envelope_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ellswift_create",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ellswift_create( ufsecp_ctx* ctx, const uint8_t privkey[32], uint8_t encoding64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_ellswift_xdh",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_ellswift_xdh( ufsecp_ctx* ctx, const uint8_t ell_a64[64], const uint8_t ell_b64[64], const uint8_t our_privkey[32], int initiating, uint8_t secret32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_eth_address",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_eth_address(ufsecp_ctx* ctx, const uint8_t pubkey33[33], uint8_t addr20_out[20])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_eth_address_checksummed",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_eth_address_checksummed( ufsecp_ctx* ctx, const uint8_t pubkey33[33], char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_eth_ecrecover",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_eth_ecrecover(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t r[32], const uint8_t s[32], uint64_t v, uint8_t addr20_out[20])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_eth_personal_hash",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_eth_personal_hash(const uint8_t* msg, size_t msg_len, uint8_t digest32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_eth_sign",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_eth_sign(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t privkey[32], uint8_t r_out[32], uint8_t s_out[32], uint64_t* v_out, uint64_t chain_id)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_frost_aggregate",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_frost_aggregate( ufsecp_ctx* ctx, const uint8_t* partial_sigs, size_t n, const uint8_t* nonce_commits, size_t n_signers, const uint8_t group_pubkey33[33], const uint8_t msg32[32], uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_frost_keygen_begin",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_frost_keygen_begin( ufsecp_ctx* ctx, uint32_t participant_id, uint32_t threshold, uint32_t num_participants, const uint8_t seed[32], uint8_t* commits_out, size_t* commits_len, uint8_t* shares_out, size_t* shares_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_frost_keygen_finalize",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_frost_keygen_finalize( ufsecp_ctx* ctx, uint32_t participant_id, const uint8_t* all_commits, size_t commits_len, const uint8_t* received_shares, size_t shares_len, uint32_t threshold, uint32_t num_participants, uint8_t keypkg_out[UFSECP_FROST_KEYPKG_LEN])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_frost_sign",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_frost_sign( ufsecp_ctx* ctx, const uint8_t keypkg[UFSECP_FROST_KEYPKG_LEN], const uint8_t nonce[UFSECP_FROST_NONCE_LEN], const uint8_t msg32[32], const uint8_t* nonce_commits, size_t n_signers, uint8_t partial_sig_out[36])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_frost_sign_nonce_gen",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_frost_sign_nonce_gen( ufsecp_ctx* ctx, uint32_t participant_id, const uint8_t nonce_seed[32], uint8_t nonce_out[UFSECP_FROST_NONCE_LEN], uint8_t nonce_commit_out[UFSECP_FROST_NONCE_COMMIT_LEN])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_frost_verify_partial",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_frost_verify_partial( ufsecp_ctx* ctx, const uint8_t partial_sig[36], const uint8_t verification_share33[33], const uint8_t* nonce_commits, size_t n_signers, const uint8_t msg32[32], const uint8_t group_pubkey33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_backend_count",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "uint32_t ufsecp_gpu_backend_count(uint32_t* backend_ids, uint32_t max_ids)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_backend_name",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "const char* ufsecp_gpu_backend_name(uint32_t backend_id)",
+      "required_checks": [
+        "success_smoke",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_bip324_aead_decrypt_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_bip324_aead_decrypt_batch( ufsecp_gpu_ctx* ctx, const uint8_t* keys32, const uint8_t* nonces12, const uint8_t* wire_in, const uint32_t* sizes, uint32_t max_payload, size_t count, uint8_t* plaintext_out, uint8_t* out_valid)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_bip324_aead_encrypt_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_bip324_aead_encrypt_batch( ufsecp_gpu_ctx* ctx, const uint8_t* keys32, const uint8_t* nonces12, const uint8_t* plaintexts, const uint32_t* sizes, uint32_t max_payload, size_t count, uint8_t* wire_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_bulletproof_verify_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_bulletproof_verify_batch( ufsecp_gpu_ctx* ctx, const uint8_t* proofs324, const uint8_t* commitments65, const uint8_t* H_generator65, size_t count, uint8_t* out_results)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_ctx_create",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_ctx_create( ufsecp_gpu_ctx** ctx_out, uint32_t backend_id, uint32_t device_index)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_ctx_destroy",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "void ufsecp_gpu_ctx_destroy(ufsecp_gpu_ctx* ctx)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_device_count",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "uint32_t ufsecp_gpu_device_count(uint32_t backend_id)",
+      "required_checks": [
+        "success_smoke",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_device_info",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_device_info( uint32_t backend_id, uint32_t device_index, ufsecp_gpu_device_info_t* info_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_ecdh_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_ecdh_batch( ufsecp_gpu_ctx* ctx, const uint8_t* privkeys32, const uint8_t* peer_pubkeys33, size_t count, uint8_t* out_secrets32)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_ecdsa_verify_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_ecdsa_verify_batch( ufsecp_gpu_ctx* ctx, const uint8_t* msg_hashes32, const uint8_t* pubkeys33, const uint8_t* sigs64, size_t count, uint8_t* out_results)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_ecrecover_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_ecrecover_batch( ufsecp_gpu_ctx* ctx, const uint8_t* msg_hashes32, const uint8_t* sigs64, const int* recids, size_t count, uint8_t* out_pubkeys33, uint8_t* out_valid)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_error_str",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "const char* ufsecp_gpu_error_str(ufsecp_error_t err)",
+      "required_checks": [
+        "success_smoke"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_frost_verify_partial_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch( ufsecp_gpu_ctx* ctx, const uint8_t* z_i32, const uint8_t* D_i33, const uint8_t* E_i33, const uint8_t* Y_i33, const uint8_t* rho_i32, const uint8_t* lambda_ie32, const uint8_t* negate_R, const uint8_t* negate_key, size_t count, uint8_t* out_results)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_generator_mul_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_generator_mul_batch( ufsecp_gpu_ctx* ctx, const uint8_t* scalars32, size_t count, uint8_t* out_pubkeys33)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_hash160_pubkey_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_hash160_pubkey_batch( ufsecp_gpu_ctx* ctx, const uint8_t* pubkeys33, size_t count, uint8_t* out_hash160)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_is_available",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "int ufsecp_gpu_is_available(uint32_t backend_id)",
+      "required_checks": [
+        "success_smoke",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_last_error",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_last_error(const ufsecp_gpu_ctx* ctx)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_last_error_msg",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "const char* ufsecp_gpu_last_error_msg(const ufsecp_gpu_ctx* ctx)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_msm",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_msm( ufsecp_gpu_ctx* ctx, const uint8_t* scalars32, const uint8_t* points33, size_t n, uint8_t* out_result33)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_schnorr_verify_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_schnorr_verify_batch( ufsecp_gpu_ctx* ctx, const uint8_t* msg_hashes32, const uint8_t* pubkeys_x32, const uint8_t* sigs64, size_t count, uint8_t* out_results)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_zk_dleq_verify_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_zk_dleq_verify_batch( ufsecp_gpu_ctx* ctx, const uint8_t* proofs64, const uint8_t* G_pts65, const uint8_t* H_pts65, const uint8_t* P_pts65, const uint8_t* Q_pts65, size_t count, uint8_t* out_results)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_gpu_zk_knowledge_verify_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_zk_knowledge_verify_batch( ufsecp_gpu_ctx* ctx, const uint8_t* proofs64, const uint8_t* pubkeys65, const uint8_t* messages32, size_t count, uint8_t* out_results)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ]
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_hash160",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_hash160(const uint8_t* data, size_t len, uint8_t digest20_out[20])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_keccak256",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_keccak256(const uint8_t* data, size_t len, uint8_t digest32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_last_error",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_last_error(const ufsecp_ctx* ctx)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_last_error_msg",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "const char* ufsecp_last_error_msg(const ufsecp_ctx* ctx)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_multi_scalar_mul",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_multi_scalar_mul( ufsecp_ctx* ctx, const uint8_t* scalars, const uint8_t* points, size_t n, uint8_t out33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_musig2_key_agg",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_musig2_key_agg( ufsecp_ctx* ctx, const uint8_t* pubkeys, size_t n, uint8_t keyagg_out[UFSECP_MUSIG2_KEYAGG_LEN], uint8_t agg_pubkey32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_musig2_nonce_agg",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_musig2_nonce_agg( ufsecp_ctx* ctx, const uint8_t* pubnonces, size_t n, uint8_t aggnonce_out[UFSECP_MUSIG2_AGGNONCE_LEN])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_musig2_nonce_gen",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_musig2_nonce_gen( ufsecp_ctx* ctx, const uint8_t privkey[32], const uint8_t pubkey32[32], const uint8_t agg_pubkey32[32], const uint8_t msg32[32], const uint8_t extra_in[32], uint8_t secnonce_out[UFSECP_MUSIG2_SECNONCE_LEN], uint8_t pubnonce_out[UFSECP_MUSIG2_PUBNONCE_LEN])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_musig2_partial_sig_agg",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_musig2_partial_sig_agg( ufsecp_ctx* ctx, const uint8_t* partial_sigs, size_t n, const uint8_t session[UFSECP_MUSIG2_SESSION_LEN], uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_musig2_partial_sign",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_musig2_partial_sign( ufsecp_ctx* ctx, uint8_t secnonce[UFSECP_MUSIG2_SECNONCE_LEN], const uint8_t privkey[32], const uint8_t keyagg[UFSECP_MUSIG2_KEYAGG_LEN], const uint8_t session[UFSECP_MUSIG2_SESSION_LEN], size_t signer_index, uint8_t partial_sig32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_musig2_partial_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_musig2_partial_verify( ufsecp_ctx* ctx, const uint8_t partial_sig32[32], const uint8_t pubnonce[UFSECP_MUSIG2_PUBNONCE_LEN], const uint8_t pubkey32[32], const uint8_t keyagg[UFSECP_MUSIG2_KEYAGG_LEN], const uint8_t session[UFSECP_MUSIG2_SESSION_LEN], size_t signer_index)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_musig2_start_sign_session",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_musig2_start_sign_session( ufsecp_ctx* ctx, const uint8_t aggnonce[UFSECP_MUSIG2_AGGNONCE_LEN], const uint8_t keyagg[UFSECP_MUSIG2_KEYAGG_LEN], const uint8_t msg32[32], uint8_t session_out[UFSECP_MUSIG2_SESSION_LEN])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pedersen_blind_sum",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pedersen_blind_sum( ufsecp_ctx* ctx, const uint8_t* blinds_in, size_t n_in, const uint8_t* blinds_out, size_t n_out, uint8_t sum32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pedersen_commit",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pedersen_commit( ufsecp_ctx* ctx, const uint8_t value[32], const uint8_t blinding[32], uint8_t commitment33_out[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_pedersen_switch_commit",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pedersen_switch_commit( ufsecp_ctx* ctx, const uint8_t value[32], const uint8_t blinding[32], const uint8_t switch_blind[32], uint8_t commitment33_out[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_pedersen_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pedersen_verify( ufsecp_ctx* ctx, const uint8_t commitment33[33], const uint8_t value[32], const uint8_t blinding[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pedersen_verify_sum",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pedersen_verify_sum( ufsecp_ctx* ctx, const uint8_t* pos, size_t n_pos, const uint8_t* neg, size_t n_neg)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pubkey_add",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pubkey_add(ufsecp_ctx* ctx, const uint8_t a33[33], const uint8_t b33[33], uint8_t out33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_pubkey_combine",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pubkey_combine(ufsecp_ctx* ctx, const uint8_t* pubkeys, size_t n, uint8_t out33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pubkey_create",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pubkey_create(ufsecp_ctx* ctx, const uint8_t privkey[32], uint8_t pubkey33_out[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pubkey_create_uncompressed",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pubkey_create_uncompressed( ufsecp_ctx* ctx, const uint8_t privkey[32], uint8_t pubkey65_out[65])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pubkey_negate",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pubkey_negate(ufsecp_ctx* ctx, const uint8_t pubkey33[33], uint8_t out33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pubkey_parse",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pubkey_parse(ufsecp_ctx* ctx, const uint8_t* input, size_t input_len, uint8_t pubkey33_out[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pubkey_tweak_add",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pubkey_tweak_add(ufsecp_ctx* ctx, const uint8_t pubkey33[33], const uint8_t tweak[32], uint8_t out33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pubkey_tweak_mul",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pubkey_tweak_mul(ufsecp_ctx* ctx, const uint8_t pubkey33[33], const uint8_t tweak[32], uint8_t out33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_pubkey_xonly",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_pubkey_xonly(ufsecp_ctx* ctx, const uint8_t privkey[32], uint8_t xonly32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_schnorr_adaptor_adapt",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_adaptor_adapt( ufsecp_ctx* ctx, const uint8_t pre_sig[UFSECP_SCHNORR_ADAPTOR_SIG_LEN], const uint8_t adaptor_secret[32], uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_schnorr_adaptor_extract",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_adaptor_extract( ufsecp_ctx* ctx, const uint8_t pre_sig[UFSECP_SCHNORR_ADAPTOR_SIG_LEN], const uint8_t sig64[64], uint8_t secret32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_schnorr_adaptor_sign",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_adaptor_sign( ufsecp_ctx* ctx, const uint8_t privkey[32], const uint8_t msg32[32], const uint8_t adaptor_point33[33], const uint8_t aux_rand[32], uint8_t pre_sig_out[UFSECP_SCHNORR_ADAPTOR_SIG_LEN])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_schnorr_adaptor_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_adaptor_verify( ufsecp_ctx* ctx, const uint8_t pre_sig[UFSECP_SCHNORR_ADAPTOR_SIG_LEN], const uint8_t pubkey_x[32], const uint8_t msg32[32], const uint8_t adaptor_point33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_schnorr_batch_identify_invalid",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_batch_identify_invalid( ufsecp_ctx* ctx, const uint8_t* entries, size_t n, size_t* invalid_out, size_t* invalid_count)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_schnorr_batch_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_batch_verify( ufsecp_ctx* ctx, const uint8_t* entries, size_t n)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_schnorr_sign",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_sign(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t privkey[32], const uint8_t aux_rand[32], uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_schnorr_sign_batch",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_sign_batch( ufsecp_ctx* ctx, size_t count, const uint8_t* msgs32, const uint8_t* privkeys32, const uint8_t* aux_rands32, uint8_t* sigs64_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_schnorr_sign_verified",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_sign_verified(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t privkey[32], const uint8_t aux_rand[32], uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section I: Remaining ABI Surface (v3.23+)"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_schnorr_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_verify(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t sig64[64], const uint8_t pubkey_x[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_seckey_negate",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_seckey_negate(ufsecp_ctx* ctx, uint8_t privkey[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_seckey_tweak_add",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_seckey_tweak_add(ufsecp_ctx* ctx, uint8_t privkey[32], const uint8_t tweak[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_seckey_tweak_mul",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_seckey_tweak_mul(ufsecp_ctx* ctx, uint8_t privkey[32], const uint8_t tweak[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_seckey_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_seckey_verify(const ufsecp_ctx* ctx, const uint8_t privkey[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_segwit_is_witness_program",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "int ufsecp_segwit_is_witness_program( const uint8_t* script, size_t script_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_segwit_p2tr_spk",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_segwit_p2tr_spk( const uint8_t output_key[32], uint8_t spk_out[34])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_segwit_p2wpkh_spk",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_segwit_p2wpkh_spk( const uint8_t pubkey_hash[20], uint8_t spk_out[22])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_segwit_p2wsh_spk",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_segwit_p2wsh_spk( const uint8_t script_hash[32], uint8_t spk_out[34])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_segwit_parse_program",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_segwit_parse_program( const uint8_t* script, size_t script_len, int* version_out, uint8_t* program_out, size_t* program_len_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_segwit_witness_script_hash",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_segwit_witness_script_hash( const uint8_t* script, size_t script_len, uint8_t hash_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_sha256",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_sha256(const uint8_t* data, size_t len, uint8_t digest32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_sha512",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_sha512(const uint8_t* data, size_t len, uint8_t digest64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_shamir_trick",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_shamir_trick( ufsecp_ctx* ctx, const uint8_t a[32], const uint8_t P33[33], const uint8_t b[32], const uint8_t Q33[33], uint8_t out33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_silent_payment_address",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_silent_payment_address( ufsecp_ctx* ctx, const uint8_t scan_privkey[32], const uint8_t spend_privkey[32], uint8_t scan_pubkey33_out[33], uint8_t spend_pubkey33_out[33], char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_silent_payment_create_output",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_silent_payment_create_output( ufsecp_ctx* ctx, const uint8_t* input_privkeys, size_t n_inputs, const uint8_t scan_pubkey33[33], const uint8_t spend_pubkey33[33], uint32_t k, uint8_t output_pubkey33_out[33], uint8_t* tweak32_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_silent_payment_scan",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_silent_payment_scan( ufsecp_ctx* ctx, const uint8_t scan_privkey[32], const uint8_t spend_privkey[32], const uint8_t* input_pubkeys33, size_t n_input_pubkeys, const uint8_t* output_xonly32, size_t n_outputs, uint32_t* found_indices_out, uint8_t* found_privkeys_out, size_t* n_found)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_tagged_hash",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_tagged_hash(const char* tag, const uint8_t* data, size_t len, uint8_t digest32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_taproot_keypath_sighash",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_taproot_keypath_sighash( ufsecp_ctx* ctx, uint32_t version, uint32_t locktime, size_t input_count, const uint8_t* prevout_txids, /* input_count*32 bytes, flattened */ const uint32_t* prevout_vouts, const uint64_t* input_amounts, const uint32_t* input_sequences, const uint8_t* const* input_spks, const size_t* input_spk_lens, size_t output_count, const uint64_t* output_values, const uint8_t* const* output_spks, const size_t* output_spk_lens, size_t input_index, uint8_t hash_type, const uint8_t* annex, size_t annex_len, uint8_t sighash_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_taproot_output_key",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_taproot_output_key( ufsecp_ctx* ctx, const uint8_t internal_x[32], const uint8_t* merkle_root, uint8_t output_x_out[32], int* parity_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_taproot_tweak_seckey",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_taproot_tweak_seckey( ufsecp_ctx* ctx, const uint8_t privkey[32], const uint8_t* merkle_root, uint8_t tweaked32_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_taproot_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_taproot_verify( ufsecp_ctx* ctx, const uint8_t output_x[32], int output_parity, const uint8_t internal_x[32], const uint8_t* merkle_root, size_t merkle_root_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_tapscript_sighash",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_tapscript_sighash( ufsecp_ctx* ctx, uint32_t version, uint32_t locktime, size_t input_count, const uint8_t* prevout_txids, const uint32_t* prevout_vouts, const uint64_t* input_amounts, const uint32_t* input_sequences, const uint8_t* const* input_spks, const size_t* input_spk_lens, size_t output_count, const uint64_t* output_values, const uint8_t* const* output_spks, const size_t* output_spk_lens, size_t input_index, uint8_t hash_type, const uint8_t tapleaf_hash[32], uint8_t key_version, uint32_t code_separator_pos, const uint8_t* annex, size_t annex_len, uint8_t sighash_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions",
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section H: New ABI Surface Edge Cases (v3.22+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_wif_decode",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_wif_decode(ufsecp_ctx* ctx, const char* wif, uint8_t privkey32_out[32], int* compressed_out, int* network_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_wif_encode",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_wif_encode(ufsecp_ctx* ctx, const uint8_t privkey[32], int compressed, int network, char* wif_out, size_t* wif_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_zk_dleq_prove",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_zk_dleq_prove( ufsecp_ctx* ctx, const uint8_t secret[32], const uint8_t G33[33], const uint8_t H33[33], const uint8_t P33[33], const uint8_t Q33[33], const uint8_t aux_rand[32], uint8_t proof_out[UFSECP_ZK_DLEQ_PROOF_LEN])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_zk_dleq_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_zk_dleq_verify( ufsecp_ctx* ctx, const uint8_t proof[UFSECP_ZK_DLEQ_PROOF_LEN], const uint8_t G33[33], const uint8_t H33[33], const uint8_t P33[33], const uint8_t Q33[33])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_zk_knowledge_prove",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_zk_knowledge_prove( ufsecp_ctx* ctx, const uint8_t secret[32], const uint8_t pubkey33[33], const uint8_t msg32[32], const uint8_t aux_rand[32], uint8_t proof_out[UFSECP_ZK_KNOWLEDGE_PROOF_LEN])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_zk_knowledge_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_zk_knowledge_verify( ufsecp_ctx* ctx, const uint8_t proof[UFSECP_ZK_KNOWLEDGE_PROOF_LEN], const uint8_t pubkey33[33], const uint8_t msg32[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_zk_range_prove",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_zk_range_prove( ufsecp_ctx* ctx, uint64_t value, const uint8_t blinding[32], const uint8_t commitment33[33], const uint8_t aux_rand[32], uint8_t* proof_out, size_t* proof_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    },
+    {
+      "function": "ufsecp_zk_range_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_zk_range_verify( ufsecp_ctx* ctx, const uint8_t commitment33[33], const uint8_t* proof, size_t proof_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:abi_gate"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
+        ]
+      },
+      "missing_checks": [
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": true
+    }
+  ]
+}

@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from audit_gap_report import build_report as build_audit_gap_report
+from generate_abi_negative_tests import build_manifest as build_abi_negative_manifest
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 LIB_ROOT = SCRIPT_DIR.parent
@@ -149,6 +150,36 @@ def check_failure_class_matrix(conn):
         findings.append(('PASS', 'Failure-class matrix is structurally valid and clear of owner-grade residual blockers'))
 
     return 'P0: Failure-Class Matrix', findings
+
+
+# ---------------------------------------------------------------------------
+# P0 — ABI Hostile-Caller Manifest
+# ---------------------------------------------------------------------------
+def check_abi_negative_tests(conn):
+    findings = []
+    report, has_fail = build_abi_negative_manifest()
+
+    findings.append((
+        'INFO',
+        'ABI negative-test manifest counts: '
+        f"exports={report.get('header_count', 0)}, "
+        f"blocking={report.get('blocking_function_count', 0)}, "
+        f"null={report.get('coverage_counts', {}).get('null_rejection', 0)}, "
+        f"zero={report.get('coverage_counts', {}).get('zero_edge', 0)}, "
+        f"invalid={report.get('coverage_counts', {}).get('invalid_content', 0)}, "
+        f"smoke={report.get('coverage_counts', {}).get('success_smoke', 0)}"
+    ))
+
+    blockers = [item for item in report.get('functions', []) if item.get('blocking')]
+    if blockers:
+        preview = ', '.join(item['function'] for item in blockers[:5])
+        findings.append(('FAIL', f"{len(blockers)} exported functions missing hostile-caller quartet coverage: {preview}"))
+    elif has_fail:
+        findings.append(('FAIL', 'ABI hostile-caller manifest reported blocking coverage gaps'))
+    else:
+        findings.append(('PASS', 'All exported ABI functions satisfy the hostile-caller coverage quartet'))
+
+    return 'P0: ABI Hostile-Caller Manifest', findings
 
 
 # ---------------------------------------------------------------------------
@@ -521,6 +552,7 @@ def check_doc_pairing(conn):
 # ---------------------------------------------------------------------------
 CHECK_MAP = {
     '--failure-matrix': check_failure_class_matrix,
+    '--abi-negative-tests': check_abi_negative_tests,
     '--abi-completeness': check_abi_completeness,
     '--test-coverage': check_test_coverage,
     '--security-patterns': check_security_patterns,
@@ -535,6 +567,7 @@ CHECK_MAP = {
 
 ALL_CHECKS = [
     check_failure_class_matrix,
+    check_abi_negative_tests,
     check_abi_completeness,
     check_test_coverage,
     check_security_patterns,

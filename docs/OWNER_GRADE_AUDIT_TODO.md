@@ -133,6 +133,22 @@ ABI misuse is one of the most expensive real-world failure modes. Manual audit
 tests catch a lot already, but owner-grade posture should make missing edge-case
 coverage mechanically visible for every export.
 
+Current progress:
+
+1. `scripts/generate_abi_negative_tests.py` now exists and scans the public ABI
+	headers, `docs/FFI_HOSTILE_CALLER.md`, and `.project_graph.db`
+	`function_test_map` evidence.
+2. It emits canonical `docs/ABI_NEGATIVE_TEST_MANIFEST.json` and
+	`docs/ABI_NEGATIVE_TEST_MANIFEST.md` artifacts showing per-export coverage for
+	the hostile-caller quartet: NULL rejection, zero-edge handling,
+	invalid-content rejection, and success-smoke coverage.
+3. `scripts/audit_gate.py` now includes a `P0: ABI Hostile-Caller Manifest`
+	check and `--abi-negative-tests` mode, so exports missing the hostile-caller
+	quartet become visible in the main audit gate.
+4. The manifest is intentionally truth-revealing: it highlights exports still
+	missing explicit zero-edge or invalid-content evidence instead of assuming
+	blanket hostile-caller coverage from narrative claims alone.
+
 ### 4. Secret-Path Change Gate
 
 Need:
