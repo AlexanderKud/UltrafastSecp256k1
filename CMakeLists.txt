@@ -184,10 +184,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     endif()
 elseif(MSVC)
     add_compile_options(
-        /W4
-        /permissive-
-        $<$<CONFIG:Release>:/O2>
-        $<$<CONFIG:Release>:/GL>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/W4>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/permissive->
+        $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/O2>
+        $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/GL>
     )
     if(SECP256K1_WERROR)
         add_compile_options(/WX)

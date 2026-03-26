@@ -157,18 +157,19 @@ struct HostScalar {
 
     // Basic arithmetic on host for verification
     HostScalar operator+(const HostScalar& other) const {
-        // Simple implementation using __int128
+        // Portable 64-bit implementation (no __int128 — MSVC compatible)
         uint64_t N[4] = {
             0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL,
             0xFFFFFFFFFFFFFFFEULL, 0xFFFFFFFFFFFFFFFFULL
         };
         
         HostScalar r;
-        unsigned __int128 carry = 0;
+        uint64_t carry = 0;
         for(int i=0; i<4; i++) {
-            unsigned __int128 sum = (unsigned __int128)limbs[i] + other.limbs[i] + carry;
-            r.limbs[i] = (uint64_t)sum;
-            carry = sum >> 64;
+            const uint64_t sum = limbs[i] + other.limbs[i];
+            const uint64_t carry0 = (sum < limbs[i]) ? 1ULL : 0ULL;
+            r.limbs[i] = sum + carry;
+            carry = carry0 | ((r.limbs[i] < sum) ? 1ULL : 0ULL);
         }
         
         // Subtract N if needed
@@ -183,11 +184,12 @@ struct HostScalar {
         }
         
         if (ge) {
-            unsigned __int128 borrow = 0;
+            uint64_t borrow = 0;
             for(int i=0; i<4; i++) {
-                unsigned __int128 diff = (unsigned __int128)r.limbs[i] - N[i] - borrow;
-                r.limbs[i] = (uint64_t)diff;
-                borrow = (diff >> 127) & 1;
+                const uint64_t diff = r.limbs[i] - N[i];
+                const uint64_t borrow0 = (r.limbs[i] < N[i]) ? 1ULL : 0ULL;
+                r.limbs[i] = diff - borrow;
+                borrow = borrow0 | ((diff < borrow) ? 1ULL : 0ULL);
             }
         }
         return r;
@@ -200,19 +202,21 @@ struct HostScalar {
         };
         
         HostScalar r;
-        unsigned __int128 borrow = 0;
+        uint64_t borrow = 0;
         for(int i=0; i<4; i++) {
-            unsigned __int128 diff = (unsigned __int128)limbs[i] - other.limbs[i] - borrow;
-            r.limbs[i] = (uint64_t)diff;
-            borrow = (diff >> 127) & 1;
+            const uint64_t diff = limbs[i] - other.limbs[i];
+            const uint64_t borrow0 = (limbs[i] < other.limbs[i]) ? 1ULL : 0ULL;
+            r.limbs[i] = diff - borrow;
+            borrow = borrow0 | ((diff < borrow) ? 1ULL : 0ULL);
         }
         
         if (borrow) {
-            unsigned __int128 carry = 0;
+            uint64_t carry = 0;
             for(int i=0; i<4; i++) {
-                unsigned __int128 sum = (unsigned __int128)r.limbs[i] + N[i] + carry;
-                r.limbs[i] = (uint64_t)sum;
-                carry = sum >> 64;
+                const uint64_t sum = r.limbs[i] + N[i];
+                const uint64_t carry0 = (sum < r.limbs[i]) ? 1ULL : 0ULL;
+                r.limbs[i] = sum + carry;
+                carry = carry0 | ((r.limbs[i] < sum) ? 1ULL : 0ULL);
             }
         }
         return r;

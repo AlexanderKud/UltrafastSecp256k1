@@ -53,6 +53,9 @@
 #include <random>
 #include <algorithm>
 #include <cmath>
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 #include <array>
 #include <functional>
 
@@ -108,10 +111,19 @@ struct CompareEntry {
 // ============================================================================
 template<typename T>
 static inline void DoNotOptimize(T const& value) {
+#if defined(__GNUC__) || defined(__clang__)
     asm volatile("" : : "r,m"(value) : "memory");
+#else
+    static volatile const T* _sink;
+    _sink = &value;
+#endif
 }
 static inline void ClobberMemory() {
+#if defined(__GNUC__) || defined(__clang__)
     asm volatile("" : : : "memory");
+#else
+    _ReadWriteBarrier();
+#endif
 }
 
 // ============================================================================

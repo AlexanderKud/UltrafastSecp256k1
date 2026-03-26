@@ -109,7 +109,13 @@ static inline int64_t extract_upper_64(const uint8_t* x_bytes) {
 
 template<typename T>
 static inline void DoNotOptimize(T const& value) {
+#if defined(__GNUC__) || defined(__clang__)
     asm volatile("" : : "r,m"(value) : "memory");
+#else
+    // MSVC: use ReadWriteBarrier or volatile read to prevent optimization
+    static volatile const T* _sink;
+    _sink = &value;
+#endif
 }
 
 // ============================================================================
