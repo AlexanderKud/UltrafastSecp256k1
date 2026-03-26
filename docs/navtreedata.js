@@ -66,6 +66,7 @@ var NAVTREE =
       [ "File Members", "globals.html", [
         [ "All", "globals.html", "globals_dup" ],
         [ "Functions", "globals_func.html", "globals_func" ],
+        [ "Variables", "globals_vars.html", null ],
         [ "Typedefs", "globals_type.html", null ],
         [ "Macros", "globals_defs.html", null ]
       ] ]
@@ -76,20 +77,20 @@ var NAVTREE =
 var NAVTREEINDEX =
 [
 "UltrafastSecp256k1_8hpp.html",
-"classsecp256k1_1_1fast_1_1CombGenContext.html#a681a68591b2f5c47b43fc82f86cde715",
-"classsecp256k1_1_1fast_1_1Scalar.html#afe61b6a7cc507dc69b112074b9264e6c",
-"field_8hpp.html#a5ae40302a381925532e840f65821207c",
-"hash__accel_8hpp.html#a45ddaa3ca6297a3934dd19c92f45e866",
-"namespacesecp256k1.html#a072a3d26d90e0b01cf9b8e09568ad3cf",
-"namespacesecp256k1_1_1coins.html#ae9978405d4dfef91cc06d90518d512d5",
-"namespacesecp256k1_1_1fast.html#ac1ddf9ee84cddda62783f86e435a77ac",
-"schnorr_8hpp.html#a4f309954a0216a8c8d7ee538405be62c",
-"structsecp256k1_1_1FrostNonce.html#a3a31511001167acfe4ff2426b6e674c9",
-"structsecp256k1_1_1coins_1_1BitcoinSigDecodeResult.html#a234d00960796cad398e97718cb19c0c4",
-"structsecp256k1_1_1fast_1_1FieldElement52.html#ac4272c9c8eedc879a5783a1033d2d60f",
-"structsecp256k1_1_1zk_1_1RangeProof.html#ad4f9a84d56418d88a5779bbb40b3e06c",
-"ufsecp__error_8h.html#aa1ceea5f36485c09b09b8d0a3fbb09fb",
-"zk_8hpp_source.html"
+"classsecp256k1_1_1fast_1_1CombGenContext.html#a49672498ff1c87311e1e157bd327edc7",
+"classsecp256k1_1_1fast_1_1Scalar.html#ae634c2ab98447b45a16a507b6d5b76d3",
+"field_8hpp.html#a549591bddbe22577193cbc4b083e8894",
+"hash__accel_8hpp.html",
+"namespaces.html",
+"namespacesecp256k1_1_1coins.html#aca8eaf4780da4eba71b217a62f129103",
+"namespacesecp256k1_1_1fast.html#ab4a40a44d316fd9c0a4ec6635bb16a0e",
+"sanitizer__scale_8hpp_source.html",
+"structsecp256k1_1_1FrostKeyPackage.html#a9e1bafc6aac63f4d77f7af42bc540e41",
+"structsecp256k1_1_1WitnessTx.html#a240ee9c4dc889b964cc04c9098a1c540",
+"structsecp256k1_1_1fast_1_1FieldElement52.html#aa1022dc5e17302a51df8dbbd55b75b9f",
+"structsecp256k1_1_1zk_1_1RangeProof.html#a454adf9c1d0938d67fb15ffe67d1d9fc",
+"ufsecp_8h.html#af69d4112faac5f9ce587f04010cbcc36",
+"wallet_8hpp.html#a53b975a7a3696210c8be62537c488f1d"
 ];
 
 var SYNCONMSG = 'click to disable panel synchronisation';
