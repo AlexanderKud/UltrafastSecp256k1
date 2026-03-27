@@ -9,7 +9,11 @@
 > FROST/MuSig2 protocol-level tests have been added since this report.
 > This document is preserved as a historical baseline.
 
-**Library Version:** 3.9.0  
+<!-- BEGIN CURRENT RELEASE VERSION -->
+<!-- This line is maintained by scripts/sync_audit_report_version.py -->
+**Current Release Version:** 3.4.0  
+<!-- END CURRENT RELEASE VERSION -->
+**Historical Audit Baseline Version:** 3.9.0  
 **Audit Date:** 2026-02-11  
 **Commit:** `cc20253` (dev)  
 **Platform:** Linux x86_64, clang++-19, C++20, Release (-O3)  
