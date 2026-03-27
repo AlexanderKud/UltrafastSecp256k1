@@ -1030,6 +1030,32 @@ target_compile_definitions(test_exploit_gpu_host_api_shape_standalone PRIVATE ST
 add_test(NAME exploit_gpu_host_api_shape COMMAND test_exploit_gpu_host_api_shape_standalone)
 set_tests_properties(exploit_gpu_host_api_shape PROPERTIES TIMEOUT 60 LABELS "audit;exploit;gpu;ffi;hostile")
 
+# -- PoC: Silent Payment confusion (BIP-352 key role / output isolation) -----
+add_executable(test_exploit_silent_payment_confusion_standalone test_exploit_silent_payment_confusion.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_silent_payment_confusion_standalone)
+target_include_directories(test_exploit_silent_payment_confusion_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_silent_payment_confusion_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_silent_payment_confusion COMMAND test_exploit_silent_payment_confusion_standalone)
+set_tests_properties(exploit_silent_payment_confusion PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bip352;silent_payment")
+
+# -- PoC: CT vs Fast implementation equivalence ------------------------------
+add_executable(test_exploit_ct_fast_equivalence_standalone test_exploit_ct_fast_equivalence.cpp)
+audit_target_defaults(test_exploit_ct_fast_equivalence_standalone)
+target_compile_definitions(test_exploit_ct_fast_equivalence_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ct_fast_equivalence COMMAND test_exploit_ct_fast_equivalence_standalone)
+set_tests_properties(exploit_ct_fast_equivalence PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ct;equivalence")
+
+# -- PoC: Pedersen switch commitment misuse ----------------------------------
+add_executable(test_exploit_pedersen_switch_misuse_standalone test_exploit_pedersen_switch_misuse.cpp)
+audit_target_defaults(test_exploit_pedersen_switch_misuse_standalone)
+target_compile_definitions(test_exploit_pedersen_switch_misuse_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_pedersen_switch_misuse COMMAND test_exploit_pedersen_switch_misuse_standalone)
+set_tests_properties(exploit_pedersen_switch_misuse PROPERTIES TIMEOUT 60 LABELS "audit;exploit;pedersen;switch")
+
 # -- ECIES regression + C ABI prefix enforcement ----------------------------
 add_executable(test_ecies_regression_standalone test_ecies_regression.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
@@ -1408,6 +1434,8 @@ set_tests_properties(
     exploit_ecdsa_malleability exploit_glv_kat exploit_aead_integrity
     exploit_batch_schnorr_forge exploit_bip32_ckd_hardened
     exploit_zk_adversarial exploit_pedersen_adversarial
+    exploit_silent_payment_confusion
+    exploit_ct_fast_equivalence exploit_pedersen_switch_misuse
     PROPERTIES LABELS "audit"
 )
 if(SECP256K1_BUILD_PROTOCOL_TESTS)
