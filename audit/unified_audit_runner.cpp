@@ -45,6 +45,7 @@
 #if __has_include("secp256k1/version.hpp")
 #include "secp256k1/version.hpp"
 #endif
+#include "secp256k1/precompute.hpp"
 #ifndef SECP256K1_VERSION_STRING
 #define SECP256K1_VERSION_STRING "unknown"
 #endif
@@ -58,6 +59,19 @@
 static constexpr const char* AUDIT_FRAMEWORK_VERSION = "2.0.0";
 
 using namespace secp256k1::fast;
+
+static void reset_fixed_base_state_for_module() {
+    FixedBaseConfig cfg{};
+    cfg.window_bits = 15U;
+    cfg.enable_glv = false;
+    cfg.use_jsf = false;
+    cfg.adaptive_glv = false;
+    cfg.use_cache = false;
+    cfg.cache_path.clear();
+    cfg.cache_dir.clear();
+    cfg.max_windows_to_load = 0U;
+    configure_fixed_base(cfg);
+}
 
 // ============================================================================
 // Forward declarations -- selftest modules (from run_selftest.cpp sources)
@@ -1247,6 +1261,8 @@ int main(int argc, char* argv[]) {
             std::printf("  [%2d/%d] %-45s ", run_idx, modules_to_run, m.name);
             (void)std::fflush(stdout);
         }
+
+        reset_fixed_base_state_for_module();
 
         auto t0 = std::chrono::steady_clock::now();
         int const rc = m.run();
