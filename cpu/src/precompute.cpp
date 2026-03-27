@@ -426,6 +426,51 @@ struct PrecomputeContext {
     std::vector<std::vector<AffinePointPacked>> psi_tables;
 };
 
+[[nodiscard]] std::size_t expected_window_count(unsigned window_bits) {
+    return (256U + window_bits - 1U) / window_bits;
+}
+
+[[nodiscard]] std::size_t expected_digit_count(unsigned window_bits) {
+    return std::size_t{1} << window_bits;
+}
+
+[[nodiscard]] bool is_valid_window_bits(unsigned window_bits) {
+    return window_bits >= 2U && window_bits <= 30U;
+}
+
+[[nodiscard]] bool validate_precompute_context(const PrecomputeContext& ctx) {
+    if (!is_valid_window_bits(ctx.window_bits)) {
+        return false;
+    }
+    if (ctx.window_count != expected_window_count(ctx.window_bits)) {
+        return false;
+    }
+    if (ctx.digit_count != expected_digit_count(ctx.window_bits)) {
+        return false;
+    }
+    if (ctx.base_tables.size() != ctx.window_count) {
+        return false;
+    }
+    for (const auto& window : ctx.base_tables) {
+        if (window.size() != ctx.digit_count) {
+            return false;
+        }
+    }
+    if (ctx.config.enable_glv) {
+        if (ctx.psi_tables.size() != ctx.window_count) {
+            return false;
+        }
+        for (const auto& window : ctx.psi_tables) {
+            if (window.size() != ctx.digit_count) {
+                return false;
+            }
+        }
+    } else if (!ctx.psi_tables.empty()) {
+        return false;
+    }
+    return true;
+}
+
 using Limbs4 = std::array<std::uint64_t, 4>;
 using Limbs6 = std::array<std::uint64_t, 6>;
 using Limbs3 = std::array<std::uint64_t, 3>;
@@ -1029,9 +1074,36 @@ struct CacheHeader {
 };
 
 constexpr std::uint32_t CACHE_MAGIC = 0x53454350U;  // "SECP"
-constexpr std::uint32_t CACHE_VERSION = 1U;
+constexpr std::uint32_t CACHE_VERSION = 2U;
 
 bool write_affine_point(std::ofstream& file, const AffinePointPacked& point);
+
+[[nodiscard]] bool validate_cache_header_for_config(const CacheHeader& header,
+                                                    const FixedBaseConfig& requested,
+                                                    unsigned max_windows) {
+    if (header.has_glv > 1U) {
+        return false;
+    }
+    if (!is_valid_window_bits(header.window_bits)) {
+        return false;
+    }
+    if (header.window_count != expected_window_count(header.window_bits)) {
+        return false;
+    }
+    if (header.digit_count != expected_digit_count(header.window_bits)) {
+        return false;
+    }
+    if (header.window_bits != requested.window_bits) {
+        return false;
+    }
+    if ((header.has_glv != 0U) != requested.enable_glv) {
+        return false;
+    }
+    if (max_windows > 0U && max_windows < header.window_count) {
+        return false;
+    }
+    return true;
+}
 
 // Streaming cache builder with queue
 struct WindowData {
@@ -2282,6 +2354,9 @@ bool load_precompute_cache_locked(const std::string& path, unsigned max_windows)
     if (!file.good() || header.magic != CACHE_MAGIC || header.version != CACHE_VERSION) {
         return false;
     }
+    if (!validate_cache_header_for_config(header, g_config, max_windows)) {
+        return false;
+    }
     
     // Validate file size to reject truncated/partially-written files.
     // Infinity points are serialized as 1 byte (flag only, no x/y),
@@ -2309,93 +2384,55 @@ bool load_precompute_cache_locked(const std::string& path, unsigned max_windows)
               << " has_glv=" << header.has_glv << '\n';
 #endif
     
-    // Create new context from cache
+    // Create new context from cache. Runtime behavior continues to come from
+    // the caller's effective config; the cache must match it, not override it.
     auto ctx = std::make_unique<PrecomputeContext>();
+    ctx->config = g_config;
     ctx->window_bits = header.window_bits;
     ctx->window_count = header.window_count;
     ctx->digit_count = header.digit_count;
-    ctx->config.window_bits = header.window_bits;
-    ctx->config.enable_glv = (header.has_glv != 0);
     ctx->beta = FieldElement::from_bytes(kBetaBytes);
     
 #if SECP256K1_DEBUG_GLV
     std::cout << "[CACHE] Context GLV enabled: " << ctx->config.enable_glv << '\n';
 #endif
     
-    // Determine how many windows to load
-    std::size_t windows_to_load = ctx->window_count;
-    if (max_windows > 0 && max_windows < ctx->window_count) {
-        windows_to_load = max_windows;
-    }
-    
 #if SECP256K1_DEBUG_GLV
-    std::cout << "[CACHE] Loading " << windows_to_load << " of " << ctx->window_count << " windows..." << '\n';
+    std::cout << "[CACHE] Loading " << ctx->window_count << " windows..." << '\n';
 #endif
     
     // Allocate tables
-    ctx->base_tables.resize(windows_to_load);
+    ctx->base_tables.resize(ctx->window_count);
     if (ctx->config.enable_glv) {
-        ctx->psi_tables.resize(windows_to_load);
+        ctx->psi_tables.resize(ctx->window_count);
     }
     
     // Read base tables
     for (std::size_t w = 0; w < ctx->window_count; ++w) {
-        bool const should_load = (w < windows_to_load);
-        
-        if (should_load) {
-            ctx->base_tables[w].resize(ctx->digit_count);
-        }
-        
+        ctx->base_tables[w].resize(ctx->digit_count);
         for (std::size_t d = 0; d < ctx->digit_count; ++d) {
-            if (should_load) {
-                if (!read_affine_point(file, ctx->base_tables[w][d])) {
-                    return false;
-                }
-            } else {
-                // Skip this point
-                std::uint8_t infinity_byte = 0;
-                file.read(reinterpret_cast<char*>(&infinity_byte), 1);
-                if (!file.good()) return false;
-                
-                if (infinity_byte == 0) {
-                    // Skip x and y coordinates (2 * 32 bytes)
-                    file.seekg(64, std::ios::cur);
-                    if (!file.good()) return false;
-                }
+            if (!read_affine_point(file, ctx->base_tables[w][d])) {
+                return false;
             }
         }
     }
     
     // Read psi tables if GLV enabled
-    if (header.has_glv) {
+    if (ctx->config.enable_glv) {
         for (std::size_t w = 0; w < ctx->window_count; ++w) {
-            bool const should_load = (w < windows_to_load);
-            
-            if (should_load) {
-                ctx->psi_tables[w].resize(ctx->digit_count);
-            }
-            
+            ctx->psi_tables[w].resize(ctx->digit_count);
             for (std::size_t d = 0; d < ctx->digit_count; ++d) {
-                if (should_load) {
-                    if (!read_affine_point(file, ctx->psi_tables[w][d])) {
-                        return false;
-                    }
-                } else {
-                    // Skip this point
-                    std::uint8_t infinity_byte = 0;
-                    file.read(reinterpret_cast<char*>(&infinity_byte), 1);
-                    if (!file.good()) return false;
-                    
-                    if (infinity_byte == 0) {
-                        file.seekg(64, std::ios::cur);
-                        if (!file.good()) return false;
-                    }
+                if (!read_affine_point(file, ctx->psi_tables[w][d])) {
+                    return false;
                 }
             }
         }
     }
     
     file.close();
+    if (!file.good() || !validate_precompute_context(*ctx)) {
+        return false;
+    }
     
     // Install the loaded context
     g_context = std::move(ctx);
@@ -2426,12 +2463,18 @@ void ensure_built_locked() {
             
             // Cache load failed, use in-memory generation
             g_context = build_context(g_config);
+            if (!g_context || !validate_precompute_context(*g_context)) {
+                throw std::runtime_error("Precompute context validation failed after cache fallback rebuild");
+            }
             
             // Save to cache for next time
             save_precompute_cache_locked(cache_path);
         } else {
             // Cache disabled, just build in memory
             g_context = build_context(g_config);
+            if (!g_context || !validate_precompute_context(*g_context)) {
+                throw std::runtime_error("Precompute context validation failed");
+            }
         }
     }
 }
@@ -3384,6 +3427,9 @@ Point scalar_mul_generator(const Scalar& scalar) {
     std::unique_lock<std::mutex> lock(g_mutex);
     ensure_built_locked();
     PrecomputeContext const& ctx = *g_context;
+    if (!validate_precompute_context(ctx)) {
+        throw std::runtime_error("Invalid precompute context");
+    }
     lock.unlock();
 
     // PHASE 3 OPTIMIZED (Mixed Jacobian-Affine addition - 8 muls instead of 12)
@@ -3392,18 +3438,32 @@ Point scalar_mul_generator(const Scalar& scalar) {
     const std::size_t window_count = ctx.window_count;
 
     auto accumulate = [&](const std::vector<int32_t>& digits, const std::vector<std::vector<AffinePointPacked>>& tables) {
+        if (digits.size() != window_count) {
+            throw std::runtime_error("Digit count does not match precompute window count");
+        }
+        if (tables.size() != window_count) {
+            throw std::runtime_error("Precompute table count does not match window count");
+        }
         for (std::size_t window = 0; window < window_count; ++window) {
             int32_t const digit = digits[window];
+            auto const& current_table = tables[window];
+            if (current_table.size() != ctx.digit_count) {
+                throw std::runtime_error("Precompute table width does not match digit range");
+            }
             
             // Phase 4: Prefetch next iteration's data (if not last iteration)
             if (window + 1 < window_count) {
+                auto const& next_table = tables[window + 1];
+                if (next_table.size() != ctx.digit_count) {
+                    throw std::runtime_error("Next precompute table width does not match digit range");
+                }
                 int32_t const next_digit = digits[window + 1];
                 if (next_digit != 0) {
-                    bool const next_negative = next_digit < 0;
-                    auto const next_index = static_cast<std::size_t>(next_negative ? -next_digit : next_digit);
-                    if (next_index < tables[window + 1].size()) {
+                    auto const next_index = static_cast<std::size_t>(
+                        next_digit < 0 ? -static_cast<std::int64_t>(next_digit) : static_cast<std::int64_t>(next_digit));
+                    if (next_index < next_table.size()) {
                         // Prefetch next entry into cache
-                        SECP256K1_PREFETCH_READ(&tables[window + 1][next_index]);
+                        SECP256K1_PREFETCH_READ(&next_table[next_index]);
                     }
                 }
             }
@@ -3412,11 +3472,12 @@ Point scalar_mul_generator(const Scalar& scalar) {
                 continue;
             }
             bool const negative = digit < 0;
-            auto const index = static_cast<std::size_t>(negative ? -digit : digit);
-            if (index >= tables[window].size()) {
+            auto const index = static_cast<std::size_t>(
+                negative ? -static_cast<std::int64_t>(digit) : static_cast<std::int64_t>(digit));
+            if (index >= current_table.size()) {
                 throw std::runtime_error("Digit index out of range during accumulation");
             }
-            const auto& entry = tables[window][index];
+            const auto& entry = current_table[index];
             if (entry.infinity) {
                 continue;
             }
