@@ -776,17 +776,30 @@ if(SECP256K1_BUILD_BENCH)
     # Derive include root from src dir (one level up)
     get_filename_component(_LIBSECP_ROOT "${LIBSECP_SRC_DIR}" DIRECTORY)
     if(EXISTS "${LIBSECP_SRC_DIR}/secp256k1.c")
-        add_executable(bench_unified
-            bench/bench_unified.cpp
+        set(_BENCH_UNIFIED_LIBSECP_SOURCES
             bench/libsecp_provider.c
             ${LIBSECP_SRC_DIR}/precomputed_ecmult.c
             ${LIBSECP_SRC_DIR}/precomputed_ecmult_gen.c
+        )
+        add_executable(bench_unified
+            bench/bench_unified.cpp
+            ${_BENCH_UNIFIED_LIBSECP_SOURCES}
         )
         target_include_directories(bench_unified PRIVATE
             ${_LIBSECP_ROOT}/include
             ${LIBSECP_SRC_DIR}
         )
         target_link_libraries(bench_unified PRIVATE ${SECP256K1_LIB_NAME})
+
+        # The libsecp provider intentionally compiles upstream bitcoin-core
+        # internals in-tree for benchmark parity. Those upstream sources emit
+        # warnings under our stricter local flags, so keep them non-fatal even
+        # when CI enables a repo-wide -Werror build.
+        if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+            set_source_files_properties(${_BENCH_UNIFIED_LIBSECP_SOURCES} PROPERTIES
+                COMPILE_FLAGS "-Wno-error -Wno-conversion -Wno-sign-conversion -Wno-unused-function"
+            )
+        endif()
 
         # Optional: OpenSSL integration for multi-library comparison.
         # Disable during cross-compilation to avoid accidentally binding host OpenSSL.

@@ -130,23 +130,14 @@ Point multi_scalar_mul(const Scalar* scalars,
     std::vector<FE52> tbl_phiP_x(total_entries), tbl_phiP_y(total_entries);
 
     {
-        // Build tables using Point-level operations (handles all edge cases)
-        std::vector<Point> base_pts(n);
-        for (std::size_t i = 0; i < n; ++i) {
-            if (glv_info[i].neg1) {
-                base_pts[i] = points[i].negate();
-            } else {
-                base_pts[i] = points[i];
-            }
-        }
-
         // Build odd-multiple tables: [1Q, 3Q, 5Q, ..., (2T-1)Q]
         std::vector<std::vector<Point>> tables(n);
         for (std::size_t i = 0; i < n; ++i) {
+            Point const base = glv_info[i].neg1 ? points[i].negate() : points[i];
             tables[i].resize(table_size);
-            tables[i][0] = base_pts[i];
+            tables[i][0] = base;
             if (table_size > 1) {
-                Point const P2 = base_pts[i].dbl();
+                Point const P2 = base.dbl();
                 for (std::size_t j = 1; j < table_size; ++j) {
                     tables[i][j] = tables[i][j - 1].add(P2);
                 }
