@@ -189,15 +189,27 @@ jobs:
             -DSECP256K1_BUILD_TESTS=ON \
             -DSECP256K1_BUILD_BENCH=OFF \
             -DSECP256K1_BUILD_EXAMPLES=OFF \
+            -DSECP256K1_BUILD_JAVA=OFF \
             -DSECP256K1_USE_ASM=ON
 
       - name: Build
         run: cmake --build build -j$(nproc)
 
-      - name: Test (via QEMU)
+      - name: ARM64 smoke (via QEMU)
         run: |
-          export QEMU_LD_PREFIX=/usr/aarch64-linux-gnu
-          ctest --test-dir build --output-on-failure -j4 -E "^ct_sidechannel"
+          set -euo pipefail
+
+          QEMU_AARCH64="$(command -v qemu-aarch64-static || command -v qemu-aarch64)"
+          SYSROOT="/usr/aarch64-linux-gnu"
+          SELFTEST="$(find build -name run_selftest -type f -executable | head -1)"
+          BIP324_TEST="$(find build -name test_bip324_standalone -type f -executable | head -1)"
+
+          test -n "$QEMU_AARCH64"
+          test -n "$SELFTEST"
+          test -n "$BIP324_TEST"
+
+          timeout 360 "$QEMU_AARCH64" -L "$SYSROOT" "$SELFTEST" smoke
+          timeout 180 "$QEMU_AARCH64" -L "$SYSROOT" "$BIP324_TEST"
 
       - name: Collect release artifacts
         run: |
