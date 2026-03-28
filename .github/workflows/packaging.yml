@@ -68,6 +68,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DSECP256K1_BUILD_TESTS=OFF \
             -DSECP256K1_BUILD_BENCH=OFF \
+            -DSECP256K1_BUILD_JAVA=OFF \
             -DSECP256K1_BUILD_SHARED=ON \
             -DSECP256K1_INSTALL=ON \
             -DSECP256K1_INSTALL_PKGCONFIG=ON \
@@ -111,6 +112,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DSECP256K1_BUILD_TESTS=OFF \
             -DSECP256K1_BUILD_BENCH=OFF \
+            -DSECP256K1_BUILD_JAVA=OFF \
             -DSECP256K1_BUILD_SHARED=ON \
             -DSECP256K1_INSTALL=ON \
             -DSECP256K1_INSTALL_PKGCONFIG=ON \
