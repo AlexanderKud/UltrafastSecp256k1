@@ -4243,8 +4243,9 @@ ufsecp_error_t ufsecp_bip324_create(
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "initiator must be 0 or 1");
     }
 
-    auto* sess = new (std::nothrow) ufsecp_bip324_session{};
+    auto* sess = new (std::nothrow) ufsecp_bip324_session;
     if (!sess) return ctx_set_err(ctx, UFSECP_ERR_INTERNAL, "allocation failed");
+    sess->cpp_session = nullptr;
 
     sess->cpp_session = new (std::nothrow) secp256k1::Bip324Session(initiator == 1);
     if (!sess->cpp_session) {

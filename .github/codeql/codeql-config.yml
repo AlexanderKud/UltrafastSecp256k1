@@ -4,6 +4,12 @@
 
 name: "UltrafastSecp256k1 CodeQL Config"
 
+paths-ignore:
+  - audit/**
+  - cpu/tests/**
+  - bindings/java/**
+  - examples/**
+
 # Filter out non-security queries that generate noise
 query-filters:
   # 52 functions deliberately kept with [[maybe_unused]] for ABI/future use

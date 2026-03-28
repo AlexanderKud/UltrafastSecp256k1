@@ -198,9 +198,7 @@ std::array<std::uint8_t, 32> bip143_sighash(
     // SINGLE: hash of output at same index (we use preimage.hash_outputs
     //         which caller should set accordingly), or zeros if no matching output.
     // ALL: full hashOutputs
-    if (base_type != SIGHASH_NONE && base_type != SIGHASH_SINGLE) {
-        ctx.update(preimage.hash_outputs.data(), 32);
-    } else if (base_type == SIGHASH_SINGLE) {
+    if (base_type != SIGHASH_NONE) {
         // For SINGLE, caller is expected to set hash_outputs to the hash of
         // the corresponding output. If no such output, zeros are used.
         ctx.update(preimage.hash_outputs.data(), 32);

@@ -183,7 +183,7 @@ void chacha20_setup_state(std::uint32_t state[16],
 
     // Key (8 words)
     for (int i = 0; i < 8; ++i) {
-        state[4 + i] = load32_le(key + i * 4);
+        state[4 + i] = load32_le(key + static_cast<std::size_t>(i) * 4U);
     }
 
     // Counter

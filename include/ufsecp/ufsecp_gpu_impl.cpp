@@ -187,12 +187,10 @@ ufsecp_error_t ufsecp_gpu_ctx_create(
 }
 
 void ufsecp_gpu_ctx_destroy(ufsecp_gpu_ctx* ctx) {
-    try {
     if (ctx) {
         ctx->backend.reset();
         delete ctx;
     }
-    } catch (...) { /* best-effort destroy */ }
 }
 
 ufsecp_error_t ufsecp_gpu_last_error(const ufsecp_gpu_ctx* ctx) {

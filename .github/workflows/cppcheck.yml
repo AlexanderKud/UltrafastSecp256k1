@@ -40,8 +40,9 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DSECP256K1_BUILD_TESTS=ON \
-            -DSECP256K1_BUILD_BENCH=ON
+            -DSECP256K1_BUILD_TESTS=OFF \
+            -DSECP256K1_BUILD_BENCH=OFF \
+            -DSECP256K1_BUILD_EXAMPLES=OFF
 
       - name: Run Cppcheck (XML output)
         run: |

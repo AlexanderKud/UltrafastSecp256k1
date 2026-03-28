@@ -300,7 +300,9 @@ ecies_encrypt(const Point& recipient_pubkey,
     //    salt = fixed domain tag preventing cross-protocol KDF collisions
     //    info = ephemeral pubkey compressed (binds derived keys to this session)
     //    OKM  = enc_key (32B) || mac_key (32B)
-    static constexpr std::uint8_t kdf_salt[] = "secp256k1-ecies-v1";
+    static constexpr std::uint8_t kdf_salt[] = {
+        's','e','c','p','2','5','6','k','1','-','e','c','i','e','s','-','v','1'
+    };
     auto prk = hkdf_sha256_extract(kdf_salt, sizeof(kdf_salt) - 1,
                                    shared_x.data(), 32);
     secp256k1::detail::secure_erase(shared_x.data(), 32);
@@ -366,7 +368,9 @@ ecies_decrypt(const Scalar& privkey,
 
     // 4. HKDF-SHA256 key derivation -- must match encrypt exactly.
     //    info = ephemeral pubkey bytes as received in the envelope.
-    static constexpr std::uint8_t kdf_salt[] = "secp256k1-ecies-v1";
+    static constexpr std::uint8_t kdf_salt[] = {
+        's','e','c','p','2','5','6','k','1','-','e','c','i','e','s','-','v','1'
+    };
     auto prk = hkdf_sha256_extract(kdf_salt, sizeof(kdf_salt) - 1,
                                    shared_x.data(), 32);
     secp256k1::detail::secure_erase(shared_x.data(), 32);

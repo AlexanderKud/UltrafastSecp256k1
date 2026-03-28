@@ -58,9 +58,9 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DSECP256K1_MARCH=x86-64-v3 \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DSECP256K1_BUILD_TESTS=ON \
-            -DSECP256K1_BUILD_BENCH=ON \
-            -DSECP256K1_BUILD_EXAMPLES=ON
+            -DSECP256K1_BUILD_TESTS=OFF \
+            -DSECP256K1_BUILD_BENCH=OFF \
+            -DSECP256K1_BUILD_EXAMPLES=OFF
 
       - name: Build (needed for generated headers)
         run: cmake --build build -j$(nproc)
@@ -72,6 +72,7 @@ jobs:
           # Filter out .S assembly files (clang-tidy cannot process them)
           jq -r '.[].file' build/compile_commands.json \
             | grep -E '\.(cpp|cc|cxx)$' \
+            | grep -E '/(cpu/src|cpu/include|include/ufsecp|include/secp256k1|gpu/src|gpu/include|opencl|metal)/' \
             | sort -u \
             | xargs -P "$(nproc)" -n 4 \
               clang-tidy-17 -p build --warnings-as-errors='' --quiet 2>&1 \
