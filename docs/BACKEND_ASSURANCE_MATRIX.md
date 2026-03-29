@@ -76,7 +76,7 @@ operations. CUDA, OpenCL, and Metal all implement that stable public surface.
 | Audit runner modules | 49 | 27+ | 27 | 27 |
 | Selftest | Y | Y | Y | Y |
 | CT equivalence | Y | Y (smoke) | Y | Y |
-| Side-channel (dudect) | Y (600s) | - | - | - |
+| Side-channel (dudect / device-cycle probe) | Y (600s) | Y (fixed-vs-random `clock64()` Welch t-test) | - | - |
 | Differential | Y | - | - | - |
 | Fault injection | Y | - | - | - |
 | Wycheproof vectors | Y | - | - | - |
@@ -148,7 +148,7 @@ happens, ROCm/HIP simply remains outside the hardware-backed publishable set.
 `selftest`, `comprehensive`, `exhaustive`, `field_52`, `field_26`, `hash_accel`, `batch_add_affine`, `bip340_vectors`, `bip340_strict`, `bip32_vectors`, `bip39`, `rfc6979_vectors`, `ecc_properties`, `edge_cases`, `ethereum`, `wallet`, `ct_sidechannel`, `ct_sidechannel_smoke`, `differential`, `ct_equivalence`, `fault_injection`, `debug_invariants`, `fiat_crypto_vectors`, `carry_propagation`, `wycheproof_ecdsa`, `wycheproof_ecdh`, `batch_randomness`, `cross_platform_kat`, `abi_gate`, `ct_verif_formal`, `fiat_crypto_linkage`, `audit_fuzz`, `adversarial_protocol`, `ecies_regression`, `diag_scalar_mul`, `unified_audit`
 
 ### CUDA
-`cuda_selftest`, `gpu_audit`, `gpu_ct_smoke`
+`cuda_selftest`, `gpu_audit`, `gpu_ct_smoke`, `gpu_ct_leakage_probe`
 
 ### OpenCL
 `opencl_selftest`, `opencl_audit`

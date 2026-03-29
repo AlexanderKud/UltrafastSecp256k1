@@ -107,6 +107,7 @@ lags behind the generated validation surfaces, prefer the generated counts.
 | `metal/tests/test_metal_host.cpp` | Metal | Metal shader correctness |
 | `metal/src/metal_audit_runner.mm` | Metal | `secp256k1_metal_audit`: unified GPU audit (27 modules, 8 sections) |
 | `cuda/src/test_ct_smoke.cu` | CUDA | CT smoke tests incl. ZK knowledge + DLEQ prove/verify (9 tests) |
+| `cuda/src/gpu_ct_leakage_probe.cu` | CUDA | Fixed-vs-random device-cycle Welch t-test for CT generator/signing kernels with JSON evidence output |
 | `cuda/src/test_suite.cu` | CUDA | `cuda_selftest`: kernel correctness, field + scalar + point ops |
 | `cuda/src/gpu_audit_runner.cu` | CUDA | `gpu_audit`: unified GPU audit (27 modules, 8 sections) |
 | `metal/app/metal_test.mm` | Metal | `secp256k1_metal_test`: shader correctness, compute pipeline |
@@ -129,6 +130,7 @@ These standalone CTest entries are part of the active validation surface and are
 | `bip342` | Bitcoin protocol | Taproot / Tapscript BIP-342 correctness coverage |
 | `c_abi_negative` | C ABI hostile-caller | Negative-path checks for invalid inputs, malformed pointers, and fail-closed behavior |
 | `c_abi_thread_stress` | C ABI concurrency | Threaded stress coverage for public ABI entry points |
+| `gpu_ct_leakage_probe` | GPU | CUDA advisory side-channel probe using fixed-vs-random `clock64()` Welch t-test on CT generator and signing kernels |
 | `exploit_ecdsa_der_confusion` | Exploit PoC | Ensures DER parser behavior rejects non-canonical or ambiguous encodings |
 | `exploit_batch_verify_poison` | Exploit PoC | Regression coverage for adversarial batch-verify poisoning and accumulator corruption attempts |
 | `exploit_der_parsing_differential` | Exploit PoC | Differential strictness coverage for ambiguous or non-canonical DER parser behavior |
