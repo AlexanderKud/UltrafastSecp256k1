@@ -62,7 +62,6 @@ through `ufsecp_gpu.h`.
 | Pedersen commitment | Y | Y | Y | `bulletproof_verify_batch` internals |
 | Keccak-256 / `eth_address` | Y | Y | Y | internal Ethereum address derivation |
 | BIP-32 derive child | Y | - | Y | internal HD key derivation (app use) |
-| Bloom filter | Y | Y | Y | address scanner app (`megabatch_search`, `secp256k1_search_gpu`) |
 
 ---
 

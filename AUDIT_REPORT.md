@@ -4,7 +4,7 @@
 > The test suite has been significantly restructured since then (31 CTest targets
 > as of v3.21.0 vs 20 at time of this audit). The 8 original audit suites have
 > been consolidated into `unified_audit` + 17 specialized standalone audit tests
-> (including Wycheproof ECDSA/ECDH, Fiat-Crypto linkage, CT formal verification,
+> (including Wycheproof ECDSA/ECDH, independent reference linkage, CT formal verification,
 > fault injection, and cross-platform KAT).
 > FROST/MuSig2 protocol-level tests have been added since this report.
 > This document is preserved as a historical baseline.

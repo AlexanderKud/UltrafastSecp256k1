@@ -172,7 +172,7 @@ This top-level narrative maps directly to the assurance ledger: CT secret-key ro
 
 - Every field arithmetic property is verified algebraically: commutativity, associativity, distributivity, carry propagation, canonical form
 - Every constant-time path is verified under **formal CT analysis + Valgrind + hardware-native ARM64 CT pipeline** — three independent layers
-- Every ECDSA/Schnorr implementation is cross-validated against **Wycheproof vectors, Fiat-Crypto reference, and BIP test vectors**
+- Every ECDSA/Schnorr implementation is cross-validated against **Wycheproof vectors, independent reference golden vectors, and BIP test vectors**
 - Every commit that would regress throughput **fails CI automatically** via `bench-regression.yml`
 - Audit results are logged as **structured artifacts** (JSON reports, per-platform logs), not just pass/fail signals
 - **Nightly differential testing** runs ~1.3M random round-trips against reference implementations every night

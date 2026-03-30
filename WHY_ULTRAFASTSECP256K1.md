@@ -37,7 +37,7 @@ These top-level differentiators are claim-keyed in the ledger: exploit-audit sur
 | Exploit PoC tests | 86 dedicated adversarial PoC tests across 14 coverage areas (`audit/test_exploit_*.cpp`) | 86 test files, 0 failures |
 | Fuzz / adversarial | libFuzzer harnesses + 530K deterministic corpus adversarial checks | ~530,000+ |
 | Wycheproof vectors | Google's cryptographic test vectors for ECDSA and ECDH | Hundreds of vectors |
-| Fiat-Crypto linkage | Cross-validates field arithmetic against formally-verified Fiat-Crypto reference | Full suite |
+| Independent reference linkage | Cross-validates field arithmetic against independent schoolbook oracle + golden vectors | Full suite |
 | FROST / MuSig2 KAT | Protocol-level Known Answer Tests per BIP-327 and FROST spec | Full suite |
 | Fault injection | Tests behaviour under simulated hardware faults (bit flips, counter skips) | Full suite |
 | ABI gate | FFI round-trip stability, C ABI regression detection | Full suite |
@@ -161,7 +161,7 @@ UltrafastSecp256k1 applies the OpenSSF supply-chain hardening model:
 
 | Layer | Method | Status |
 |-------|--------|--------|
-| Field arithmetic correctness | Fiat-Crypto cross-validation (differential testing against formally-verified reference) | Active |
+| Field arithmetic correctness | Independent reference cross-validation (differential testing against schoolbook oracle + golden vectors) | Active |
 | Constant-time (field/scalar) | `ct-verif` tool + ARM64 hardware CI | Active |
 | Constant-time (point ops) | Dedicated `ct-arm64.yml` pipeline + Valgrind shadow analysis | Active |
 | Wycheproof ECDSA/ECDH | Google's adversarial test vector suite | Active |

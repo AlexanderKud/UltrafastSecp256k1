@@ -398,9 +398,9 @@ Diagnostic timing comparison between CT and fast scalar multiplication paths.
 7. **ECDSA signature serialization roundtrip**: compact <-> DER
 8. **BIP-340 known test vectors**: official Bitcoin test vectors
 
-### [22/55] Fiat-Crypto Reference Vectors -- 647 checks
+### [22/55] Independent Reference Vectors -- 647 checks
 
-Golden vectors from Fiat-Crypto / Sage computer algebra:
+Golden vectors from Sage computer algebra and independent computation:
 
 1. Field multiplication golden vectors
 2. Field squaring golden vectors
@@ -1094,7 +1094,7 @@ APT install: `sudo apt install libufsecp-dev`
 | Constant-time layer + equivalence | COVERED | dudect smoke + full, CT deep, ASM inspection, Valgrind CLASSIFY/DECLASSIFY |
 | Standard test vectors (BIP-340/32, RFC 6979, FROST) | COVERED | Official vectors verified |
 | Randomized differential testing | COVERED | 13K+ checks (CI) + 1.3M (nightly) |
-| Fiat-Crypto reference vectors | COVERED | Golden vectors from computer algebra |
+| Independent reference vectors | COVERED | Golden vectors from Sage + independent schoolbook oracle (6085 linkage + 647 vector checks) |
 | Cross-platform KAT | COVERED | X64, ARM64, RISC-V all identical |
 | Parser/adversarial fuzzing (deterministic) | COVERED | 530K+ random inputs, 0 crashes |
 | Coverage-guided fuzzing | COVERED | 3 libFuzzer harnesses (field, scalar, point) + ASan |

@@ -102,7 +102,7 @@ Output: `audit-output-<timestamp>/audit_report.md` + `artifacts/`
 |---|------|---------------|-------------|
 | G.1 | Internal differential (5x52 vs 10x26 vs 4x64) | `field_52`, `field_26`, `differential` | `differential` |
 | G.2 | Cross-library vs bitcoin-core/libsecp256k1 | `test_cross_libsecp256k1.cpp` | `cross_libsecp256k1` (requires `-DSECP256K1_BUILD_CROSS_TESTS=ON`) |
-| G.3 | Fiat-Crypto reference vectors | `fiat_crypto` | `fiat_crypto_vectors` |
+| G.3 | Independent reference golden vectors | `fiat_crypto` | `fiat_crypto_vectors` |
 | G.4 | Cross-platform KAT | `cross_platform_kat` | `cross_platform_kat` |
 
 ### H. Fuzzing (Robustness / Parser Safety)

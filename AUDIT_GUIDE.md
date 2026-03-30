@@ -371,7 +371,7 @@ clang++ -fsanitize=fuzzer,address -O2 -std=c++20 \
 - [ ] **from_bytes vs from_limbs**: verify endianness handling
 - [ ] **ZK proofs**: `audit_zk` passes -- knowledge, DLEQ, range proof, serialization, rejection
 - [ ] **Wycheproof**: all 89 ECDSA + 36 ECDH adversarial vectors correctly rejected/accepted
-- [ ] **Fiat-Crypto linkage**: field arithmetic matches formally-verified reference
+- [ ] **Independent reference linkage**: field arithmetic matches independent schoolbook oracle + Fiat-Crypto golden vectors
 - [ ] **BIP-324**: handshake/encrypt/decrypt/tamper tests pass in `test_bip324_standalone` and FFI coverage passes in `test_ffi_coverage`
 - [ ] **GPU kernels**: verify arithmetic matches CPU reference (note: no CT guarantee on GPU)
 - [ ] **FROST / MuSig2**: verify protocol/adversarial suites and reference vectors remain green
