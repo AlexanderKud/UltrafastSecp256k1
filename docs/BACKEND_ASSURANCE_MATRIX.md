@@ -143,6 +143,11 @@ evidence for ROCm/HIP promotion.
 GPU CT kernels exist to verify device paths match the constant-time CPU reference
 (CT smoke tests). They are not a recommendation to move private-key signing to GPU.
 
+> **GPU is variable-time**: GPU kernels are NOT constant-time with respect to secret inputs.
+> `ufsecp_gpu_ecdh_batch` accepts private keys for BIP-352 scanning workloads where the GPU
+> operates in a trusted single-tenant environment. Sending secret keys to GPU in a shared/cloud
+> GPU environment is a critical vulnerability. Production signing MUST use the CPU CT layer.
+
 ---
 
 ## CTest Targets by Backend

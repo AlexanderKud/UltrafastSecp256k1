@@ -2207,7 +2207,7 @@ std::string get_default_cache_path(unsigned window_bits) {
     }
     filename += ".bin";
     
-    // Use configured cache directory (default: G:\EccTables)
+    // Use configured cache directory
     if (!g_config.cache_dir.empty()) {
         std::string cache_path = g_config.cache_dir + "/" + filename;
         // Use stat() instead of std::filesystem::exists() to avoid
@@ -2589,7 +2589,7 @@ bool write_default_fixed_base_config(const std::string& path) {
     out << "# Lines beginning with '#' or ';' are comments.\n";
     out << "# Edit values to match your environment.\n\n";
     out << "# Directory holding precomputed tables (cache_w{bits}[ _glv].bin)\n";
-    out << "cache_dir=F:\\EccTables\n\n";
+    out << "cache_dir=\n\n";
     out << "# Fixed-base window size (higher = larger cache, faster generator mul). Typical: 16-20\n";
     out << "window_bits=18\n\n";
     out << "# GLV path and JSF recoding (affects generator mul internals)\n";
@@ -2732,7 +2732,7 @@ static double measure_ns_per_mul(const FixedBaseConfig& cfg,
 static std::vector<TuneCandidate> discover_candidates(const FixedBaseConfig& base_cfg, unsigned min_w, unsigned max_w) {
     std::vector<TuneCandidate> out;
 
-    std::string const dir = base_cfg.cache_dir.empty() ? std::string("F:\\EccTables") : base_cfg.cache_dir;
+    std::string const dir = base_cfg.cache_dir.empty() ? std::string(".") : base_cfg.cache_dir;
     struct stat dir_st;
     if (::stat(dir.c_str(), &dir_st) != 0) return out;
 #ifdef _WIN32
@@ -2813,7 +2813,6 @@ bool auto_tune_fixed_base(FixedBaseConfig& best_out,
                           unsigned min_w,
                           unsigned max_w) {
     FixedBaseConfig base = best_out; // start from provided/default
-    if (base.cache_dir.empty()) base.cache_dir = "F:\\EccTables";
     base.use_cache = true;
     base.max_windows_to_load = 0;
 

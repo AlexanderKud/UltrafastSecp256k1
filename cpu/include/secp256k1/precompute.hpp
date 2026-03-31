@@ -39,8 +39,8 @@ struct FixedBaseConfig {
     
     // Cache configuration
     bool use_cache = true;              // Enable cache system
-    std::string cache_path{};           // Empty = auto (F:\EccTables\cache_w{bits}.bin)
-    std::string cache_dir = "F:\\EccTables";  // Default cache directory with all precomputed tables
+    std::string cache_path{};           // Empty = auto-detect cache path from cache_dir
+    std::string cache_dir = "";         // Default cache directory with all precomputed tables
     unsigned max_windows_to_load = 0U;  // Load all windows for optimal performance
     
     // Progress reporting
