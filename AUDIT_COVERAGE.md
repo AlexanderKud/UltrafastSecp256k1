@@ -832,6 +832,19 @@ Sign/verify roundtrip timing sanity check.
 
 ---
 
+## Known Coverage Gaps
+
+The following gaps are acknowledged, tracked, and have documented mitigations:
+
+| Gap | Scope | Mitigation | Planned Fix |
+|-----|-------|------------|-------------|
+| **ct_point.cpp** not analyzed by ct-verif LLVM pass | CPU CT point ops (`point_add_complete`, `point_double`, `scalar_mul`) | Manual code review + dudect timing tests (all pass) + Valgrind taint via `valgrind_ct_check.sh` | Add to ct-verif workflow; tracked in `docs/CT_VERIFICATION.md §Known Limitations §1` |
+| FROST / MuSig2 not CT-audited | Multi-party protocols; nonce generation under review | API labeled experimental; unit tests cover functional correctness | Full CT audit once API stabilizes |
+| GPU backends (CUDA/OpenCL/Metal) CT is algorithmic only | SIMT hardware may exhibit microarchitectural side-channels | GPU CT leakage probe (`cuda/gpu_ct_leakage_probe.cu`, t=0.0 on RTX 5060 Ti); hardware-level attacks require physical access | Oscilloscope-level measurement on production hardware |
+| `batch_verify` first weight `a_0 = 1` (deterministic) | Schnorr batch verifier optimization (saves one scalar_mul) | The batch seed SHA-256 covers ALL entries so `a_1…a_{n-1}` remain unpredictable; soundness proof holds even with fixed `a_0`. Audited in `test_batch_randomness.cpp` §5. | No fix needed; documented design decision |
+
+---
+
 ## Additional CTest Targets (Outside Unified Audit)
 
 These tests run as separate CTest executables and are included in the 24/24 CTest pass:
@@ -1185,4 +1198,4 @@ valgrind --leak-check=full --error-exitcode=1 ./build_rel/audit/unified_audit_ru
 
 ---
 
-*Generated from unified_audit_runner v3.14.0 output + CI workflow analysis on 2026-02-25.*
+*Generated from unified_audit_runner v3.50.0 output + CI workflow analysis. Last updated 2026-04-01.*
