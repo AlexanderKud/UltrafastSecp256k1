@@ -13,7 +13,16 @@
 #include <cstring>
 #include <atomic>
 #if defined(_MSC_VER)
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
 #  include <windows.h>  // SecureZeroMemory
+#  ifdef min
+#    undef min
+#  endif
+#  ifdef max
+#    undef max
+#  endif
 #endif
 
 namespace secp256k1::detail {
