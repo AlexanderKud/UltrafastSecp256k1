@@ -1222,6 +1222,32 @@ target_compile_definitions(test_exploit_ctx_clone_standalone PRIVATE STANDALONE_
 add_test(NAME exploit_ctx_clone COMMAND test_exploit_ctx_clone_standalone)
 set_tests_properties(exploit_ctx_clone PROPERTIES TIMEOUT 60 LABELS "audit;exploit;context;clone")
 
+# -- PoC: Public key arithmetic (PUB-1..PUB-9: negate, tweak_add/mul, combine) -
+add_executable(test_exploit_pubkey_arith_standalone
+    test_exploit_pubkey_arith.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_pubkey_arith_standalone)
+target_include_directories(test_exploit_pubkey_arith_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_pubkey_arith_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_pubkey_arith COMMAND test_exploit_pubkey_arith_standalone)
+set_tests_properties(exploit_pubkey_arith PROPERTIES TIMEOUT 60 LABELS "audit;exploit;pubkey;tweak")
+
+# -- PoC: Batch signing edge cases (BSG-1..BSG-9) ----------------------------
+add_executable(test_exploit_batch_sign_standalone
+    test_exploit_batch_sign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_batch_sign_standalone)
+target_include_directories(test_exploit_batch_sign_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_batch_sign_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_batch_sign COMMAND test_exploit_batch_sign_standalone)
+set_tests_properties(exploit_batch_sign PROPERTIES TIMEOUT 60 LABELS "audit;exploit;schnorr;batch")
+
 # -- Diagnostic: ct::scalar_mul step-by-step comparison --------------------
 add_executable(diag_scalar_mul ${CPU_TESTS_DIR}/diag_scalar_mul.cpp)
 audit_target_defaults(diag_scalar_mul)
@@ -1596,6 +1622,8 @@ add_executable(unified_audit_runner
     test_exploit_gcs_false_positive.cpp
     test_exploit_psbt_input_confusion.cpp
     test_exploit_descriptor_injection.cpp
+    test_exploit_pubkey_arith.cpp
+    test_exploit_batch_sign.cpp
 )
 # Conditionally add 5x52 field test (requires __uint128_t; skip on MSVC)
 if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
