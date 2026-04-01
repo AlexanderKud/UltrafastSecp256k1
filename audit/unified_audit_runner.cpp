@@ -139,6 +139,7 @@ int test_gpu_abi_gate_run();          // Discovery, lifecycle, ops-if-available
 int test_audit_fuzz_run();
 int test_fuzz_parsers_run();
 int test_fuzz_address_bip32_ffi_run();
+int test_fuzz_musig2_frost_run();
 
 // ============================================================================
 // Forward declarations -- Wycheproof & batch-randomness (Track I3, I6-3)
@@ -277,6 +278,7 @@ int test_exploit_gpu_host_api_shape_run();
 int test_exploit_hedged_nonce_bias_run();
 int test_exploit_hkdf_kat_run();
 int test_exploit_hkdf_security_run();
+int test_infinity_edge_cases_run();
 int test_exploit_invalid_curve_twist_run();
 int test_exploit_keccak256_kat_run();
 int test_exploit_multiscalar_run();
@@ -317,6 +319,18 @@ int test_exploit_zk_adversarial_run();
 int test_exploit_zk_proofs_run();
 
 // ============================================================================
+// Forward declarations -- Feature Exploit PoC tests (P2SH, BIP-85, BIP-340 var,
+//                          BIP-322, BIP-158 GCS, PSBT, Descriptors)
+// ============================================================================
+int test_exploit_p2sh_address_confusion_run();
+int test_exploit_bip85_path_collision_run();
+int test_exploit_schnorr_msg_length_confusion_run();
+int test_exploit_bip322_type_confusion_run();
+int test_exploit_gcs_false_positive_run();
+int test_exploit_psbt_input_confusion_run();
+int test_exploit_descriptor_injection_run();
+
+// ============================================================================
 // Report section IDs -- 9 audit categories
 // ============================================================================
 //   1. math_invariants   -- Mathematical Invariants (Fp, Zn, Group Laws)
@@ -327,7 +341,7 @@ int test_exploit_zk_proofs_run();
 //   6. protocol_security -- Protocol Security (ECDSA, Schnorr, MuSig2, FROST)
 //   7. memory_safety     -- ABI & Memory Safety (sanitizer, zeroization)
 //   8. performance       -- Performance Validation & Regression
-//   9. exploit_poc       -- Exploit PoC Security Probes (106 attack vectors)
+//   9. exploit_poc       -- Exploit PoC Security Probes (108 attack vectors)
 // ============================================================================
 
 struct AuditModule {
@@ -363,7 +377,7 @@ static const SectionInfo SECTIONS[] = {
     { "performance",       "\xe1\x83\x9e\xe1\x83\x94\xe1\x83\xa0\xe1\x83\xa4\xe1\x83\x9d\xe1\x83\xa0\xe1\x83\x9b\xe1\x83\x90\xe1\x83\x9c\xe1\x83\xa1\xe1\x83\x98\xe1\x83\xa1 \xe1\x83\x95\xe1\x83\x90\xe1\x83\x9a\xe1\x83\x98\xe1\x83\x93\xe1\x83\x90\xe1\x83\xaa\xe1\x83\x98\xe1\x83\x90",
                            "Performance Validation & Regression" },
     { "exploit_poc",       "\xe1\x83\x94\xe1\x83\xa5\xe1\x83\xa1\xe1\x83\x9e\xe1\x83\x9a\xe1\x83\x9d\xe1\x83\x98\xe1\x83\xa2 PoC \xe1\x83\xa2\xe1\x83\x94\xe1\x83\xa1\xe1\x83\xa2\xe1\x83\x94\xe1\x83\x91\xe1\x83\x98",
-                           "Exploit PoC Security Probes (106 attack vectors)" },
+                           "Exploit PoC Security Probes (108 attack vectors)" },
 };
 static constexpr int NUM_SECTIONS = sizeof(SECTIONS) / sizeof(SECTIONS[0]);
 
@@ -425,6 +439,7 @@ static const AuditModule ALL_MODULES[] = {
     { "audit_fuzz",        "Adversarial fuzz (malform/edge)",              "fuzzing",        test_audit_fuzz_run, false },
     { "fuzz_parsers",      "Parser fuzz (DER/Schnorr/Pubkey)",            "fuzzing",        test_fuzz_parsers_run, false },
     { "fuzz_addr_bip32",   "Address/BIP32/FFI boundary fuzz",             "fuzzing",        test_fuzz_address_bip32_ffi_run, false },
+    { "fuzz_musig2_frost", "Parser fuzz: MuSig2/FROST/Adaptor (15 probes)","fuzzing",        test_fuzz_musig2_frost_run, false },
     { "fault_injection",   "Fault injection simulation",                   "fuzzing",        test_fault_injection_run, false },
 
     // ===================================================================
@@ -474,7 +489,7 @@ static const AuditModule ALL_MODULES[] = {
     { "audit_perf",        "Performance smoke (sign/verify roundtrip)",    "performance",    audit_perf_run, false },
 
     // ===================================================================
-    // Section 9: Exploit PoC Security Probes (106 attack vectors)
+    // Section 9: Exploit PoC Security Probes (108 attack vectors)
     // ===================================================================
     { "exploit_adaptor_extended",       "Adaptor Signature Extended Security",          "exploit_poc", test_exploit_adaptor_extended_run, false },
     { "exploit_adaptor_parity",         "Adaptor Signature R.y Parity",                "exploit_poc", test_exploit_adaptor_parity_run, false },
@@ -544,6 +559,7 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_hedged_nonce_bias",      "Hedged Signature Nonce Bias",                 "exploit_poc", test_exploit_hedged_nonce_bias_run, false },
     { "exploit_hkdf_kat",               "HKDF-SHA256 KAT (RFC 5869)",                 "exploit_poc", test_exploit_hkdf_kat_run, false },
     { "exploit_hkdf_security",          "HKDF-SHA256 Security (RFC 5869)",             "exploit_poc", test_exploit_hkdf_security_run, false },
+    { "infinity_edge_cases",            "Point-at-Infinity Edge Cases (INF-1..28)",    "exploit_poc", test_infinity_edge_cases_run, false },
     { "exploit_invalid_curve_twist",    "Invalid Curve / Twist Point Injection",       "exploit_poc", test_exploit_invalid_curve_twist_run, false },
     { "exploit_keccak256_kat",          "Keccak-256 KAT Vectors",                      "exploit_poc", test_exploit_keccak256_kat_run, false },
     { "exploit_multiscalar",            "Multi-Scalar Multiplication",                 "exploit_poc", test_exploit_multiscalar_run, false },

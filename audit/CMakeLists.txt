@@ -818,6 +818,13 @@ target_compile_definitions(test_exploit_point_serialization_standalone PRIVATE S
 add_test(NAME exploit_point_serialization COMMAND test_exploit_point_serialization_standalone)
 set_tests_properties(exploit_point_serialization PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ec;point")
 
+# -- Point-at-Infinity edge cases (INF-1..INF-28: cancellation, serial, tweak) -
+add_executable(test_infinity_edge_cases_standalone test_infinity_edge_cases.cpp)
+audit_target_defaults(test_infinity_edge_cases_standalone)
+target_compile_definitions(test_infinity_edge_cases_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME infinity_edge_cases COMMAND test_infinity_edge_cases_standalone)
+set_tests_properties(infinity_edge_cases PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ec;point;infinity")
+
 # -- ECDSA RFC 6979 KAT (determinism, low-S, wrong-key/msg rejection) --------
 add_executable(test_exploit_ecdsa_rfc6979_kat_standalone test_exploit_ecdsa_rfc6979_kat.cpp)
 audit_target_defaults(test_exploit_ecdsa_rfc6979_kat_standalone)
@@ -1295,6 +1302,7 @@ add_executable(unified_audit_runner
     audit_fuzz.cpp
     test_fuzz_parsers.cpp
     test_fuzz_address_bip32_ffi.cpp
+    test_fuzz_musig2_frost.cpp
     # -- Deep audit modules --
     audit_field.cpp
     audit_scalar.cpp
@@ -1434,6 +1442,7 @@ add_executable(unified_audit_runner
     test_exploit_wallet_cross_domain_replay.cpp
     test_exploit_zk_adversarial.cpp
     test_exploit_zk_proofs.cpp
+    test_infinity_edge_cases.cpp
 )
 # Conditionally add 5x52 field test (requires __uint128_t; skip on MSVC)
 if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
