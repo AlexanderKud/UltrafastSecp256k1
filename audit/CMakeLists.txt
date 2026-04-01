@@ -1495,6 +1495,61 @@ target_compile_definitions(test_exploit_cache_sidechannel_amplification_standalo
 add_test(NAME exploit_cache_sidechannel_amplification COMMAND test_exploit_cache_sidechannel_amplification_standalone)
 set_tests_properties(exploit_cache_sidechannel_amplification PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;sidechannel")
 
+# -- PoC: LadderLeak-style sub-bit nonce leakage regression -----------------
+add_executable(test_exploit_ladderleak_subbit_nonce_standalone
+    test_exploit_ladderleak_subbit_nonce.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_ladderleak_subbit_nonce_standalone)
+target_include_directories(test_exploit_ladderleak_subbit_nonce_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_ladderleak_subbit_nonce_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_ladderleak_subbit_nonce COMMAND test_exploit_ladderleak_subbit_nonce_standalone)
+set_tests_properties(exploit_ladderleak_subbit_nonce PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;nonce;ladderleak")
+
+# -- PoC: Minerva-style noisy HNP leakage regression ------------------------
+add_executable(test_exploit_minerva_noisy_hnp_standalone
+    test_exploit_minerva_noisy_hnp.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_minerva_noisy_hnp_standalone)
+target_include_directories(test_exploit_minerva_noisy_hnp_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_minerva_noisy_hnp_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_minerva_noisy_hnp COMMAND test_exploit_minerva_noisy_hnp_standalone)
+set_tests_properties(exploit_minerva_noisy_hnp PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;nonce;minerva")
+
+# -- PoC: Hertzbleed-style DVFS timing regression ---------------------------
+add_executable(test_exploit_hertzbleed_dvfs_timing_standalone
+    test_exploit_hertzbleed_dvfs_timing.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_hertzbleed_dvfs_timing_standalone)
+target_include_directories(test_exploit_hertzbleed_dvfs_timing_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_hertzbleed_dvfs_timing_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_hertzbleed_dvfs_timing COMMAND test_exploit_hertzbleed_dvfs_timing_standalone)
+set_tests_properties(exploit_hertzbleed_dvfs_timing PROPERTIES TIMEOUT 60 LABELS "audit;exploit;sidechannel;timing;dvfs")
+
+# -- PoC: Biased nonce chain-scale scan regression --------------------------
+add_executable(test_exploit_biased_nonce_chain_scan_standalone
+    test_exploit_biased_nonce_chain_scan.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_biased_nonce_chain_scan_standalone)
+target_include_directories(test_exploit_biased_nonce_chain_scan_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_biased_nonce_chain_scan_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_biased_nonce_chain_scan COMMAND test_exploit_biased_nonce_chain_scan_standalone)
+set_tests_properties(exploit_biased_nonce_chain_scan PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;nonce;bias")
+
+# -- PoC: KR-ECDSA/BUFF binding regression ----------------------------------
+add_executable(test_exploit_kr_ecdsa_buff_binding_standalone
+    test_exploit_kr_ecdsa_buff_binding.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_kr_ecdsa_buff_binding_standalone)
+target_include_directories(test_exploit_kr_ecdsa_buff_binding_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_kr_ecdsa_buff_binding_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_kr_ecdsa_buff_binding COMMAND test_exploit_kr_ecdsa_buff_binding_standalone)
+set_tests_properties(exploit_kr_ecdsa_buff_binding PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;binding")
+
 # -- Diagnostic: ct::scalar_mul step-by-step comparison --------------------
 add_executable(diag_scalar_mul ${CPU_TESTS_DIR}/diag_scalar_mul.cpp)
 audit_target_defaults(diag_scalar_mul)
@@ -1893,6 +1948,11 @@ add_executable(unified_audit_runner
     test_exploit_frost_adaptive_corruption.cpp
     test_exploit_ecdsa_fault_injection.cpp
     test_exploit_cache_sidechannel_amplification.cpp
+    test_exploit_ladderleak_subbit_nonce.cpp
+    test_exploit_minerva_noisy_hnp.cpp
+    test_exploit_hertzbleed_dvfs_timing.cpp
+    test_exploit_biased_nonce_chain_scan.cpp
+    test_exploit_kr_ecdsa_buff_binding.cpp
 )
 # Conditionally add 5x52 field test (requires __uint128_t; skip on MSVC)
 if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
@@ -2016,6 +2076,9 @@ set_tests_properties(
     exploit_ecies_ephemeral_reuse exploit_address_prefix_collision
     exploit_ecdh_zvp_glv_static exploit_frost_adaptive_corruption
     exploit_ecdsa_fault_injection exploit_cache_sidechannel_amplification
+    exploit_ladderleak_subbit_nonce exploit_minerva_noisy_hnp
+    exploit_hertzbleed_dvfs_timing exploit_biased_nonce_chain_scan
+    exploit_kr_ecdsa_buff_binding
     PROPERTIES LABELS "audit"
 )
 if(SECP256K1_BUILD_PROTOCOL_TESTS)

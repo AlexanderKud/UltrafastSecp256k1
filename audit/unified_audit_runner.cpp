@@ -354,6 +354,11 @@ int test_exploit_ecdh_zvp_glv_static_run();
 int test_exploit_frost_adaptive_corruption_run();
 int test_exploit_ecdsa_fault_injection_run();
 int test_exploit_cache_sidechannel_amplification_run();
+int test_exploit_ladderleak_subbit_nonce_run();
+int test_exploit_minerva_noisy_hnp_run();
+int test_exploit_hertzbleed_dvfs_timing_run();
+int test_exploit_biased_nonce_chain_scan_run();
+int test_exploit_kr_ecdsa_buff_binding_run();
 
 // ============================================================================
 // Report section IDs -- 9 audit categories
@@ -656,6 +661,11 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_frost_adaptive_corr",    "FROST Adaptive Corruption Misuse",            "exploit_poc", test_exploit_frost_adaptive_corruption_run, false },
     { "exploit_ecdsa_fault_injection",  "Deterministic ECDSA Fault-Injection Surface", "exploit_poc", test_exploit_ecdsa_fault_injection_run, false },
     { "exploit_cache_sidechannel_amp",  "Cache Side-Channel Amplification Surface",    "exploit_poc", test_exploit_cache_sidechannel_amplification_run, false },
+    { "exploit_ladderleak_subbit_nonce", "LadderLeak-Style Sub-Bit Nonce Leakage",     "exploit_poc", test_exploit_ladderleak_subbit_nonce_run, false },
+    { "exploit_minerva_noisy_hnp",       "Minerva-Style Noisy HNP Leakage Surface",    "exploit_poc", test_exploit_minerva_noisy_hnp_run, false },
+    { "exploit_hertzbleed_dvfs_timing",  "Hertzbleed-Style DVFS Timing Surface",       "exploit_poc", test_exploit_hertzbleed_dvfs_timing_run, false },
+    { "exploit_biased_nonce_chain_scan", "Biased-Nonce Chain-Scale Scan Surface",      "exploit_poc", test_exploit_biased_nonce_chain_scan_run, false },
+    { "exploit_kr_ecdsa_buff_binding",   "KR-ECDSA/BUFF Binding Regression Surface",   "exploit_poc", test_exploit_kr_ecdsa_buff_binding_run, false },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);
