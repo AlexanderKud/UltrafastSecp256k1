@@ -54,11 +54,17 @@ All measurements: RTX 5060 Ti (SM 12.0, CUDA 12), batch=16 384, kernel-only thro
 
 **Quick links:** [Discord](https://discord.gg/sUmW7cc5) * [Benchmarks](docs/BENCHMARKS.md) * [Community Benchmarks](docs/COMMUNITY_BENCHMARKS.md) * [Adopters](ADOPTERS.md) * [Build Guide](docs/BUILDING.md) * [API Reference](docs/API_REFERENCE.md) * [Binding Usage Standard](docs/BINDINGS_USAGE_STANDARD.md) * [Security Policy](SECURITY.md) * [Threat Model](THREAT_MODEL.md) * [Assurance Ledger](docs/ASSURANCE_LEDGER.md) * [AI Audit Protocol](docs/AI_AUDIT_PROTOCOL.md) * [**Why This Library?**](WHY_ULTRAFASTSECP256K1.md) * [Porting Guide](PORTING.md) * [**Sponsor**](https://github.com/sponsors/shrec)
 
-### Adoption & Ecosystem Signals
+### Real-world Adoption
 
-- Known production adoption now includes [SparrowWallet Frigate](https://github.com/sparrowwallet/frigate); the disclosure is published with permission from Craig Raw.
-- Package distribution also shows public traction: [`ufsecp`](https://www.npmjs.com/package/ufsecp) had 1,192 npm downloads in the last 30 days, [`react-native-ufsecp`](https://www.npmjs.com/package/react-native-ufsecp) had 1,295, and [`Ufsecp`](https://www.nuget.org/packages/Ufsecp) shows 1,491 total NuGet downloads as of 2026-03-29.
-- The maintained running list lives in [ADOPTERS.md](ADOPTERS.md), so new public deployments and package signals can be appended over time without bloating the release notes.
+UltrafastSecp256k1 is used by [Sparrow Wallet's Frigate](https://github.com/sparrowwallet/frigate).
+
+Frigate 1.4.0 switched its DuckDB extension to `ufsecp.duckdb_extension` using UltrafastSecp256k1, and its README documents a custom DuckDB extension wrapping UltrafastSecp256k1 for `ufsecp_scan(...)`-based Silent Payments scanning with CUDA, OpenCL and Metal backend support.
+
+See: [Frigate 1.4.0 release](https://github.com/sparrowwallet/frigate/releases/tag/1.4.0) · [Frigate README](https://github.com/sparrowwallet/frigate/blob/master/README.md) · [Details →](docs/ADOPTION.md)
+
+Package traction: [`ufsecp`](https://www.npmjs.com/package/ufsecp) 1,192 npm downloads/30d · [`react-native-ufsecp`](https://www.npmjs.com/package/react-native-ufsecp) 1,295/30d · [`Ufsecp`](https://www.nuget.org/packages/Ufsecp) 1,491 NuGet total (as of 2026-03-29).
+
+Full adopter list: [ADOPTERS.md](ADOPTERS.md)
 
 ---
 

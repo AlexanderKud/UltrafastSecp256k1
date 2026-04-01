@@ -16,7 +16,7 @@ so we can list you here.
 
 | Organization | Use Case | Features Used | Since |
 |---|---|---|---|
-| [SparrowWallet Frigate](https://github.com/sparrowwallet/frigate) | Electrum server / Bitcoin backend workloads using UltrafastSecp256k1 in production | Bitcoin secp256k1 primitives | 2026-03 |
+| [SparrowWallet Frigate](https://github.com/sparrowwallet/frigate) | DuckDB-based Silent Payments scanning via `ufsecp.duckdb_extension` wrapping UltrafastSecp256k1; uses `ufsecp_scan(...)` with CUDA, OpenCL and Metal backends | ECDSA, Schnorr, ECDH, Silent Payments, GPU batch | 2026-03 (v1.4.0) |
 
 ## Development / Research
 
