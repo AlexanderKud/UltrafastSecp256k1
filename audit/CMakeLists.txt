@@ -1451,6 +1451,50 @@ target_compile_definitions(test_exploit_address_prefix_collision_standalone PRIV
 add_test(NAME exploit_address_prefix_collision COMMAND test_exploit_address_prefix_collision_standalone)
 set_tests_properties(exploit_address_prefix_collision PROPERTIES TIMEOUT 60 LABELS "audit;exploit;address")
 
+# -- PoC: ECDH ZVP/GLV static-key regression surface ------------------------
+add_executable(test_exploit_ecdh_zvp_glv_static_standalone
+    test_exploit_ecdh_zvp_glv_static.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_ecdh_zvp_glv_static_standalone)
+target_include_directories(test_exploit_ecdh_zvp_glv_static_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_ecdh_zvp_glv_static_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_ecdh_zvp_glv_static COMMAND test_exploit_ecdh_zvp_glv_static_standalone)
+set_tests_properties(exploit_ecdh_zvp_glv_static PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdh;zvp;glv")
+
+# -- PoC: FROST adaptive corruption misuse regression -----------------------
+add_executable(test_exploit_frost_adaptive_corruption_standalone
+    test_exploit_frost_adaptive_corruption.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_frost_adaptive_corruption_standalone)
+target_include_directories(test_exploit_frost_adaptive_corruption_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_frost_adaptive_corruption_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_frost_adaptive_corruption COMMAND test_exploit_frost_adaptive_corruption_standalone)
+set_tests_properties(exploit_frost_adaptive_corruption PROPERTIES TIMEOUT 60 LABELS "audit;exploit;frost;adaptive")
+
+# -- PoC: Deterministic ECDSA fault-injection regression --------------------
+add_executable(test_exploit_ecdsa_fault_injection_standalone
+    test_exploit_ecdsa_fault_injection.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_ecdsa_fault_injection_standalone)
+target_include_directories(test_exploit_ecdsa_fault_injection_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_ecdsa_fault_injection_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_ecdsa_fault_injection COMMAND test_exploit_ecdsa_fault_injection_standalone)
+set_tests_properties(exploit_ecdsa_fault_injection PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;fault")
+
+# -- PoC: Cache side-channel amplification regression -----------------------
+add_executable(test_exploit_cache_sidechannel_amplification_standalone
+    test_exploit_cache_sidechannel_amplification.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_cache_sidechannel_amplification_standalone)
+target_include_directories(test_exploit_cache_sidechannel_amplification_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_cache_sidechannel_amplification_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_cache_sidechannel_amplification COMMAND test_exploit_cache_sidechannel_amplification_standalone)
+set_tests_properties(exploit_cache_sidechannel_amplification PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;sidechannel")
+
 # -- Diagnostic: ct::scalar_mul step-by-step comparison --------------------
 add_executable(diag_scalar_mul ${CPU_TESTS_DIR}/diag_scalar_mul.cpp)
 audit_target_defaults(diag_scalar_mul)
@@ -1707,7 +1751,7 @@ add_executable(unified_audit_runner
     ${CPU_TESTS_DIR}/test_field_26.cpp
     # -- diagnostics --
     ${CPU_TESTS_DIR}/diag_scalar_mul.cpp
-    # -- Exploit PoC tests (110 attack vectors, Section 9) --
+    # -- Exploit PoC tests (Section 9) --
     test_exploit_adaptor_extended.cpp
     test_exploit_adaptor_parity.cpp
     test_exploit_address_encoding.cpp
@@ -1845,6 +1889,10 @@ add_executable(unified_audit_runner
     test_exploit_quantum_exposure.cpp
     test_exploit_ecies_ephemeral_reuse.cpp
     test_exploit_address_prefix_collision.cpp
+    test_exploit_ecdh_zvp_glv_static.cpp
+    test_exploit_frost_adaptive_corruption.cpp
+    test_exploit_ecdsa_fault_injection.cpp
+    test_exploit_cache_sidechannel_amplification.cpp
 )
 # Conditionally add 5x52 field test (requires __uint128_t; skip on MSVC)
 if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
@@ -1966,6 +2014,8 @@ set_tests_properties(
     exploit_bip352_parity_confusion exploit_rfc6979_truncation_bias
     exploit_binding_adversarial_api exploit_quantum_exposure
     exploit_ecies_ephemeral_reuse exploit_address_prefix_collision
+    exploit_ecdh_zvp_glv_static exploit_frost_adaptive_corruption
+    exploit_ecdsa_fault_injection exploit_cache_sidechannel_amplification
     PROPERTIES LABELS "audit"
 )
 if(SECP256K1_BUILD_PROTOCOL_TESTS)

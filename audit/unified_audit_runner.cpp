@@ -208,7 +208,7 @@ int test_ethereum_run();
 #endif
 
 // ============================================================================
-// Forward declarations -- Exploit PoC tests (106 standalone security probes)
+// Forward declarations -- Exploit PoC tests
 // ============================================================================
 int test_exploit_adaptor_extended_run();
 int test_exploit_adaptor_parity_run();
@@ -350,6 +350,10 @@ int test_exploit_binding_invalid_curve_run();
 int test_exploit_frost_ct_nonce_run();
 int test_exploit_frost_participant_set_malleability_run();
 int test_exploit_musig2_parallel_session_cross_run();
+int test_exploit_ecdh_zvp_glv_static_run();
+int test_exploit_frost_adaptive_corruption_run();
+int test_exploit_ecdsa_fault_injection_run();
+int test_exploit_cache_sidechannel_amplification_run();
 
 // ============================================================================
 // Report section IDs -- 9 audit categories
@@ -362,7 +366,7 @@ int test_exploit_musig2_parallel_session_cross_run();
 //   6. protocol_security -- Protocol Security (ECDSA, Schnorr, MuSig2, FROST)
 //   7. memory_safety     -- ABI & Memory Safety (sanitizer, zeroization)
 //   8. performance       -- Performance Validation & Regression
-//   9. exploit_poc       -- Exploit PoC Security Probes (135 modules)
+//   9. exploit_poc       -- Exploit PoC Security Probes
 // ============================================================================
 
 struct AuditModule {
@@ -398,7 +402,7 @@ static const SectionInfo SECTIONS[] = {
     { "performance",       "\xe1\x83\x9e\xe1\x83\x94\xe1\x83\xa0\xe1\x83\xa4\xe1\x83\x9d\xe1\x83\xa0\xe1\x83\x9b\xe1\x83\x90\xe1\x83\x9c\xe1\x83\xa1\xe1\x83\x98\xe1\x83\xa1 \xe1\x83\x95\xe1\x83\x90\xe1\x83\x9a\xe1\x83\x98\xe1\x83\x93\xe1\x83\x90\xe1\x83\xaa\xe1\x83\x98\xe1\x83\x90",
                            "Performance Validation & Regression" },
     { "exploit_poc",       "\xe1\x83\x94\xe1\x83\xa5\xe1\x83\xa1\xe1\x83\x9e\xe1\x83\x9a\xe1\x83\x9d\xe1\x83\x98\xe1\x83\xa2 PoC \xe1\x83\xa2\xe1\x83\x94\xe1\x83\xa1\xe1\x83\xa2\xe1\x83\x94\xe1\x83\x91\xe1\x83\x98",
-                           "Exploit PoC Security Probes (135 modules)" },
+                           "Exploit PoC Security Probes" },
 };
 static constexpr int NUM_SECTIONS = sizeof(SECTIONS) / sizeof(SECTIONS[0]);
 
@@ -510,7 +514,7 @@ static const AuditModule ALL_MODULES[] = {
     { "audit_perf",        "Performance smoke (sign/verify roundtrip)",    "performance",    audit_perf_run, false },
 
     // ===================================================================
-    // Section 9: Exploit PoC Security Probes (135 modules)
+    // Section 9: Exploit PoC Security Probes
     // ===================================================================
     { "exploit_adaptor_extended",       "Adaptor Signature Extended Security",          "exploit_poc", test_exploit_adaptor_extended_run, false },
     { "exploit_adaptor_parity",         "Adaptor Signature R.y Parity",                "exploit_poc", test_exploit_adaptor_parity_run, false },
@@ -648,6 +652,10 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_frost_ct_nonce",         "FROST CT Nonce (FCN)",                        "exploit_poc", test_exploit_frost_ct_nonce_run, false },
     { "exploit_frost_part_set_mall",    "FROST Participant Set Malleability (FPS)",    "exploit_poc", test_exploit_frost_participant_set_malleability_run, false },
     { "exploit_musig2_par_session",     "MuSig2 Parallel Session Cross (MPS)",         "exploit_poc", test_exploit_musig2_parallel_session_cross_run, false },
+    { "exploit_ecdh_zvp_glv_static",    "ECDH ZVP/GLV Static-Key Abuse",               "exploit_poc", test_exploit_ecdh_zvp_glv_static_run, false },
+    { "exploit_frost_adaptive_corr",    "FROST Adaptive Corruption Misuse",            "exploit_poc", test_exploit_frost_adaptive_corruption_run, false },
+    { "exploit_ecdsa_fault_injection",  "Deterministic ECDSA Fault-Injection Surface", "exploit_poc", test_exploit_ecdsa_fault_injection_run, false },
+    { "exploit_cache_sidechannel_amp",  "Cache Side-Channel Amplification Surface",    "exploit_poc", test_exploit_cache_sidechannel_amplification_run, false },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);
