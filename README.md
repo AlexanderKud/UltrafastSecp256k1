@@ -8,6 +8,11 @@
 
 **Audit-first, high-performance secp256k1 engine for C++ and GPU-scale batch workloads** — built independently from scratch for Bitcoin, Ethereum, Silent Payments, threshold signatures (FROST, MuSig2), embedded systems, and reproducible benchmarking. UltrafastSecp256k1 combines optimized CPU arithmetic, a stable multi-backend GPU C ABI, **world-first open-source GPU FROST partial verification**, constant-time CPU signing paths, HD key derivation (BIP-32/44), Taproot (BIP-340/341), ZK range proofs, and 12+ platform targets including CUDA, OpenCL, Metal, WebAssembly, RISC-V, ESP32, and STM32.
 
+> **This project is two things at once:**
+> **1. A high-performance secp256k1 engine** — GPU-accelerated, multi-platform, production-hardened.
+> **2. A continuous, self-evolving audit system** — every exploit attempt becomes a permanent regression test. Security is treated as an ongoing process, not a static document.
+> → [How the audit system works](#engineering-quality--self-audit-culture)
+
 > **Keywords:** secp256k1 GPU · ECDSA batch verify · Schnorr BIP-340 · FROST threshold signatures · MuSig2 · Bitcoin cryptography · CUDA secp256k1 · OpenCL ECC · BIP-352 Silent Payments · constant-time cryptography · embedded ECC · WebAssembly crypto
 
 > **11.00 M BIP352 scans/s** · **4.88 M ECDSA signs/s** · **4.05 M ECDSA verifies/s** · **3.66 M Schnorr signs/s** · **5.38 M Schnorr verifies/s** · **1.34 M FROST partial verifies/s** · **97.2 M point compressions/s** — single GPU (RTX 5060 Ti SM 12.0)
@@ -28,6 +33,7 @@ All measurements: RTX 5060 Ti (SM 12.0, CUDA 12), batch=16 384, kernel-only thro
 
 ### Why UltrafastSecp256k1?
 
+- **Continuous adversarial audit system** -- every exploit attempt becomes a permanent regression test; 1,000,000+ assertions per build, 121 exploit PoC modules across 115 attack vectors, 24 CI workflows, 3 formal CT verification pipelines, 1.3M+ nightly differential checks — security hardens on every commit, not just on release day ([→ how it works](#engineering-quality--self-audit-culture))
 - **Differentiated GPU secp256k1 surface** -- CUDA, OpenCL, and Metal all implement the stable 13-op GPU C ABI, while CUDA also carries the highest-throughput signing and verification kernels plus **GPU FROST partial verification** ([reproducible benchmark suite and raw logs](docs/BENCHMARKS.md))
 - **High-performance CPU secp256k1 engine** -- optimized generator multiply, scalar multiply, hashing, and serialization pipelines across x86-64, ARM64, RISC-V, and embedded targets ([see bench_unified ratio table](docs/BENCHMARKS.md))
 - **BIP-352 Silent Payments at 11.00 M/s** -- the full 7-stage GPU pipeline (k×P → hash → k×G → add → match) runs at 91.0 ns/op on CUDA, **267× faster** than single-threaded CPU ([GPU bench](docs/BENCHMARKS.md), [standalone CPU benchmark by @craigraw](https://github.com/craigraw/bench_bip352))
@@ -37,7 +43,6 @@ All measurements: RTX 5060 Ti (SM 12.0, CUDA 12), batch=16 384, kernel-only thro
 - **Zero dependencies** -- pure C++20, no Boost, no OpenSSL, compiles anywhere with a conforming compiler
 - **Dual-layer security** -- variable-time FAST path for throughput, constant-time CT path for secret-key operations
 - **12+ platforms** -- x86-64, ARM64, RISC-V, WASM, iOS, Android, ESP32, STM32, CUDA, Metal, OpenCL, plus an early-development ROCm/HIP compatibility path slated for hardware-backed validation
-- **Audit-first engineering culture** -- 1,000,000+ internal assertions per build, 55 unified audit modules, **86 exploit PoC tests across 14 coverage areas**, 24 GitHub Actions workflows, 3 formal constant-time verification pipelines, 1.3M+ nightly differential checks, and a graph-driven self-audit framework built around reproducibility rather than one-off trust signals
 
 > **Benchmark reproducibility:** All numbers come from pinned compiler/driver/toolkit versions with exact commands and raw logs. See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) (methodology) and the [live dashboard](https://shrec.github.io/UltrafastSecp256k1/dev/bench/).
 
