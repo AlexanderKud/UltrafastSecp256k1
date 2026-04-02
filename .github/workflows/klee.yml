@@ -193,6 +193,7 @@ jobs:
               klee/klee:3.0 \
               clang++ -std=c++17 -emit-llvm -O0 -g \
                 -I /home/klee/klee_build/include \
+                -include assert.h \
                 "/work/${name}.cpp" -c -o "/work/${name}.bc"
             echo "  -> /tmp/klee-work/${name}.bc"
           done
