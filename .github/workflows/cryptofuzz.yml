@@ -188,10 +188,15 @@ jobs:
               uint8_t our_pub[33] = {};
               if (ufsecp_pubkey_create(ctx, privkey, our_pub) != UFSECP_OK) return;
 
-              // Sign with our library
-              uint8_t our_sig[72] = {};
-              size_t our_sig_len = 72;
-              if (ufsecp_ecdsa_sign(ctx, privkey, msg32, our_sig, &our_sig_len) != UFSECP_OK)
+              // Sign with our library → compact 64-byte sig
+              uint8_t our_sig64[64] = {};
+              if (ufsecp_ecdsa_sign(ctx, msg32, privkey, our_sig64) != UFSECP_OK)
+                  return;
+
+              // Convert compact sig to DER for libsecp256k1 verify
+              uint8_t our_der[72] = {};
+              size_t our_der_len = 72;
+              if (ufsecp_ecdsa_sig_to_der(ctx, our_sig64, our_der, &our_der_len) != UFSECP_OK)
                   return;
 
               // Verify with reference libsecp256k1
@@ -200,7 +205,7 @@ jobs:
 
               secp256k1_ecdsa_signature ref_sig;
               int parsed = secp256k1_ecdsa_signature_parse_der(
-                  ref_ctx, &ref_sig, our_sig, our_sig_len);
+                  ref_ctx, &ref_sig, our_der, our_der_len);
               if (!parsed) {
                   fprintf(stderr, "DIVERGENCE[ecdsa_cross]: our sig not parseable by libsecp256k1\n");
                   g_fail++; return;
@@ -210,15 +215,18 @@ jobs:
               CHECK_DIFF(ok == 1, "ecdsa_cross_verify");
 
               // Also: sign with reference, verify with ours
-              unsigned char ref_sig_bytes[64] = {};
               secp256k1_ecdsa_signature rsig;
-              uint8_t nonce[32] = {};
-              memcpy(nonce, msg32, 32); nonce[0] ^= 0x55; // deterministic variation
               secp256k1_ecdsa_sign(ref_ctx, &rsig, msg32, privkey, NULL, NULL);
-              unsigned char der_buf[72] = {};
-              size_t der_len = 72;
-              secp256k1_ecdsa_signature_serialize_der(ref_ctx, der_buf, &der_len, &rsig);
-              int vrc = ufsecp_ecdsa_verify(ctx, our_pub, msg32, der_buf, der_len);
+              // Normalize to low-s (libsecp256k1 may produce high-s)
+              secp256k1_ecdsa_signature_normalize(ref_ctx, &rsig, &rsig);
+              unsigned char ref_der[72] = {};
+              size_t ref_der_len = 72;
+              secp256k1_ecdsa_signature_serialize_der(ref_ctx, ref_der, &ref_der_len, &rsig);
+              // Convert reference DER to compact for ufsecp_ecdsa_verify
+              uint8_t ref_compact[64] = {};
+              if (ufsecp_ecdsa_sig_from_der(ctx, ref_der, ref_der_len, ref_compact) != UFSECP_OK)
+                  return;
+              int vrc = ufsecp_ecdsa_verify(ctx, msg32, ref_compact, our_pub);
               CHECK_DIFF(vrc == UFSECP_OK, "ecdsa_cross_verify_ref_sig");
           }
 
@@ -229,16 +237,16 @@ jobs:
                                           const uint8_t aux_rand[32]) {
               if (!is_valid_privkey(privkey)) return;
 
-              // Sign with our library
+              // Sign with our library (arg order: ctx, msg32, privkey, aux_rand, sig64_out)
               uint8_t our_sig64[64] = {};
-              if (ufsecp_schnorr_sign(ctx, privkey, msg32, aux_rand, our_sig64) != UFSECP_OK)
+              if (ufsecp_schnorr_sign(ctx, msg32, privkey, aux_rand, our_sig64) != UFSECP_OK)
                   return;
 
               // Get x-only pubkey
               uint8_t our_pub[33] = {};
               if (ufsecp_pubkey_create(ctx, privkey, our_pub) != UFSECP_OK) return;
               uint8_t xonly[32] = {};
-              memcpy(xonly, our_pub + 1, 32); // compressed → x-only
+              memcpy(xonly, our_pub + 1, 32); // compressed → strip prefix → x-only
 
               // Verify with reference
               secp256k1_xonly_pubkey xpk;
@@ -256,11 +264,10 @@ jobs:
               if (ufsecp_pubkey_create(ctx, k1, pub1) != UFSECP_OK) return;
               if (ufsecp_pubkey_create(ctx, k2, pub2) != UFSECP_OK) return;
 
+              // ufsecp_ecdh(ctx, privkey, pubkey33, secret32_out) — 4 args
               uint8_t shared1[32] = {}, shared2[32] = {};
-              size_t l1 = 32, l2 = 32;
-              ufsecp_ecdh(ctx, k1, pub2, shared1, &l1);
-              ufsecp_ecdh(ctx, k2, pub1, shared2, &l2);
-              CHECK_DIFF(l1 == 32 && l2 == 32, "ecdh_symmetric_len");
+              ufsecp_ecdh(ctx, k1, pub2, shared1);
+              ufsecp_ecdh(ctx, k2, pub1, shared2);
               CHECK_DIFF(memcmp(shared1, shared2, 32) == 0, "ecdh_symmetric");
           }
 
@@ -268,8 +275,11 @@ jobs:
               const int ITERATIONS = (argc > 1) ? atoi(argv[1]) : 1000;
               fprintf(stderr, "Cryptofuzz++ differential harness — %d iterations\n", ITERATIONS);
 
-              ufsecp_ctx* ctx = ufsecp_ctx_create(UFSECP_CTX_SIGN | UFSECP_CTX_VERIFY);
-              if (!ctx) { fprintf(stderr, "ufsecp_ctx_create failed\n"); return 1; }
+              // ufsecp_ctx_create takes ufsecp_ctx** and returns ufsecp_error_t
+              ufsecp_ctx* ctx = nullptr;
+              if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) {
+                  fprintf(stderr, "ufsecp_ctx_create failed\n"); return 1;
+              }
 
               secp256k1_context* ref_ctx = secp256k1_context_create(
                   SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);

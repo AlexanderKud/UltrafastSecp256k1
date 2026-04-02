@@ -7,12 +7,14 @@
 #
 # We target the parser-boundary and input-validation layer:
 #   - ufsecp_pubkey_parse (all 33-byte compressed inputs)
-#   - ufsecp_ecdsa_verify (malformed DER signatures)
 #   - ufsecp_seckey_verify (all 32-byte scalars)
-#   - ufsecp_schnorr_verify (x-only pubkey + sig64)
+#   - DER signature parser (malformed input rejection)
 #
-# These are the surfaces most likely to contain parser strictness bugs.
-# KLEE uses LLVM bitcode so we compile with --emit-llvm first.
+# NOTE: We do NOT use 'container:' because GitHub Actions (actions/checkout,
+# actions/upload-artifact) require write access to runner temp paths which
+# the klee user inside klee/klee:3.0 does not have.  Instead we pull the
+# image and run KLEE via explicit 'docker run' commands so that checkout and
+# artifact upload happen on the host runner.
 # ============================================================================
 name: KLEE Symbolic Execution
 
@@ -51,32 +53,28 @@ jobs:
     name: KLEE symbolic execution
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    container:
-      image: klee/klee:3.0
-      options: --ulimit memlock=-1
 
     steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Verify KLEE installation
-        run: |
-          klee --version
-          klee-stats --version 2>/dev/null || true
-          llvm-config --version
+      - name: Pull KLEE Docker image
+        run: docker pull klee/klee:3.0
 
-      - name: Write KLEE harness for pubkey_parse
+      - name: Write KLEE harnesses
         run: |
-          cat > /tmp/klee_pubkey_parse.cpp << 'EOF'
-          // KLEE harness: test pubkey parser on all possible 33-byte compressed points
+          mkdir -p /tmp/klee-work
+
+          cat > /tmp/klee-work/klee_pubkey_parse.cpp << 'EOF'
           #include <klee/klee.h>
           #include <cstdint>
           #include <cstring>
           #include <cstddef>
 
-          // Minimal stub for standalone compilation under KLEE
-          // (We test the pure parser logic extracted from the library)
-
-          // secp256k1 field prime p
           static bool field_is_in_range(const uint8_t x[32]) {
               static const uint8_t P[32] = {
                   0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
@@ -88,47 +86,33 @@ jobs:
                   if (x[i] < P[i]) return true;
                   if (x[i] > P[i]) return false;
               }
-              return false; // x == p (invalid)
+              return false;
           }
 
-          // pubkey_parse constraints:
-          //   - prefix byte must be 0x02 or 0x03
-          //   - x-coordinate must be < field prime
-          //   - no silent acceptance of out-of-range x
           static int pubkey_parse_model(const uint8_t input[33]) {
               uint8_t prefix = input[0];
-              if (prefix != 0x02 && prefix != 0x03) return -1; // invalid prefix
+              if (prefix != 0x02 && prefix != 0x03) return -1;
               const uint8_t* x = input + 1;
-              if (!field_is_in_range(x)) return -2;            // x >= p → invalid
-              return 0; // accept
+              if (!field_is_in_range(x)) return -2;
+              return 0;
           }
 
           int main() {
               uint8_t input[33];
               klee_make_symbolic(input, sizeof(input), "pubkey_bytes");
-
               int result = pubkey_parse_model(input);
-
-              // KLEE assertion: if prefix is not 0x02/0x03, must reject
               if (input[0] != 0x02 && input[0] != 0x03) {
                   klee_assert(result == -1);
               }
-
-              // KLEE assertion: if x >= p, must reject
-              // (This path explores all symbolic x values that fail the range check)
               return 0;
           }
           EOF
 
-      - name: Write KLEE harness for seckey_verify
-        run: |
-          cat > /tmp/klee_seckey_verify.cpp << 'EOF'
-          // KLEE harness: test seckey validation on all 32-byte scalars
+          cat > /tmp/klee-work/klee_seckey_verify.cpp << 'EOF'
           #include <klee/klee.h>
           #include <cstdint>
           #include <cstring>
 
-          // secp256k1 group order n
           static const uint8_t N[32] = {
               0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
               0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFE,
@@ -137,59 +121,41 @@ jobs:
           };
 
           static int seckey_verify_model(const uint8_t k[32]) {
-              // Must be non-zero
               bool all_zero = true;
               for (int i = 0; i < 32; ++i) if (k[i]) { all_zero = false; break; }
               if (all_zero) return -1;
-              // Must be < n
               for (int i = 0; i < 32; ++i) {
-                  if (k[i] < N[i]) return 0;  // valid
-                  if (k[i] > N[i]) return -2; // >= n
+                  if (k[i] < N[i]) return 0;
+                  if (k[i] > N[i]) return -2;
               }
-              return -2; // == n, invalid
+              return -2;
           }
 
           int main() {
               uint8_t key[32];
               klee_make_symbolic(key, sizeof(key), "seckey");
-
               int result = seckey_verify_model(key);
-
-              // Verify consistency: zero key always rejected
               bool all_zero = true;
               for (int i = 0; i < 32; ++i) if (key[i]) { all_zero = false; break; }
-              if (all_zero) {
-                  klee_assert(result != 0);
-              }
-
-              // Verify: key == n is rejected (scalar equals group order)
+              if (all_zero) { klee_assert(result != 0); }
               bool eq_n = true;
               for (int i = 0; i < 32; ++i) if (key[i] != N[i]) { eq_n = false; break; }
-              if (eq_n) {
-                  klee_assert(result != 0);
-              }
-
+              if (eq_n) { klee_assert(result != 0); }
               return 0;
           }
           EOF
 
-      - name: Write KLEE harness for DER signature parsing
-        run: |
-          cat > /tmp/klee_der_parse.cpp << 'EOF'
-          // KLEE harness: test DER signature parser on symbolic inputs
-          // Checks that the parser never accepts malformed DER or out-of-range r/s
+          cat > /tmp/klee-work/klee_der_parse.cpp << 'EOF'
           #include <klee/klee.h>
           #include <cstdint>
           #include <cstring>
           #include <cstddef>
 
-          // Minimal DER parser model for secp256k1 ECDSA signatures
-          // DER format: 0x30 [len] 0x02 [r_len] [r] 0x02 [s_len] [s]
           static int der_parse_model(const uint8_t* der, size_t len) {
               if (len < 8 || len > 72) return -1;
               if (der[0] != 0x30) return -2;
               size_t total = der[1];
-              if (total + 2 != len) return -3;    // length mismatch
+              if (total + 2 != len) return -3;
               if (der[2] != 0x02) return -4;
               size_t r_len = der[3];
               if (r_len == 0 || r_len > 33 || 4 + r_len >= len) return -5;
@@ -197,46 +163,38 @@ jobs:
               size_t s_len = der[5 + r_len];
               if (s_len == 0 || s_len > 33) return -7;
               if (5 + r_len + s_len != len) return -8;
-
-              // r and s must not have unnecessary leading zero bytes
-              // (except when high bit is set in the value byte)
               if (r_len > 1 && der[4] == 0x00 && (der[5] & 0x80) == 0) return -9;
               if (s_len > 1 && der[5 + r_len] == 0x00 && (der[6 + r_len] & 0x80) == 0) return -10;
-
               return 0;
           }
 
-          // Fixed symbolic input size (keep state space manageable)
           #define SIG_LEN 72
 
           int main() {
               uint8_t sig[SIG_LEN];
               klee_make_symbolic(sig, sizeof(sig), "der_sig");
-
-              // Constrain length to realistic range
               size_t len;
               klee_make_symbolic(&len, sizeof(len), "sig_len");
               klee_assume(len >= 8 && len <= SIG_LEN);
-
               der_parse_model(sig, len);
-              // KLEE explores all paths; asserts are in the model above.
-              // Any klee_assert failure = parser bug.
               return 0;
           }
           EOF
 
       - name: Compile harnesses to LLVM bitcode
         run: |
-          mkdir -p /tmp/klee-bc
-          for src in /tmp/klee_pubkey_parse.cpp /tmp/klee_seckey_verify.cpp /tmp/klee_der_parse.cpp; do
+          for src in /tmp/klee-work/*.cpp; do
             name=$(basename "$src" .cpp)
-            echo "Compiling $name to bitcode..."
-            clang++ -std=c++17 -emit-llvm -O0 -g \
-              -I /usr/local/include/klee \
-              "$src" -c -o "/tmp/klee-bc/${name}.bc" 2>&1
-            echo "  → /tmp/klee-bc/${name}.bc"
+            echo "=== Compiling $name ==="
+            docker run --rm \
+              -v /tmp/klee-work:/work \
+              klee/klee:3.0 \
+              clang++ -std=c++17 -emit-llvm -O0 -g \
+                -I /home/klee/klee_build/include \
+                "/work/${name}.cpp" -c -o "/work/${name}.bc"
+            echo "  -> /tmp/klee-work/${name}.bc"
           done
-          ls -la /tmp/klee-bc/
+          ls -la /tmp/klee-work/*.bc
 
       - name: Run KLEE on each harness
         env:
@@ -246,41 +204,44 @@ jobs:
           mkdir -p /tmp/klee-results
           TOTAL_ERRORS=0
 
-          for bc in /tmp/klee-bc/*.bc; do
+          for bc in /tmp/klee-work/*.bc; do
             name=$(basename "$bc" .bc)
             echo ""
-            echo "=== KLEE: $name (max-time=${KLEE_MAX_TIME}s, max-depth=${KLEE_MAX_DEPTH}) ==="
-            outdir="/tmp/klee-results/${name}"
+            echo "=== KLEE: $name ==="
+            mkdir -p "/tmp/klee-results/${name}"
 
-            klee \
-              --output-dir="$outdir" \
-              --max-time="${KLEE_MAX_TIME}s" \
-              --max-depth="${KLEE_MAX_DEPTH}" \
-              --emit-all-errors \
-              --only-output-states-covering-new \
-              "$bc" 2>&1 | tee "/tmp/klee-results/${name}.log"
+            docker run --rm \
+              -v /tmp/klee-work:/work \
+              -v /tmp/klee-results:/results \
+              klee/klee:3.0 \
+              klee \
+                --output-dir="/results/${name}" \
+                --max-time="${KLEE_MAX_TIME}s" \
+                --max-depth="${KLEE_MAX_DEPTH}" \
+                --emit-all-errors \
+                --only-output-states-covering-new \
+                "/work/${name}.bc" 2>&1 | tee "/tmp/klee-results/${name}.log" || true
 
-            # Check for errors
-            ERRORS=$(find "$outdir" -name "*.err" 2>/dev/null | wc -l)
-            ASSERTS=$(find "$outdir" -name "*.assert.err" 2>/dev/null | wc -l)
-            echo "  Errors: $ERRORS (assertions: $ASSERTS)"
+            ASSERTS=$(find "/tmp/klee-results/${name}" -name "*.assert.err" 2>/dev/null | wc -l)
+            echo "  Assertion violations: $ASSERTS"
             if [ "$ASSERTS" -gt 0 ]; then
               echo "::error::KLEE found $ASSERTS assertion violations in $name"
               TOTAL_ERRORS=$((TOTAL_ERRORS + ASSERTS))
             fi
 
-            # Print stats
-            klee-stats "$outdir" 2>/dev/null || true
+            docker run --rm \
+              -v /tmp/klee-results:/results \
+              klee/klee:3.0 \
+              klee-stats "/results/${name}" 2>/dev/null || true
           done
 
           echo ""
-          echo "=== KLEE Summary ==="
           echo "Total assertion violations: $TOTAL_ERRORS"
           if [ "$TOTAL_ERRORS" -gt 0 ]; then
-            echo "::error::KLEE detected $TOTAL_ERRORS assertion violation(s) — parser strictness bug"
+            echo "::error::KLEE detected $TOTAL_ERRORS assertion violation(s)"
             exit 1
           fi
-          echo "::notice::KLEE: no assertion violations found across all harnesses"
+          echo "::notice::KLEE: no assertion violations found"
 
       - name: Upload KLEE results
         if: always()
