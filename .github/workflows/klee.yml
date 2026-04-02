@@ -65,124 +65,15 @@ jobs:
       - name: Pull KLEE Docker image
         run: docker pull klee/klee:3.0
 
-      - name: Write KLEE harnesses
+      - name: Copy KLEE harnesses from repo
         run: |
           mkdir -p /tmp/klee-work
           # docker run klee user needs write access to this directory
           chmod 777 /tmp/klee-work
-
-          cat > /tmp/klee-work/klee_pubkey_parse.cpp << 'EOF'
-          #include <klee/klee.h>
-          #include <cstdint>
-          #include <cstring>
-          #include <cstddef>
-
-          static bool field_is_in_range(const uint8_t x[32]) {
-              static const uint8_t P[32] = {
-                  0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-                  0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-                  0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-                  0xFF,0xFF,0xFF,0xFE,0xFF,0xFF,0xFC,0x2F
-              };
-              for (int i = 0; i < 32; ++i) {
-                  if (x[i] < P[i]) return true;
-                  if (x[i] > P[i]) return false;
-              }
-              return false;
-          }
-
-          static int pubkey_parse_model(const uint8_t input[33]) {
-              uint8_t prefix = input[0];
-              if (prefix != 0x02 && prefix != 0x03) return -1;
-              const uint8_t* x = input + 1;
-              if (!field_is_in_range(x)) return -2;
-              return 0;
-          }
-
-          int main() {
-              uint8_t input[33];
-              klee_make_symbolic(input, sizeof(input), "pubkey_bytes");
-              int result = pubkey_parse_model(input);
-              if (input[0] != 0x02 && input[0] != 0x03) {
-                  klee_assert(result == -1);
-              }
-              return 0;
-          }
-          EOF
-
-          cat > /tmp/klee-work/klee_seckey_verify.cpp << 'EOF'
-          #include <klee/klee.h>
-          #include <cstdint>
-          #include <cstring>
-
-          static const uint8_t N[32] = {
-              0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-              0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFE,
-              0xBA,0xAE,0xDC,0xE6,0xAF,0x48,0xA0,0x3B,
-              0xBF,0xD2,0x5E,0x8C,0xD0,0x36,0x41,0x41
-          };
-
-          static int seckey_verify_model(const uint8_t k[32]) {
-              bool all_zero = true;
-              for (int i = 0; i < 32; ++i) if (k[i]) { all_zero = false; break; }
-              if (all_zero) return -1;
-              for (int i = 0; i < 32; ++i) {
-                  if (k[i] < N[i]) return 0;
-                  if (k[i] > N[i]) return -2;
-              }
-              return -2;
-          }
-
-          int main() {
-              uint8_t key[32];
-              klee_make_symbolic(key, sizeof(key), "seckey");
-              int result = seckey_verify_model(key);
-              bool all_zero = true;
-              for (int i = 0; i < 32; ++i) if (key[i]) { all_zero = false; break; }
-              if (all_zero) { klee_assert(result != 0); }
-              bool eq_n = true;
-              for (int i = 0; i < 32; ++i) if (key[i] != N[i]) { eq_n = false; break; }
-              if (eq_n) { klee_assert(result != 0); }
-              return 0;
-          }
-          EOF
-
-          cat > /tmp/klee-work/klee_der_parse.cpp << 'EOF'
-          #include <klee/klee.h>
-          #include <cstdint>
-          #include <cstring>
-          #include <cstddef>
-
-          static int der_parse_model(const uint8_t* der, size_t len) {
-              if (len < 8 || len > 72) return -1;
-              if (der[0] != 0x30) return -2;
-              size_t total = der[1];
-              if (total + 2 != len) return -3;
-              if (der[2] != 0x02) return -4;
-              size_t r_len = der[3];
-              if (r_len == 0 || r_len > 33 || 4 + r_len >= len) return -5;
-              if (der[4 + r_len] != 0x02) return -6;
-              size_t s_len = der[5 + r_len];
-              if (s_len == 0 || s_len > 33) return -7;
-              if (5 + r_len + s_len != len) return -8;
-              if (r_len > 1 && der[4] == 0x00 && (der[5] & 0x80) == 0) return -9;
-              if (s_len > 1 && der[5 + r_len] == 0x00 && (der[6 + r_len] & 0x80) == 0) return -10;
-              return 0;
-          }
-
-          #define SIG_LEN 72
-
-          int main() {
-              uint8_t sig[SIG_LEN];
-              klee_make_symbolic(sig, sizeof(sig), "der_sig");
-              size_t len;
-              klee_make_symbolic(&len, sizeof(len), "sig_len");
-              klee_assume(len >= 8 && len <= SIG_LEN);
-              der_parse_model(sig, len);
-              return 0;
-          }
-          EOF
-
+          # Harness sources live in the repo — copy them to the work dir
+          cp tests/harnesses/klee/klee_pubkey_parse.cpp /tmp/klee-work/
+          cp tests/harnesses/klee/klee_seckey_verify.cpp /tmp/klee-work/
+          cp tests/harnesses/klee/klee_der_parse.cpp /tmp/klee-work/
       - name: Compile harnesses to LLVM bitcode
         run: |
           for src in /tmp/klee-work/*.cpp; do
