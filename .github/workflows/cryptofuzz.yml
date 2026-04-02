@@ -69,9 +69,11 @@ jobs:
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: ~/.cache/ccache
-          key: ccache-cryptofuzz-${{ hashFiles('cpu/src/**', 'cpu/include/**', 'include/**') }}
+          # Cache key includes arch level so -march=native from a previous run
+          # (compiled on a different physical runner) never poisons this cache.
+          key: ccache-cryptofuzz-x86-64-v2-${{ hashFiles('cpu/src/**', 'cpu/include/**', 'include/**') }}
           restore-keys: |
-            ccache-cryptofuzz-
+            ccache-cryptofuzz-x86-64-v2-
 
       - name: Build UltrafastSecp256k1 (shared library for fuzzing)
         run: |
@@ -84,7 +86,8 @@ jobs:
             -DSECP256K1_BUILD_TESTS=OFF \
             -DSECP256K1_BUILD_BENCH=OFF \
             -DSECP256K1_BUILD_EXAMPLES=OFF \
-            -DSECP256K1_USE_LTO=OFF
+            -DSECP256K1_USE_LTO=OFF \
+            -DSECP256K1_MARCH=x86-64-v2
           cmake --build build-fuzz -j"$(nproc)"
 
       - name: Clone libsecp256k1 (reference)
@@ -136,10 +139,11 @@ jobs:
           echo "Running differential harness ($ITERATIONS iterations)..."
           timeout "${FUZZ_SECONDS}" /tmp/diff_harness "$ITERATIONS" 2>&1 | tee /tmp/cryptofuzz_results.txt
           EXIT=${PIPESTATUS[0]}
+          echo "Harness exit code: $EXIT"
           if [ "$EXIT" -eq 124 ]; then
             echo "::notice::Harness reached time limit (${FUZZ_SECONDS}s) — expected for short CI run"
           elif [ "$EXIT" -ne 0 ]; then
-            echo "::error::Cryptofuzz++ detected divergence between libraries — output above"
+            echo "::error::Harness crashed (exit=$EXIT) — SIGILL=132 SIGSEGV=139 SIGABRT=134 — see output above"
             exit 1
           fi
           # Parse results
