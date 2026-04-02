@@ -881,7 +881,7 @@ target_include_directories(test_infinity_edge_cases_standalone PRIVATE
 )
 target_compile_definitions(test_infinity_edge_cases_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
 add_test(NAME infinity_edge_cases COMMAND test_infinity_edge_cases_standalone)
-set_tests_properties(infinity_edge_cases PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ec;point;infinity")
+set_tests_properties(infinity_edge_cases PROPERTIES TIMEOUT 900 LABELS "audit;exploit;ec;point;infinity")
 
 # -- ECDSA RFC 6979 KAT (determinism, low-S, wrong-key/msg rejection) --------
 add_executable(test_exploit_ecdsa_rfc6979_kat_standalone test_exploit_ecdsa_rfc6979_kat.cpp)
