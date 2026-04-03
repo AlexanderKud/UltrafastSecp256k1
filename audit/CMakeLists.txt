@@ -2284,7 +2284,20 @@ if(Python3_FOUND)
         LABELS "audit;python;stateful"
         ENVIRONMENT "${_py_env}")
 
-    message(STATUS "  Python audit scripts: 8 tests registered (py_differential_crossimpl, py_nonce_bias, py_bip32_cka, py_rfc6979_spec, py_glv_exhaustive, py_semantic_props, py_invalid_input_grammar, py_stateful_sequences)")
+    # Static dev-bug scanner — no library needed, scans C++ source files for classic
+    # development bugs: sizeof(ptr), off-by-one, signed/unsigned, truncation, null-after-deref, etc.
+    # Runs at MEDIUM level and emits a JSON report; does NOT fail CI so it serves as a
+    # review aid rather than a hard gate (until all findings are triaged and fixed).
+    add_test(NAME py_dev_bug_scan
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/dev_bug_scanner.py"
+                --min-severity MEDIUM
+                --json -o "${CMAKE_BINARY_DIR}/py_dev_bug_report.json")
+    set_tests_properties(py_dev_bug_scan PROPERTIES
+        TIMEOUT 60
+        LABELS "audit;python;static_analysis"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+    message(STATUS "  Python audit scripts: 9 tests registered (py_differential_crossimpl, py_nonce_bias, py_bip32_cka, py_rfc6979_spec, py_glv_exhaustive, py_semantic_props, py_invalid_input_grammar, py_stateful_sequences, py_dev_bug_scan)")
 else()
     message(STATUS "  Python3 not found — skipping Python audit scripts")
 endif()
