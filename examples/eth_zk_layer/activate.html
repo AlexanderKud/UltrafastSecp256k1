@@ -175,12 +175,29 @@
     Backend must be running on Linux: <code>python3 node_server.py</code><br>
     Opens CORS for this page automatically. Works cross-machine on LAN.
   </p>
+
+  <hr>
+  <div class="section-title">Library Benchmark</div>
+  <p style="font-size:0.8rem;color:var(--muted);margin-bottom:0.6rem">
+    Runs <strong>N</strong> real ecrecover + sign + wallet-auth cycles on the server
+    using the same <code>libufsecp.so</code> path as wallet authentication above.
+    No wallet needed — shows raw pipeline throughput vs go-ethereum / ethers.js / web3.py.
+  </p>
+  <div class="row">
+    <button class="secondary" onclick="openBench(500)">Bench 500 ops</button>
+    <button class="secondary" onclick="openBench(2000)">Bench 2000 ops</button>
+  </div>
 </div>
 
 <script>
 // ── state ───────────────────────────────────────────────────────────────────
 let currentNonce = null;
 let currentAddress = null;
+
+function openBench(n) {
+  const url = document.getElementById('backendUrl').value.trim().replace(/\/$/, '');
+  window.open(url + '/bench?n=' + n, '_blank');
+}
 
 function setStep(n) {
   for (let i = 1; i <= 3; i++) {
