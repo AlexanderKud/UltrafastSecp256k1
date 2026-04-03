@@ -60,6 +60,7 @@ function(ufsecp_configure tgt)
     target_include_directories(${tgt}
         PUBLIC  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../>
                 $<INSTALL_INTERFACE:include>
         PRIVATE ${CPU_INCLUDE_DIR}
                 ${SHARED_INCLUDE_DIR}
