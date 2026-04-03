@@ -426,23 +426,22 @@ def consume_nonce(nonce: str) -> str | None:
 
 def _run_gpu_bench(ufsecp: "UfSecp", pool: list) -> dict:
     """
-    Benchmark GPU ecrecover_batch for every available backend.
+    Benchmark all GPU batch operations for every compiled backend.
     Returns a dict keyed by backend name ("OpenCL", "CUDA", "Metal").
-    Each entry has: available, device, compute_units, global_mem_gb,
-    and batches: {str(N): {batch_ns, per_op_ns, ops_per_sec}}.
+    Each entry: {available, device, compute_units, global_mem_gb, max_clock_mhz,
+                 ops: {op_name: {batches, peak_ops, peak_batch_size}}}.
     """
     if not getattr(ufsecp, '_gpu_ok', False):
         return {"_available": False, "_reason": "GPU bindings not present in this build"}
 
-    L = ufsecp._lib
-    results: dict = {}
+    L    = ufsecp._lib
     POOL = len(pool)
-    # Powers of 4: 256 → 1 048 576.  We stop early if throughput plateaus.
     BATCH_SIZES = [256, 1024, 4096, 16384, 65536, 262144, 1048576]
-    GPU_WARMUP = 3
+    GPU_WARMUP  = 2
+    results: dict = {}
 
     try:
-        ids_arr = (ctypes.c_uint32 * 4)()
+        ids_arr    = (ctypes.c_uint32 * 4)()
         n_backends = L.ufsecp_gpu_backend_count(ids_arr, 4)
         if n_backends == 0:
             return {"_available": False, "_reason": "No GPU backends compiled in"}
@@ -457,12 +456,10 @@ def _run_gpu_bench(ufsecp: "UfSecp", pool: list) -> dict:
                                          "reason": "driver/device not found"}
                 continue
 
-            # Device info
             dev = _GpuDeviceInfo()
             L.ufsecp_gpu_device_info(backend_id, 0, ctypes.byref(dev))
             dev_name = dev.name.decode(errors="replace").strip()
 
-            # Create GPU context
             gpu_ctx = ctypes.c_void_p(0)
             rc = L.ufsecp_gpu_ctx_create(ctypes.byref(gpu_ctx), backend_id, 0)
             if rc != UFSECP_OK or not gpu_ctx:
@@ -470,81 +467,248 @@ def _run_gpu_bench(ufsecp: "UfSecp", pool: list) -> dict:
                                          "reason": f"ctx_create rc={rc}"}
                 continue
 
-            entry: dict = {
-                "available":       True,
-                "device":          dev_name,
-                "compute_units":   int(dev.compute_units),
-                "global_mem_gb":   round(dev.global_mem_bytes / 1e9, 1),
-                "max_clock_mhz":   int(dev.max_clock_mhz),
-                "batches":         {},
+            vram  = dev.global_mem_bytes
+            entry = {
+                "available":     True,
+                "device":        dev_name,
+                "compute_units": int(dev.compute_units),
+                "global_mem_gb": round(dev.global_mem_bytes / 1e9, 1),
+                "max_clock_mhz": int(dev.max_clock_mhz),
+                "ops":           {},
             }
 
             try:
-                prev_ops   = 0
-                plateau_at = None  # first batch size where improvement < 5 %
+                # ── Generic batch-size sweep ──────────────────────────────────
+                def _sweep(run_fn, buf_est_fn, sizes=None):
+                    if sizes is None:
+                        sizes = BATCH_SIZES
+                    batches    = {}
+                    prev_ops   = 0
+                    plateau_at = None
+                    for bs in sizes:
+                        buf_b = buf_est_fn(bs)
+                        if vram > 0 and buf_b > vram * 0.9:
+                            batches[str(bs)] = {"skipped": "OOM risk", "buf_bytes": buf_b}
+                            break
+                        try:
+                            for _ in range(GPU_WARMUP):
+                                run_fn(bs)
+                            reps = 5 if bs >= 65536 else (8 if bs >= 16384 else 12)
+                            t0 = time.perf_counter_ns()
+                            for _ in range(reps):
+                                run_fn(bs)
+                            t1 = time.perf_counter_ns()
+                            batch_ns  = (t1 - t0) / reps
+                            per_op_ns = batch_ns / bs
+                            ops_psec  = round(1e9 / per_op_ns) if per_op_ns > 0 else 0
+                            batches[str(bs)] = {
+                                "batch_ns":    round(batch_ns),
+                                "per_op_ns":   round(per_op_ns, 2),
+                                "ops_per_sec": ops_psec,
+                            }
+                            if prev_ops > 0 and ops_psec <= prev_ops * 1.03:
+                                if plateau_at is None:
+                                    plateau_at = bs
+                                elif bs >= plateau_at * 4:
+                                    break
+                            prev_ops = max(prev_ops, ops_psec)
+                        except Exception as exc:
+                            batches[str(bs)] = {"error": str(exc)}
+                            break
+                    peak_ops = max(
+                        (v["ops_per_sec"] for v in batches.values()
+                         if isinstance(v, dict) and "ops_per_sec" in v), default=0)
+                    peak_bs  = max(
+                        (int(k) for k, v in batches.items()
+                         if isinstance(v, dict) and v.get("ops_per_sec") == peak_ops), default=0)
+                    res = {"batches": batches, "peak_ops": peak_ops, "peak_batch_size": peak_bs}
+                    if plateau_at:
+                        res["peak_batch"] = plateau_at
+                    return res
 
-                for bs in BATCH_SIZES:
-                    # Safety: skip if buffer would exceed 90 % of device VRAM
-                    buf_bytes = bs * (32 + 64 + 4 + 33 + 1)
-                    vram      = dev.global_mem_bytes
-                    if vram > 0 and buf_bytes > vram * 0.9:
-                        entry["batches"][str(bs)] = {"skipped": "OOM risk",
-                                                     "buf_bytes": buf_bytes}
+                # ── 1. ecrecover_batch ────────────────────────────────────────
+                _ec: dict = {}
+                def _run_ecrecover(bs):
+                    if bs not in _ec:
+                        hb = bytearray(bs * 32); sb = bytearray(bs * 64)
+                        ri = (ctypes.c_int * bs)()
+                        for i in range(bs):
+                            h, r, s, v, _ = pool[i % POOL]
+                            hb[i*32:(i+1)*32]   = h
+                            sb[i*64:i*64+32]    = r
+                            sb[i*64+32:i*64+64] = s
+                            ri[i] = (v-27) if v in (27,28) else ((v-35)%2 if v>=35 else 0)
+                        _ec[bs] = (bytes(hb), bytes(sb), ri,
+                                   ctypes.create_string_buffer(bs*33),
+                                   ctypes.create_string_buffer(bs))
+                    h, s, ri, opk, ov = _ec[bs]
+                    L.ufsecp_gpu_ecrecover_batch(gpu_ctx, h, s, ri, bs, opk, ov)
+
+                entry["ops"]["ecrecover_batch"] = _sweep(
+                    _run_ecrecover, lambda b: b*(32+64+4+33+1))
+
+                # ── 2. generator_mul_batch ────────────────────────────────────
+                _gm: dict = {}
+                def _run_genmul(bs):
+                    if bs not in _gm:
+                        sc = bytearray(bs * 32)
+                        for i in range(bs):
+                            sc[i*32]   = max(1, (i+1) & 0xFF)
+                            sc[i*32+1] = (i >> 8) & 0xFF
+                        _gm[bs] = (bytes(sc), ctypes.create_string_buffer(bs*33))
+                    sc, out = _gm[bs]
+                    L.ufsecp_gpu_generator_mul_batch(gpu_ctx, sc, bs, out)
+
+                entry["ops"]["generator_mul_batch"] = _sweep(
+                    _run_genmul, lambda b: b*(32+33))
+
+                # ── 3. ecdsa_verify_batch ─────────────────────────────────────
+                _ev: dict = {}
+                def _run_ecdsa(bs):
+                    if bs not in _ev:
+                        hb = bytearray(bs*32); pkb = bytearray(bs*33); sb = bytearray(bs*64)
+                        for i in range(bs):
+                            h, r, s, _, _ = pool[i % POOL]
+                            hb[i*32:(i+1)*32]    = h
+                            pkb[i*33]            = 0x02
+                            pkb[i*33+1:(i+1)*33] = h
+                            sb[i*64:i*64+32]     = r
+                            sb[i*64+32:i*64+64]  = s
+                        _ev[bs] = (bytes(hb), bytes(pkb), bytes(sb),
+                                   ctypes.create_string_buffer(bs))
+                    hb, pkb, sb, out = _ev[bs]
+                    L.ufsecp_gpu_ecdsa_verify_batch(gpu_ctx, hb, pkb, sb, bs, out)
+
+                entry["ops"]["ecdsa_verify_batch"] = _sweep(
+                    _run_ecdsa, lambda b: b*(32+33+64+1))
+
+                # ── 4. schnorr_verify_batch ───────────────────────────────────
+                _sv: dict = {}
+                def _run_schnorr(bs):
+                    if bs not in _sv:
+                        hb = bytearray(bs*32); xpk = bytearray(bs*32); sb = bytearray(bs*64)
+                        for i in range(bs):
+                            h, r, s, _, _ = pool[i % POOL]
+                            hb[i*32:(i+1)*32]   = h
+                            xpk[i*32:(i+1)*32]  = h
+                            sb[i*64:i*64+32]    = r
+                            sb[i*64+32:i*64+64] = s
+                        _sv[bs] = (bytes(hb), bytes(xpk), bytes(sb),
+                                   ctypes.create_string_buffer(bs))
+                    hb, xpk, sb, out = _sv[bs]
+                    L.ufsecp_gpu_schnorr_verify_batch(gpu_ctx, hb, xpk, sb, bs, out)
+
+                entry["ops"]["schnorr_verify_batch"] = _sweep(
+                    _run_schnorr, lambda b: b*(32+32+64+1))
+
+                # ── 5. ecdh_batch ─────────────────────────────────────────────
+                _dh: dict = {}
+                def _run_ecdh(bs):
+                    if bs not in _dh:
+                        prv = bytearray(bs*32); peer = bytearray(bs*33)
+                        for i in range(bs):
+                            prv[i*32]             = max(1, (i+1) & 0xFF)
+                            prv[i*32+31]          = (i*3+7) & 0xFF
+                            h, _, _, _, _         = pool[i % POOL]
+                            peer[i*33]            = 0x02
+                            peer[i*33+1:(i+1)*33] = h
+                        _dh[bs] = (bytes(prv), bytes(peer),
+                                   ctypes.create_string_buffer(bs*32))
+                    prv, peer, out = _dh[bs]
+                    L.ufsecp_gpu_ecdh_batch(gpu_ctx, prv, peer, bs, out)
+
+                entry["ops"]["ecdh_batch"] = _sweep(
+                    _run_ecdh, lambda b: b*(32+33+32))
+
+                # ── 6. hash160_pubkey_batch ───────────────────────────────────
+                _h1: dict = {}
+                def _run_hash160(bs):
+                    if bs not in _h1:
+                        pkb = bytearray(bs*33)
+                        for i in range(bs):
+                            h, _, _, _, _        = pool[i % POOL]
+                            pkb[i*33]            = 0x02 + (i & 1)
+                            pkb[i*33+1:(i+1)*33] = h
+                        _h1[bs] = (bytes(pkb), ctypes.create_string_buffer(bs*20))
+                    pkb, out = _h1[bs]
+                    L.ufsecp_gpu_hash160_pubkey_batch(gpu_ctx, pkb, bs, out)
+
+                entry["ops"]["hash160_pubkey_batch"] = _sweep(
+                    _run_hash160, lambda b: b*(33+20))
+
+                # ── 7. msm (single output per call — measure latency curve) ───
+                _msm: dict = {}
+                def _run_msm(bs):
+                    if bs not in _msm:
+                        sc = bytearray(bs*32); pts = bytearray(bs*33)
+                        for i in range(bs):
+                            sc[i*32]              = max(1, (i+1) & 0xFF)
+                            h, _, _, _, _         = pool[i % POOL]
+                            pts[i*33]             = 0x02
+                            pts[i*33+1:(i+1)*33]  = h
+                        _msm[bs] = (bytes(sc), bytes(pts),
+                                    ctypes.create_string_buffer(33))
+                    sc, pts, out = _msm[bs]
+                    L.ufsecp_gpu_msm(gpu_ctx, sc, pts, bs, out)
+
+                msm_batches: dict = {}
+                for bs in [256, 1024, 4096, 16384, 65536]:
+                    if vram > 0 and bs*(32+33) > vram * 0.9:
+                        msm_batches[str(bs)] = {"skipped": "OOM risk"}
                         break
+                    try:
+                        for _ in range(GPU_WARMUP):
+                            _run_msm(bs)
+                        reps = 5 if bs >= 16384 else 8
+                        t0 = time.perf_counter_ns()
+                        for _ in range(reps):
+                            _run_msm(bs)
+                        t1 = time.perf_counter_ns()
+                        call_ns = (t1 - t0) / reps
+                        msm_batches[str(bs)] = {
+                            "call_ns":     round(call_ns),
+                            "per_op_ns":   round(call_ns / bs, 1),
+                            "ops_per_sec": round(1e9 * bs / call_ns) if call_ns > 0 else 0,
+                        }
+                    except Exception as exc:
+                        msm_batches[str(bs)] = {"error": str(exc)}
+                        break
+                msm_peak    = max((v["ops_per_sec"] for v in msm_batches.values()
+                                   if isinstance(v, dict) and "ops_per_sec" in v), default=0)
+                msm_peak_bs = max((int(k) for k, v in msm_batches.items()
+                                   if isinstance(v, dict) and v.get("ops_per_sec") == msm_peak),
+                                  default=0)
+                entry["ops"]["msm"] = {
+                    "batches":         msm_batches,
+                    "peak_ops":        msm_peak,
+                    "peak_batch_size": msm_peak_bs,
+                    "note":            "pairs/sec (single output point per call)",
+                }
 
-                    # Build flat arrays
-                    h_buf   = bytearray(bs * 32)
-                    sig_buf = bytearray(bs * 64)
-                    recids  = (ctypes.c_int * bs)()
-                    for i in range(bs):
-                        h, r, s, v, _ = pool[i % POOL]
-                        h_buf[i*32:(i+1)*32]      = h
-                        sig_buf[i*64:i*64+32]     = r
-                        sig_buf[i*64+32:i*64+64]  = s
-                        if   v in (27, 28):  recids[i] = v - 27
-                        elif v >= 35:        recids[i] = (v - 35) % 2
-                        else:                recids[i] = 0
+                # ── 8. frost_verify_partial_batch ─────────────────────────────
+                _fr: dict = {}
+                def _pt33(seed):
+                    return bytes([0x02] + [(seed + k) & 0xFF for k in range(32)])
+                def _run_frost(bs):
+                    if bs not in _fr:
+                        _fr[bs] = (
+                            bytes([1] * bs * 32),
+                            b''.join(_pt33(i)   for i in range(bs)),
+                            b''.join(_pt33(i+1) for i in range(bs)),
+                            b''.join(_pt33(i+2) for i in range(bs)),
+                            bytes([1] * bs * 32),
+                            bytes([1] * bs * 32),
+                            bytes([0] * bs),
+                            bytes([0] * bs),
+                            ctypes.create_string_buffer(bs),
+                        )
+                    z, D, E, Y, rho, lam, nR, nK, out = _fr[bs]
+                    L.ufsecp_gpu_frost_verify_partial_batch(
+                        gpu_ctx, z, D, E, Y, rho, lam, nR, nK, bs, out)
 
-                    h_bytes   = bytes(h_buf)
-                    sig_bytes = bytes(sig_buf)
-                    out_pk    = ctypes.create_string_buffer(bs * 33)
-                    out_val   = ctypes.create_string_buffer(bs)
+                entry["ops"]["frost_verify_partial_batch"] = _sweep(
+                    _run_frost, lambda b: b*(32+33+33+33+32+32+1+1+1))
 
-                    # Warmup
-                    for _ in range(GPU_WARMUP):
-                        L.ufsecp_gpu_ecrecover_batch(
-                            gpu_ctx, h_bytes, sig_bytes, recids, bs, out_pk, out_val)
-
-                    # Adaptive reps: target ~2 s of wall time, minimum 3
-                    reps = max(3, min(20, max(3, int(2_000_000_000 // max(1, prev_ops * 1000 // max(1, bs)) * bs))))
-                    if bs >= 65536:
-                        reps = max(3, min(5, reps))
-
-                    t0 = time.perf_counter_ns()
-                    for _ in range(reps):
-                        L.ufsecp_gpu_ecrecover_batch(
-                            gpu_ctx, h_bytes, sig_bytes, recids, bs, out_pk, out_val)
-                    t1 = time.perf_counter_ns()
-
-                    batch_ns  = (t1 - t0) / reps
-                    per_op_ns = batch_ns / bs
-                    ops_psec  = round(1e9 / per_op_ns) if per_op_ns > 0 else 0
-                    entry["batches"][str(bs)] = {
-                        "batch_ns":   round(batch_ns),
-                        "per_op_ns":  round(per_op_ns, 1),
-                        "ops_per_sec": ops_psec,
-                    }
-
-                    # Plateau detection: stop if improvement < 3 % vs prev
-                    if prev_ops > 0 and ops_psec <= prev_ops * 1.03:
-                        if plateau_at is None:
-                            plateau_at = bs  # note but continue one more
-                        elif bs >= plateau_at * 4:
-                            break            # two steps with no gain — stop
-                    prev_ops = max(prev_ops, ops_psec)
-
-                if plateau_at:
-                    entry["peak_batch"] = plateau_at
             finally:
                 L.ufsecp_gpu_ctx_destroy(gpu_ctx)
 
