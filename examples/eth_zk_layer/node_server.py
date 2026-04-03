@@ -246,10 +246,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/challenge":
             self._handle_challenge()
-        elif self.path == "/":
-            self._json(200, {"service": "UltrafastSecp256k1 Node Activator", "status": "up"})
+        elif self.path in ("/", "/activate.html"):
+            self._serve_html()
         else:
             self._json(404, {"error": "Not found"})
+
+    def _serve_html(self):
+        html_path = Path(__file__).resolve().parent / "activate.html"
+        if not html_path.exists():
+            self._json(404, {"error": "activate.html not found next to node_server.py"})
+            return
+        body = html_path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         if self.path == "/activate":
