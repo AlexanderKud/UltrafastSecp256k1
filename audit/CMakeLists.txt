@@ -2257,7 +2257,34 @@ if(Python3_FOUND)
         LABELS "audit;python;glv"
         ENVIRONMENT "${_py_env}")
 
-    message(STATUS "  Python audit scripts: 5 tests registered (py_differential_crossimpl, py_nonce_bias, py_bip32_cka, py_rfc6979_spec, py_glv_exhaustive)")
+    add_test(NAME py_semantic_props
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/semantic_props.py"
+                --lib "${_uf_lib}" --count 200
+                --json -o "${CMAKE_BINARY_DIR}/py_semantic_props_report.json")
+    set_tests_properties(py_semantic_props PROPERTIES
+        TIMEOUT 300
+        LABELS "audit;python;algebraic"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_invalid_input_grammar
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/invalid_input_grammar.py"
+                --lib "${_uf_lib}"
+                --json -o "${CMAKE_BINARY_DIR}/py_invalid_input_report.json")
+    set_tests_properties(py_invalid_input_grammar PROPERTIES
+        TIMEOUT 60
+        LABELS "audit;python;input_validation"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_stateful_sequences
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/stateful_sequences.py"
+                --lib "${_uf_lib}" --count 200
+                --json -o "${CMAKE_BINARY_DIR}/py_stateful_sequences_report.json")
+    set_tests_properties(py_stateful_sequences PROPERTIES
+        TIMEOUT 300
+        LABELS "audit;python;stateful"
+        ENVIRONMENT "${_py_env}")
+
+    message(STATUS "  Python audit scripts: 8 tests registered (py_differential_crossimpl, py_nonce_bias, py_bip32_cka, py_rfc6979_spec, py_glv_exhaustive, py_semantic_props, py_invalid_input_grammar, py_stateful_sequences)")
 else()
     message(STATUS "  Python3 not found — skipping Python audit scripts")
 endif()
