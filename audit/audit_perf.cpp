@@ -147,7 +147,7 @@ int main() {
         P = G.scalar_mul(k);
     }));
     print_result(BENCH("point_to_compressed", N_POINT, {}, {
-        volatile auto c = P.to_compressed();
+        volatile auto c = P.to_compressed(); (void)c;
     }));
     printf("\n");
 
@@ -162,10 +162,10 @@ int main() {
     auto ecdsa_sig = secp256k1::ecdsa_sign(ecdsa_msg, ecdsa_sk);
 
     print_result(BENCH("ecdsa_sign", N_SIG, {}, {
-        volatile auto s = secp256k1::ecdsa_sign(ecdsa_msg, ecdsa_sk);
+        volatile auto s = secp256k1::ecdsa_sign(ecdsa_msg, ecdsa_sk); (void)s;
     }));
     print_result(BENCH("ecdsa_verify", N_SIG, {}, {
-        volatile auto v = secp256k1::ecdsa_verify(ecdsa_msg, ecdsa_pk, ecdsa_sig);
+        volatile auto v = secp256k1::ecdsa_verify(ecdsa_msg, ecdsa_pk, ecdsa_sig); (void)v;
     }));
     printf("\n");
 
@@ -181,10 +181,10 @@ int main() {
     auto schnorr_sig = secp256k1::schnorr_sign(schnorr_sk, schnorr_msg, schnorr_aux);
 
     print_result(BENCH("schnorr_sign", N_SIG, {}, {
-        volatile auto s = secp256k1::schnorr_sign(schnorr_sk, schnorr_msg, schnorr_aux);
+        volatile auto s = secp256k1::schnorr_sign(schnorr_sk, schnorr_msg, schnorr_aux); (void)s;
     }));
     print_result(BENCH("schnorr_verify", N_SIG, {}, {
-        volatile auto v = secp256k1::schnorr_verify(schnorr_pkx, schnorr_msg, schnorr_sig);
+        volatile auto v = secp256k1::schnorr_verify(schnorr_pkx, schnorr_msg, schnorr_sig); (void)v;
     }));
     printf("\n");
 
