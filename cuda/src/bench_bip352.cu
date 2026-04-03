@@ -525,6 +525,7 @@ __global__ void bip352_pipeline_kernel_lut_pretbl_sha256opt(
     int64_t* __restrict__ prefixes,
     int n);
 
+
 // Precompute serialized shared-secret bytes (k*P result compressed) per tweak.
 __global__ void precompute_ser_kernel(
     const secp256k1::cuda::AffinePoint* __restrict__ tables_P,
@@ -1509,6 +1510,7 @@ int main() {
            (sha256opt_ratio >= 1.0) ? sha256opt_ratio : 1.0 / sha256opt_ratio,
            (sha256opt_ratio >= 1.0) ? "GPU" : "CPU");
 
+
     printf("  %-40s %10.1f %12.1f %6.2fx %s\n",
            "Full pipeline (preser)",
            cpu_ns_op, gpu_preser_ns_op,
@@ -2204,3 +2206,4 @@ __global__ void kernel_generator_mul_w8(
     secp256k1::cuda::scalar_from_bytes(hash_bytes + idx * 32, &hs);
     secp256k1::cuda::scalar_mul_generator_w8(&hs, &out[idx]);
 }
+

@@ -127,8 +127,49 @@ __global__ void batch_compressed_to_jac_kernel(
     ok[idx] = point_from_compressed(pubs33 + idx * 33, &out[idx]);
 }
 
-/** MSM single-thread reduction: sum N Jacobian partials → 1 compressed point.
- *  Runs on a single GPU thread to avoid host-side field arithmetic. */
+/** MSM block reduction: each block reduces BLOCK_SZ partials → 1 result
+ *  via shared-memory tree.  Shared mem = blockDim.x * sizeof(JacobianPoint).
+ *  Output: one JacobianPoint per block written to block_results[blockIdx.x]. */
+__global__ void msm_block_reduce_kernel(
+    const JacobianPoint* __restrict__ partials,
+    int n,
+    JacobianPoint* block_results)
+{
+    extern __shared__ JacobianPoint sdata[];
+
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+
+    if (idx < n) {
+        sdata[tid] = partials[idx];
+    } else {
+        sdata[tid].infinity = true;
+        field_set_zero(&sdata[tid].x);
+        field_set_zero(&sdata[tid].y);
+        field_set_one(&sdata[tid].z);
+    }
+    __syncthreads();
+
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            if (sdata[tid].infinity) {
+                sdata[tid] = sdata[tid + stride];
+            } else if (!sdata[tid + stride].infinity) {
+                JacobianPoint tmp;
+                jacobian_add(&sdata[tid], &sdata[tid + stride], &tmp);
+                sdata[tid] = tmp;
+            }
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        block_results[blockIdx.x] = sdata[0];
+    }
+}
+
+/** MSM final reduction: sum a small array of per-block results and compress.
+ *  Runs on a single thread; input count should be small (n/256). */
 __global__ void msm_reduce_and_compress_kernel(
     const JacobianPoint* partials, int n, uint8_t* out33, bool* ok)
 {
@@ -236,6 +277,7 @@ public:
     }
 
     void shutdown() override {
+        msm_pool_.free_all();
         ready_ = false;
     }
 
@@ -528,39 +570,49 @@ public:
             bytes_to_scalar(scalars32 + i * 32, &h_scalars[i]);
         }
 
-        /* Allocate device memory */
-        Scalar*        d_scalars  = nullptr;
-        uint8_t*       d_pts33   = nullptr;
-        JacobianPoint* d_points   = nullptr;
-        bool*          d_pt_ok    = nullptr;
-        JacobianPoint* d_partials = nullptr;
-        uint8_t*       d_out33    = nullptr;
-        bool*          d_ok       = nullptr;
+        /* Ensure persistent pool is large enough (avoids per-call cudaMalloc) */
+        {
+            cudaError_t pool_err = msm_pool_.ensure(n);
+            if (pool_err != cudaSuccess)
+                return set_error(GpuError::Memory, cudaGetErrorString(pool_err));
+        }
 
-        CUDA_TRY(cudaMalloc(&d_scalars, n * sizeof(Scalar)));
-        CUDA_TRY(cudaMalloc(&d_pts33, n * 33));
-        CUDA_TRY(cudaMalloc(&d_points, n * sizeof(JacobianPoint)));
-        CUDA_TRY(cudaMalloc(&d_pt_ok, n * sizeof(bool)));
-        CUDA_TRY(cudaMalloc(&d_partials, n * sizeof(JacobianPoint)));
-        CUDA_TRY(cudaMalloc(&d_out33, 33));
-        CUDA_TRY(cudaMalloc(&d_ok, sizeof(bool)));
+        Scalar*        d_scalars   = msm_pool_.d_scalars;
+        uint8_t*       d_pts33     = msm_pool_.d_pts33;
+        JacobianPoint* d_points    = msm_pool_.d_points;
+        bool*          d_pt_ok     = msm_pool_.d_pt_ok;
+        JacobianPoint* d_partials  = msm_pool_.d_partials;
+        JacobianPoint* d_blk_parts = msm_pool_.d_blk_parts;
+        uint8_t*       d_out33     = msm_pool_.d_out33;
+        bool*          d_ok        = msm_pool_.d_ok;
+
+        /* Warp-parallel reduce: block size 256, shared mem per block = 256 * sizeof(JacobianPoint) */
+        constexpr int kReduceBlock = 256;
+        const int n_int      = static_cast<int>(n);
+        const int scatter_blocks = (n_int + kReduceBlock - 1) / kReduceBlock;
+        const size_t smem    = kReduceBlock * sizeof(JacobianPoint);
 
         CUDA_TRY(cudaMemcpy(d_scalars, h_scalars.data(), n * sizeof(Scalar), cudaMemcpyHostToDevice));
         CUDA_TRY(cudaMemcpy(d_pts33, points33, n * 33, cudaMemcpyHostToDevice));
 
         /* Decompress points on GPU */
         int threads = 128;
-        int blocks  = (static_cast<int>(n) + threads - 1) / threads;
+        int blocks  = (n_int + threads - 1) / threads;
         batch_compressed_to_jac_kernel<<<blocks, threads>>>(
-            d_pts33, d_points, d_pt_ok, static_cast<int>(n));
+            d_pts33, d_points, d_pt_ok, n_int);
         CUDA_TRY(cudaGetLastError());
 
         /* Phase 1: scatter — each thread computes scalars[i] * points[i] */
-        msm_scatter_kernel<<<blocks, threads>>>(d_scalars, d_points, d_partials, static_cast<int>(n));
+        msm_scatter_kernel<<<blocks, threads>>>(d_scalars, d_points, d_partials, n_int);
         CUDA_TRY(cudaGetLastError());
 
-        /* Phase 2: reduce + compress on GPU (single thread) */
-        msm_reduce_and_compress_kernel<<<1, 1>>>(d_partials, static_cast<int>(n), d_out33, d_ok);
+        /* Phase 2a: parallel block reduce (256 partials → 1 per block) */
+        msm_block_reduce_kernel<<<scatter_blocks, kReduceBlock, smem>>>(
+            d_partials, n_int, d_blk_parts);
+        CUDA_TRY(cudaGetLastError());
+
+        /* Phase 2b: final single-thread reduce over the small block results */
+        msm_reduce_and_compress_kernel<<<1, 1>>>(d_blk_parts, scatter_blocks, d_out33, d_ok);
         CUDA_TRY(cudaGetLastError());
         CUDA_TRY(cudaDeviceSynchronize());
 
@@ -569,13 +621,7 @@ public:
         bool result_ok;
         CUDA_TRY(cudaMemcpy(&result_ok, d_ok, sizeof(bool), cudaMemcpyDeviceToHost));
 
-        cudaFree(d_ok);
-        cudaFree(d_out33);
-        cudaFree(d_partials);
-        cudaFree(d_pt_ok);
-        cudaFree(d_points);
-        cudaFree(d_pts33);
-        cudaFree(d_scalars);
+        /* Buffers stay alive in msm_pool_ — do NOT free them here */
 
         if (!result_ok) {
             std::memset(out_result33, 0, 33);
@@ -1011,6 +1057,58 @@ private:
     uint32_t   device_idx_ = 0;
     GpuError   last_err_   = GpuError::Ok;
     char       last_msg_[256] = {};
+
+    /* -- Persistent MSM device buffer pool (avoids per-call cudaMalloc) --- */
+    struct MsmPool {
+        size_t         capacity    = 0;
+        Scalar*        d_scalars   = nullptr;
+        uint8_t*       d_pts33     = nullptr;
+        JacobianPoint* d_points    = nullptr;
+        bool*          d_pt_ok     = nullptr;
+        JacobianPoint* d_partials  = nullptr;
+        JacobianPoint* d_blk_parts = nullptr;
+        uint8_t*       d_out33     = nullptr;
+        bool*          d_ok        = nullptr;
+
+        void free_all() {
+            if (d_scalars)   { cudaFree(d_scalars);   d_scalars   = nullptr; }
+            if (d_pts33)     { cudaFree(d_pts33);     d_pts33     = nullptr; }
+            if (d_points)    { cudaFree(d_points);    d_points    = nullptr; }
+            if (d_pt_ok)     { cudaFree(d_pt_ok);     d_pt_ok     = nullptr; }
+            if (d_partials)  { cudaFree(d_partials);  d_partials  = nullptr; }
+            if (d_blk_parts) { cudaFree(d_blk_parts); d_blk_parts = nullptr; }
+            if (d_out33)     { cudaFree(d_out33);     d_out33     = nullptr; }
+            if (d_ok)        { cudaFree(d_ok);        d_ok        = nullptr; }
+            capacity = 0;
+        }
+
+        /* Ensure pool is at least n elements wide.
+         * Grows by 2x to amortise reallocation cost. */
+        cudaError_t ensure(size_t n) {
+            if (n <= capacity) return cudaSuccess;
+            free_all();
+            size_t cap = n < 256 ? 256 : n;
+            /* round up to next power-of-two for block-reduce alignment */
+            cap = 1;
+            while (cap < n) cap <<= 1;
+            constexpr int kBlk = 256;
+            const size_t n_blks = (cap + kBlk - 1) / kBlk;
+
+            cudaError_t e;
+#define ALLOC(ptr, bytes) e = cudaMalloc(&(ptr), (bytes)); if (e != cudaSuccess) { free_all(); return e; }
+            ALLOC(d_scalars,   cap  * sizeof(Scalar));
+            ALLOC(d_pts33,     cap  * 33);
+            ALLOC(d_points,    cap  * sizeof(JacobianPoint));
+            ALLOC(d_pt_ok,     cap  * sizeof(bool));
+            ALLOC(d_partials,  cap  * sizeof(JacobianPoint));
+            ALLOC(d_blk_parts, n_blks * sizeof(JacobianPoint));
+            ALLOC(d_out33,     33);
+            ALLOC(d_ok,        sizeof(bool));
+#undef ALLOC
+            capacity = cap;
+            return cudaSuccess;
+        }
+    } msm_pool_;
 
     GpuError set_error(GpuError err, const char* msg) {
         last_err_ = err;

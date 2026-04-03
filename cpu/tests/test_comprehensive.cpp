@@ -1245,7 +1245,9 @@ static void test_point_precomputed() {
     
     // 15.5: scalar_mul_precomputed_wnaf
     PT const wnaf_result = G.scalar_mul_precomputed_wnaf(
-        plan.wnaf1, plan.wnaf2, plan.neg1, plan.neg2);
+        plan.wnaf1.data(), plan.wnaf1_len,
+        plan.wnaf2.data(), plan.wnaf2_len,
+        plan.neg1, plan.neg2);
     CHECK(pt_eq(wnaf_result, ref), "precomputed_wnaf(42) matches");
     
     // 15.6: Multiple KPlan values

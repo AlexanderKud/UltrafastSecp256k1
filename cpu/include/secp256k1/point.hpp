@@ -1,8 +1,12 @@
 #ifndef C870F4A3_192C_4B96_9AE6_497D1885C5D9
 #define C870F4A3_192C_4B96_9AE6_497D1885C5D9
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 #include "field.hpp"
 #include "scalar.hpp"
 
@@ -56,15 +60,21 @@ namespace secp256k1::fast {
 // Fixed K x Variable Q optimization plan
 // Caches all K-dependent work: GLV decomposition + wNAF computation
 // Use this when you need to multiply many different points Q by the same scalar K
+// Maximum wNAF buffer length for a 256-bit scalar: 256 bits + 1 extra digit + 3 padding
+constexpr std::size_t kWnafBufLen = 260;
+
 struct KPlan {
-    uint8_t window_width;           // wNAF window size (see kDefaultGlvWindow)
-    Scalar k1;                       // Decomposed scalar k1
-    Scalar k2;                       // Decomposed scalar k2
-    std::vector<int32_t> wnaf1;     // Precomputed wNAF for k1
-    std::vector<int32_t> wnaf2;     // Precomputed wNAF for k2
-    bool neg1;                       // Sign flag for k1
-    bool neg2;                       // Sign flag for k2
-    
+    uint8_t window_width;                   // wNAF window size (see kDefaultGlvWindow)
+    Scalar k1;                              // Decomposed scalar k1
+    Scalar k2;                              // Decomposed scalar k2
+    // wNAF digits stored in fixed-size stack buffers — no heap allocation per plan
+    std::array<int32_t, kWnafBufLen> wnaf1{};
+    std::size_t wnaf1_len{0};
+    std::array<int32_t, kWnafBufLen> wnaf2{};
+    std::size_t wnaf2_len{0};
+    bool neg1;                              // Sign flag for k1
+    bool neg2;                              // Sign flag for k2
+
     // Factory: Create plan from scalar K
     // w: wNAF window width (default: platform-optimal kDefaultGlvWindow)
     static KPlan from_scalar(const Scalar& k, uint8_t w = kDefaultGlvWindow);
@@ -127,6 +137,10 @@ public:
     // Runtime only does: table generation + interleaved addition
     Point scalar_mul_precomputed_wnaf(const std::vector<int32_t>& wnaf1,
                                        const std::vector<int32_t>& wnaf2,
+                                       bool neg1, bool neg2) const;
+    // Raw-pointer overload — no heap access, used by KPlan hot path
+    Point scalar_mul_precomputed_wnaf(const int32_t* wnaf1, std::size_t len1,
+                                       const int32_t* wnaf2, std::size_t len2,
                                        bool neg1, bool neg2) const;
     
     // Fixed K x Variable Q: Use precomputed KPlan for maximum speed

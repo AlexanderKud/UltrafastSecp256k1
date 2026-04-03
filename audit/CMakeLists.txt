@@ -738,6 +738,12 @@ target_compile_definitions(test_exploit_eth_signing_standalone PRIVATE STANDALON
 add_test(NAME exploit_eth_signing COMMAND test_exploit_eth_signing_standalone)
 set_tests_properties(exploit_eth_signing PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ethereum")
 
+add_executable(test_exploit_eip712_kat_standalone test_exploit_eip712_kat.cpp)
+audit_target_defaults(test_exploit_eip712_kat_standalone)
+target_compile_definitions(test_exploit_eip712_kat_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_eip712_kat COMMAND test_exploit_eip712_kat_standalone)
+set_tests_properties(exploit_eip712_kat PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ethereum;eip712")
+
 add_executable(test_exploit_bitcoin_message_signing_standalone test_exploit_bitcoin_message_signing.cpp)
 audit_target_defaults(test_exploit_bitcoin_message_signing_standalone)
 target_compile_definitions(test_exploit_bitcoin_message_signing_standalone PRIVATE STANDALONE_TEST)
@@ -1550,6 +1556,110 @@ target_compile_definitions(test_exploit_kr_ecdsa_buff_binding_standalone PRIVATE
 add_test(NAME exploit_kr_ecdsa_buff_binding COMMAND test_exploit_kr_ecdsa_buff_binding_standalone)
 set_tests_properties(exploit_kr_ecdsa_buff_binding PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;binding")
 
+# -- ECDSA r <=> x-coordinate edge cases (Wycheproof PR #206) ---------------
+add_executable(test_exploit_ecdsa_r_overflow_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_exploit_ecdsa_r_overflow.cpp)
+audit_target_defaults(test_exploit_ecdsa_r_overflow_standalone)
+target_compile_definitions(test_exploit_ecdsa_r_overflow_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdsa_r_overflow COMMAND test_exploit_ecdsa_r_overflow_standalone)
+set_tests_properties(exploit_ecdsa_r_overflow PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;wycheproof")
+
+# -- Wycheproof ECDSA Bitcoin variant vectors (BIP-62 low-S + PR #206) ------
+add_executable(test_wycheproof_ecdsa_bitcoin_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_bitcoin.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_bitcoin_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_bitcoin_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_bitcoin COMMAND test_wycheproof_ecdsa_bitcoin_standalone)
+set_tests_properties(wycheproof_ecdsa_bitcoin PROPERTIES TIMEOUT 60 LABELS "audit;kat;wycheproof;bitcoin")
+
+# -- Wycheproof ECDSA secp256k1 SHA-256 DER vectors -------------------------
+add_executable(test_wycheproof_ecdsa_sha256_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_secp256k1_sha256.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_sha256_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_sha256_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_sha256 COMMAND test_wycheproof_ecdsa_sha256_standalone)
+set_tests_properties(wycheproof_ecdsa_sha256 PROPERTIES TIMEOUT 60 LABELS "audit;kat;wycheproof;ecdsa;der")
+
+# -- Wycheproof ECDSA secp256k1 SHA-256 P1363 vectors -----------------------
+add_executable(test_wycheproof_ecdsa_sha256_p1363_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_secp256k1_sha256_p1363.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_sha256_p1363_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_sha256_p1363_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_sha256_p1363 COMMAND test_wycheproof_ecdsa_sha256_p1363_standalone)
+set_tests_properties(wycheproof_ecdsa_sha256_p1363 PROPERTIES TIMEOUT 60 LABELS "audit;kat;wycheproof;ecdsa;p1363")
+
+# -- Wycheproof HMAC-SHA256 vectors -----------------------------------------
+add_executable(test_wycheproof_hmac_sha256_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_hmac_sha256.cpp)
+audit_target_defaults(test_wycheproof_hmac_sha256_standalone)
+target_compile_definitions(test_wycheproof_hmac_sha256_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_hmac_sha256 COMMAND test_wycheproof_hmac_sha256_standalone)
+set_tests_properties(wycheproof_hmac_sha256 PROPERTIES TIMEOUT 120 LABELS "audit;kat;wycheproof;hmac")
+
+# -- Wycheproof HKDF-SHA256 vectors -----------------------------------------
+add_executable(test_wycheproof_hkdf_sha256_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_hkdf_sha256.cpp)
+audit_target_defaults(test_wycheproof_hkdf_sha256_standalone)
+target_compile_definitions(test_wycheproof_hkdf_sha256_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_hkdf_sha256 COMMAND test_wycheproof_hkdf_sha256_standalone)
+set_tests_properties(wycheproof_hkdf_sha256 PROPERTIES TIMEOUT 120 LABELS "audit;kat;wycheproof;hkdf")
+
+# -- Wycheproof ChaCha20-Poly1305 vectors ------------------------------------
+add_executable(test_wycheproof_chacha20_poly1305_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_chacha20_poly1305.cpp)
+audit_target_defaults(test_wycheproof_chacha20_poly1305_standalone)
+target_compile_definitions(test_wycheproof_chacha20_poly1305_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_chacha20_poly1305 COMMAND test_wycheproof_chacha20_poly1305_standalone)
+set_tests_properties(wycheproof_chacha20_poly1305 PROPERTIES TIMEOUT 120 LABELS "audit;kat;wycheproof;chacha20;aead")
+
+# -- Wycheproof ECDSA secp256k1 SHA-512 DER vectors --------------------------
+add_executable(test_wycheproof_ecdsa_sha512_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_secp256k1_sha512.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_sha512_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_sha512_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_sha512 COMMAND test_wycheproof_ecdsa_sha512_standalone)
+set_tests_properties(wycheproof_ecdsa_sha512 PROPERTIES TIMEOUT 300 LABELS "audit;kat;wycheproof;ecdsa;sha512;der")
+
+# -- Wycheproof ECDSA secp256k1 SHA-512 P1363 vectors -----------------------
+add_executable(test_wycheproof_ecdsa_sha512_p1363_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_secp256k1_sha512_p1363.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_sha512_p1363_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_sha512_p1363_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_sha512_p1363 COMMAND test_wycheproof_ecdsa_sha512_p1363_standalone)
+set_tests_properties(wycheproof_ecdsa_sha512_p1363 PROPERTIES TIMEOUT 300 LABELS "audit;kat;wycheproof;ecdsa;sha512;p1363")
+
+# -- Schnorr BIP-340 nonce reuse key recovery (SNR-1..SNR-10) ---------------
+add_executable(test_exploit_schnorr_nonce_reuse_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_exploit_schnorr_nonce_reuse.cpp)
+audit_target_defaults(test_exploit_schnorr_nonce_reuse_standalone)
+target_compile_definitions(test_exploit_schnorr_nonce_reuse_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_schnorr_nonce_reuse COMMAND test_exploit_schnorr_nonce_reuse_standalone)
+set_tests_properties(exploit_schnorr_nonce_reuse PROPERTIES TIMEOUT 60 LABELS "audit;exploit;schnorr;nonce_reuse")
+
+# -- BIP-32 non-hardened child key → parent private key recovery (CKA-1..CKA-8) --
+add_executable(test_exploit_bip32_child_key_attack_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_exploit_bip32_child_key_attack.cpp)
+audit_target_defaults(test_exploit_bip32_child_key_attack_standalone)
+target_compile_definitions(test_exploit_bip32_child_key_attack_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_bip32_child_key_attack COMMAND test_exploit_bip32_child_key_attack_standalone)
+set_tests_properties(exploit_bip32_child_key_attack PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bip32;key_derivation")
+
+# -- FROST identifiable abort / per-participant attribution (FIA-1..FIA-9) --
+add_executable(test_exploit_frost_identifiable_abort_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_exploit_frost_identifiable_abort.cpp)
+audit_target_defaults(test_exploit_frost_identifiable_abort_standalone)
+target_compile_definitions(test_exploit_frost_identifiable_abort_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_frost_identifiable_abort COMMAND test_exploit_frost_identifiable_abort_standalone)
+set_tests_properties(exploit_frost_identifiable_abort PROPERTIES TIMEOUT 60 LABELS "audit;exploit;frost;identifiable_abort")
+
+# -- Hash algorithm & format isolation (HAS-1..HAS-8) ----------------------
+add_executable(test_exploit_hash_algo_sig_isolation_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_exploit_hash_algo_sig_isolation.cpp)
+audit_target_defaults(test_exploit_hash_algo_sig_isolation_standalone)
+target_compile_definitions(test_exploit_hash_algo_sig_isolation_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_hash_algo_sig_isolation COMMAND test_exploit_hash_algo_sig_isolation_standalone)
+set_tests_properties(exploit_hash_algo_sig_isolation PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;hash_confusion")
+
 # -- Diagnostic: ct::scalar_mul step-by-step comparison --------------------
 add_executable(diag_scalar_mul ${CPU_TESTS_DIR}/diag_scalar_mul.cpp)
 audit_target_defaults(diag_scalar_mul)
@@ -1857,6 +1967,7 @@ add_executable(unified_audit_runner
     test_exploit_ellswift_ecdh.cpp
     test_exploit_ethereum_differential.cpp
     test_exploit_eth_signing.cpp
+    test_exploit_eip712_kat.cpp
     test_exploit_field_arithmetic.cpp
     test_exploit_field_boundary_exhaustive.cpp
     test_exploit_frost_binding_factor_mismatch.cpp
@@ -2091,3 +2202,116 @@ endif()
 message(STATUS "  Audit test plan: audit/AUDIT_TEST_PLAN.md")
 message(STATUS "  Full audit script (Windows): audit/run_full_audit.ps1")
 message(STATUS "  Full audit script (Linux):   audit/run_full_audit.sh")
+
+# ===========================================================================
+# Python audit scripts (external-auditor-class statistical/differential tests)
+# ===========================================================================
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_FOUND)
+    set(_py_scripts_dir "${CMAKE_CURRENT_SOURCE_DIR}/../scripts")
+    set(_uf_lib "$<TARGET_FILE:ufsecp_shared>")
+    set(_py_env "PYTHONPATH=${_py_scripts_dir}")
+
+    add_test(NAME py_differential_crossimpl
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/differential_cross_impl.py"
+                --lib "${_uf_lib}" --count 500
+                --json -o "${CMAKE_BINARY_DIR}/py_differential_report.json")
+    set_tests_properties(py_differential_crossimpl PROPERTIES
+        TIMEOUT 180
+        LABELS "audit;python;differential"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_nonce_bias
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/nonce_bias_detector.py"
+                --lib "${_uf_lib}" --count 5000
+                --json -o "${CMAKE_BINARY_DIR}/py_nonce_bias_report.json")
+    set_tests_properties(py_nonce_bias PROPERTIES
+        TIMEOUT 300
+        LABELS "audit;python;statistical"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_bip32_cka
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/bip32_cka_demo.py"
+                --lib "${_uf_lib}" --paths 100
+                --json -o "${CMAKE_BINARY_DIR}/py_bip32_cka_report.json")
+    set_tests_properties(py_bip32_cka PROPERTIES
+        TIMEOUT 120
+        LABELS "audit;python;bip32"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_rfc6979_spec
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/rfc6979_spec_verifier.py"
+                --lib "${_uf_lib}" --count 200
+                --json -o "${CMAKE_BINARY_DIR}/py_rfc6979_report.json")
+    set_tests_properties(py_rfc6979_spec PROPERTIES
+        TIMEOUT 120
+        LABELS "audit;python;rfc6979"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_glv_exhaustive
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/glv_exhaustive_check.py"
+                --lib "${_uf_lib}" --extra-random 5000
+                --json -o "${CMAKE_BINARY_DIR}/py_glv_report.json")
+    set_tests_properties(py_glv_exhaustive PROPERTIES
+        TIMEOUT 300
+        LABELS "audit;python;glv"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_semantic_props
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/semantic_props.py"
+                --lib "${_uf_lib}" --count 200
+                --json -o "${CMAKE_BINARY_DIR}/py_semantic_props_report.json")
+    set_tests_properties(py_semantic_props PROPERTIES
+        TIMEOUT 300
+        LABELS "audit;python;algebraic"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_invalid_input_grammar
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/invalid_input_grammar.py"
+                --lib "${_uf_lib}"
+                --json -o "${CMAKE_BINARY_DIR}/py_invalid_input_report.json")
+    set_tests_properties(py_invalid_input_grammar PROPERTIES
+        TIMEOUT 60
+        LABELS "audit;python;input_validation"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_stateful_sequences
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/stateful_sequences.py"
+                --lib "${_uf_lib}" --count 200
+                --json -o "${CMAKE_BINARY_DIR}/py_stateful_sequences_report.json")
+    set_tests_properties(py_stateful_sequences PROPERTIES
+        TIMEOUT 300
+        LABELS "audit;python;stateful"
+        ENVIRONMENT "${_py_env}")
+
+    # Static dev-bug scanner — no library needed, scans C++ source files for classic
+    # development bugs: sizeof(ptr), off-by-one, signed/unsigned, truncation, null-after-deref, etc.
+    # Runs at MEDIUM level and emits a JSON report; does NOT fail CI so it serves as a
+    # review aid rather than a hard gate (until all findings are triaged and fixed).
+    add_test(NAME py_dev_bug_scan
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/dev_bug_scanner.py"
+                --min-severity MEDIUM
+                --json -o "${CMAKE_BINARY_DIR}/py_dev_bug_report.json")
+    set_tests_properties(py_dev_bug_scan PROPERTIES
+        TIMEOUT 60
+        LABELS "audit;python;static_analysis"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+    # Hot-path allocation scanner — no library needed, scans C++ source files for
+    # heap allocations (new, malloc, std::vector local construction, push_back, std::string)
+    # inside performance-critical functions (sign, verify, ecdh, scalar_mul, derive, etc.).
+    # Heap allocations on hot paths violate the zero-allocation-per-op rule and degrade
+    # throughput.  Does NOT fail CI until findings are triaged (serves as a tracking tool).
+    add_test(NAME py_hot_path_alloc_scan
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/hot_path_alloc_scanner.py"
+                --min-severity MEDIUM
+                --json -o "${CMAKE_BINARY_DIR}/py_hot_path_alloc_report.json")
+    set_tests_properties(py_hot_path_alloc_scan PROPERTIES
+        TIMEOUT 60
+        LABELS "audit;python;static_analysis;performance"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+    message(STATUS "  Python audit scripts: 10 tests registered (py_differential_crossimpl, py_nonce_bias, py_bip32_cka, py_rfc6979_spec, py_glv_exhaustive, py_semantic_props, py_invalid_input_grammar, py_stateful_sequences, py_dev_bug_scan, py_hot_path_alloc_scan)")
+else()
+    message(STATUS "  Python3 not found — skipping Python audit scripts")
+endif()

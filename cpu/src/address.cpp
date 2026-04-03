@@ -684,11 +684,13 @@ silent_payment_create_output(const std::vector<Scalar>& input_privkeys,
     // t_k = SHA256(tagged_hash("BIP0352/SharedSecret", ser(S)) || ser32(k))
     auto S_comp = S.to_compressed();
     
+    // Tagged hash — "BIP0352/SharedSecret" is constant; use a static to avoid
+    // recomputing it on every call to silent_payment_create_output.
+    static const auto s_create_tag_hash =
+        SHA256::hash(reinterpret_cast<const std::uint8_t*>("BIP0352/SharedSecret"), 20);
     SHA256 h;
-    // Tagged hash
-    auto tag_hash = SHA256::hash(reinterpret_cast<const std::uint8_t*>("BIP0352/SharedSecret"), 20);
-    h.update(tag_hash.data(), 32);
-    h.update(tag_hash.data(), 32);
+    h.update(s_create_tag_hash.data(), 32);
+    h.update(s_create_tag_hash.data(), 32);
     h.update(S_comp.data(), 33);
     std::uint8_t k_be[4] = {
         std::uint8_t(k >> 24), std::uint8_t(k >> 16),
@@ -727,14 +729,21 @@ silent_payment_scan(const Scalar& scan_privkey,
     auto const S_comp = S.to_compressed();
     Point const B_spend = ct::generator_mul(spend_privkey);
 
+    // Precompute SHA midstate for t_k computation: avoids recomputing the
+    // static "BIP0352/SharedSecret" tag and S_comp update inside the loop.
+    // tag_hash is constant; S_comp is fixed per scan call.
+    static const auto s_bip352_tag_hash =
+        SHA256::hash(reinterpret_cast<const std::uint8_t*>("BIP0352/SharedSecret"), 20);
+    SHA256 h_base;
+    h_base.update(s_bip352_tag_hash.data(), 32);
+    h_base.update(s_bip352_tag_hash.data(), 32);
+    h_base.update(S_comp.data(), 33);
+
     // Check each output
     for (std::uint32_t k = 0; k < static_cast<std::uint32_t>(output_pubkeys.size()); ++k) {
         // t_k = tagged_hash("BIP0352/SharedSecret", ser(S) || ser32(k))
-        SHA256 h;
-        auto tag_hash = SHA256::hash(reinterpret_cast<const std::uint8_t*>("BIP0352/SharedSecret"), 20);
-        h.update(tag_hash.data(), 32);
-        h.update(tag_hash.data(), 32);
-        h.update(S_comp.data(), 33);
+        // Clone precomputed midstate; only append ser32(k) per iteration
+        SHA256 h = h_base;
         std::uint8_t k_be[4] = {
             std::uint8_t(k >> 24), std::uint8_t(k >> 16),
             std::uint8_t(k >> 8), std::uint8_t(k)

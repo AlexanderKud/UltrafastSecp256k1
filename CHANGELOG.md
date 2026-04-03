@@ -8,6 +8,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security / Audit
+- **Python audit script suite** (`scripts/`) — 8 dynamic + 1 static analysis scripts, 9 Python
+  CTest targets total. All run via `--lib path/to/libufsecp.so`. All PASS.
+  - `differential_cross_impl.py` (1000+ checks): drives library alongside coincurve + python-ecdsa
+    for random (sk, msg) pairs; catches wrong low-S normalization, pubkey parity bugs, ECDH
+    mismatches. CTest `py_differential_crossimpl`. Committed `e94523bb` / `ad32e1d1`.
+  - `nonce_bias_detector.py` (10,000+ sign ops): chi-squared + Kolmogorov-Smirnov + per-bit sweep;
+    catches Minerva/TPM-FAIL-class biases invisible to code review. CTest `py_nonce_bias`.
+    Committed `e94523bb` / `ad32e1d1`.
+  - `rfc6979_spec_verifier.py` (200+ checks): independent pure-Python RFC 6979 §3.2 HMAC-SHA256
+    nonce derivation vs library output + RFC 6979 Appendix A.2.5 KAT. CTest `py_rfc6979_spec`.
+    Committed `e94523bb` / `ad32e1d1`.
+  - `bip32_cka_demo.py`: live BIP-32 non-hardened parent key recovery demo + hardened immunity
+    check. CTest `py_bip32_cka`. Committed `e94523bb` / `ad32e1d1`.
+  - `glv_exhaustive_check.py` (5000+ scalars): GLV decomposition verifier — adversarial
+    Babai-boundary scalars (near n/2, λ, 2^127, 2^128) vs coincurve reference. CTest
+    `py_glv_exhaustive`. Committed `e94523bb` / `ad32e1d1`.
+  - `semantic_props.py` (1450+ checks): algebraic property tests (kG+lG==(k+l)G, k(lG)==(kl)G),
+    sign/verify roundtrip, determinism, Hypothesis integration. CTest `py_semantic_props`.
+    Committed `bdc00c6b`.
+  - `invalid_input_grammar.py` (37 checks): structured invalid-input rejection — bad pubkey prefix,
+    x≥p, not-on-curve, sk=0/n/overrange, r=0/n, s=0/n, invalid BIP-32 seed/paths. CTest
+    `py_invalid_input_grammar`. Committed `bdc00c6b`.
+  - `stateful_sequences.py` (401+ checks): API sequence verifier — error-injection recovery,
+    multi-level BIP-32 path consistency, dual-context independence, 5000-op endurance. CTest
+    `py_stateful_sequences`. Committed `bdc00c6b`.
+- **Dev bug scanner** (`scripts/dev_bug_scanner.py`) — 15-category static analyzer for library C++
+  source (cpu/src, gpu/src, opencl, metal, bindings, include), 221 files scanned.
+  **182 findings (82 HIGH, 100 MEDIUM)**: NULL 51 | CPASTE 45 | SIG 31 | RETVAL 30 | MSET 19 |
+  OB1 5 | ZEROIZE 1. Categories: NULL (dereference before check), CPASTE (same lvalue assigned
+  twice), SIG (signed/unsigned mismatch), RETVAL (ufsecp_* return value discarded), MSET (wrong
+  memset literal size), OB1 (off-by-one ≤ vs <), ZEROIZE (clears fewer bytes than declared),
+  SEMI (dangling semicolon), MBREAK (missing break/fallthrough), TRUNC (i64→i32 truncation),
+  OVER (32-bit multiply before widening), SPTR (sizeof(pointer)), DBLINIT (double init),
+  UNREACH (statement after return), LOGIC (&&/|| confusion). Precision mitigations: balanced-paren
+  SEMI, brace-depth UNREACH, preprocessor-reset CPASTE, case-grouping MBREAK. Registered as
+  CTest `py_dev_bug_scan`. Committed `79f83220`.
+- **Audit test quality scanner** (`scripts/audit_test_quality_scanner.py`) — static analyzer for
+  audit C++ test files detecting patterns that cause tests to vacuously pass: A=`CHECK(true,...)`
+  always-pass, B=security-rejection gap (unconditional `else{CHECK(true)}`), C=condition/message
+  polarity mismatch, D=weak statistical thresholds, E=`ufsecp_*` return value silently discarded,
+  F=missing unconditional reject in adversarial test. Manual audit found 17+ instances across
+  KR-5/6, FAC-5/7, PSM-2/6, HB-5. Committed `79f83220`.
+- **ASan/UBSan clean**: 210/210 C++ tests pass under
+  `-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer` after full
+  `build-asan/` rebuild. All stale binaries rebuilt and confirmed clean.
+- **Schnorr BIP-340 nonce reuse key recovery** (`audit/test_exploit_schnorr_nonce_reuse.cpp`) —
+  SNR-1..SNR-16: proves that reusing nonce k in two BIP-340 sigs yields full private key recovery
+  via d' = (s1-s2)·(e1-e2)⁻¹ mod n. Covers known-k construction, nonce recovery, RFC6979 safety
+  (different messages → different R), even-y negation case, and three-message pairwise agreement.
+  Closes Schnorr NRR coverage gap. Committed `c843979c`.
+- **BIP-32 non-hardened child key attack** (`audit/test_exploit_bip32_child_key_attack.cpp`) —
+  CKA-1..CKA-18: proves that xpub + non-hardened child_sk → parent_sk recovery via
+  parent_sk = child_sk - I_L mod n. Covers arbitrary indices, chained upward attacks (grandchild
+  → child → master), hardened derivation blockage, to_public() key stripping. Committed `c843979c`.
+- **FROST identifiable abort** (`audit/test_exploit_frost_identifiable_abort.cpp`) —
+  FIA-1..FIA-14: proves frost_verify_partial() correctly attributes which participant submitted a
+  bad partial sig. Covers single/multi-cheater detection, wrong-message cheating, identity swap,
+  coordinator scan loop, honest subset completion. Committed `c843979c`.
+- **Hash algorithm & format isolation** (`audit/test_exploit_hash_algo_sig_isolation.cpp`) —
+  HAS-1..HAS-11: proves cross-hash-algorithm and cross-format confusion is rejected. Covers
+  SHA-256 vs alt-hash confusion, raw-bytes vs digest confusion, Schnorr↔ECDSA format confusion
+  (compact + DER), double-hash confusion, domain prefix isolation. Committed `c843979c`.
+- **ECDSA `ecdsa_verify` large-x fix** (`cpu/src/ecdsa.cpp`) — corrected `r_less_than_pmn`
+  comparison: wrong PMN constants (`0x402da1732fc9bebf` / `0x14551231950b75fc`) assumed p-n < 2^128;
+  actual p-n = `0x14551231950b75fc4402da1722fc9baee` has limb[2]=1. Fixed in both FE52 and 4x64
+  paths. Signatures where k·G.x ∈ [n, p-1] (r ≈ 2^128, probability ~2^−128 per signature) were
+  erroneously rejected. Equivalent to the Stark Bank CVE-2021-43568..43572 false-negative class.
+  Found and confirmed by Wycheproof tcId 346. Committed `ea8cfb3c`.
+- **Wycheproof PR #206 ECDSA r-overflow tests** (`audit/test_exploit_ecdsa_r_overflow.cpp`) —
+  Track I3-3: 19 checks covering k·G.x ≥ n (tcId 346 accept), r=p-3 strict-parse rejection,
+  r=n→zero-reduction reject, r=0 reject, range sanity and sign/verify consistency. Closes
+  Wycheproof PR #206 / Stark Bank CVE assurance gap.
+- **Wycheproof ECDSA Bitcoin variant vectors** (`audit/test_wycheproof_ecdsa_bitcoin.cpp`) —
+  Track I3-4: 53 checks covering BIP-62 low-S enforcement, tcId 346/347/348/351, high-S
+  malleability boundary, sign/normalize/compact roundtrip, r=0/s=0 special-value rejection,
+  and point-at-infinity rejection during verify.
 - **Ethereum differential KAT** (`audit/test_exploit_ethereum_differential.cpp`) — 10 tests, 15 sub-checks against go-ethereum, web3.py, and ethers.js reference vectors: address derivation (go-ethereum testKey KAT), privkey=1 canonical address, ecrecover with go-ethereum test message hash, EIP-191 hash vs web3.py, sign+ecrecover roundtrip, EIP-155 v encoding, eth_personal_sign roundtrip, tamper detection, keccak256("abc") KAT, anti-collision. Closes assurance gap **#4**.
 - **MuSig2/FROST/adaptor parser robustness fuzz** (`audit/test_fuzz_musig2_frost.cpp`) — 15 tests, 16 sub-checks: musig2 key_agg/nonce_agg/partial_verify/partial_sig_agg with random inputs (5000/3000/2000 rounds each), FROST keygen_finalize/sign/verify_partial/aggregate random inputs, schnorr+ecdsa adaptor random inputs, boundary test (n_signers=0 → must error). Closes assurance gap **#7**.
 - **ClusterFuzzLite expanded to 5 targets**: added `cpu/fuzz/fuzz_ecdsa.cpp` (ECDSA sign→verify invariant, wrong-msg false-positive check, parse_compact_strict robustness) and `cpu/fuzz/fuzz_schnorr.cpp` (BIP-340 sign→verify, adversarial from_bytes verify, wrong-msg check).

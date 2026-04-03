@@ -1222,20 +1222,17 @@ static Point scalar_mul_glv52(const Point& base, const Scalar& scalar) {
 KPlan KPlan::from_scalar(const Scalar& k, uint8_t w) {
     // Step 1: GLV decomposition (K -> k1, k2, signs)
     auto decomp = split_scalar_glv(k);
-    
-    // Step 2: Compute wNAF for both scalars
-    auto wnaf1 = compute_wnaf(decomp.k1, w);
-    auto wnaf2 = compute_wnaf(decomp.k2, w);
-    
-    // Return cached plan with k1, k2 scalars preserved
+
+    // Step 2: Compute wNAF directly into the plan's fixed-size stack buffers.
+    // compute_wnaf_into uses a caller-supplied array; no heap allocation.
     KPlan plan;
     plan.window_width = w;
     plan.k1 = decomp.k1;
     plan.k2 = decomp.k2;
-    plan.wnaf1 = std::move(wnaf1);
-    plan.wnaf2 = std::move(wnaf2);
     plan.neg1 = decomp.neg1;
     plan.neg2 = decomp.neg2;
+    compute_wnaf_into(decomp.k1, w, plan.wnaf1.data(), plan.wnaf1.size(), plan.wnaf1_len);
+    compute_wnaf_into(decomp.k2, w, plan.wnaf2.data(), plan.wnaf2.size(), plan.wnaf2_len);
     return plan;
 }
 #else
@@ -2312,10 +2309,14 @@ Point Point::scalar_mul_predecomposed(const Scalar& k1, const Scalar& k2,
     // Otherwise, fall back to separate computation (sign handling is complex)
     if (!neg1 && !neg2) {
         // Fast path: K = k1 + k2*lambda (both positive)
+        // Use stack buffers — no heap allocation.
         constexpr unsigned window_width = 4;
-        auto wnaf1 = compute_wnaf(k1, window_width);
-        auto wnaf2 = compute_wnaf(k2, window_width);
-        return scalar_mul_precomputed_wnaf(wnaf1, wnaf2, false, false);
+        std::array<int32_t, 260> wnaf1_stk{}, wnaf2_stk{};
+        std::size_t len1 = 0, len2 = 0;
+        compute_wnaf_into(k1, window_width, wnaf1_stk.data(), wnaf1_stk.size(), len1);
+        compute_wnaf_into(k2, window_width, wnaf2_stk.data(), wnaf2_stk.size(), len2);
+        return scalar_mul_precomputed_wnaf(wnaf1_stk.data(), len1,
+                                           wnaf2_stk.data(), len2, false, false);
     }
 #endif
 
@@ -2329,11 +2330,20 @@ Point Point::scalar_mul_predecomposed(const Scalar& k1, const Scalar& k2,
     return term1;
 }
 
+// Vector overload — delegates to raw-pointer implementation (zero extra alloc).
+Point Point::scalar_mul_precomputed_wnaf(const std::vector<int32_t>& wnaf1,
+                                          const std::vector<int32_t>& wnaf2,
+                                          bool neg1, bool neg2) const {
+    return scalar_mul_precomputed_wnaf(wnaf1.data(), wnaf1.size(),
+                                        wnaf2.data(), wnaf2.size(),
+                                        neg1, neg2);
+}
+
 // Step 3: Shamir's trick with precomputed wNAF
 // All K-related work (decomposition, wNAF) is done once
 // Runtime only: phi(Q), tables, interleaved double-and-add
-Point Point::scalar_mul_precomputed_wnaf(const std::vector<int32_t>& wnaf1,
-                                          const std::vector<int32_t>& wnaf2,
+Point Point::scalar_mul_precomputed_wnaf(const int32_t* wnaf1, std::size_t len1,
+                                          const int32_t* wnaf2, std::size_t len2,
                                           bool neg1, bool neg2) const {
     // Convert this point to Jacobian for internal operations
 #if defined(SECP256K1_FAST_52BIT)
@@ -2355,17 +2365,13 @@ Point Point::scalar_mul_precomputed_wnaf(const std::vector<int32_t>& wnaf1,
     // Table stores positive odd multiples: [1, 3, 5, ..., 2^w-1]
     // Table size = 2^(w-1)
     int max_digit = 0;
-    for (auto d : wnaf1) {
-        int const abs_d = (d < 0) ? -d : d;
-        if (abs_d > max_digit) {
-            max_digit = abs_d;
-        }
+    for (std::size_t di = 0; di < len1; ++di) {
+        int const abs_d = (wnaf1[di] < 0) ? -wnaf1[di] : wnaf1[di];
+        if (abs_d > max_digit) max_digit = abs_d;
     }
-    for (auto d : wnaf2) {
-        int const abs_d = (d < 0) ? -d : d;
-        if (abs_d > max_digit) {
-            max_digit = abs_d;
-        }
+    for (std::size_t di = 0; di < len2; ++di) {
+        int const abs_d = (wnaf2[di] < 0) ? -wnaf2[di] : wnaf2[di];
+        if (abs_d > max_digit) max_digit = abs_d;
     }
     
     // Table size needed to handle max_digit
@@ -2422,13 +2428,13 @@ Point Point::scalar_mul_precomputed_wnaf(const std::vector<int32_t>& wnaf1,
     // Shamir's trick: process both wNAF streams simultaneously (inplace ops)
     JacobianPoint result = {FieldElement::zero(), FieldElement::one(), FieldElement::zero(), true};
     
-    std::size_t const max_len = std::max(wnaf1.size(), wnaf2.size());
+    std::size_t const max_len = std::max(len1, len2);
     
     for (int i = static_cast<int>(max_len) - 1; i >= 0; --i) {
         jacobian_double_inplace(result);
         
         // Add phi(Q) * k2 contribution (no copy: pre-negated tables)
-        if (i < static_cast<int>(wnaf2.size())) {
+        if (i < static_cast<int>(len2)) {
             int32_t const digit2 = wnaf2[static_cast<std::size_t>(i)];
             if (digit2 > 0) {
                 int const idx = (digit2 - 1) / 2;
@@ -2440,7 +2446,7 @@ Point Point::scalar_mul_precomputed_wnaf(const std::vector<int32_t>& wnaf1,
         }
 
         // Add Q * k1 contribution (no copy: pre-negated tables)
-        if (i < static_cast<int>(wnaf1.size())) {
+        if (i < static_cast<int>(len1)) {
             int32_t const digit1 = wnaf1[static_cast<std::size_t>(i)];
             if (digit1 > 0) {
                 int const idx = (digit1 - 1) / 2;
@@ -2483,26 +2489,23 @@ static Point scalar_mul_with_plan_glv52(const Point& base, const KPlan& plan) {
 
     if (SECP256K1_UNLIKELY(glv_table_size > kMaxGlvTableSize || glv_window < 3)) {
         // Safety fallback for unsupported window sizes
-        return base.scalar_mul_precomputed_wnaf(plan.wnaf1, plan.wnaf2,
-                                                 plan.neg1, plan.neg2);
+        return base.scalar_mul_precomputed_wnaf(
+            plan.wnaf1.data(), plan.wnaf1_len,
+            plan.wnaf2.data(), plan.wnaf2_len,
+            plan.neg1, plan.neg2);
     }
 
-    // -- Copy wNAF from plan to stack arrays and trim trailing zeros ---
-    std::array<int32_t, 260> wnaf1_buf{}, wnaf2_buf{};
-    std::size_t wnaf1_len = 0, wnaf2_len = 0;
-    {
-        const auto& w1 = plan.wnaf1;
-        const auto& w2 = plan.wnaf2;
-        wnaf1_len = std::min(w1.size(), wnaf1_buf.size());
-        wnaf2_len = std::min(w2.size(), wnaf2_buf.size());
-        std::copy_n(w1.data(), wnaf1_len, wnaf1_buf.data());
-        std::copy_n(w2.data(), wnaf2_len, wnaf2_buf.data());
-    }
+    // -- Use wNAF directly from plan's fixed-size arrays (no heap copy needed) ---
+    // plan.wnaf1/wnaf2 are already stack arrays populated by KPlan::from_scalar.
+    std::size_t wnaf1_len = plan.wnaf1_len;
+    std::size_t wnaf2_len = plan.wnaf2_len;
+    const int32_t* wnaf1_ptr = plan.wnaf1.data();
+    const int32_t* wnaf2_ptr = plan.wnaf2.data();
 
     // Trim trailing zeros -- GLV half-scalars are ~128 bits but wNAF
     // always outputs 256+ positions.  This halves the doubling count.
-    while (wnaf1_len > 0 && wnaf1_buf[wnaf1_len - 1] == 0) --wnaf1_len;
-    while (wnaf2_len > 0 && wnaf2_buf[wnaf2_len - 1] == 0) --wnaf2_len;
+    while (wnaf1_len > 0 && wnaf1_ptr[wnaf1_len - 1] == 0) --wnaf1_len;
+    while (wnaf2_len > 0 && wnaf2_ptr[wnaf2_len - 1] == 0) --wnaf2_len;
 
     // -- Precompute odd multiples [1P, 3P, ..., (2T-1)P] in 5x52 -----
     std::array<AffinePoint52, kMaxGlvTableSize> tbl_P;
@@ -2510,8 +2513,10 @@ static Point scalar_mul_with_plan_glv52(const Point& base, const KPlan& plan) {
     FieldElement52 globalz;
 
     if (!build_glv52_table_zr(P52, tbl_P.data(), glv_table_size, globalz)) {
-        return base.scalar_mul_precomputed_wnaf(plan.wnaf1, plan.wnaf2,
-                                                 plan.neg1, plan.neg2);
+        return base.scalar_mul_precomputed_wnaf(
+            plan.wnaf1.data(), plan.wnaf1_len,
+            plan.wnaf2.data(), plan.wnaf2_len,
+            plan.neg1, plan.neg2);
     }
 
     // -- Derive phi(P) table + Shamir's trick -------------------------
@@ -2520,7 +2525,7 @@ static Point scalar_mul_with_plan_glv52(const Point& base, const KPlan& plan) {
 
     JacobianPoint52 result52 = shamir_2stream_glv52(
         tbl_P.data(), tbl_phiP.data(),
-        wnaf1_buf.data(), wnaf1_len, wnaf2_buf.data(), wnaf2_len);
+        wnaf1_ptr, wnaf1_len, wnaf2_ptr, wnaf2_len);
 
     if (!result52.infinity) {
         result52.z.mul_assign(globalz);
@@ -2544,7 +2549,10 @@ Point Point::scalar_mul_with_plan(const KPlan& plan) const {
     return scalar_mul_with_plan_glv52(*this, plan);
 #else
     // Legacy 4x64 path: keep the Jacobian result lazy-affine here too.
-    return scalar_mul_precomputed_wnaf(plan.wnaf1, plan.wnaf2, plan.neg1, plan.neg2);
+    return scalar_mul_precomputed_wnaf(
+        plan.wnaf1.data(), plan.wnaf1_len,
+        plan.wnaf2.data(), plan.wnaf2_len,
+        plan.neg1, plan.neg2);
 #endif
 }
 
