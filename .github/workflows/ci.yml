@@ -341,6 +341,9 @@ jobs:
       - name: Build
         run: cmake --build build/${{ matrix.sanitizer }} -j$(nproc)
 
+      - name: Install Python audit dependencies
+        run: pip install --quiet coincurve ecdsa hypothesis
+
       - name: Test (${{ matrix.label }})
         # Sanitizers add 3-15x overhead; raise per-test timeout from 300s to 900s.
         # Exclude selftest (unified runner) -- standalone tests cover the same
@@ -376,6 +379,9 @@ jobs:
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} -j
 
+      - name: Install Python audit dependencies
+        run: pip install --quiet coincurve ecdsa hypothesis
+
       - name: Test
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure -j -E "^ct_sidechannel"
 
@@ -408,6 +414,9 @@ jobs:
 
       - name: Build
         run: cmake --build build -j$(sysctl -n hw.logicalcpu)
+
+      - name: Install Python audit dependencies
+        run: pip3 install --quiet coincurve ecdsa hypothesis
 
       - name: Test (all including Metal GPU)
         run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.logicalcpu) -E "^(ct_sidechannel|secp256k1_metal_audit|gpu_ops_equivalence)"
@@ -689,6 +698,9 @@ jobs:
 
       - name: Build
         run: cmake --build build/cov -j"$(nproc)"
+
+      - name: Install Python audit dependencies
+        run: pip install --quiet coincurve ecdsa hypothesis
 
       - name: Test
         run: ctest --test-dir build/cov --output-on-failure -j"$(nproc)" -E "^ct_sidechannel"
