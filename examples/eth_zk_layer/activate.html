@@ -211,6 +211,7 @@
         <tbody id="benchTableBody"></tbody>
       </table>
       <div id="benchGpu" style="margin-top:0.8rem"></div>
+      <div id="benchZk"  style="margin-top:0.8rem"></div>
       <div id="benchCmp" style="margin-top:0.8rem"></div>
       <p id="benchMeta" style="font-size:0.7rem;color:var(--muted);margin-top:0.6rem"></p>
     </div>
@@ -330,6 +331,51 @@ async function runBench(n) {
       }
     }
     document.getElementById('benchGpu').innerHTML = gpuHtml;
+
+    // ── ZK / Pedersen section ────────────────────────────────────────────────
+    const zkData = d.zk || {};
+    let zkHtml = '';
+    if (zkData._available === false) {
+      zkHtml = `<div style="font-size:0.73rem;color:var(--muted);padding:0.2rem 0">⚠ ZK: ${zkData._reason||'unavailable'}</div>`;
+    } else if (Object.keys(zkData).filter(k => !k.startsWith('_')).length > 0) {
+      const fn = v => v >= 1e6 ? (v/1e6).toFixed(2)+' ms' : v >= 1000 ? (v/1000).toFixed(1)+' µs' : v.toFixed(0)+' ns';
+      const fmps = v => v >= 1e6 ? (v/1e6).toFixed(2)+' M/s' : v >= 1000 ? (v/1000).toFixed(1)+' k/s' : v.toFixed(0)+'/s';
+      const zkOps = [
+        { key: 'pedersen_commit',      label: 'Pedersen commit',         note: 'C = v·H + r·G' },
+        { key: 'zk_knowledge_prove',   label: 'Knowledge proof — prove', note: 'Σ-protocol dlog' },
+        { key: 'zk_knowledge_verify',  label: 'Knowledge proof — verify',note: '' },
+        { key: 'zk_dleq_prove',        label: 'DLEQ proof — prove',      note: 'P/G = Q/H same exp' },
+        { key: 'zk_dleq_verify',       label: 'DLEQ proof — verify',     note: '' },
+        { key: 'zk_range_prove',       label: 'Bulletproof range — prove',note: 'value ∈ [0, 2⁶⁴)' },
+        { key: 'zk_range_verify',      label: 'Bulletproof range — verify',note: '' },
+      ];
+      const rows = zkOps.filter(o => zkData[o.key]).map(o => {
+        const info = zkData[o.key];
+        const extra = info.proof_bytes ? ` <span style="font-size:0.62rem;color:var(--muted)">(${info.proof_bytes}B proof)</span>` : '';
+        return `<tr>
+          <td style="padding:0.3rem 0.5rem;border-bottom:1px solid var(--border)">${o.label}${o.note?` <span style="font-size:0.62rem;color:var(--muted)">${o.note}</span>`:''}</td>
+          <td style="padding:0.3rem 0.5rem;border-bottom:1px solid var(--border);text-align:right;font-family:var(--mono);color:var(--green);font-weight:600">${fn(info.ns)}${extra}</td>
+          <td style="padding:0.3rem 0.5rem;border-bottom:1px solid var(--border);text-align:right;color:var(--green)">${fmps(info.ops_per_sec)}</td>
+        </tr>`;
+      }).join('');
+      zkHtml = `
+        <div style="font-size:0.7rem;text-transform:uppercase;color:var(--muted);margin-bottom:0.5rem;letter-spacing:.07em">ZK Primitives — CPU (secp256k1, constant-time)</div>
+        <table style="width:100%;border-collapse:collapse;font-size:0.78rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;overflow:hidden">
+          <tr style="color:var(--muted);font-size:0.68rem;background:#161b22">
+            <th style="text-align:left;padding:0.3rem 0.5rem;font-weight:500">Operation</th>
+            <th style="text-align:right;padding:0.3rem 0.5rem;font-weight:500">Latency</th>
+            <th style="text-align:right;padding:0.3rem 0.5rem;font-weight:500">Throughput (1 core)</th>
+          </tr>
+          ${rows}
+        </table>
+        <div style="font-size:0.66rem;color:var(--muted);margin-top:0.3rem;line-height:1.6">
+          All proofs are on secp256k1 · constant-time prove paths · measured live via ctypes → libufsecp.so
+        </div>`;
+      if (zkData._error) {
+        zkHtml += `<div style="font-size:0.68rem;color:orange;margin-top:0.2rem">⚠ partial error: ${zkData._error}</div>`;
+      }
+    }
+    document.getElementById('benchZk').innerHTML = zkHtml;
 
     // ── Comparison table ────────────────────────────────────────────────────
     const our = tp.ecrecover_per_sec;

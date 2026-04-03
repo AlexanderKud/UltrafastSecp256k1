@@ -185,9 +185,152 @@ class UfSecp:
                 ctypes.c_char_p,                 # out_pubkeys33
                 ctypes.c_char_p,                 # out_valid
             ]
+
+            L.ufsecp_gpu_generator_mul_batch.restype  = ctypes.c_int
+            L.ufsecp_gpu_generator_mul_batch.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # scalars32
+                ctypes.c_size_t,   # count
+                ctypes.c_char_p,   # out_pubkeys33
+            ]
+
+            L.ufsecp_gpu_ecdsa_verify_batch.restype  = ctypes.c_int
+            L.ufsecp_gpu_ecdsa_verify_batch.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # msg_hashes32
+                ctypes.c_char_p,   # pubkeys33
+                ctypes.c_char_p,   # sigs64
+                ctypes.c_size_t,   # count
+                ctypes.c_char_p,   # out_results
+            ]
+
+            L.ufsecp_gpu_schnorr_verify_batch.restype  = ctypes.c_int
+            L.ufsecp_gpu_schnorr_verify_batch.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # msg_hashes32
+                ctypes.c_char_p,   # pubkeys_x32 (x-only)
+                ctypes.c_char_p,   # sigs64
+                ctypes.c_size_t,   # count
+                ctypes.c_char_p,   # out_results
+            ]
+
+            L.ufsecp_gpu_ecdh_batch.restype  = ctypes.c_int
+            L.ufsecp_gpu_ecdh_batch.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # privkeys32
+                ctypes.c_char_p,   # peer_pubkeys33
+                ctypes.c_size_t,   # count
+                ctypes.c_char_p,   # out_secrets32
+            ]
+
+            L.ufsecp_gpu_hash160_pubkey_batch.restype  = ctypes.c_int
+            L.ufsecp_gpu_hash160_pubkey_batch.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # pubkeys33
+                ctypes.c_size_t,   # count
+                ctypes.c_char_p,   # out_hash160 (count*20)
+            ]
+
+            L.ufsecp_gpu_msm.restype  = ctypes.c_int
+            L.ufsecp_gpu_msm.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # scalars32
+                ctypes.c_char_p,   # points33
+                ctypes.c_size_t,   # n
+                ctypes.c_char_p,   # out_result33 (33 bytes)
+            ]
+
+            L.ufsecp_gpu_frost_verify_partial_batch.restype  = ctypes.c_int
+            L.ufsecp_gpu_frost_verify_partial_batch.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # z_i32
+                ctypes.c_char_p,   # D_i33
+                ctypes.c_char_p,   # E_i33
+                ctypes.c_char_p,   # Y_i33
+                ctypes.c_char_p,   # rho_i32
+                ctypes.c_char_p,   # lambda_ie32
+                ctypes.c_char_p,   # negate_R (count bytes)
+                ctypes.c_char_p,   # negate_key (count bytes)
+                ctypes.c_size_t,   # count
+                ctypes.c_char_p,   # out_results
+            ]
+
             self._gpu_ok = True
         except Exception:
             self._gpu_ok = False
+
+        # ── ZK / Pedersen bindings (best-effort) ──────────────────────────
+        try:
+            L.ufsecp_pedersen_commit.restype  = ctypes.c_int
+            L.ufsecp_pedersen_commit.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # value32
+                ctypes.c_char_p,   # blinding32
+                ctypes.c_char_p,   # commitment33_out
+            ]
+
+            L.ufsecp_zk_knowledge_prove.restype  = ctypes.c_int
+            L.ufsecp_zk_knowledge_prove.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # secret32
+                ctypes.c_char_p,   # pubkey33
+                ctypes.c_char_p,   # msg32
+                ctypes.c_char_p,   # aux_rand32
+                ctypes.c_char_p,   # proof64_out
+            ]
+
+            L.ufsecp_zk_knowledge_verify.restype  = ctypes.c_int
+            L.ufsecp_zk_knowledge_verify.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # proof64
+                ctypes.c_char_p,   # pubkey33
+                ctypes.c_char_p,   # msg32
+            ]
+
+            L.ufsecp_zk_dleq_prove.restype  = ctypes.c_int
+            L.ufsecp_zk_dleq_prove.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # secret32
+                ctypes.c_char_p,   # G33
+                ctypes.c_char_p,   # H33
+                ctypes.c_char_p,   # P33
+                ctypes.c_char_p,   # Q33
+                ctypes.c_char_p,   # aux_rand32
+                ctypes.c_char_p,   # proof64_out
+            ]
+
+            L.ufsecp_zk_dleq_verify.restype  = ctypes.c_int
+            L.ufsecp_zk_dleq_verify.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # proof64
+                ctypes.c_char_p,   # G33
+                ctypes.c_char_p,   # H33
+                ctypes.c_char_p,   # P33
+                ctypes.c_char_p,   # Q33
+            ]
+
+            L.ufsecp_zk_range_prove.restype  = ctypes.c_int
+            L.ufsecp_zk_range_prove.argtypes = [
+                ctypes.c_void_p,                  # ctx
+                ctypes.c_uint64,                  # value (u64)
+                ctypes.c_char_p,                  # blinding32
+                ctypes.c_char_p,                  # commitment33
+                ctypes.c_char_p,                  # aux_rand32
+                ctypes.c_char_p,                  # proof_out
+                ctypes.POINTER(ctypes.c_size_t),  # proof_len (in/out)
+            ]
+
+            L.ufsecp_zk_range_verify.restype  = ctypes.c_int
+            L.ufsecp_zk_range_verify.argtypes = [
+                ctypes.c_void_p,   # ctx
+                ctypes.c_char_p,   # commitment33
+                ctypes.c_char_p,   # proof
+                ctypes.c_size_t,   # proof_len
+            ]
+
+            self._zk_ok = True
+        except Exception:
+            self._zk_ok = False
 
     def __del__(self):
         if hasattr(self, '_ctx') and self._ctx:
@@ -413,6 +556,151 @@ def _run_gpu_bench(ufsecp: "UfSecp", pool: list) -> dict:
     return results
 
 
+def _run_zk_bench(ufsecp: "UfSecp") -> dict:
+    """
+    Benchmark CPU ZK primitives: Pedersen commit, knowledge proof,
+    DLEQ proof, and Bulletproof range proof.
+    Returns a flat dict: {op_name: {ns, ops_per_sec, ...}}.
+    """
+    if not getattr(ufsecp, '_zk_ok', False):
+        return {"_available": False, "_reason": "ZK / Pedersen bindings not present in this build"}
+
+    L   = ufsecp._lib
+    ctx = ufsecp._ctx
+    WARMUP  = 3
+    results: dict = {}
+
+    try:
+        # shared test inputs
+        val32  = b'\x01' + b'\x00' * 31          # value scalar = 1
+        b32    = b'\x42' + b'\xfe' * 31           # blinding factor
+        aux32  = b'\xbb' * 32                     # aux randomness
+        msg32  = b'\xaa' * 32
+
+        # ── 1. Pedersen commit ────────────────────────────────────────────────
+        commit33 = ctypes.create_string_buffer(33)
+        for _ in range(WARMUP):
+            L.ufsecp_pedersen_commit(ctx, val32, b32, commit33)
+        N = 2000
+        t0 = time.perf_counter_ns()
+        for _ in range(N):
+            L.ufsecp_pedersen_commit(ctx, val32, b32, commit33)
+        t1 = time.perf_counter_ns()
+        pc_ns = (t1 - t0) / N
+        results["pedersen_commit"] = {"ns": round(pc_ns, 1), "ops_per_sec": round(1e9 / pc_ns)}
+
+        # ── 2. ZK knowledge prove + verify ────────────────────────────────────
+        secret32 = b'\x77' + b'\x03' * 31
+        pubkey33 = ufsecp.pubkey_create(secret32)
+        kp_buf   = ctypes.create_string_buffer(64)   # UFSECP_ZK_KNOWLEDGE_PROOF_LEN = 64
+
+        for _ in range(WARMUP):
+            L.ufsecp_zk_knowledge_prove(ctx, secret32, pubkey33, msg32, aux32, kp_buf)
+        N_kp = 500
+        t0 = time.perf_counter_ns()
+        for _ in range(N_kp):
+            L.ufsecp_zk_knowledge_prove(ctx, secret32, pubkey33, msg32, aux32, kp_buf)
+        t1 = time.perf_counter_ns()
+        kp_ns = (t1 - t0) / N_kp
+        results["zk_knowledge_prove"] = {"ns": round(kp_ns, 1), "ops_per_sec": round(1e9 / kp_ns)}
+
+        proof_k = bytes(kp_buf)
+        for _ in range(WARMUP):
+            L.ufsecp_zk_knowledge_verify(ctx, proof_k, pubkey33, msg32)
+        N_kv = 1000
+        t0 = time.perf_counter_ns()
+        for _ in range(N_kv):
+            L.ufsecp_zk_knowledge_verify(ctx, proof_k, pubkey33, msg32)
+        t1 = time.perf_counter_ns()
+        kv_ns = (t1 - t0) / N_kv
+        results["zk_knowledge_verify"] = {"ns": round(kv_ns, 1), "ops_per_sec": round(1e9 / kv_ns)}
+
+        # ── 3. DLEQ prove + verify ────────────────────────────────────────────
+        # G = secp generator = pubkey_create(1); P = secret*G = pubkey33
+        # Use G = H (degenerate) so Q = P, valid for any secret
+        one32  = b'\x01' + b'\x00' * 31
+        G33    = ufsecp.pubkey_create(one32)   # secp256k1 generator
+        H33    = G33                           # G = H (degenerate DLEQ)
+        P33    = pubkey33                      # P = secret * G
+        Q33    = pubkey33                      # Q = secret * H = P
+        dp_buf = ctypes.create_string_buffer(64)   # UFSECP_ZK_DLEQ_PROOF_LEN = 64
+
+        for _ in range(WARMUP):
+            L.ufsecp_zk_dleq_prove(ctx, secret32, G33, H33, P33, Q33, aux32, dp_buf)
+        N_dp = 500
+        t0 = time.perf_counter_ns()
+        for _ in range(N_dp):
+            L.ufsecp_zk_dleq_prove(ctx, secret32, G33, H33, P33, Q33, aux32, dp_buf)
+        t1 = time.perf_counter_ns()
+        dp_ns = (t1 - t0) / N_dp
+        results["zk_dleq_prove"] = {"ns": round(dp_ns, 1), "ops_per_sec": round(1e9 / dp_ns)}
+
+        proof_d = bytes(dp_buf)
+        for _ in range(WARMUP):
+            L.ufsecp_zk_dleq_verify(ctx, proof_d, G33, H33, P33, Q33)
+        N_dv = 1000
+        t0 = time.perf_counter_ns()
+        for _ in range(N_dv):
+            L.ufsecp_zk_dleq_verify(ctx, proof_d, G33, H33, P33, Q33)
+        t1 = time.perf_counter_ns()
+        dv_ns = (t1 - t0) / N_dv
+        results["zk_dleq_verify"] = {"ns": round(dv_ns, 1), "ops_per_sec": round(1e9 / dv_ns)}
+
+        # ── 4. Bulletproof range prove + verify ───────────────────────────────
+        rval  = 100000                                # u64 in [0, 2^64)
+        rval_b = rval.to_bytes(32, 'big')             # big-endian scalar for pedersen_commit
+        rp_commit = ctypes.create_string_buffer(33)
+        L.ufsecp_pedersen_commit(ctx, rval_b, b32, rp_commit)
+        commit33_bytes = bytes(rp_commit)
+
+        rp_buf = ctypes.create_string_buffer(688)     # UFSECP_ZK_RANGE_PROOF_MAX_LEN = 688
+        rp_len = ctypes.c_size_t(688)
+
+        # warmup to JIT-stabilise and capture actual proof length
+        for _ in range(WARMUP):
+            rp_len.value = 688
+            L.ufsecp_zk_range_prove(
+                ctx, ctypes.c_uint64(rval), b32, commit33_bytes, aux32,
+                rp_buf, ctypes.byref(rp_len))
+        actual_plen = rp_len.value
+
+        N_rp = 30
+        t0 = time.perf_counter_ns()
+        for _ in range(N_rp):
+            rp_len.value = 688
+            L.ufsecp_zk_range_prove(
+                ctx, ctypes.c_uint64(rval), b32, commit33_bytes, aux32,
+                rp_buf, ctypes.byref(rp_len))
+        t1 = time.perf_counter_ns()
+        rp_ns = (t1 - t0) / N_rp
+        results["zk_range_prove"] = {
+            "ns": round(rp_ns),
+            "ops_per_sec": round(1e9 / rp_ns, 2),
+            "proof_bytes": actual_plen,
+        }
+
+        proof_data = bytes(rp_buf)[:actual_plen]
+        for _ in range(WARMUP):
+            L.ufsecp_zk_range_verify(
+                ctx, commit33_bytes, proof_data, ctypes.c_size_t(actual_plen))
+        N_rv = 200
+        t0 = time.perf_counter_ns()
+        for _ in range(N_rv):
+            L.ufsecp_zk_range_verify(
+                ctx, commit33_bytes, proof_data, ctypes.c_size_t(actual_plen))
+        t1 = time.perf_counter_ns()
+        rv_ns = (t1 - t0) / N_rv
+        results["zk_range_verify"] = {
+            "ns": round(rv_ns),
+            "ops_per_sec": round(1e9 / rv_ns, 2),
+        }
+
+    except Exception as exc:
+        results["_error"] = str(exc)
+
+    return results
+
+
 def _run_bench(ufsecp: "UfSecp", n: int) -> dict:
     """
     Run the full Ethereum authentication pipeline N times and return timing JSON.
@@ -556,6 +844,7 @@ def _run_bench(ufsecp: "UfSecp", n: int) -> dict:
         },
 
         "gpu": _run_gpu_bench(ufsecp, pool),
+        "zk":  _run_zk_bench(ufsecp),
     }
 
 
