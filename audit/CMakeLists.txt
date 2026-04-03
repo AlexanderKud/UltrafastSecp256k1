@@ -2297,7 +2297,21 @@ if(Python3_FOUND)
         LABELS "audit;python;static_analysis"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
-    message(STATUS "  Python audit scripts: 9 tests registered (py_differential_crossimpl, py_nonce_bias, py_bip32_cka, py_rfc6979_spec, py_glv_exhaustive, py_semantic_props, py_invalid_input_grammar, py_stateful_sequences, py_dev_bug_scan)")
+    # Hot-path allocation scanner — no library needed, scans C++ source files for
+    # heap allocations (new, malloc, std::vector local construction, push_back, std::string)
+    # inside performance-critical functions (sign, verify, ecdh, scalar_mul, derive, etc.).
+    # Heap allocations on hot paths violate the zero-allocation-per-op rule and degrade
+    # throughput.  Does NOT fail CI until findings are triaged (serves as a tracking tool).
+    add_test(NAME py_hot_path_alloc_scan
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/hot_path_alloc_scanner.py"
+                --min-severity MEDIUM
+                --json -o "${CMAKE_BINARY_DIR}/py_hot_path_alloc_report.json")
+    set_tests_properties(py_hot_path_alloc_scan PROPERTIES
+        TIMEOUT 60
+        LABELS "audit;python;static_analysis;performance"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+    message(STATUS "  Python audit scripts: 10 tests registered (py_differential_crossimpl, py_nonce_bias, py_bip32_cka, py_rfc6979_spec, py_glv_exhaustive, py_semantic_props, py_invalid_input_grammar, py_stateful_sequences, py_dev_bug_scan, py_hot_path_alloc_scan)")
 else()
     message(STATUS "  Python3 not found — skipping Python audit scripts")
 endif()
