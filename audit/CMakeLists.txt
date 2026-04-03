@@ -1588,6 +1588,46 @@ target_compile_definitions(test_wycheproof_ecdsa_sha256_p1363_standalone PRIVATE
 add_test(NAME wycheproof_ecdsa_sha256_p1363 COMMAND test_wycheproof_ecdsa_sha256_p1363_standalone)
 set_tests_properties(wycheproof_ecdsa_sha256_p1363 PROPERTIES TIMEOUT 60 LABELS "audit;kat;wycheproof;ecdsa;p1363")
 
+# -- Wycheproof HMAC-SHA256 vectors -----------------------------------------
+add_executable(test_wycheproof_hmac_sha256_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_hmac_sha256.cpp)
+audit_target_defaults(test_wycheproof_hmac_sha256_standalone)
+target_compile_definitions(test_wycheproof_hmac_sha256_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_hmac_sha256 COMMAND test_wycheproof_hmac_sha256_standalone)
+set_tests_properties(wycheproof_hmac_sha256 PROPERTIES TIMEOUT 120 LABELS "audit;kat;wycheproof;hmac")
+
+# -- Wycheproof HKDF-SHA256 vectors -----------------------------------------
+add_executable(test_wycheproof_hkdf_sha256_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_hkdf_sha256.cpp)
+audit_target_defaults(test_wycheproof_hkdf_sha256_standalone)
+target_compile_definitions(test_wycheproof_hkdf_sha256_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_hkdf_sha256 COMMAND test_wycheproof_hkdf_sha256_standalone)
+set_tests_properties(wycheproof_hkdf_sha256 PROPERTIES TIMEOUT 120 LABELS "audit;kat;wycheproof;hkdf")
+
+# -- Wycheproof ChaCha20-Poly1305 vectors ------------------------------------
+add_executable(test_wycheproof_chacha20_poly1305_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_chacha20_poly1305.cpp)
+audit_target_defaults(test_wycheproof_chacha20_poly1305_standalone)
+target_compile_definitions(test_wycheproof_chacha20_poly1305_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_chacha20_poly1305 COMMAND test_wycheproof_chacha20_poly1305_standalone)
+set_tests_properties(wycheproof_chacha20_poly1305 PROPERTIES TIMEOUT 120 LABELS "audit;kat;wycheproof;chacha20;aead")
+
+# -- Wycheproof ECDSA secp256k1 SHA-512 DER vectors --------------------------
+add_executable(test_wycheproof_ecdsa_sha512_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_secp256k1_sha512.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_sha512_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_sha512_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_sha512 COMMAND test_wycheproof_ecdsa_sha512_standalone)
+set_tests_properties(wycheproof_ecdsa_sha512 PROPERTIES TIMEOUT 300 LABELS "audit;kat;wycheproof;ecdsa;sha512;der")
+
+# -- Wycheproof ECDSA secp256k1 SHA-512 P1363 vectors -----------------------
+add_executable(test_wycheproof_ecdsa_sha512_p1363_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_secp256k1_sha512_p1363.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_sha512_p1363_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_sha512_p1363_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_sha512_p1363 COMMAND test_wycheproof_ecdsa_sha512_p1363_standalone)
+set_tests_properties(wycheproof_ecdsa_sha512_p1363 PROPERTIES TIMEOUT 300 LABELS "audit;kat;wycheproof;ecdsa;sha512;p1363")
+
 # -- Schnorr BIP-340 nonce reuse key recovery (SNR-1..SNR-10) ---------------
 add_executable(test_exploit_schnorr_nonce_reuse_standalone
     ${CMAKE_CURRENT_SOURCE_DIR}/test_exploit_schnorr_nonce_reuse.cpp)
