@@ -1572,6 +1572,22 @@ target_compile_definitions(test_wycheproof_ecdsa_bitcoin_standalone PRIVATE STAN
 add_test(NAME wycheproof_ecdsa_bitcoin COMMAND test_wycheproof_ecdsa_bitcoin_standalone)
 set_tests_properties(wycheproof_ecdsa_bitcoin PROPERTIES TIMEOUT 60 LABELS "audit;kat;wycheproof;bitcoin")
 
+# -- Wycheproof ECDSA secp256k1 SHA-256 DER vectors -------------------------
+add_executable(test_wycheproof_ecdsa_sha256_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_secp256k1_sha256.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_sha256_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_sha256_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_sha256 COMMAND test_wycheproof_ecdsa_sha256_standalone)
+set_tests_properties(wycheproof_ecdsa_sha256 PROPERTIES TIMEOUT 60 LABELS "audit;kat;wycheproof;ecdsa;der")
+
+# -- Wycheproof ECDSA secp256k1 SHA-256 P1363 vectors -----------------------
+add_executable(test_wycheproof_ecdsa_sha256_p1363_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_secp256k1_sha256_p1363.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_sha256_p1363_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_sha256_p1363_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_sha256_p1363 COMMAND test_wycheproof_ecdsa_sha256_p1363_standalone)
+set_tests_properties(wycheproof_ecdsa_sha256_p1363 PROPERTIES TIMEOUT 60 LABELS "audit;kat;wycheproof;ecdsa;p1363")
+
 # -- Schnorr BIP-340 nonce reuse key recovery (SNR-1..SNR-10) ---------------
 add_executable(test_exploit_schnorr_nonce_reuse_standalone
     ${CMAKE_CURRENT_SOURCE_DIR}/test_exploit_schnorr_nonce_reuse.cpp)
