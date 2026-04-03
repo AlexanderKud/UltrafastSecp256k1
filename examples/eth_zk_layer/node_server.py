@@ -294,8 +294,9 @@ def _run_gpu_bench(ufsecp: "UfSecp", pool: list) -> dict:
     L = ufsecp._lib
     results: dict = {}
     POOL = len(pool)
-    BATCH_SIZES = [256, 1024, 4096]
-    GPU_WARMUP = 2
+    # Powers of 4: 256 → 1 048 576.  We stop early if throughput plateaus.
+    BATCH_SIZES = [256, 1024, 4096, 16384, 65536, 262144, 1048576]
+    GPU_WARMUP = 3
 
     try:
         ids_arr = (ctypes.c_uint32 * 4)()
@@ -336,7 +337,18 @@ def _run_gpu_bench(ufsecp: "UfSecp", pool: list) -> dict:
             }
 
             try:
+                prev_ops   = 0
+                plateau_at = None  # first batch size where improvement < 5 %
+
                 for bs in BATCH_SIZES:
+                    # Safety: skip if buffer would exceed 90 % of device VRAM
+                    buf_bytes = bs * (32 + 64 + 4 + 33 + 1)
+                    vram      = dev.global_mem_bytes
+                    if vram > 0 and buf_bytes > vram * 0.9:
+                        entry["batches"][str(bs)] = {"skipped": "OOM risk",
+                                                     "buf_bytes": buf_bytes}
+                        break
+
                     # Build flat arrays
                     h_buf   = bytearray(bs * 32)
                     sig_buf = bytearray(bs * 64)
@@ -360,8 +372,11 @@ def _run_gpu_bench(ufsecp: "UfSecp", pool: list) -> dict:
                         L.ufsecp_gpu_ecrecover_batch(
                             gpu_ctx, h_bytes, sig_bytes, recids, bs, out_pk, out_val)
 
-                    # Measure
-                    reps = max(3, min(20, 30000 // bs))
+                    # Adaptive reps: target ~2 s of wall time, minimum 3
+                    reps = max(3, min(20, max(3, int(2_000_000_000 // max(1, prev_ops * 1000 // max(1, bs)) * bs))))
+                    if bs >= 65536:
+                        reps = max(3, min(5, reps))
+
                     t0 = time.perf_counter_ns()
                     for _ in range(reps):
                         L.ufsecp_gpu_ecrecover_batch(
@@ -376,6 +391,17 @@ def _run_gpu_bench(ufsecp: "UfSecp", pool: list) -> dict:
                         "per_op_ns":  round(per_op_ns, 1),
                         "ops_per_sec": ops_psec,
                     }
+
+                    # Plateau detection: stop if improvement < 3 % vs prev
+                    if prev_ops > 0 and ops_psec <= prev_ops * 1.03:
+                        if plateau_at is None:
+                            plateau_at = bs  # note but continue one more
+                        elif bs >= plateau_at * 4:
+                            break            # two steps with no gain — stop
+                    prev_ops = max(prev_ops, ops_psec)
+
+                if plateau_at:
+                    entry["peak_batch"] = plateau_at
             finally:
                 L.ufsecp_gpu_ctx_destroy(gpu_ctx)
 
