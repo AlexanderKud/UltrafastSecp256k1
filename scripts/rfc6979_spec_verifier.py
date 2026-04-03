@@ -149,41 +149,16 @@ def _compute_r_from_k(k: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Library wrapper (sign only)
+# Library wrapper — delegates to shared _ufsecp wrapper
 # ---------------------------------------------------------------------------
 
-def _find_lib(hint: Optional[str]) -> str:
-    candidates = []
-    if hint:
-        candidates.append(Path(hint))
-    root = LIB_ROOT
-    candidates += [
-        root / "bindings" / "c_api" / "build" / "libultrafast_secp256k1.so",
-    ]
-    suite = root.parent.parent
-    for bd in ["build_opencl", "build_rel", "build-cuda"]:
-        candidates.append(suite / bd / "include" / "ufsecp" / "libufsecp.so")
-    for c in candidates:
-        if Path(c).exists():
-            return str(c)
-    raise FileNotFoundError("Library not found; pass --lib /path/to/lib.so")
-
-
-class SignLib:
-    def __init__(self, lib_path: str):
-        self._lib = ctypes.CDLL(lib_path)
-        u8p = ctypes.c_char_p
-        fn = self._lib.secp256k1_ecdsa_sign
-        fn.restype  = ctypes.c_int
-        fn.argtypes = [u8p, u8p, u8p]
-
-    def sign(self, sk32: bytes, msg32: bytes) -> bytes:
-        assert len(sk32) == 32 and len(msg32) == 32
-        sig = ctypes.create_string_buffer(64)
-        rc  = self._lib.secp256k1_ecdsa_sign(sig, msg32, sk32)
-        if rc != 0:
-            raise RuntimeError(f"secp256k1_ecdsa_sign rc={rc}")
-        return sig.raw
+import sys as _sys
+import importlib as _importlib
+if str(SCRIPT_DIR) not in _sys.path:
+    _sys.path.insert(0, str(SCRIPT_DIR))
+_ufsecp_mod = _importlib.import_module("_ufsecp")
+_find_lib = _ufsecp_mod.find_lib
+SignLib    = _ufsecp_mod.UfSecp
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +178,12 @@ RFC6979_VECTORS = [
         "name": "RFC6979 §A.2.5 secp256k1 SHA-256 'sample'",
         "sk_hex": "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721",
         "msg_str": "sample",
+        # h1 = SHA-256("sample") = AF2BDBE1AA9B6EC1E2ADE1D694F41FC71A831D0268E9891562113D8A62ADD1BF
+        # k = A6E3C57DD01ABE90086538398355DD4C3B17AA873382B0F24D6129493D8AAD60
+        # r = (k*G).x mod n, verified by coincurve + ufsecp library agreement
         "expected_k_hex": "A6E3C57DD01ABE90086538398355DD4C3B17AA873382B0F24D6129493D8AAD60",
-        "expected_r_hex": "D33EA0CCD21E1CA2B2B8B5DA1AFB97D5218F6B9A9E7F2B63BE4A15B892562E",
+        # r = (k*G).x mod n, verified by coincurve + ufsecp library agreement
+        "expected_r_hex": "432310E32CB80EB6503A26CE83CC165C783B870845FB8AAD6D970889FCD7A6C8",
     },
     {
         "name": "RFC6979 §A.2.5 secp256k1 SHA-256 'test'",
@@ -213,9 +192,9 @@ RFC6979_VECTORS = [
         # For 'test' message with this private key:
         # h1 = SHA-256("test") = 9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A0
         # expected k: D16B6AE827F17175E040871A1C7EC3500192C4C92677336EC2537ACAEE0008E0
-        # expected r: 5FA81C63109BADB88C1F367B47DA606DA28CAD69AA22C4FE6AD7DF73A7173AA
+        # r = (k*G).x mod n, verified by coincurve + ufsecp library agreement
         "expected_k_hex": "D16B6AE827F17175E040871A1C7EC3500192C4C92677336EC2537ACAEE0008E0",
-        "expected_r_hex": "5FA81C63109BADB88C1F367B47DA606DA28CAD69AA22C4FE6AD7DF73A7173AA",
+        "expected_r_hex": "F2ADCEA7139057BE6409855EE96D008E0E5B5F532333EC17448E26A36F47BCB2",
     },
 ]
 
@@ -298,7 +277,7 @@ def run(lib_path: Optional[str], count: int, json_out: bool, out_file: Optional[
 
         # Library r-value
         try:
-            sig64 = lib.sign(sk32, h1)
+            sig64 = lib.sign(h1, sk32)
             r_lib = int.from_bytes(sig64[:32], "big")
             r_lib_hex = sig64[:32].hex().upper()
         except Exception as e:
@@ -350,7 +329,7 @@ def run(lib_path: Optional[str], count: int, json_out: bool, out_file: Optional[
         r_python = _compute_r_from_k(k_python)
 
         try:
-            sig64 = lib.sign(sk32, h1)
+            sig64 = lib.sign(h1, sk32)
             r_lib = int.from_bytes(sig64[:32], "big")
         except Exception as e:
             mismatches.append(Mismatch(

@@ -2202,3 +2202,62 @@ endif()
 message(STATUS "  Audit test plan: audit/AUDIT_TEST_PLAN.md")
 message(STATUS "  Full audit script (Windows): audit/run_full_audit.ps1")
 message(STATUS "  Full audit script (Linux):   audit/run_full_audit.sh")
+
+# ===========================================================================
+# Python audit scripts (external-auditor-class statistical/differential tests)
+# ===========================================================================
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_FOUND)
+    set(_py_scripts_dir "${CMAKE_CURRENT_SOURCE_DIR}/../scripts")
+    set(_uf_lib "$<TARGET_FILE:ufsecp_shared>")
+    set(_py_env "PYTHONPATH=${_py_scripts_dir}")
+
+    add_test(NAME py_differential_crossimpl
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/differential_cross_impl.py"
+                --lib "${_uf_lib}" --count 500
+                --json -o "${CMAKE_BINARY_DIR}/py_differential_report.json")
+    set_tests_properties(py_differential_crossimpl PROPERTIES
+        TIMEOUT 180
+        LABELS "audit;python;differential"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_nonce_bias
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/nonce_bias_detector.py"
+                --lib "${_uf_lib}" --count 5000
+                --json -o "${CMAKE_BINARY_DIR}/py_nonce_bias_report.json")
+    set_tests_properties(py_nonce_bias PROPERTIES
+        TIMEOUT 300
+        LABELS "audit;python;statistical"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_bip32_cka
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/bip32_cka_demo.py"
+                --lib "${_uf_lib}" --paths 100
+                --json -o "${CMAKE_BINARY_DIR}/py_bip32_cka_report.json")
+    set_tests_properties(py_bip32_cka PROPERTIES
+        TIMEOUT 120
+        LABELS "audit;python;bip32"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_rfc6979_spec
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/rfc6979_spec_verifier.py"
+                --lib "${_uf_lib}" --count 200
+                --json -o "${CMAKE_BINARY_DIR}/py_rfc6979_report.json")
+    set_tests_properties(py_rfc6979_spec PROPERTIES
+        TIMEOUT 120
+        LABELS "audit;python;rfc6979"
+        ENVIRONMENT "${_py_env}")
+
+    add_test(NAME py_glv_exhaustive
+        COMMAND ${Python3_EXECUTABLE} "${_py_scripts_dir}/glv_exhaustive_check.py"
+                --lib "${_uf_lib}" --extra-random 5000
+                --json -o "${CMAKE_BINARY_DIR}/py_glv_report.json")
+    set_tests_properties(py_glv_exhaustive PROPERTIES
+        TIMEOUT 300
+        LABELS "audit;python;glv"
+        ENVIRONMENT "${_py_env}")
+
+    message(STATUS "  Python audit scripts: 5 tests registered (py_differential_crossimpl, py_nonce_bias, py_bip32_cka, py_rfc6979_spec, py_glv_exhaustive)")
+else()
+    message(STATUS "  Python3 not found — skipping Python audit scripts")
+endif()

@@ -88,38 +88,23 @@ SQRT_N_APPROX = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF4F55AA97A60E0B8D  # ~ 2^128
 # Library wrapper (sign)
 # ---------------------------------------------------------------------------
 
-def _find_lib(hint: Optional[str]) -> str:
-    candidates = []
-    if hint:
-        candidates.append(Path(hint))
-    root = LIB_ROOT
-    candidates += [
-        root / "bindings" / "c_api" / "build" / "libultrafast_secp256k1.so",
-    ]
-    suite = root.parent.parent
-    for bd in ["build_opencl", "build_rel", "build-cuda"]:
-        candidates.append(suite / bd / "include" / "ufsecp" / "libufsecp.so")
-    for c in candidates:
-        if Path(c).exists():
-            return str(c)
-    raise FileNotFoundError("Library not found; pass --lib /path/to/lib.so")
+import sys as _sys, importlib as _importlib
+if str(SCRIPT_DIR) not in _sys.path:
+    _sys.path.insert(0, str(SCRIPT_DIR))
+_ufsecp_mod = _importlib.import_module("_ufsecp")
+_find_lib = _ufsecp_mod.find_lib
 
 
 class SignLib:
+    """Thin shim — delegates to UfSecp; returns None on failure for GLV test."""
     def __init__(self, lib_path: str):
-        self._lib = ctypes.CDLL(lib_path)
-        u8p = ctypes.c_char_p
-        fn = self._lib.secp256k1_ecdsa_sign
-        fn.restype  = ctypes.c_int
-        fn.argtypes = [u8p, u8p, u8p]
+        self._uf = _ufsecp_mod.UfSecp(lib_path)
 
     def sign(self, sk32: bytes, msg32: bytes) -> Optional[bytes]:
-        assert len(sk32) == 32 and len(msg32) == 32
-        sig = ctypes.create_string_buffer(64)
-        rc  = self._lib.secp256k1_ecdsa_sign(sig, msg32, sk32)
-        if rc != 0:
+        try:
+            return self._uf.sign(msg32, sk32)
+        except Exception:
             return None
-        return sig.raw
 
 
 # ---------------------------------------------------------------------------

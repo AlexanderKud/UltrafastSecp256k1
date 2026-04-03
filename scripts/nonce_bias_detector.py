@@ -72,25 +72,15 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Library + signing
+# Library + signing — delegates to shared _ufsecp wrapper
 # ---------------------------------------------------------------------------
 
-def _find_lib(hint: Optional[str]) -> str:
-    candidates = []
-    if hint:
-        candidates.append(Path(hint))
-    root = LIB_ROOT
-    candidates += [
-        root / "bindings" / "c_api" / "build" / "libultrafast_secp256k1.so",
-        root / "bindings" / "c_api" / "build-ci-smoke2" / "libultrafast_secp256k1.so",
-    ]
-    suite = root.parent.parent
-    for bd in ["build_opencl", "build_rel", "build-cuda"]:
-        candidates.append(suite / bd / "include" / "ufsecp" / "libufsecp.so")
-    for c in candidates:
-        if Path(c).exists():
-            return str(c)
-    raise FileNotFoundError("Cannot locate shared library; pass --lib /path/to/lib.so")
+import importlib as _importlib
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+_ufsecp_mod = _importlib.import_module("_ufsecp")
+_find_lib   = _ufsecp_mod.find_lib
+Signer      = _ufsecp_mod.UfSecp
 
 
 def _rand_privkey() -> bytes:
@@ -98,27 +88,6 @@ def _rand_privkey() -> bytes:
         k = secrets.token_bytes(32)
         if 1 <= int.from_bytes(k, "big") < N:
             return k
-
-
-class Signer:
-    def __init__(self, lib_path: str):
-        lib = ctypes.CDLL(lib_path)
-        for fn in ("secp256k1_ecdsa_sign", "secp256k1_ec_pubkey_create",
-                   "secp256k1_ecdsa_verify"):
-            if not hasattr(lib, fn):
-                raise RuntimeError(f"Symbol {fn} not found in {lib_path}")
-        u8p = ctypes.c_char_p
-        lib.secp256k1_ecdsa_sign.restype  = ctypes.c_int
-        lib.secp256k1_ecdsa_sign.argtypes = [u8p, u8p, u8p]
-        self._lib = lib
-
-    def sign(self, msg32: bytes, sk: bytes) -> bytes:
-        """Returns compact 64-byte signature."""
-        out = ctypes.create_string_buffer(64)
-        rc = self._lib.secp256k1_ecdsa_sign(out, msg32, sk)
-        if rc != 0:
-            raise RuntimeError(f"sign failed rc={rc}")
-        return out.raw
 
 
 # ---------------------------------------------------------------------------

@@ -82,103 +82,20 @@ LIB_ROOT = SCRIPT_DIR.parent
 N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
 # ---------------------------------------------------------------------------
-# Library loader — uses the Python binding FFI layer
+# Library loader — delegates to shared _ufsecp wrapper
 # ---------------------------------------------------------------------------
 
-def _find_lib(hint: Optional[str] = None) -> str:
-    candidates = []
-    if hint:
-        candidates.append(hint)
-    root = LIB_ROOT
-    candidates += [
-        root / "bindings" / "c_api" / "build" / "libultrafast_secp256k1.so",
-        root / "bindings" / "c_api" / "build-ci-smoke2" / "libultrafast_secp256k1.so",
-    ]
-    # suite build dirs
-    suite_root = root.parent.parent
-    for bd in ["build_opencl", "build_rel", "build-cuda"]:
-        candidates.append(suite_root / bd / "include" / "ufsecp" / "libufsecp.so")
-    for c in candidates:
-        p = Path(c)
-        if p.exists():
-            return str(p)
-    raise FileNotFoundError(
-        "Cannot find libultrafast_secp256k1.so / libufsecp.so. "
-        "Pass --lib /path/to/lib.so"
-    )
+import sys as _sys
+import importlib as _importlib
 
+def _import_ufsecp():
+    if SCRIPT_DIR not in _sys.path:
+        _sys.path.insert(0, str(SCRIPT_DIR))
+    return _importlib.import_module("_ufsecp")
 
-class UfLib:
-    """Thin ctypes wrapper around the functions we need for differential testing."""
-
-    def __init__(self, path: str):
-        self._lib = ctypes.CDLL(path)
-        self._setup()
-
-    def _setup(self):
-        lib = self._lib
-        u8p = ctypes.c_char_p
-        sz  = ctypes.c_size_t
-
-        # ufsecp_ecdsa_sign(ctx, msg32, sk32, sig64_out) -> int
-        if hasattr(lib, "ufsecp_ecdsa_sign"):
-            lib.ufsecp_ecdsa_sign.restype  = ctypes.c_int
-            lib.ufsecp_ecdsa_sign.argtypes = [ctypes.c_void_p, u8p, u8p, u8p]
-            self._sign_fn = "ufsecp"
-        else:
-            self._sign_fn = "c_api"
-
-        # secp256k1_ecdsa_sign (c_api layer)
-        if hasattr(lib, "secp256k1_ecdsa_sign"):
-            lib.secp256k1_ecdsa_sign.restype  = ctypes.c_int
-            lib.secp256k1_ecdsa_sign.argtypes = [u8p, u8p, u8p]
-        if hasattr(lib, "secp256k1_ecdsa_verify"):
-            lib.secp256k1_ecdsa_verify.restype  = ctypes.c_int
-            lib.secp256k1_ecdsa_verify.argtypes = [u8p, u8p, u8p]
-        if hasattr(lib, "secp256k1_ec_pubkey_create"):
-            lib.secp256k1_ec_pubkey_create.restype  = ctypes.c_int
-            lib.secp256k1_ec_pubkey_create.argtypes = [u8p, u8p]
-        if hasattr(lib, "secp256k1_ecdsa_sign_recoverable"):
-            lib.secp256k1_ecdsa_sign_recoverable.restype  = ctypes.c_int
-            lib.secp256k1_ecdsa_sign_recoverable.argtypes = [u8p, u8p, u8p, u8p]
-        if hasattr(lib, "secp256k1_ecdh"):
-            lib.secp256k1_ecdh.restype  = ctypes.c_int
-            lib.secp256k1_ecdh.argtypes = [u8p, u8p, u8p]
-
-    def pubkey(self, sk: bytes) -> bytes:
-        """Compressed 33-byte public key."""
-        out = ctypes.create_string_buffer(33)
-        rc = self._lib.secp256k1_ec_pubkey_create(out, sk)
-        if rc != 0:
-            raise ValueError(f"pubkey_create failed: rc={rc}")
-        return out.raw
-
-    def sign(self, msg32: bytes, sk: bytes) -> bytes:
-        """DER-encoded ECDSA signature (compact 64-byte output from library)."""
-        out = ctypes.create_string_buffer(64)
-        rc = self._lib.secp256k1_ecdsa_sign(out, msg32, sk)
-        if rc != 0:
-            raise ValueError(f"ecdsa_sign failed: rc={rc}")
-        return out.raw  # compact r||s, 32+32
-
-    def verify(self, msg32: bytes, sig64: bytes, pk33: bytes) -> bool:
-        rc = self._lib.secp256k1_ecdsa_verify(msg32, sig64, pk33)
-        return rc == 0
-
-    def sign_recoverable(self, msg32: bytes, sk: bytes) -> bytes:
-        """65-byte recoverable signature: 64 bytes + recid byte."""
-        out = ctypes.create_string_buffer(65)
-        rc = self._lib.secp256k1_ecdsa_sign_recoverable(out, msg32, sk)
-        if rc != 0:
-            raise ValueError(f"sign_recoverable failed: rc={rc}")
-        return out.raw
-
-    def ecdh(self, sk: bytes, pk33: bytes) -> bytes:
-        out = ctypes.create_string_buffer(32)
-        rc = self._lib.secp256k1_ecdh(out, sk, pk33)
-        if rc != 0:
-            raise ValueError(f"ecdh failed: rc={rc}")
-        return out.raw
+_ufsecp_mod = _import_ufsecp()
+_find_lib = _ufsecp_mod.find_lib
+UfLib     = _ufsecp_mod.UfSecp
 
 
 # ---------------------------------------------------------------------------
