@@ -122,6 +122,21 @@ extern "C" {
         out_witnesses: *mut u8,
     ) -> c_int;
 
+    // BIP-352: Silent Payment scan (CPU utility + GPU batch)
+    pub fn ufsecp_bip352_prepare_scan_plan(
+        scan_privkey32: *const u8,
+        plan264_out:    *mut u8,
+    ) -> c_int;
+
+    pub fn ufsecp_gpu_bip352_scan_batch(
+        ctx:             *mut ufsecp_gpu_ctx,
+        scan_privkey32:  *const u8,
+        spend_pubkey33:  *const u8,
+        tweak_pubkeys33: *const u8,
+        n_tweaks:        usize,
+        prefix64_out:    *mut u64,
+    ) -> c_int;
+
     // Error
     pub fn ufsecp_gpu_error_str(err: c_int) -> *const c_char;
 }

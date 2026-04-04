@@ -1163,6 +1163,17 @@ public:
                          "ecdsa_snark_witness_batch not yet implemented on Metal");
     }
 
+    GpuError bip352_scan_batch(
+        const uint8_t*, const uint8_t*,
+        const uint8_t*, size_t, uint64_t*) override
+    {
+        // TODO(parity): Metal MSL shader for bip352_scan_batch not yet implemented.
+        // CUDA and OpenCL backends are fully functional.
+        // tracking: bip352-scan-metal
+        return set_error(GpuError::Unsupported,
+                         "bip352_scan_batch not yet implemented on Metal");
+    }
+
 private:
     std::unique_ptr<secp256k1::metal::MetalRuntime> runtime_;
     bool lib_init_attempted_ = false;

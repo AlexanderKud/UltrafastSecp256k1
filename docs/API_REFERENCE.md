@@ -2190,6 +2190,14 @@ Backend-neutral GPU acceleration surface. All functions use opaque `ufsecp_gpu_c
 | `ufsecp_gpu_bulletproof_verify_batch` | `(ctx, proofs324[], commits65[], H65, n, results[]) -> error_t` | Batch Bulletproof range proof verification (PUBLIC) |
 | `ufsecp_gpu_bip324_aead_encrypt_batch` | `(ctx, keys32[], nonces12[], plain[], sizes[], max_payload, n, wire_out[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD encrypt (PUBLIC) |
 | `ufsecp_gpu_bip324_aead_decrypt_batch` | `(ctx, keys32[], nonces12[], wire[], sizes[], max_payload, n, plain_out[], valid[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD decrypt (SECRET) |
+| `ufsecp_gpu_zk_ecdsa_snark_witness_batch` | `(ctx, msgs32[], pubs33[], sigs64[], n, witnesses760_out[]) -> error_t` | Batch ECDSA SNARK witness generation — eprint 2025/695 (PUBLIC inputs) |
+| `ufsecp_gpu_bip352_scan_batch` | `(ctx, scan_privkey32, spend_pubkey33, tweaks33[], n, prefix64_out[]) -> error_t` | BIP-352 Silent Payment batch scan — returns upper-64-bit x-coordinate prefix per tweak (SECRET-BEARING: scan key sent to GPU) |
+
+#### BIP-352 CPU utility
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_bip352_prepare_scan_plan` | `(scan_privkey32, plan264_out) -> error_t` | Precompute 264-byte BIP-352 GLV wNAF scan plan for repeated GPU batch scans |
 
 ---
 

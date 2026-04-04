@@ -21,6 +21,10 @@
 #include <new>
 #include <limits>
 
+/* CPU headers needed for ufsecp_bip352_prepare_scan_plan */
+#include "secp256k1/scalar.hpp"
+#include "secp256k1/glv.hpp"
+
 using namespace secp256k1::gpu;
 
 /* Hard upper bound on user-supplied GPU batch counts.
@@ -536,6 +540,97 @@ ufsecp_error_t ufsecp_gpu_zk_ecdsa_snark_witness_batch(
     try {
         return to_abi_error(ctx->backend->snark_witness_batch(
             msg_hashes32, pubkeys33, sigs64, count, out_witnesses));
+    } UFSECP_GPU_CATCH
+}
+
+/* ===========================================================================
+ * BIP-352 scan plan precomputation (CPU utility, no GPU ctx needed)
+ * =========================================================================== */
+
+ufsecp_error_t ufsecp_bip352_prepare_scan_plan(
+    const uint8_t scan_privkey32[32],
+    uint8_t       plan264_out[264])
+{
+    if (!scan_privkey32 || !plan264_out) return UFSECP_ERR_NULL_ARG;
+
+    using namespace secp256k1::fast;
+
+    Scalar k = Scalar::from_bytes(scan_privkey32);
+    if (k.is_zero()) return UFSECP_ERR_BAD_KEY;
+
+    auto decomp   = glv_decompose(k);
+    auto k1_bytes = decomp.k1.to_bytes();
+    auto k2_bytes = decomp.k2.to_bytes();
+
+    /* Layout (264 bytes, matches OpenCL BIP352ScanKeyGlv):
+     *  [0..129]  wnaf1[130]  — wNAF digits for k1 half-scalar
+     *  [130..259] wnaf2[130] — wNAF digits for k2 half-scalar
+     *  [260]     k1_neg      — 1 if k1 was negative
+     *  [261]     flip_phi    — 1 if phi table y should be negated
+     *  [262..263] pad        — zero padding                         */
+    auto* wn1     = reinterpret_cast<int8_t*>(plan264_out);
+    auto* wn2     = reinterpret_cast<int8_t*>(plan264_out + 130);
+    plan264_out[260] = decomp.k1_neg ? 1 : 0;
+    plan264_out[261] = (decomp.k1_neg != decomp.k2_neg) ? 1 : 0;
+    plan264_out[262] = 0;
+    plan264_out[263] = 0;
+
+    /* 5-bit wNAF encoding — mirrors host_compute_wnaf() used by the
+     * bip352_pipeline_kernel OpenCL kernel.                         */
+    auto compute_wnaf = [](const uint8_t* be32, int8_t out[130]) {
+        uint64_t s[4] = {};
+        for (int limb = 0; limb < 4; ++limb) {
+            uint64_t v = 0;
+            int base = limb * 8;
+            for (int i = 0; i < 8; ++i) v = (v << 8) | be32[base + i];
+            s[3 - limb] = v;
+        }
+        for (int i = 0; i < 130; ++i) {
+            if (s[0] & 1ULL) {
+                int d = (int)(s[0] & 0x1FULL);
+                if (d >= 16) {
+                    d -= 32;
+                    uint64_t add = static_cast<uint64_t>(-d);
+                    uint64_t prev = s[0]; s[0] += add;
+                    if (s[0] < prev) { for (int j = 1; j < 4; ++j) if (++s[j]) break; }
+                } else {
+                    uint64_t prev = s[0]; s[0] -= static_cast<uint64_t>(d);
+                    if (s[0] > prev) { for (int j = 1; j < 4; ++j) if (s[j]--) break; }
+                }
+                out[i] = static_cast<int8_t>(d);
+            } else {
+                out[i] = 0;
+            }
+            s[0] = (s[0] >> 1) | (s[1] << 63);
+            s[1] = (s[1] >> 1) | (s[2] << 63);
+            s[2] = (s[2] >> 1) | (s[3] << 63);
+            s[3] >>= 1;
+        }
+    };
+
+    compute_wnaf(k1_bytes.data(), wn1);
+    compute_wnaf(k2_bytes.data(), wn2);
+    return UFSECP_OK;
+}
+
+/* ===========================================================================
+ * BIP-352 GPU batch scan
+ * =========================================================================== */
+
+ufsecp_error_t ufsecp_gpu_bip352_scan_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t   scan_privkey32[32],
+    const uint8_t   spend_pubkey33[33],
+    const uint8_t*  tweak_pubkeys33,
+    size_t          n_tweaks,
+    uint64_t*       prefix64_out)
+{
+    if (!ctx || !scan_privkey32 || !spend_pubkey33 || !tweak_pubkeys33 || !prefix64_out)
+        return UFSECP_ERR_NULL_ARG;
+    if (n_tweaks > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+        return to_abi_error(ctx->backend->bip352_scan_batch(
+            scan_privkey32, spend_pubkey33, tweak_pubkeys33, n_tweaks, prefix64_out));
     } UFSECP_GPU_CATCH
 }
 

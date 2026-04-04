@@ -240,6 +240,42 @@ public:
         (void)plaintext_out; (void)out_valid;
         return GpuError::Unsupported;
     }
+
+    /* -- BIP-352 Silent Payment batch scanning ----------------------------- */
+
+    /** GPU batch BIP-352 Silent Payment scanning.
+     *
+     *  For each tweak public key (sender UTXO input), computes:
+     *    1. shared   = scan_privkey × tweak_point       (GLV wNAF scalar-mul)
+     *    2. ser37    = compress(shared) ∥ [0,0,0,0]     (33 + 4 bytes)
+     *    3. hash     = SHA256_tagged("BIP0352/SharedSecret", ser37)
+     *    4. output   = hash × G
+     *    5. cand     = spend_pubkey + output
+     *    6. prefix64 = upper 64 bits of cand.x
+     *
+     *  The caller compares prefix64_out[i] against the upper 64 bits of all
+     *  known output x-coordinates in the block to identify Silent Payment
+     *  outputs belonging to this wallet.
+     *
+     *  SECRET-BEARING: scan_privkey32 is uploaded to device memory.
+     *
+     *  @param scan_privkey32  32-byte scan private key (big-endian). SECRET.
+     *  @param spend_pubkey33  33-byte compressed spend public key.
+     *  @param tweak_pubkeys33 n_tweaks × 33 bytes (sender input public keys).
+     *  @param n_tweaks        Number of tweak keys.
+     *  @param prefix64_out    Output: n_tweaks × uint64_t x-coordinate prefixes.
+     *  @return GpuError::Ok on success. GpuError::Unsupported on Metal. */
+    virtual GpuError bip352_scan_batch(
+        const uint8_t  scan_privkey32[32],
+        const uint8_t  spend_pubkey33[33],
+        const uint8_t* tweak_pubkeys33,
+        size_t n_tweaks,
+        uint64_t* prefix64_out)
+    {
+        (void)scan_privkey32; (void)spend_pubkey33;
+        (void)tweak_pubkeys33; (void)n_tweaks; (void)prefix64_out;
+        return GpuError::Unsupported;
+    }
 };
 
 /* -- Backend registry ------------------------------------------------------ */

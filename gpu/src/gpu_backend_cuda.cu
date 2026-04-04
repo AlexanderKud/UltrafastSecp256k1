@@ -85,6 +85,101 @@ extern __global__ void ecdsa_snark_witness_batch_kernel(
 
 namespace gpu {
 
+/* ============================================================================
+ * BIP-352 Silent Payment GPU scan kernel (inline, no bench dependency)
+ * ============================================================================ */
+
+namespace {
+
+/** BIP0352/SharedSecret tagged SHA-256 midstate (precomputed):
+ *  SHA256("BIP0352/SharedSecret") || SHA256("BIP0352/SharedSecret")
+ *  compressed into the H[0..7] intermediate state.                  */
+static __device__ __forceinline__ void bip352_tagged_hash_37(
+    const uint8_t ser37[37], uint8_t hash32[32])
+{
+    /* Initialise from precomputed BIP0352/SharedSecret tagged midstate. */
+    uint32_t h[8] = {
+        0x88831537U, 0x5127079bU, 0x69c2137bU, 0xab0303e6U,
+        0x98fa21faU, 0x4a888523U, 0xbd99daabU, 0xf25e5e0aU
+    };
+    /* Build the single 64-byte block: ser37 (37 bytes) + 0x80 + zeros + length.
+     * Total bytes hashed from start = 64 (tag block) + 37 = 101.
+     * Bit length = 101 * 8 = 808 = 0x0000000000000328. Low 32 bits only needed. */
+    uint8_t block[64] = {};
+    for (int i = 0; i < 37; ++i) block[i] = ser37[i];
+    block[37] = 0x80u;
+    block[62] = 0x03u;
+    block[63] = 0x28u;
+    secp256k1::cuda::sha256_compress(h, block);
+    /* Write h[0..7] big-endian. */
+    for (int i = 0; i < 8; ++i) {
+        hash32[i*4  ] = (uint8_t)(h[i] >> 24);
+        hash32[i*4+1] = (uint8_t)(h[i] >> 16);
+        hash32[i*4+2] = (uint8_t)(h[i] >>  8);
+        hash32[i*4+3] = (uint8_t)(h[i]);
+    }
+}
+
+/** GPU kernel: BIP-352 Silent Payment pipeline, 1 thread per tweak point.
+ *
+ *  Steps per thread:
+ *    1. shared    = scan_k × tweak_pts[idx]   (GLV wNAF)
+ *    2. ser37     = compress(shared) ∥ [0,0,0,0]
+ *    3. hash      = SHA256_tagged(ser37)
+ *    4. output    = hash × G
+ *    5. cand      = spend_aff + output
+ *    6. prefix    = upper 64 bits of cand.x                         */
+static __global__ void bip352_scan_batch_kernel(
+    const secp256k1::cuda::JacobianPoint* __restrict__ tweak_pts,
+    const secp256k1::cuda::Scalar*        __restrict__ scan_k,
+    const secp256k1::cuda::AffinePoint*   __restrict__ spend_aff,
+    uint64_t* __restrict__ prefixes,
+    int n)
+{
+    using namespace secp256k1::cuda;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= n) return;
+
+    /* 1. shared = scan_k × tweak_pts[idx] */
+    JacobianPoint shared;
+    scalar_mul_glv_wnaf(&tweak_pts[idx], scan_k, &shared);
+    if (shared.infinity) { prefixes[idx] = 0; return; }
+
+    /* 2. Serialize shared secret to 37 bytes: [prefix_byte][x32][0,0,0,0] */
+    uint8_t comp33[33];
+    point_to_compressed(&shared, comp33);
+    uint8_t ser37[37];
+    for (int i = 0; i < 33; ++i) ser37[i] = comp33[i];
+    ser37[33] = ser37[34] = ser37[35] = ser37[36] = 0;
+
+    /* 3. Tagged SHA-256 */
+    uint8_t hash[32];
+    bip352_tagged_hash_37(ser37, hash);
+
+    /* 4. hash × G */
+    Scalar hs;
+    scalar_from_bytes(hash, &hs);
+    JacobianPoint gen_out;
+    scalar_mul_generator_const(&hs, &gen_out);
+
+    /* 5. cand = spend_aff + gen_out */
+    JacobianPoint cand;
+    jacobian_add_mixed(&gen_out, &spend_aff[0], &cand);
+    if (cand.infinity) { prefixes[idx] = 0; return; }
+
+    /* 6. Extract upper 64 bits of cand.x (after Jacobian normalisation) */
+    FieldElement ax, ay;
+    jacobian_to_affine(&cand, &ax, &ay);
+    (void)ay;
+    uint8_t xb[32];
+    field_to_bytes(&ax, xb);
+    uint64_t pref = 0;
+    for (int i = 0; i < 8; ++i) pref = (pref << 8) | xb[i];
+    prefixes[idx] = pref;
+}
+
+} // anonymous namespace
+
 /* Import CUDA types (FieldElement, Scalar, JacobianPoint, etc.) and kernels
    from the secp256k1::cuda namespace into secp256k1::gpu. */
 using namespace cuda;
@@ -1116,6 +1211,112 @@ public:
         cudaFree(d_pubs);
         cudaFree(d_pubs33);
         cudaFree(d_msgs);
+        clear_error();
+        return GpuError::Ok;
+    }
+
+    /* -- BIP-352 Silent Payment GPU batch scan ----------------------------- */
+
+    GpuError bip352_scan_batch(
+        const uint8_t  scan_privkey32[32],
+        const uint8_t  spend_pubkey33[33],
+        const uint8_t* tweak_pubkeys33,
+        size_t n_tweaks,
+        uint64_t* prefix64_out) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (n_tweaks == 0) { clear_error(); return GpuError::Ok; }
+        if (!scan_privkey32 || !spend_pubkey33 || !tweak_pubkeys33 || !prefix64_out)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        /* -- 1. Convert scan key to Scalar on CPU -- */
+        cuda::Scalar h_scan_k;
+        for (int limb = 0; limb < 4; ++limb) {
+            uint64_t v = 0;
+            int base = (3 - limb) * 8;
+            for (int b = 0; b < 8; ++b) v = (v << 8) | scan_privkey32[base + b];
+            h_scan_k.limbs[limb] = v;
+        }
+
+        /* -- 2. Decompress tweak pubkeys on CPU, then upload as JacobianPoint -- */
+        std::vector<cuda::JacobianPoint> h_tweaks(n_tweaks);
+        {
+            uint8_t* d_pubs33_tmp = nullptr;
+            cuda::JacobianPoint* d_pubs_tmp = nullptr;
+            bool* d_ok_tmp = nullptr;
+            CUDA_TRY(cudaMalloc(&d_pubs33_tmp, n_tweaks * 33));
+            CUDA_TRY(cudaMalloc(&d_pubs_tmp,   n_tweaks * sizeof(cuda::JacobianPoint)));
+            CUDA_TRY(cudaMalloc(&d_ok_tmp,     n_tweaks * sizeof(bool)));
+            CUDA_TRY(cudaMemcpy(d_pubs33_tmp, tweak_pubkeys33, n_tweaks * 33, cudaMemcpyHostToDevice));
+
+            int threads = 128;
+            int blocks  = (static_cast<int>(n_tweaks) + threads - 1) / threads;
+            batch_compressed_to_jac_kernel<<<blocks, threads>>>(
+                d_pubs33_tmp, d_pubs_tmp, d_ok_tmp, static_cast<int>(n_tweaks));
+            CUDA_TRY(cudaGetLastError());
+            CUDA_TRY(cudaDeviceSynchronize());
+            CUDA_TRY(cudaMemcpy(h_tweaks.data(), d_pubs_tmp,
+                                n_tweaks * sizeof(cuda::JacobianPoint),
+                                cudaMemcpyDeviceToHost));
+            cudaFree(d_ok_tmp);
+            cudaFree(d_pubs_tmp);
+            cudaFree(d_pubs33_tmp);
+        }
+
+        /* -- 3. Decompress spend pubkey on GPU -> AffinePoint -- */
+        cuda::AffinePoint h_spend_aff{};
+        {
+            uint8_t* d_spend33 = nullptr;
+            cuda::JacobianPoint* d_spend_jac = nullptr;
+            bool* d_ok2 = nullptr;
+            CUDA_TRY(cudaMalloc(&d_spend33,   33));
+            CUDA_TRY(cudaMalloc(&d_spend_jac, sizeof(cuda::JacobianPoint)));
+            CUDA_TRY(cudaMalloc(&d_ok2,       sizeof(bool)));
+            CUDA_TRY(cudaMemcpy(d_spend33, spend_pubkey33, 33, cudaMemcpyHostToDevice));
+            batch_compressed_to_jac_kernel<<<1, 1>>>(d_spend33, d_spend_jac, d_ok2, 1);
+            CUDA_TRY(cudaGetLastError());
+            CUDA_TRY(cudaDeviceSynchronize());
+            cuda::JacobianPoint h_jac{};
+            CUDA_TRY(cudaMemcpy(&h_jac, d_spend_jac, sizeof(cuda::JacobianPoint), cudaMemcpyDeviceToHost));
+            cudaFree(d_ok2);
+            cudaFree(d_spend_jac);
+            cudaFree(d_spend33);
+            h_spend_aff.x = h_jac.x;
+            h_spend_aff.y = h_jac.y;
+        }
+
+        /* -- 4. Allocate device buffers and upload -- */
+        cuda::JacobianPoint* d_tweaks   = nullptr;
+        cuda::Scalar*        d_scan_k   = nullptr;
+        cuda::AffinePoint*   d_spend    = nullptr;
+        uint64_t*            d_prefixes = nullptr;
+
+        CUDA_TRY(cudaMalloc(&d_tweaks,   n_tweaks * sizeof(cuda::JacobianPoint)));
+        CUDA_TRY(cudaMalloc(&d_scan_k,   sizeof(cuda::Scalar)));
+        CUDA_TRY(cudaMalloc(&d_spend,    sizeof(cuda::AffinePoint)));
+        CUDA_TRY(cudaMalloc(&d_prefixes, n_tweaks * sizeof(uint64_t)));
+
+        CUDA_TRY(cudaMemcpy(d_tweaks, h_tweaks.data(),
+                            n_tweaks * sizeof(cuda::JacobianPoint), cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_scan_k, &h_scan_k, sizeof(cuda::Scalar), cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_spend,  &h_spend_aff, sizeof(cuda::AffinePoint), cudaMemcpyHostToDevice));
+
+        /* -- 5. Launch BIP-352 scan kernel -- */
+        int threads = 128;
+        int blocks  = (static_cast<int>(n_tweaks) + threads - 1) / threads;
+        bip352_scan_batch_kernel<<<blocks, threads>>>(
+            d_tweaks, d_scan_k, d_spend, d_prefixes, static_cast<int>(n_tweaks));
+        CUDA_TRY(cudaGetLastError());
+        CUDA_TRY(cudaDeviceSynchronize());
+
+        /* -- 6. Download prefixes -- */
+        CUDA_TRY(cudaMemcpy(prefix64_out, d_prefixes,
+                            n_tweaks * sizeof(uint64_t), cudaMemcpyDeviceToHost));
+
+        cudaFree(d_prefixes);
+        cudaFree(d_spend);
+        cudaFree(d_scan_k);
+        cudaFree(d_tweaks);
         clear_error();
         return GpuError::Ok;
     }

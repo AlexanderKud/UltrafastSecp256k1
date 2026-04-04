@@ -67,6 +67,8 @@ Y = implemented + tested in audit runner, K = kernel/shader exists (not in audit
 | Bulletproof verify batch | Y (host) | Y | - | - | `ufsecp_gpu_bulletproof_verify_batch` |
 | BIP-324 AEAD encrypt batch | Y (host) | Y | - | - | `ufsecp_gpu_bip324_aead_encrypt_batch` |
 | BIP-324 AEAD decrypt batch | Y (host) | Y | - | - | `ufsecp_gpu_bip324_aead_decrypt_batch` |
+| ECDSA SNARK witness batch | Y (host) | Y | Y | - | `ufsecp_gpu_zk_ecdsa_snark_witness_batch` (eprint 2025/695) |
+| BIP-352 Silent Payment scan | Y (host) | Y | Y | stub | `ufsecp_gpu_bip352_scan_batch`; Metal: `TODO(parity):bip352-scan-metal` |
 | **Constant-Time Layer** | | | | | |
 | CT field ops | Y | Y | K | K | OCL/Metal: kernel files exist, not in audit |
 | CT scalar ops | Y | Y | K | K | Same |

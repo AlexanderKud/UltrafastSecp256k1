@@ -784,3 +784,122 @@ console.log('Invalid verify:', ok);  // false
 
 await ctx.destroy();
 ```
+
+---
+
+## GPU Bindings (Python + Rust)
+
+### BIP-352 Silent Payment GPU Batch Scan — Python
+
+```python
+"""
+BIP-352 Silent Payment GPU batch scan using UfsecpGpu.
+
+Pipeline per tweak t_i:
+  1. shared = scan_privkey × t_i        (GLV wNAF on GPU)
+  2. hash   = SHA256_tagged(shared)     (BIP0352/SharedSecret)
+  3. output = hash × G + spend_pubkey
+  4. prefix = upper-64-bits of output.x
+"""
+import os
+from ufsecp import Ufsecp, UfsecpGpu
+
+# Generate deterministic keys for demo (use real keys in production)
+scan_privkey  = bytes(range(1, 33))          # 32 bytes — KEEP SECRET
+spend_pubkey  = None                          # derived below
+
+with Ufsecp() as ctx:
+    spend_privkey = bytes(range(33, 65))      # 32-byte spend key
+    spend_pubkey  = ctx.pubkey_create(spend_privkey)   # 33-byte compressed
+
+# Build 4 synthetic tweak points (in practice, these come from transaction inputs)
+tweaks = []
+with Ufsecp() as ctx:
+    for i in range(1, 5):
+        sk = bytes([i] * 32)
+        tweaks.append(ctx.pubkey_create(sk))   # 33 bytes each
+
+# Run GPU batch scan
+with UfsecpGpu() as gpu:
+    prefixes = gpu.bip352_scan_batch(scan_privkey, spend_pubkey, tweaks)
+    for i, prefix in enumerate(prefixes):
+        print(f"  tweak[{i}] candidate x prefix: {prefix:#018x}")
+
+# Optional: precompute scan plan once, inspect 264-byte blob
+with Ufsecp() as ctx:
+    plan = ctx.bip352_prepare_scan_plan(scan_privkey)
+    print(f"Scan plan ({len(plan)} bytes): {plan[:8].hex()}...")
+```
+
+### BIP-352 Silent Payment GPU Batch Scan — Rust
+
+```rust
+use ufsecp_sys::*;
+use std::ptr;
+
+fn main() {
+    unsafe {
+        // --- Create CPU context for pubkey derivation ---
+        let mut cpu: *mut ufsecp_ctx = ptr::null_mut();
+        let rc = ufsecp_ctx_create(&mut cpu);
+        assert_eq!(rc, 0, "ctx_create failed: {rc}");
+
+        // Derive spend pubkey from a spend private key
+        let spend_sk: [u8; 32] = {
+            let mut k = [0u8; 32];
+            for (i, b) in k.iter_mut().enumerate() { *b = (i + 33) as u8; }
+            k
+        };
+        let mut spend_pk = [0u8; 33];
+        let rc = ufsecp_pubkey_create(cpu, spend_sk.as_ptr(), spend_pk.as_mut_ptr());
+        assert_eq!(rc, 0);
+
+        // Build 4 tweak pubkeys
+        let mut tweaks = vec![0u8; 4 * 33];
+        for i in 0..4_usize {
+            let sk: [u8; 32] = [(i + 1) as u8; 32];
+            let rc = ufsecp_pubkey_create(
+                cpu, sk.as_ptr(), tweaks[i * 33..].as_mut_ptr());
+            assert_eq!(rc, 0);
+        }
+        ufsecp_ctx_destroy(cpu);
+
+        // --- Create GPU context ---
+        let mut gpu: *mut ufsecp_gpu_ctx = ptr::null_mut();
+        let mut ids = [0u32; 8];
+        let cnt = ufsecp_gpu_backend_count(ids.as_mut_ptr(), 8);
+        if cnt == 0 { eprintln!("no GPU backend available"); return; }
+        let rc = ufsecp_gpu_ctx_create(&mut gpu, ids[0], 0);
+        assert_eq!(rc, 0, "gpu_ctx_create failed: {rc}");
+
+        // --- Precompute scan plan (CPU, optional) ---
+        let scan_sk: [u8; 32] = {
+            let mut k = [0u8; 32];
+            for (i, b) in k.iter_mut().enumerate() { *b = (i + 1) as u8; }
+            k
+        };
+        let mut plan = [0u8; 264];
+        let rc = ufsecp_bip352_prepare_scan_plan(scan_sk.as_ptr(), plan.as_mut_ptr());
+        assert_eq!(rc, 0);
+        println!("scan plan: {:02x}{:02x}...", plan[0], plan[1]);
+
+        // --- GPU batch scan ---
+        let mut prefixes = vec![0u64; 4];
+        let rc = ufsecp_gpu_bip352_scan_batch(
+            gpu,
+            scan_sk.as_ptr(),
+            spend_pk.as_ptr(),
+            tweaks.as_ptr(),
+            4,
+            prefixes.as_mut_ptr(),
+        );
+        assert_eq!(rc, 0, "bip352_scan_batch failed: {rc}");
+
+        for (i, p) in prefixes.iter().enumerate() {
+            println!("  tweak[{i}] candidate x prefix: {p:#018x}");
+        }
+
+        ufsecp_gpu_ctx_destroy(gpu);
+    }
+}
+```

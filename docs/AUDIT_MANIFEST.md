@@ -261,3 +261,4 @@ To add a new audit principle:
 | 2026-03-23 | Fixed `export_assurance.py` test_coverage query | Was using wrong DB table |
 | 2026-03-23 | Fixed graph builder missing `ufsecp_gpu.h` | 18 GPU ABI functions were invisible |
 | 2026-03-23 | Fixed preflight missing `ufsecp_gpu.h` scan | ABI drift detection was incomplete |
+| 2026-03-25 | Added `test_gpu_bip352_scan.cpp` (SW-BIP352-1..13) | BIP-352 Silent Payment GPU scan audit coverage |

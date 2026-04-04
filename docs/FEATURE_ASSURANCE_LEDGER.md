@@ -562,6 +562,8 @@ Backend-neutral GPU acceleration surface (`ufsecp_gpu.h`). Separate opaque conte
 | `ufsecp_gpu_bulletproof_verify_batch` | - | - | - | CUDA only | Batch Bulletproof range proof verification |
 | `ufsecp_gpu_bip324_aead_encrypt_batch` | - | - | - | CUDA only | Batch BIP-324 AEAD encrypt |
 | `ufsecp_gpu_bip324_aead_decrypt_batch` | - | - | - | CUDA only | Batch BIP-324 AEAD decrypt |
+| `ufsecp_gpu_zk_ecdsa_snark_witness_batch` | Y | Y | Y | CUDA+OpenCL | ECDSA SNARK witness batch (eprint 2025/695) |
+| `ufsecp_gpu_bip352_scan_batch` | Y | Y | Y | CUDA+OpenCL | BIP-352 Silent Payment GPU batch scan; scan_privkey SECRET-BEARING |
 
 **Test file:** `audit/test_gpu_abi_gate.cpp` (39 assertions)
 

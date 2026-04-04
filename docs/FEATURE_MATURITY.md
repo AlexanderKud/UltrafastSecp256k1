@@ -134,6 +134,8 @@ Each feature is rated by: implementation status, threat model coverage, test vec
 | ECDH/Hash160/MSM batch | Y | - | - | - | Partial | ECDH secret-bearing | Stable |
 | FROST partial verify GPU ABI | Y | Malformed commitments, unsupported backend | Protocol vectors + backend probing | - | Y (all 3) | N/A (public) | Production |
 | ecrecover_batch GPU ABI | Y | Invalid recid, malformed compact sig | Backend probing + GPU/CPU equivalence | - | CUDA/OpenCL/Metal | N/A (public) | Stable |
+| ECDSA SNARK witness GPU ABI | Y | NULL ctx/args, bad inputs | Layout check + CPU reference + GPU-CPU equivalence | - | CUDA/OpenCL | N/A (public) | Stable |
+| BIP-352 Silent Payment GPU scan | Y | NULL ctx/args, zero count, SECRET-BEARING key | Macro + null-arg + determinism + distinct-tweaks tests | - | CUDA/OpenCL | scan_privkey SECRET-BEARING | Stable |
 
 ---
 

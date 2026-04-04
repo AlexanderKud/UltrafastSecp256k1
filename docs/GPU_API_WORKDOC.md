@@ -366,3 +366,72 @@ The engines stay internal.
 The operations API becomes reusable.
 The C ABI becomes the interop boundary.
 CUDA/OpenCL/Metal remain implementation backends, not public contracts.
+
+---
+
+## BIP-352 Silent Payment GPU Batch Scan — Design Notes
+
+### Public C ABI
+
+```c
+/* Size of the precomputed scan plan (GLV wNAF encoded, 264 bytes). */
+#define UFSECP_BIP352_SCAN_PLAN_BYTES 264
+
+/* CPU utility: precompute scan plan from raw scan private key.
+ * Outputs a 264-byte struct: two 130-byte wNAF arrays + 2 flags + 2 pad bytes.
+ * Safe to cache.  Does NOT contain the raw scalar. */
+ufsecp_error_t ufsecp_bip352_prepare_scan_plan(
+    const uint8_t scan_privkey32[32],
+    uint8_t plan264_out[264]);
+
+/* GPU batch: SECRET-BEARING.
+ * For each tweak_i, computes scan_privkey × tweak_i → shared_i,
+ * SHA256_tagged("BIP0352/SharedSecret", ser37(shared_i)),
+ * hash_i × G + spend_pubkey, and returns upper-64-bit prefix_i. */
+ufsecp_error_t ufsecp_gpu_bip352_scan_batch(
+    ufsecp_gpu_ctx*  ctx,
+    const uint8_t    scan_privkey32[32],
+    const uint8_t    spend_pubkey33[33],
+    const uint8_t*   tweak_pubkeys33,
+    size_t           n_tweaks,
+    uint64_t*        prefix64_out);
+```
+
+### Pipeline (per tweak)
+
+1. `scan_privkey × tweak_i` → `shared_i` (GLV wNAF on GPU)
+2. `ser37 = [prefix_byte] || shared_i.x || [0, 0, 0, 0]`  (37 bytes)
+3. `hash_i = SHA256_tagged("BIP0352/SharedSecret", ser37)`  — tagged SHA256 with precomputed midstate `{0x88831537, 0x5127079b, 0x69c2137b, 0xab0303e6, 0x98fa21fa, 0x4a888523, 0xbd99daab, 0xf25e5e0a}`
+4. `output_i = hash_i × G + spend_pubkey`  (hash-to-scalar + generator mul + point add)
+5. `prefix64_out[i] = upper 64 bits of output_i.x`
+
+### BIP352ScanKeyGlv struct (264 bytes)
+
+| Offset | Size | Field | Description |
+|--------|------|-------|-------------|
+| 0 | 130 | `wnaf1[130]` | wNAF digits for k1 (GLV half-scalar) |
+| 130 | 130 | `wnaf2[130]` | wNAF digits for k2 (GLV half-scalar) |
+| 260 | 1 | `k1_neg` | 1 if k1 was negative (negate base.y) |
+| 261 | 1 | `flip_phi` | `k1_neg XOR k2_neg` — flip endomorphism table y |
+| 262 | 2 | `pad[2]` | zero padding |
+
+### Security posture
+
+`scan_privkey32` is uploaded to the GPU driver.  Callers must accept this posture.  It is equivalent
+to `ufsecp_gpu_ecdh_batch`, which is the only other SECRET-BEARING GPU operation.
+
+### Backend status
+
+| Backend | Status |
+|---------|--------|
+| CUDA | Full inline kernel — no bench dependency |
+| OpenCL | Full implementation — lazy-loads `secp256k1_bip352.cl`, CPU wNAF plan |
+| Metal | `TODO(parity):bip352-scan-metal` stub — returns `GpuError::Unsupported` |
+
+### Audit coverage
+
+`audit/test_gpu_bip352_scan.cpp` — tests SW-BIP352-1 through SW-BIP352-13:
+- Macro size check
+- CPU plan: null-arg rejection, non-zero output
+- GPU: null ctx/args rejection, zero-count no-crash, single-tweak prefix non-zero,
+  batch-16 all non-zero, determinism, distinct-tweaks produce distinct prefixes

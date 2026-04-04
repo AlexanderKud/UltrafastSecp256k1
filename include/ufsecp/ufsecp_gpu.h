@@ -490,6 +490,73 @@ UFSECP_API ufsecp_error_t ufsecp_gpu_zk_ecdsa_snark_witness_batch(
     size_t          count,
     uint8_t*        out_witnesses);
 
+/* ============================================================================
+ * BIP-352 Silent Payment scanning (GPU + CPU plan utility)
+ * ============================================================================ */
+
+/** Size in bytes of the precomputed BIP-352 GPU scan key plan.
+ *  Matches sizeof(BIP352ScanKeyGlv) used by the OpenCL kernel. */
+#define UFSECP_BIP352_SCAN_PLAN_BYTES 264
+
+/** Precompute a BIP-352 scan key wNAF plan for repeated GPU batch calls.
+ *
+ *  This is a CPU-only convenience function.  Call it once per scan key and
+ *  pass the resulting 264-byte plan to @ref ufsecp_gpu_bip352_scan_batch for
+ *  subsequent scanning.  The plan encodes the GLV-decomposed wNAF digits so
+ *  the GPU does not need to recompute them for each batch.
+ *
+ *  No GPU context is required; call this before creating the GPU context if
+ *  needed.
+ *
+ *  @param scan_privkey32  32-byte scan private key (big-endian). SECRET.
+ *  @param plan264_out     Output buffer of exactly 264 bytes.
+ *  @return UFSECP_OK on success, UFSECP_ERR_BAD_KEY if the key is zero or
+ *          otherwise invalid.
+ */
+UFSECP_API ufsecp_error_t ufsecp_bip352_prepare_scan_plan(
+    const uint8_t scan_privkey32[32],
+    uint8_t       plan264_out[264]);
+
+/** GPU batch BIP-352 Silent Payment scanning.
+ *
+ *  For each sender tweak public key in the block, computes the full BIP-352
+ *  scanning pipeline and outputs the upper 64 bits of the secp256k1 x-coordinate
+ *  of the candidate output point.
+ *
+ *  Pipeline per tweak key:
+ *    1. shared   = scan_privkey × tweak_pubkey        (GLV wNAF scalar mul)
+ *    2. ser37    = compress(shared) ∥ [0x00,0x00,0x00,0x00]
+ *    3. hash     = SHA256_tagged("BIP0352/SharedSecret", ser37)
+ *    4. output   = hash × G
+ *    5. cand     = output + spend_pubkey
+ *    6. prefix64 = upper 64 bits of cand.x
+ *
+ *  The caller compares prefix64_out[i] against the upper 64 bits of every
+ *  known output's x-coordinate in the block to detect matching Silent Payment
+ *  outputs.
+ *
+ *  SECRET-BEARING: scan_privkey32 is uploaded to device memory during this
+ *  call.  Callers should zeroize it immediately after the call if required.
+ *
+ *  @param ctx              GPU context (OpenCL or CUDA; Metal returns
+ *                          UFSECP_ERR_GPU_UNSUPPORTED).
+ *  @param scan_privkey32   32-byte scan private key (big-endian). SECRET.
+ *  @param spend_pubkey33   33-byte compressed secp256k1 spend public key.
+ *  @param tweak_pubkeys33  Input: n_tweaks × 33 bytes, compressed pubkeys.
+ *  @param n_tweaks         Number of tweak keys to process.
+ *  @param prefix64_out     Output: n_tweaks × uint64_t, one per tweak key.
+ *  @return UFSECP_OK on success.
+ *          UFSECP_ERR_BAD_KEY   if any pubkey is invalid.
+ *          UFSECP_ERR_GPU_UNSUPPORTED on Metal backend.
+ */
+UFSECP_API ufsecp_error_t ufsecp_gpu_bip352_scan_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t   scan_privkey32[32],
+    const uint8_t   spend_pubkey33[33],
+    const uint8_t*  tweak_pubkeys33,
+    size_t          n_tweaks,
+    uint64_t*       prefix64_out);
+
 #ifdef __cplusplus
 }
 #endif

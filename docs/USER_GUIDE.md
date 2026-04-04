@@ -703,6 +703,79 @@ if (err != UFSECP_OK) {
 
 ---
 
+## 16. GPU Batch Operations
+
+Include `<ufsecp/ufsecp_gpu.h>` and link `libufsecp_gpu.so` to use GPU-accelerated batch operations.
+
+### BIP-352 Silent Payment GPU Batch Scan
+
+`ufsecp_gpu_bip352_scan_batch` computes the BIP-352 pipeline for each tweak pubkey on the GPU and
+returns a 64-bit prefix of each candidate output x-coordinate.
+
+**Security note:** `scan_privkey32` is uploaded to the GPU driver. Only use this API when the threat
+model explicitly accepts GPU-driver access to private key material (same posture as `ufsecp_gpu_ecdh_batch`).
+
+```c
+#include <ufsecp/ufsecp_gpu.h>
+#include <stdio.h>
+#include <stdint.h>
+
+int main(void) {
+    /* Open GPU context */
+    ufsecp_gpu_ctx* gpu = NULL;
+    uint32_t ids[8];
+    uint32_t cnt = ufsecp_gpu_backend_count(ids, 8);
+    if (cnt == 0) { fprintf(stderr, "no GPU backend\n"); return 1; }
+    if (ufsecp_gpu_ctx_create(&gpu, ids[0], 0) != UFSECP_OK) return 1;
+
+    /* Provide your scan private key and spend pubkey (33-byte compressed) */
+    uint8_t scan_privkey[32]  = { /* ... your scan key ... */ };
+    uint8_t spend_pubkey[33]  = { /* ... your spend pubkey ... */ };
+
+    /* Flat array of N × 33 bytes for the tweak pubkeys */
+    size_t N = 4;
+    uint8_t tweaks[4 * 33]    = { /* ... tweak points from tx inputs ... */ };
+
+    /* Output: upper-64-bit prefix of each candidate output x-coord */
+    uint64_t prefixes[4] = {0};
+
+    ufsecp_error_t rc = ufsecp_gpu_bip352_scan_batch(
+        gpu,
+        scan_privkey,   /* SECRET — sent to GPU driver */
+        spend_pubkey,
+        tweaks,
+        N,
+        prefixes
+    );
+    if (rc != UFSECP_OK) {
+        fprintf(stderr, "scan_batch error: %s\n", ufsecp_gpu_error_str(rc));
+        ufsecp_gpu_ctx_destroy(gpu);
+        return 1;
+    }
+
+    for (size_t i = 0; i < N; ++i)
+        printf("tweak[%zu] -> prefix 0x%016llx\n", i, (unsigned long long)prefixes[i]);
+
+    ufsecp_gpu_ctx_destroy(gpu);
+    return 0;
+}
+```
+
+#### Precomputing the scan plan
+
+For workloads where the same scan key is used repeatedly across many batches, you can precompute
+the 264-byte GLV wNAF plan once on the CPU:
+
+```c
+uint8_t plan[UFSECP_BIP352_SCAN_PLAN_BYTES];
+ufsecp_error_t rc = ufsecp_bip352_prepare_scan_plan(scan_privkey, plan);
+/* plan can be cached; it does NOT contain the raw key, only wNAF digits */
+```
+
+The plan is not secret itself (it contains wNAF digits only), but it was derived from a secret key — store and clear it with the same care as the scan key.
+
+---
+
 ## 17. Troubleshooting
 
 ### "Undefined symbol: ufsecp_*"

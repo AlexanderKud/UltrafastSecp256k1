@@ -23,7 +23,7 @@ import platform
 import sys
 from ctypes import (
     POINTER, Structure, byref, c_char, c_char_p, c_int, c_size_t,
-    c_uint8, c_uint32, c_void_p, create_string_buffer,
+    c_uint8, c_uint32, c_uint64, c_void_p, create_string_buffer,
 )
 from pathlib import Path
 from typing import NamedTuple, Optional, Tuple
@@ -35,6 +35,7 @@ __all__ = [
     "NET_MAINNET",
     "NET_TESTNET",
     "ECDSA_SNARK_WITNESS_BYTES",
+    "BIP352_SCAN_PLAN_BYTES",
 ]
 
 # -- Constants ------------------------------------------------------------
@@ -44,6 +45,9 @@ NET_TESTNET = 1
 
 #: Size in bytes of one flat ECDSA SNARK witness record (eprint 2025/695).
 ECDSA_SNARK_WITNESS_BYTES = 760
+
+#: Size in bytes of the precomputed BIP-352 scan plan (GLV wNAF encoded).
+BIP352_SCAN_PLAN_BYTES = 264
 
 # Error codes
 _OK              = 0
@@ -598,6 +602,36 @@ class Ufsecp:
         L.ufsecp_zk_ecdsa_snark_witness.argtypes = [vp, p8, p8, p8, p8]
         L.ufsecp_zk_ecdsa_snark_witness.restype = c_int
 
+        # BIP-352: Silent Payment scan-plan precomputation (CPU utility)
+        L.ufsecp_bip352_prepare_scan_plan.argtypes = [p8, p8]
+        L.ufsecp_bip352_prepare_scan_plan.restype = c_int
+
+
+    def bip352_prepare_scan_plan(self, scan_privkey: bytes) -> bytes:
+        """Precompute 264-byte BIP-352 scan plan (GLV wNAF) for a scan private key.
+
+        The plan can be cached and reused across many batch scan calls to avoid
+        redundant GLV decomposition work on the host.
+
+        Args:
+            scan_privkey: 32-byte scan private key (secret).
+
+        Returns:
+            264 bytes representing the precomputed scan plan.
+
+        Raises:
+            ValueError: if scan_privkey is not 32 bytes.
+            UfsecpError: on internal error.
+        """
+        if len(scan_privkey) != 32:
+            raise ValueError("scan_privkey must be 32 bytes")
+        out = (c_uint8 * BIP352_SCAN_PLAN_BYTES)()
+        rc = self._lib.ufsecp_bip352_prepare_scan_plan(
+            (c_uint8 * 32).from_buffer_copy(scan_privkey), out)
+        if rc != _OK:
+            raise UfsecpError("ufsecp_bip352_prepare_scan_plan", rc)
+        return bytes(out)
+
 
 def _chk(data: bytes, expected: int, name: str) -> None:
     if len(data) != expected:
@@ -728,6 +762,54 @@ class UfsecpGpu:
         stride = ECDSA_SNARK_WITNESS_BYTES
         return [raw[i * stride:(i + 1) * stride] for i in range(count)]
 
+    def bip352_scan_batch(
+        self,
+        scan_privkey: bytes,
+        spend_pubkey: bytes,
+        tweak_pubkeys: list,
+    ) -> list:
+        """BIP-352 Silent Payment GPU batch scan.
+
+        Computes ``scan_privkey × tweak_pubkey_i`` for each tweak point,
+        derives the BIP-352 shared-secret hash, adds the spend pubkey, and
+        returns the upper 64 bits of each candidate output x-coordinate.
+
+        Args:
+            scan_privkey:  32-byte scan private key (secret, kept on host).
+            spend_pubkey:  33-byte compressed spend public key (SEC1).
+            tweak_pubkeys: list of 33-byte compressed tweak public keys.
+
+        Returns:
+            list of int, each being the upper 64 bits of the candidate
+            output x-coordinate for the corresponding tweak.
+
+        Raises:
+            ValueError: on bad input sizes.
+            UfsecpError: on GPU backend failure.
+        """
+        n = len(tweak_pubkeys)
+        if n == 0:
+            return []
+        flat_tweaks = b"".join(tweak_pubkeys)
+        if len(scan_privkey) != 32:
+            raise ValueError("scan_privkey must be 32 bytes")
+        if len(spend_pubkey) != 33:
+            raise ValueError("spend_pubkey must be 33 bytes")
+        if len(flat_tweaks) != n * 33:
+            raise ValueError("each tweak_pubkey must be 33 bytes")
+        out_buf = (c_uint64 * n)()
+        rc = self._lib.ufsecp_gpu_bip352_scan_batch(
+            self._ctx,
+            (c_uint8 * 32).from_buffer_copy(scan_privkey),
+            (c_uint8 * 33).from_buffer_copy(spend_pubkey),
+            (c_uint8 * len(flat_tweaks)).from_buffer_copy(flat_tweaks),
+            c_size_t(n),
+            out_buf,
+        )
+        if rc != _OK:
+            raise UfsecpError("ufsecp_gpu_bip352_scan_batch", rc)
+        return list(out_buf)
+
     def _bind(self) -> None:
         L = self._lib
         vp   = c_void_p
@@ -745,3 +827,8 @@ class UfsecpGpu:
             vp, p8, p8, p8, sz, p8,
         ]
         L.ufsecp_gpu_zk_ecdsa_snark_witness_batch.restype = c_int
+
+        L.ufsecp_gpu_bip352_scan_batch.argtypes = [
+            vp, p8, p8, p8, sz, POINTER(c_uint64),
+        ]
+        L.ufsecp_gpu_bip352_scan_batch.restype = c_int

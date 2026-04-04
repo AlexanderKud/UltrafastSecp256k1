@@ -40,6 +40,10 @@
 /* -- CPU FieldElement for host-side point compression ---------------------- */
 #include "secp256k1/field.hpp"
 
+/* -- CPU GLV decomposition for BIP-352 scan plan precomputation ------------ */
+#include "secp256k1/glv.hpp"
+#include "secp256k1/scalar.hpp"
+
 /* -- CPU SHA-256 for ECDH finalization ------------------------------------- */
 #include "secp256k1/sha256.hpp"
 
@@ -209,6 +213,9 @@ public:
         if (bip324_aead_encrypt_) { clReleaseKernel(bip324_aead_encrypt_); bip324_aead_encrypt_ = nullptr; }
         if (bip324_aead_decrypt_) { clReleaseKernel(bip324_aead_decrypt_); bip324_aead_decrypt_ = nullptr; }
         if (bip324_program_)      { clReleaseProgram(bip324_program_);     bip324_program_      = nullptr; }
+
+        if (bip352_scan_kernel_)  { clReleaseKernel(bip352_scan_kernel_);  bip352_scan_kernel_  = nullptr; }
+        if (bip352_program_)      { clReleaseProgram(bip352_program_);     bip352_program_      = nullptr; }
         bip324_init_attempted_ = false;
         msm_pool_.free_all();
         ctx_.reset();
@@ -1562,6 +1569,164 @@ public:
         return GpuError::Ok;
     }
 
+    /* -- BIP-352 Silent Payment GPU batch scan ----------------------------- */
+
+    GpuError bip352_scan_batch(
+        const uint8_t  scan_privkey32[32],
+        const uint8_t  spend_pubkey33[33],
+        const uint8_t* tweak_pubkeys33,
+        size_t n_tweaks,
+        uint64_t* prefix64_out) override
+    {
+        if (!is_ready()) return set_error(GpuError::Device, "context not initialised");
+        if (n_tweaks == 0) { clear_error(); return GpuError::Ok; }
+        if (!scan_privkey32 || !spend_pubkey33 || !tweak_pubkeys33 || !prefix64_out)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        auto err = ensure_bip352_kernel();
+        if (err != GpuError::Ok) return err;
+
+        auto* cl_ctx = static_cast<cl_context>(ctx_->native_context());
+        auto* queue   = static_cast<cl_command_queue>(ctx_->native_queue());
+        cl_int clerr;
+
+        /* -- 1. Compute GLV wNAF scan plan on CPU -- */
+        struct Bip352ScanPlan {
+            int8_t  wnaf1[130];
+            int8_t  wnaf2[130];
+            uint8_t k1_neg;
+            uint8_t flip_phi;
+            uint8_t pad[2];
+        }; // 264 bytes — must match OpenCL BIP352ScanKeyGlv exactly
+        static_assert(sizeof(Bip352ScanPlan) == 264, "scan plan size mismatch");
+
+        Bip352ScanPlan plan{};
+        {
+            using namespace secp256k1::fast;
+            Scalar k = Scalar::from_bytes(scan_privkey32);
+            if (k.is_zero()) return set_error(GpuError::BadKey, "zero scan key");
+
+            auto decomp       = glv_decompose(k);
+            auto k1_bytes     = decomp.k1.to_bytes();
+            auto k2_bytes     = decomp.k2.to_bytes();
+            plan.k1_neg       = decomp.k1_neg ? 1 : 0;
+            plan.flip_phi     = (decomp.k1_neg != decomp.k2_neg) ? 1 : 0;
+
+            /* 5-bit wNAF — mirrors host_compute_wnaf() in bench_bip352_opencl.cpp */
+            auto compute_wnaf = [](const uint8_t* scalar_be32, int8_t wnaf[130]) {
+                uint64_t s[4] = {};
+                for (int limb = 0; limb < 4; ++limb) {
+                    uint64_t v = 0;
+                    int base = limb * 8;
+                    for (int i = 0; i < 8; ++i) v = (v << 8) | scalar_be32[base + i];
+                    s[3 - limb] = v;
+                }
+                for (int i = 0; i < 130; i++) {
+                    if (s[0] & 1ULL) {
+                        int d = (int)(s[0] & 0x1FULL);
+                        if (d >= 16) {
+                            d -= 32;
+                            uint64_t add = (uint64_t)(-d);
+                            uint64_t prev = s[0]; s[0] += add;
+                            if (s[0] < prev) { for (int j = 1; j < 4; j++) if (++s[j]) break; }
+                        } else {
+                            uint64_t prev = s[0]; s[0] -= (uint64_t)d;
+                            if (s[0] > prev) { for (int j = 1; j < 4; j++) if (s[j]--) break; }
+                        }
+                        wnaf[i] = (int8_t)d;
+                    } else {
+                        wnaf[i] = 0;
+                    }
+                    s[0] = (s[0] >> 1) | (s[1] << 63);
+                    s[1] = (s[1] >> 1) | (s[2] << 63);
+                    s[2] = (s[2] >> 1) | (s[3] << 63);
+                    s[3] >>= 1;
+                }
+            };
+            compute_wnaf(k1_bytes.data(), plan.wnaf1);
+            compute_wnaf(k2_bytes.data(), plan.wnaf2);
+        }
+
+        /* -- 2. Decompress spend pubkey to OclAffine on CPU -- */
+        secp256k1::opencl::AffinePoint ocl_spend{};
+        {
+            secp256k1::opencl::AffinePoint aff;
+            if (!pubkey33_to_affine(spend_pubkey33, &aff))
+                return set_error(GpuError::BadKey, "invalid spend pubkey");
+            ocl_spend = aff;
+        }
+
+        /* -- 3. Decompress tweak pubkeys to OclAffine on CPU -- */
+        std::vector<secp256k1::opencl::AffinePoint> ocl_tweaks(n_tweaks);
+        for (size_t i = 0; i < n_tweaks; ++i) {
+            if (!pubkey33_to_affine(tweak_pubkeys33 + i * 33, &ocl_tweaks[i]))
+                return set_error(GpuError::BadKey, "invalid tweak pubkey");
+        }
+
+        /* -- 4. Upload buffers to device -- */
+        cl_mem d_plan = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                       sizeof(Bip352ScanPlan), &plan, &clerr);
+        if (clerr != CL_SUCCESS) return set_error(GpuError::Memory, "scan plan alloc");
+
+        cl_mem d_spend = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                        sizeof(secp256k1::opencl::AffinePoint), &ocl_spend, &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_plan);
+            return set_error(GpuError::Memory, "spend point alloc");
+        }
+
+        cl_mem d_tweaks = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                         sizeof(secp256k1::opencl::AffinePoint) * n_tweaks,
+                                         ocl_tweaks.data(), &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_spend);
+            clReleaseMemObject(d_plan);
+            return set_error(GpuError::Memory, "tweak buffer alloc");
+        }
+
+        cl_mem d_prefixes = clCreateBuffer(cl_ctx, CL_MEM_WRITE_ONLY,
+                                           sizeof(uint64_t) * n_tweaks, nullptr, &clerr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_tweaks);
+            clReleaseMemObject(d_spend);
+            clReleaseMemObject(d_plan);
+            return set_error(GpuError::Memory, "prefix output alloc");
+        }
+
+        /* -- 5. Set kernel args and launch -- */
+        cl_uint cl_count = static_cast<cl_uint>(n_tweaks);
+        clSetKernelArg(bip352_scan_kernel_, 0, sizeof(cl_mem),  &d_tweaks);
+        clSetKernelArg(bip352_scan_kernel_, 1, sizeof(cl_mem),  &d_plan);
+        clSetKernelArg(bip352_scan_kernel_, 2, sizeof(cl_mem),  &d_spend);
+        clSetKernelArg(bip352_scan_kernel_, 3, sizeof(cl_mem),  &d_prefixes);
+        clSetKernelArg(bip352_scan_kernel_, 4, sizeof(cl_uint), &cl_count);
+
+        constexpr size_t LOCAL_SIZE = 128;
+        size_t global = ((n_tweaks + LOCAL_SIZE - 1) / LOCAL_SIZE) * LOCAL_SIZE;
+        size_t local  = LOCAL_SIZE;
+        clerr = clEnqueueNDRangeKernel(queue, bip352_scan_kernel_, 1, nullptr,
+                                       &global, &local, 0, nullptr, nullptr);
+        if (clerr != CL_SUCCESS) {
+            clReleaseMemObject(d_prefixes);
+            clReleaseMemObject(d_tweaks);
+            clReleaseMemObject(d_spend);
+            clReleaseMemObject(d_plan);
+            return set_error(GpuError::Launch, "bip352_pipeline_kernel launch failed");
+        }
+        clFinish(queue);
+
+        /* -- 6. Read back prefixes -- */
+        clEnqueueReadBuffer(queue, d_prefixes, CL_TRUE, 0,
+                            sizeof(uint64_t) * n_tweaks, prefix64_out, 0, nullptr, nullptr);
+
+        clReleaseMemObject(d_prefixes);
+        clReleaseMemObject(d_tweaks);
+        clReleaseMemObject(d_spend);
+        clReleaseMemObject(d_plan);
+        clear_error();
+        return GpuError::Ok;
+    }
+
 private:
     std::unique_ptr<secp256k1::opencl::Context> ctx_;
     GpuError last_err_ = GpuError::Ok;
@@ -1592,6 +1757,11 @@ private:
     cl_kernel  bip324_aead_encrypt_   = nullptr;
     cl_kernel  bip324_aead_decrypt_   = nullptr;
     bool       bip324_init_attempted_ = false;
+
+    /* BIP-352 Silent Payment scan kernel (lazy-loaded via secp256k1_bip352.cl) */
+    cl_program bip352_program_        = nullptr;
+    cl_kernel  bip352_scan_kernel_    = nullptr;
+    bool       bip352_init_attempted_ = false;
 
     /* MSM persistent buffer pool (shared across msm() calls) */
     OclMsmPool msm_pool_;
@@ -2039,7 +2209,70 @@ private:
 
         return GpuError::Ok;
     }
-};
+
+    /* -- Lazy-load BIP-352 Silent Payment scan kernel ---------------------- */
+    GpuError ensure_bip352_kernel() {
+        if (bip352_scan_kernel_) return GpuError::Ok;
+        if (bip352_init_attempted_)
+            return set_error(GpuError::Launch, "BIP-352 kernel init previously failed");
+        bip352_init_attempted_ = true;
+
+        auto* cl_ctx = static_cast<cl_context>(ctx_->native_context());
+        cl_device_id device = nullptr;
+        clGetContextInfo(cl_ctx, CL_CONTEXT_DEVICES, sizeof(device), &device, nullptr);
+
+        const char* search_paths[] = {
+            "../../opencl/kernels/secp256k1_bip352.cl",
+            "../opencl/kernels/secp256k1_bip352.cl",
+            "../../../opencl/kernels/secp256k1_bip352.cl",
+            "opencl/kernels/secp256k1_bip352.cl",
+            "kernels/secp256k1_bip352.cl",
+            "../kernels/secp256k1_bip352.cl",
+        };
+
+        /* The BIP-352 kernel includes other .cl files via #include.
+         * We must expand those includes before creating the program. */
+        std::string src, kernel_dir;
+        for (auto* p : search_paths) {
+            src = load_file_to_string(p);
+            if (!src.empty()) {
+                std::filesystem::path fp(p);
+                kernel_dir = fp.parent_path().string();
+                break;
+            }
+        }
+        if (src.empty())
+            return set_error(GpuError::Launch, "secp256k1_bip352.cl not found");
+
+        const char* src_ptr = src.c_str();
+        size_t src_len = src.size();
+        cl_int err;
+        bip352_program_ = clCreateProgramWithSource(cl_ctx, 1, &src_ptr, &src_len, &err);
+        if (err != CL_SUCCESS)
+            return set_error(GpuError::Launch, "bip352 clCreateProgramWithSource failed");
+
+        std::string opts = "-cl-std=CL1.2 -cl-fast-relaxed-math -cl-mad-enable";
+        if (!kernel_dir.empty()) opts += " -I " + kernel_dir;
+
+        err = clBuildProgram(bip352_program_, 1, &device, opts.c_str(), nullptr, nullptr);
+        if (err != CL_SUCCESS) {
+            size_t log_len = 0;
+            clGetProgramBuildInfo(bip352_program_, device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &log_len);
+            std::string log(log_len, '\0');
+            clGetProgramBuildInfo(bip352_program_, device, CL_PROGRAM_BUILD_LOG, log_len, log.data(), nullptr);
+            clReleaseProgram(bip352_program_); bip352_program_ = nullptr;
+            std::string msg = "bip352.cl build failed: " + log.substr(0, 400);
+            return set_error(GpuError::Launch, msg.c_str());
+        }
+
+        bip352_scan_kernel_ = clCreateKernel(bip352_program_, "bip352_pipeline_kernel", &err);
+        if (err != CL_SUCCESS) {
+            clReleaseProgram(bip352_program_); bip352_program_ = nullptr;
+            return set_error(GpuError::Launch, "bip352_pipeline_kernel not found");
+        }
+
+        return GpuError::Ok;
+    }
 
 /* -- Factory --------------------------------------------------------------- */
 std::unique_ptr<GpuBackend> create_opencl_backend() {

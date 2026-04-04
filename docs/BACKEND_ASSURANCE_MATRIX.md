@@ -52,12 +52,19 @@ A kernel being present internally does not imply a public API exists for it.
 | `ufsecp_gpu_bulletproof_verify_batch` | Y | - | Y | Y | Y |
 | `ufsecp_gpu_bip324_aead_encrypt_batch` | Y | - | Y | Y | Y |
 | `ufsecp_gpu_bip324_aead_decrypt_batch` | Y | - | Y | Y | Y |
+| `ufsecp_gpu_zk_ecdsa_snark_witness_batch` | Y | - | Y | Y | - |
+| `ufsecp_gpu_bip352_scan_batch` | Y | - | Y | Y | stub ² |
 
 ¹ `ufsecp_gpu_ecdh_batch` is the only GPU public API function that accepts private
 keys. This is an intentional exception for BIP-352 silent payment scanning workloads
 where the ECDH step cannot be split from the GPU pipeline without losing throughput.
 Callers must accept the implied security posture of sending private keys to the GPU
 driver. See *Secret-Use Policy* below.
+
+² `ufsecp_gpu_bip352_scan_batch` Metal stub returns `GpuError::Unsupported`. The
+CUDA and OpenCL implementations are fully functional. A Metal MSL shader for this
+operation is planned; tracking: `bip352-scan-metal`. `ufsecp_gpu_bip352_scan_batch`
+also accepts the scan private key (SECRET-BEARING) — same posture as `ufsecp_gpu_ecdh_batch`.
 
 ### CPU-only operations (no GPU public API)
 
