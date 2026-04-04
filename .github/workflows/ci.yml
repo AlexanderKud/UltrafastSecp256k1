@@ -369,6 +369,14 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python audit dependencies
+        run: pip install --quiet coincurve ecdsa hypothesis
+
       - name: Configure (MSVC)
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
@@ -381,9 +389,6 @@ jobs:
 
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} -j
-
-      - name: Install Python audit dependencies
-        run: pip install --quiet coincurve ecdsa hypothesis
 
       - name: Test
         env:
