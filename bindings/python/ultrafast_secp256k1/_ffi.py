@@ -13,6 +13,9 @@ import warnings
 from pathlib import Path
 from typing import Optional, Tuple
 
+#: Size in bytes of one flat ECDSA SNARK witness record (eprint 2025/695).
+ECDSA_SNARK_WITNESS_BYTES = 760
+
 
 def _find_library() -> str:
     """Locate the ultrafast_secp256k1 shared library."""

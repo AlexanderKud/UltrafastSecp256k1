@@ -75,6 +75,12 @@ extern __global__ void ecdsa_recover_batch_kernel(
     JacobianPoint* __restrict__ recovered_keys,
     bool*          __restrict__ results,
     int count);
+extern __global__ void ecdsa_snark_witness_batch_kernel(
+    const uint8_t*           __restrict__ msg_hashes,
+    const JacobianPoint*     __restrict__ public_keys,
+    const ECDSASignatureGPU* __restrict__ sigs,
+    EcdsaSnarkWitnessFlat*   __restrict__ out,
+    int count);
 } // namespace cuda
 
 namespace gpu {
@@ -1048,6 +1054,68 @@ public:
 
         cudaFree(d_ok); cudaFree(d_pt); cudaFree(d_sizes);
         cudaFree(d_wire); cudaFree(d_nonces); cudaFree(d_keys);
+        clear_error();
+        return GpuError::Ok;
+    }
+
+    GpuError snark_witness_batch(
+        const uint8_t* msg_hashes32, const uint8_t* pubkeys33,
+        const uint8_t* sigs64, size_t count,
+        uint8_t* out_flat) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (count == 0) { clear_error(); return GpuError::Ok; }
+        if (!msg_hashes32 || !pubkeys33 || !sigs64 || !out_flat)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        /* Prepare signatures on host */
+        std::vector<ECDSASignatureGPU> h_sigs(count);
+        for (size_t i = 0; i < count; ++i)
+            bytes_to_ecdsa_sig(sigs64 + i * 64, &h_sigs[i]);
+
+        /* Allocate device memory */
+        uint8_t*               d_msgs    = nullptr;
+        uint8_t*               d_pubs33  = nullptr;
+        JacobianPoint*         d_pubs    = nullptr;
+        bool*                  d_pub_ok  = nullptr;
+        ECDSASignatureGPU*     d_sigs    = nullptr;
+        EcdsaSnarkWitnessFlat* d_out     = nullptr;
+
+        CUDA_TRY(cudaMalloc(&d_msgs,   count * 32));
+        CUDA_TRY(cudaMalloc(&d_pubs33, count * 33));
+        CUDA_TRY(cudaMalloc(&d_pubs,   count * sizeof(JacobianPoint)));
+        CUDA_TRY(cudaMalloc(&d_pub_ok, count * sizeof(bool)));
+        CUDA_TRY(cudaMalloc(&d_sigs,   count * sizeof(ECDSASignatureGPU)));
+        CUDA_TRY(cudaMalloc(&d_out,    count * sizeof(EcdsaSnarkWitnessFlat)));
+
+        CUDA_TRY(cudaMemcpy(d_msgs,   msg_hashes32,    count * 32,                         cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_pubs33, pubkeys33,        count * 33,                         cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_sigs,   h_sigs.data(),   count * sizeof(ECDSASignatureGPU),  cudaMemcpyHostToDevice));
+
+        /* Decompress pubkeys on GPU */
+        int threads = 128;
+        int blocks  = (static_cast<int>(count) + threads - 1) / threads;
+        batch_compressed_to_jac_kernel<<<blocks, threads>>>(
+            d_pubs33, d_pubs, d_pub_ok, static_cast<int>(count));
+        CUDA_TRY(cudaGetLastError());
+
+        /* Launch witness computation */
+        cuda::ecdsa_snark_witness_batch_kernel<<<blocks, threads>>>(
+            d_msgs, d_pubs, d_sigs, d_out, static_cast<int>(count));
+        CUDA_TRY(cudaGetLastError());
+        CUDA_TRY(cudaDeviceSynchronize());
+
+        /* Download flat witness records */
+        CUDA_TRY(cudaMemcpy(out_flat, d_out,
+                            count * sizeof(EcdsaSnarkWitnessFlat),
+                            cudaMemcpyDeviceToHost));
+
+        cudaFree(d_out);
+        cudaFree(d_sigs);
+        cudaFree(d_pub_ok);
+        cudaFree(d_pubs);
+        cudaFree(d_pubs33);
+        cudaFree(d_msgs);
         clear_error();
         return GpuError::Ok;
     }

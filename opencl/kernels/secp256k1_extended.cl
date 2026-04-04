@@ -1921,3 +1921,180 @@ __kernel void generator_mul_windowed(
     scalar_mul_generator_windowed_impl(&r, &k);
     results[gid] = r;
 }
+
+// =============================================================================
+// LAYER 6: ECDSA SNARK witness (eprint 2025/695) — foreign-field PLONK/Halo2
+// =============================================================================
+
+/** Flat 760-byte witness record.  Identical layout to the CPU and CUDA structs.
+ *  uchar = uint8, ulong = uint64, int = int32.
+ *  Total: 11×32 + 10×5×8 + 2×4 = 352 + 400 + 8 = 760 bytes.
+ */
+typedef struct {
+    /* -- 11 input/witness byte fields (32 bytes each) ---- */
+    uchar  msg[32];
+    uchar  sig_r[32];
+    uchar  sig_s[32];
+    uchar  pub_x[32];
+    uchar  pub_y[32];
+    uchar  s_inv[32];
+    uchar  u1[32];
+    uchar  u2[32];
+    uchar  result_x[32];
+    uchar  result_y[32];
+    uchar  result_x_mod_n[32];
+    /* -- 10×5 foreign-field limbs (5×52-bit, stored as ulong) ------------- */
+    ulong  lmb_sig_r[5];
+    ulong  lmb_sig_s[5];
+    ulong  lmb_pub_x[5];
+    ulong  lmb_pub_y[5];
+    ulong  lmb_s_inv[5];
+    ulong  lmb_u1[5];
+    ulong  lmb_u2[5];
+    ulong  lmb_result_x[5];
+    ulong  lmb_result_y[5];
+    ulong  lmb_result_x_mod_n[5];
+    /* -- validity + alignment ---------------------------------------------- */
+    int    valid;
+    int    _pad;
+} EcdsaSnarkWitnessFlatOCL;
+
+// Helper: Scalar (4×ulong LE limbs) → 5×52-bit foreign-field limbs.
+inline void scalar_to_ff_limbs_cl(const Scalar* s, ulong out[5]) {
+    const ulong MASK52 = (1UL << 52) - 1UL;
+    out[0] =  s->limbs[0]                                        & MASK52;
+    out[1] = ((s->limbs[0] >> 52) | (s->limbs[1] << 12))        & MASK52;
+    out[2] = ((s->limbs[1] >> 40) | (s->limbs[2] << 24))        & MASK52;
+    out[3] = ((s->limbs[2] >> 28) | (s->limbs[3] << 36))        & MASK52;
+    out[4] =   s->limbs[3] >> 16;
+}
+
+// Helper: 32 big-endian bytes → 5×52-bit foreign-field limbs.
+// Interprets BE bytes as 4×ulong LE, then 52-bit windowing.
+inline void be_bytes_to_ff_limbs_cl(const uchar be[32], ulong out[5]) {
+    ulong w[4];
+    for (int i = 0; i < 4; i++) {
+        ulong v = 0;
+        int base = (3 - i) * 8;
+        for (int b = 0; b < 8; b++)
+            v = (v << 8) | (ulong)be[base + b];
+        w[i] = v;
+    }
+    const ulong MASK52 = (1UL << 52) - 1UL;
+    out[0] =  w[0]                           & MASK52;
+    out[1] = ((w[0] >> 52) | (w[1] << 12))  & MASK52;
+    out[2] = ((w[1] >> 40) | (w[2] << 24))  & MASK52;
+    out[3] = ((w[2] >> 28) | (w[3] << 36))  & MASK52;
+    out[4] =   w[3] >> 16;
+}
+
+// Compute one ECDSA SNARK witness record into *out.
+// On any early-out failure, out->valid is left 0.
+inline void ecdsa_snark_witness_impl(
+    const uchar              msg_hash[32],
+    const JacobianPoint*     pubkey,
+    const ECDSASignature*    sig,
+    EcdsaSnarkWitnessFlatOCL* out)
+{
+    out->valid = 0;
+    out->_pad  = 0;
+
+    if (scalar_is_zero(&sig->r) || scalar_is_zero(&sig->s)) return;
+    if (point_is_infinity(pubkey)) return;
+
+    /* ---- input bytes ---- */
+    for (int i = 0; i < 32; i++) out->msg[i] = msg_hash[i];
+    scalar_to_bytes_impl(&sig->r, out->sig_r);
+    scalar_to_bytes_impl(&sig->s, out->sig_s);
+
+    /* ---- public key: Jacobian → affine ---- */
+    AffinePoint pub_aff;
+    if (pubkey->z.limbs[0] == 1UL && pubkey->z.limbs[1] == 0UL &&
+        pubkey->z.limbs[2] == 0UL && pubkey->z.limbs[3] == 0UL) {
+        pub_aff.x = pubkey->x;
+        pub_aff.y = pubkey->y;
+    } else {
+        FieldElement pz_inv, pz_inv2, pz_inv3;
+        field_inv_impl(&pz_inv,  &pubkey->z);
+        field_sqr_impl(&pz_inv2, &pz_inv);
+        field_mul_impl(&pz_inv3, &pz_inv2, &pz_inv);
+        field_mul_impl(&pub_aff.x, &pubkey->x, &pz_inv2);
+        field_mul_impl(&pub_aff.y, &pubkey->y, &pz_inv3);
+    }
+    field_to_bytes_impl(&pub_aff.x, out->pub_x);
+    field_to_bytes_impl(&pub_aff.y, out->pub_y);
+
+    /* ---- witness scalars ---- */
+    Scalar z;
+    scalar_from_bytes_impl(msg_hash, &z);
+
+    Scalar s_inv;
+    scalar_inverse_impl(&sig->s, &s_inv);
+    scalar_to_bytes_impl(&s_inv, out->s_inv);
+
+    Scalar u1, u2;
+    scalar_mul_mod_n_impl(&z,      &s_inv, &u1);
+    scalar_to_bytes_impl(&u1, out->u1);
+    scalar_mul_mod_n_impl(&sig->r, &s_inv, &u2);
+    scalar_to_bytes_impl(&u2, out->u2);
+
+    /* ---- R = u1·G + u2·Q using Shamir's trick ---- */
+    AffinePoint G;
+    get_generator(&G);
+
+    JacobianPoint R;
+    shamir_double_mul_glv_impl(&G, &u1, &pub_aff, &u2, &R);
+    if (point_is_infinity(&R)) return;
+
+    /* ---- R affine x, y ---- */
+    FieldElement rz_inv, rz_inv2, rz_inv3, rx_aff, ry_aff;
+    field_inv_impl(&rz_inv,  &R.z);
+    field_sqr_impl(&rz_inv2, &rz_inv);
+    field_mul_impl(&rz_inv3, &rz_inv2, &rz_inv);
+    field_mul_impl(&rx_aff,  &R.x,     &rz_inv2);
+    field_mul_impl(&ry_aff,  &R.y,     &rz_inv3);
+    field_to_bytes_impl(&rx_aff, out->result_x);
+    field_to_bytes_impl(&ry_aff, out->result_y);
+
+    /* ---- result_x mod n ---- */
+    Scalar v;
+    scalar_from_bytes_impl(out->result_x, &v);
+    scalar_to_bytes_impl(&v, out->result_x_mod_n);
+
+    /* ---- validity ---- */
+    out->valid = scalar_eq_impl(&v, &sig->r) ? 1 : 0;
+
+    /* ---- foreign-field limbs ---- */
+    scalar_to_ff_limbs_cl(&sig->r, out->lmb_sig_r);
+    scalar_to_ff_limbs_cl(&sig->s, out->lmb_sig_s);
+    be_bytes_to_ff_limbs_cl(out->pub_x, out->lmb_pub_x);
+    be_bytes_to_ff_limbs_cl(out->pub_y, out->lmb_pub_y);
+    scalar_to_ff_limbs_cl(&s_inv,   out->lmb_s_inv);
+    scalar_to_ff_limbs_cl(&u1,      out->lmb_u1);
+    scalar_to_ff_limbs_cl(&u2,      out->lmb_u2);
+    be_bytes_to_ff_limbs_cl(out->result_x,       out->lmb_result_x);
+    be_bytes_to_ff_limbs_cl(out->result_y,       out->lmb_result_y);
+    be_bytes_to_ff_limbs_cl(out->result_x_mod_n, out->lmb_result_x_mod_n);
+}
+
+// Kernel: one thread per (message, pubkey, sig) tuple.
+__kernel void ecdsa_snark_witness_batch(
+    __global const uchar*              msg_hashes,   // count × 32 bytes (BE SHA-256)
+    __global const JacobianPoint*      pubkeys,      // count × JacobianPoint (decompressed)
+    __global const ECDSASignature*     sigs,         // count × ECDSASignature {r, s}
+    __global EcdsaSnarkWitnessFlatOCL* out,          // count × 760-byte witness records
+    const uint                         count
+) {
+    uint gid = get_global_id(0);
+    if (gid >= count) return;
+
+    uchar msg[32];
+    for (int i = 0; i < 32; i++) msg[i] = msg_hashes[gid * 32 + i];
+
+    JacobianPoint pub = pubkeys[gid];
+    ECDSASignature sig = sigs[gid];
+
+    EcdsaSnarkWitnessFlatOCL w;
+    ecdsa_snark_witness_impl(msg, &pub, &sig, &w);
+    out[gid] = w;
+}

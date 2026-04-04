@@ -439,6 +439,177 @@ __device__ inline void ecdsa_sig_from_compact(const uint8_t data[64], ECDSASigna
     scalar_from_bytes(data + 32, &sig->s);
 }
 
+// ============================================================================
+// ECDSA SNARK witness (foreign-field PLONK/Halo2, eprint 2025/695)
+// ============================================================================
+
+/** Flat 760-byte witness record. Layout (identical on host and device):
+ *  [  0.. 31] msg[32]                  — SHA-256 message hash (BE)
+ *  [ 32.. 63] sig_r[32]                — signature r (BE)
+ *  [ 64.. 95] sig_s[32]                — signature s (BE)
+ *  [ 96..127] pub_x[32]                — public key x (affine, BE)
+ *  [128..159] pub_y[32]                — public key y (affine, BE)
+ *  [160..191] s_inv[32]                — s^{-1} mod n (BE)
+ *  [192..223] u1[32]                   — z·s_inv mod n (BE)
+ *  [224..255] u2[32]                   — r·s_inv mod n (BE)
+ *  [256..287] result_x[32]             — R affine x-coord (BE)
+ *  [288..319] result_y[32]             — R affine y-coord (BE)
+ *  [320..351] result_x_mod_n[32]       — R.x mod n (BE)
+ *  [352..391] lmb_sig_r[5] uint64      — 5×52-bit limbs for sig_r
+ *  [392..431] lmb_sig_s[5]             — 5×52-bit limbs for sig_s
+ *  [432..471] lmb_pub_x[5]             — 5×52-bit limbs for pub_x
+ *  [472..511] lmb_pub_y[5]             — 5×52-bit limbs for pub_y
+ *  [512..551] lmb_s_inv[5]             — 5×52-bit limbs for s_inv
+ *  [552..591] lmb_u1[5]                — 5×52-bit limbs for u1
+ *  [592..631] lmb_u2[5]                — 5×52-bit limbs for u2
+ *  [632..671] lmb_result_x[5]          — 5×52-bit limbs for result_x
+ *  [672..711] lmb_result_y[5]          — 5×52-bit limbs for result_y
+ *  [712..751] lmb_result_x_mod_n[5]    — 5×52-bit limbs for result_x_mod_n
+ *  [752..755] valid int32               — 1 if ECDSA-valid, 0 otherwise
+ *  [756..759] _pad int32                — alignment padding
+ */
+struct EcdsaSnarkWitnessFlat {
+    /* -- 11 × 32-byte byte fields (input + witness scalars/coords) --------- */
+    uint8_t  msg[32];
+    uint8_t  sig_r[32];
+    uint8_t  sig_s[32];
+    uint8_t  pub_x[32];
+    uint8_t  pub_y[32];
+    uint8_t  s_inv[32];
+    uint8_t  u1[32];
+    uint8_t  u2[32];
+    uint8_t  result_x[32];
+    uint8_t  result_y[32];
+    uint8_t  result_x_mod_n[32];
+    /* -- 10 × 5 × uint64 foreign-field limbs (5×52-bit representation) ---- */
+    uint64_t lmb_sig_r[5];
+    uint64_t lmb_sig_s[5];
+    uint64_t lmb_pub_x[5];
+    uint64_t lmb_pub_y[5];
+    uint64_t lmb_s_inv[5];
+    uint64_t lmb_u1[5];
+    uint64_t lmb_u2[5];
+    uint64_t lmb_result_x[5];
+    uint64_t lmb_result_y[5];
+    uint64_t lmb_result_x_mod_n[5];
+    /* -- validity + alignment padding -------------------------------------- */
+    int32_t  valid;
+    int32_t  _pad;
+};
+static_assert(sizeof(EcdsaSnarkWitnessFlat) == 760,
+              "EcdsaSnarkWitnessFlat layout mismatch");
+
+// Helper: Scalar (4×uint64 LE limbs) → 5×52-bit foreign-field limbs.
+__device__ __forceinline__ void scalar_to_ff_limbs_device(const Scalar* s,
+                                                           uint64_t out[5]) {
+    const uint64_t MASK52 = (1ULL << 52) - 1;
+    out[0] =  s->limbs[0]                                         & MASK52;
+    out[1] = ((s->limbs[0] >> 52) | (s->limbs[1] << 12))         & MASK52;
+    out[2] = ((s->limbs[1] >> 40) | (s->limbs[2] << 24))         & MASK52;
+    out[3] = ((s->limbs[2] >> 28) | (s->limbs[3] << 36))         & MASK52;
+    out[4] =   s->limbs[3] >> 16;
+}
+
+// Helper: 32 big-endian bytes (field/scalar) → 5×52-bit foreign-field limbs.
+// Parses BE bytes as 4×uint64 LE, then decomposes into 52-bit windows.
+__device__ __forceinline__ void be_bytes_to_ff_limbs_device(const uint8_t be[32],
+                                                              uint64_t out[5]) {
+    uint64_t w[4];
+    for (int limb = 0; limb < 4; ++limb) {
+        uint64_t v = 0;
+        int base = (3 - limb) * 8;
+        for (int b = 0; b < 8; ++b)
+            v = (v << 8) | (uint64_t)be[base + b];
+        w[limb] = v;
+    }
+    const uint64_t MASK52 = (1ULL << 52) - 1;
+    out[0] =  w[0]                            & MASK52;
+    out[1] = ((w[0] >> 52) | (w[1] << 12))   & MASK52;
+    out[2] = ((w[1] >> 40) | (w[2] << 24))   & MASK52;
+    out[3] = ((w[2] >> 28) | (w[3] << 36))   & MASK52;
+    out[4] =   w[3] >> 16;
+}
+
+// Compute ECDSA SNARK witness for a single item.
+// Populates all fields of *out; sets out->valid = 0 on any failure.
+__device__ inline void ecdsa_snark_witness_device(
+    const uint8_t              msg_hash[32],
+    const JacobianPoint*       pubkey,
+    const ECDSASignatureGPU*   sig,
+    EcdsaSnarkWitnessFlat*     out)
+{
+    out->valid = 0;
+    out->_pad  = 0;
+
+    if (scalar_is_zero(&sig->r) || scalar_is_zero(&sig->s)) return;
+    if (pubkey->infinity) return;
+
+    /* ---- copy input bytes ---- */
+    for (int i = 0; i < 32; i++) out->msg[i] = msg_hash[i];
+    scalar_to_bytes(&sig->r, out->sig_r);
+    scalar_to_bytes(&sig->s, out->sig_s);
+
+    /* ---- public key: Jacobian → affine ---- */
+    FieldElement pz_inv, pz_inv2, pz_inv3, pub_x_aff, pub_y_aff;
+    field_inv(&pubkey->z, &pz_inv);
+    field_sqr(&pz_inv, &pz_inv2);
+    field_mul(&pz_inv2, &pz_inv, &pz_inv3);
+    field_mul(&pubkey->x, &pz_inv2, &pub_x_aff);
+    field_mul(&pubkey->y, &pz_inv3, &pub_y_aff);
+    field_to_bytes(&pub_x_aff, out->pub_x);
+    field_to_bytes(&pub_y_aff, out->pub_y);
+
+    /* ---- witness scalars ---- */
+    Scalar z;
+    scalar_from_bytes(msg_hash, &z);
+
+    Scalar s_inv;
+    scalar_inverse(&sig->s, &s_inv);
+    scalar_to_bytes(&s_inv, out->s_inv);
+
+    Scalar u1, u2;
+    scalar_mul_mod_n(&z, &s_inv, &u1);
+    scalar_to_bytes(&u1, out->u1);
+
+    scalar_mul_mod_n(&sig->r, &s_inv, &u2);
+    scalar_to_bytes(&u2, out->u2);
+
+    /* ---- R = u1·G + u2·Q ---- */
+    JacobianPoint R;
+    shamir_double_mul_glv(&GENERATOR_JACOBIAN, &u1, pubkey, &u2, &R);
+    if (R.infinity) return;
+
+    /* ---- R affine x, y ---- */
+    FieldElement rz_inv, rz_inv2, rz_inv3, rx_aff, ry_aff;
+    field_inv(&R.z, &rz_inv);
+    field_sqr(&rz_inv, &rz_inv2);
+    field_mul(&rz_inv2, &rz_inv, &rz_inv3);
+    field_mul(&R.x, &rz_inv2, &rx_aff);
+    field_mul(&R.y, &rz_inv3, &ry_aff);
+    field_to_bytes(&rx_aff, out->result_x);
+    field_to_bytes(&ry_aff, out->result_y);
+
+    /* ---- result_x mod n ---- */
+    Scalar v;
+    scalar_from_bytes(out->result_x, &v);
+    scalar_to_bytes(&v, out->result_x_mod_n);
+
+    /* ---- validity ---- */
+    out->valid = scalar_eq(&v, &sig->r) ? 1 : 0;
+
+    /* ---- foreign-field limbs ---- */
+    scalar_to_ff_limbs_device(&sig->r,  out->lmb_sig_r);
+    scalar_to_ff_limbs_device(&sig->s,  out->lmb_sig_s);
+    be_bytes_to_ff_limbs_device(out->pub_x, out->lmb_pub_x);
+    be_bytes_to_ff_limbs_device(out->pub_y, out->lmb_pub_y);
+    scalar_to_ff_limbs_device(&s_inv,   out->lmb_s_inv);
+    scalar_to_ff_limbs_device(&u1,      out->lmb_u1);
+    scalar_to_ff_limbs_device(&u2,      out->lmb_u2);
+    be_bytes_to_ff_limbs_device(out->result_x,       out->lmb_result_x);
+    be_bytes_to_ff_limbs_device(out->result_y,       out->lmb_result_y);
+    be_bytes_to_ff_limbs_device(out->result_x_mod_n, out->lmb_result_x_mod_n);
+}
+
 // -- ECDSA: parse compact strict (reject r,s >= n or == 0) ------------------
 __device__ inline bool ecdsa_sig_parse_compact_strict(const uint8_t data[64],
                                                        ECDSASignatureGPU* sig) {

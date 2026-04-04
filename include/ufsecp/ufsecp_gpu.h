@@ -462,6 +462,34 @@ UFSECP_API ufsecp_error_t ufsecp_gpu_bip324_aead_decrypt_batch(
     uint8_t*  plaintext_out,
     uint8_t*  out_valid);
 
+/* -- ECDSA SNARK witness batch (eprint 2025/695) ------------------------------ */
+
+/** Size in bytes of one flat witness record produced by
+ *  ufsecp_gpu_zk_ecdsa_snark_witness_batch(). */
+#define UFSECP_ECDSA_SNARK_WITNESS_BYTES 760
+
+/**
+ * Compute ECDSA SNARK witnesses for a batch of (message, pubkey, sig) tuples.
+ *
+ * @param ctx          GPU context returned by ufsecp_gpu_context_create().
+ * @param msg_hashes32 Input: count × 32 bytes (one BE SHA-256 hash per item).
+ * @param pubkeys33    Input: count × 33 bytes (compressed SEC1 public keys).
+ * @param sigs64       Input: count × 64 bytes (BE compact r|s signatures).
+ * @param count        Number of items to process.
+ * @param out_witnesses Output: count × UFSECP_ECDSA_SNARK_WITNESS_BYTES bytes.
+ *                      Each 760-byte record contains input values, intermediate
+ *                      witness scalars, and 5×52-bit foreign-field limbs.
+ * @return UFSECP_OK on success, or an error code on failure.
+ *         Returns UFSECP_ERR_UNSUPPORTED on Metal (no MSL shader yet).
+ */
+UFSECP_API ufsecp_error_t ufsecp_gpu_zk_ecdsa_snark_witness_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t*  msg_hashes32,
+    const uint8_t*  pubkeys33,
+    const uint8_t*  sigs64,
+    size_t          count,
+    uint8_t*        out_witnesses);
+
 #ifdef __cplusplus
 }
 #endif

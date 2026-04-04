@@ -519,6 +519,27 @@ ufsecp_error_t ufsecp_gpu_bip324_aead_decrypt_batch(
 }
 
 /* ===========================================================================
+ * ECDSA SNARK witness batch (eprint 2025/695)
+ * =========================================================================== */
+
+ufsecp_error_t ufsecp_gpu_zk_ecdsa_snark_witness_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t*  msg_hashes32,
+    const uint8_t*  pubkeys33,
+    const uint8_t*  sigs64,
+    size_t          count,
+    uint8_t*        out_witnesses)
+{
+    if (!ctx || !msg_hashes32 || !pubkeys33 || !sigs64 || !out_witnesses)
+        return UFSECP_ERR_NULL_ARG;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+        return to_abi_error(ctx->backend->snark_witness_batch(
+            msg_hashes32, pubkeys33, sigs64, count, out_witnesses));
+    } UFSECP_GPU_CATCH
+}
+
+/* ===========================================================================
  * GPU error string
  * =========================================================================== */
 

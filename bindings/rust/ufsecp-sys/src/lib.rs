@@ -90,6 +90,9 @@ extern "C" {
 /// Opaque GPU context type.
 pub type ufsecp_gpu_ctx = c_void;
 
+/// Size in bytes of one flat ECDSA SNARK witness record (eprint 2025/695).
+pub const UFSECP_ECDSA_SNARK_WITNESS_BYTES: usize = 760;
+
 extern "C" {
     // Discovery
     pub fn ufsecp_gpu_backend_count(backend_ids: *mut u32, max_ids: u32) -> u32;
@@ -108,6 +111,16 @@ extern "C" {
     pub fn ufsecp_gpu_ecdh_batch(ctx: *mut ufsecp_gpu_ctx, sk32: *const u8, pk33: *const u8, count: usize, secrets32: *mut u8) -> c_int;
     pub fn ufsecp_gpu_hash160_pubkey_batch(ctx: *mut ufsecp_gpu_ctx, pk33: *const u8, count: usize, h20: *mut u8) -> c_int;
     pub fn ufsecp_gpu_msm(ctx: *mut ufsecp_gpu_ctx, s32: *const u8, p33: *const u8, count: usize, out33: *mut u8) -> c_int;
+
+    // ZK: ECDSA SNARK witness batch (eprint 2025/695)
+    pub fn ufsecp_gpu_zk_ecdsa_snark_witness_batch(
+        ctx:           *mut ufsecp_gpu_ctx,
+        msg_hashes32:  *const u8,
+        pubkeys33:     *const u8,
+        sigs64:        *const u8,
+        count:         usize,
+        out_witnesses: *mut u8,
+    ) -> c_int;
 
     // Error
     pub fn ufsecp_gpu_error_str(err: c_int) -> *const c_char;

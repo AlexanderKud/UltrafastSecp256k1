@@ -145,6 +145,25 @@ void ecdsa_verify_batch_kernel(
     }
 }
 
+// ECDSA SNARK witness batch (eprint 2025/695) -- each thread fills one witness
+__global__ __launch_bounds__(128, 2)
+void ecdsa_snark_witness_batch_kernel(
+    const uint8_t*            __restrict__ msg_hashes,
+    const JacobianPoint*      __restrict__ public_keys,
+    const ECDSASignatureGPU*  __restrict__ sigs,
+    EcdsaSnarkWitnessFlat*    __restrict__ out,
+    int count)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        ecdsa_snark_witness_device(
+            msg_hashes + (size_t)idx * 32,
+            &public_keys[idx],
+            &sigs[idx],
+            &out[idx]);
+    }
+}
+
 // Schnorr Sign batch -- each thread signs one message
 __global__ __launch_bounds__(128, 2)
 void schnorr_sign_batch_kernel(

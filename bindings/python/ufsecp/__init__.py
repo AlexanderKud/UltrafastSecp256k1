@@ -30,15 +30,20 @@ from typing import NamedTuple, Optional, Tuple
 
 __all__ = [
     "Ufsecp",
+    "UfsecpGpu",
     "UfsecpError",
     "NET_MAINNET",
     "NET_TESTNET",
+    "ECDSA_SNARK_WITNESS_BYTES",
 ]
 
 # -- Constants ------------------------------------------------------------
 
 NET_MAINNET = 0
 NET_TESTNET = 1
+
+#: Size in bytes of one flat ECDSA SNARK witness record (eprint 2025/695).
+ECDSA_SNARK_WITNESS_BYTES = 760
 
 # Error codes
 _OK              = 0
@@ -455,7 +460,30 @@ class Ufsecp:
         mr_len = len(merkle_root) if merkle_root else 0
         return self._lib.ufsecp_taproot_verify(self._ctx, output_x, parity, internal_x, mr, mr_len) == _OK
 
-    # -- Internals --------------------------------------------------------
+    def zk_ecdsa_snark_witness(self, msg_hash: bytes, pubkey: bytes, sig: bytes) -> bytes:
+        """Compute a single ECDSA foreign-field SNARK witness (eprint 2025/695).
+
+        Args:
+            msg_hash: 32-byte big-endian SHA-256 hash.
+            pubkey:   33-byte compressed SEC1 public key.
+            sig:      64-byte compact signature (r[32] || s[32], big-endian).
+
+        Returns:
+            ECDSA_SNARK_WITNESS_BYTES (760) bytes: the flat witness record.
+            Check byte 752 (valid field offset) = 1 if signature is valid.
+
+        Raises:
+            UfsecpError: on malformed inputs (bad key, r=0, s=0).
+        """
+        _chk(msg_hash, 32, "msg_hash")
+        _chk(pubkey,   33, "pubkey")
+        _chk(sig,      64, "sig")
+        out = (c_uint8 * ECDSA_SNARK_WITNESS_BYTES)()
+        self._throw(
+            self._lib.ufsecp_zk_ecdsa_snark_witness(
+                self._ctx, msg_hash, pubkey, sig, out),
+            "zk_ecdsa_snark_witness")
+        return bytes(out)
 
     def _throw(self, rc: int, op: str) -> None:
         if rc != _OK:
@@ -566,7 +594,154 @@ class Ufsecp:
         L.ufsecp_taproot_verify.argtypes = [vp, p8, c_int, p8, p8, c_size_t]
         L.ufsecp_taproot_verify.restype = c_int
 
+        # ZK: ECDSA foreign-field SNARK witness (eprint 2025/695)
+        L.ufsecp_zk_ecdsa_snark_witness.argtypes = [vp, p8, p8, p8, p8]
+        L.ufsecp_zk_ecdsa_snark_witness.restype = c_int
+
 
 def _chk(data: bytes, expected: int, name: str) -> None:
     if len(data) != expected:
         raise ValueError(f"{name} must be {expected} bytes, got {len(data)}")
+
+
+# -- GPU binding ----------------------------------------------------------
+
+def _find_gpu_library() -> str:
+    """Locate the ufsecp GPU shared library."""
+    system = platform.system()
+    if system == "Windows":
+        names = ["ufsecp_gpu.dll"]
+    elif system == "Darwin":
+        names = ["libufsecp_gpu.dylib"]
+    else:
+        names = ["libufsecp_gpu.so"]
+
+    env = os.environ.get("UFSECP_GPU_LIB")
+    if env and os.path.isfile(env):
+        return env
+
+    here = Path(__file__).resolve().parent
+    for n in names:
+        for p in [here / n, here / "native" / n]:
+            if p.is_file():
+                return str(p)
+
+    root = here.parent
+    for d in ("build_rel", "build-linux", "build_opencl", "build-cuda", "build"):
+        for n in names:
+            p = root / d / n
+            if p.is_file():
+                return str(p)
+
+    return names[0]
+
+
+class UfsecpGpu:
+    """Minimal GPU context wrapper for ufsecp GPU batch operations.
+
+    Exposes GPU-accelerated ECDSA SNARK witness generation (eprint 2025/695).
+
+    Usage::
+
+        with UfsecpGpu() as gpu:
+            witnesses = gpu.zk_ecdsa_snark_witness_batch(msgs, pks, sigs)
+
+    ``witnesses`` is a ``list[bytes]`` where each element is
+    ``ECDSA_SNARK_WITNESS_BYTES`` (760) bytes.
+    """
+
+    def __init__(self, lib_path: Optional[str] = None,
+                 backend_id: int = 0, device_index: int = 0):
+        path = lib_path or _find_gpu_library()
+        self._lib = ctypes.CDLL(path)
+        self._ctx: Optional[ctypes.c_void_p] = None
+        self._bind()
+        ctx = ctypes.c_void_p()
+        rc = self._lib.ufsecp_gpu_ctx_create(byref(ctx), c_uint32(backend_id),
+                                              c_uint32(device_index))
+        if rc != _OK:
+            raise UfsecpError("ufsecp_gpu_ctx_create", rc)
+        self._ctx = ctx
+
+    def close(self) -> None:
+        if self._ctx is not None:
+            self._lib.ufsecp_gpu_ctx_destroy(self._ctx)
+            self._ctx = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def zk_ecdsa_snark_witness_batch(
+        self,
+        msg_hashes: list,
+        pubkeys: list,
+        sigs: list,
+    ) -> list:
+        """Compute ECDSA SNARK witnesses for a batch of items.
+
+        Args:
+            msg_hashes: list of 32-byte message hashes (big-endian SHA-256).
+            pubkeys:    list of 33-byte compressed SEC1 public keys.
+            sigs:       list of 64-byte compact signatures (r||s, big-endian).
+
+        Returns:
+            list of bytes, each ECDSA_SNARK_WITNESS_BYTES (760) bytes long.
+            ``w[752]`` (little-endian int32) = 1 if signature is valid.
+
+        Raises:
+            ValueError: on mismatched batch lengths or bad input sizes.
+            UfsecpError: on GPU backend failure.
+        """
+        count = len(msg_hashes)
+        if len(pubkeys) != count or len(sigs) != count:
+            raise ValueError("msg_hashes, pubkeys, and sigs must have the same length")
+        if count == 0:
+            return []
+
+        flat_msgs = b"".join(msg_hashes)
+        flat_pks  = b"".join(pubkeys)
+        flat_sigs = b"".join(sigs)
+
+        if len(flat_msgs) != count * 32:
+            raise ValueError("Each msg_hash must be 32 bytes")
+        if len(flat_pks) != count * 33:
+            raise ValueError("Each pubkey must be 33 bytes")
+        if len(flat_sigs) != count * 64:
+            raise ValueError("Each sig must be 64 bytes")
+
+        out_buf = (c_uint8 * (count * ECDSA_SNARK_WITNESS_BYTES))()
+        rc = self._lib.ufsecp_gpu_zk_ecdsa_snark_witness_batch(
+            self._ctx,
+            (c_uint8 * len(flat_msgs)).from_buffer_copy(flat_msgs),
+            (c_uint8 * len(flat_pks)).from_buffer_copy(flat_pks),
+            (c_uint8 * len(flat_sigs)).from_buffer_copy(flat_sigs),
+            c_size_t(count),
+            out_buf,
+        )
+        if rc != _OK:
+            raise UfsecpError("ufsecp_gpu_zk_ecdsa_snark_witness_batch", rc)
+
+        raw = bytes(out_buf)
+        stride = ECDSA_SNARK_WITNESS_BYTES
+        return [raw[i * stride:(i + 1) * stride] for i in range(count)]
+
+    def _bind(self) -> None:
+        L = self._lib
+        vp   = c_void_p
+        p8   = _BytesPtr
+        pvp  = POINTER(c_void_p)
+        u32  = c_uint32
+        sz   = c_size_t
+
+        L.ufsecp_gpu_ctx_create.argtypes  = [pvp, u32, u32]
+        L.ufsecp_gpu_ctx_create.restype   = c_int
+        L.ufsecp_gpu_ctx_destroy.argtypes = [vp]
+        L.ufsecp_gpu_ctx_destroy.restype  = None
+
+        L.ufsecp_gpu_zk_ecdsa_snark_witness_batch.argtypes = [
+            vp, p8, p8, p8, sz, p8,
+        ]
+        L.ufsecp_gpu_zk_ecdsa_snark_witness_batch.restype = c_int

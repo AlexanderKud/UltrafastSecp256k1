@@ -175,6 +175,33 @@ public:
         return GpuError::Unsupported;
     }
 
+    /* -- ZK — ECDSA SNARK witness (PLONK/Halo2 foreign-field, eprint 2025/695) ------ */
+
+    /** Size in bytes of one flat ECDSA SNARK witness record.
+     *  Layout: 11×32 scalar/coord bytes + 10×5 uint64 FF-limbs + 2×4 int = 760 B. */
+    static constexpr size_t ECDSA_SNARK_WITNESS_BYTES = 760;
+
+    /** Batch ECDSA foreign-field SNARK witness generation (CPU/GPU-agnostic).
+     *  Each item computes s_inv, u1, u2, R = u1·G + u2·Q, and 5×52-bit limbs
+     *  required by a PLONK/Halo2 ECDSA circuit.
+     *  @param msg_hashes32  count * 32 bytes (SHA-256 message hashes, big-endian)
+     *  @param pubkeys33     count * 33 bytes (compressed secp256k1 public keys)
+     *  @param sigs64        count * 64 bytes (compact r[32]||s[32], big-endian)
+     *  @param count         Number of witnesses to produce.
+     *  @param out_flat      Output: count * ECDSA_SNARK_WITNESS_BYTES bytes.
+     *  PUBLIC-DATA operation (no secret values touched). */
+    virtual GpuError snark_witness_batch(
+        const uint8_t* msg_hashes32,   ///< count * 32 bytes
+        const uint8_t* pubkeys33,      ///< count * 33 bytes
+        const uint8_t* sigs64,         ///< count * 64 bytes
+        size_t count,
+        uint8_t* out_flat)             ///< count * ECDSA_SNARK_WITNESS_BYTES bytes
+    {
+        (void)msg_hashes32; (void)pubkeys33; (void)sigs64;
+        (void)count; (void)out_flat;
+        return GpuError::Unsupported;
+    }
+
     /* -- BIP-324 transport batch operations -------------------------------- */
 
     /** Batch BIP-324 AEAD encrypt.

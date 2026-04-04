@@ -177,11 +177,24 @@ if(TARGET secp256k1_gpu_host AND (TARGET ufsecp_shared OR TARGET ufsecp_static))
     add_test(NAME gpu_backend_matrix COMMAND test_gpu_backend_matrix)
     set_tests_properties(gpu_backend_matrix PROPERTIES TIMEOUT 60)
 
+    # -- ECDSA SNARK witness batch (eprint 2025/695) --
+    add_executable(test_gpu_ecdsa_snark_witness test_gpu_ecdsa_snark_witness.cpp)
+    target_link_libraries(test_gpu_ecdsa_snark_witness PRIVATE ${UFSECP_GPU_TEST_LIB})
+    target_include_directories(test_gpu_ecdsa_snark_witness PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_BINARY_DIR}/include/ufsecp
+    )
+    target_compile_definitions(test_gpu_ecdsa_snark_witness PRIVATE STANDALONE_TEST)
+    add_test(NAME gpu_ecdsa_snark_witness COMMAND test_gpu_ecdsa_snark_witness)
+    set_tests_properties(gpu_ecdsa_snark_witness PROPERTIES
+        TIMEOUT 300 LABELS "audit;zk;snark;foreign-field;gpu")
+
     # Disable LTO for GPU-linked targets (nvcc LTO version differs from host compiler)
     if(SECP256K1_BUILD_CUDA)
         set_target_properties(
             test_gpu_abi_gate test_gpu_ops_equivalence
             test_gpu_host_api_negative test_gpu_backend_matrix
+            test_gpu_ecdsa_snark_witness
             PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE
         )
     endif()

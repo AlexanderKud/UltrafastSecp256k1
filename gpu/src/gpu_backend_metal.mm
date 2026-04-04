@@ -1152,6 +1152,17 @@ public:
         return GpuError::Ok;
     }
 
+    GpuError snark_witness_batch(
+        const uint8_t*, const uint8_t*, const uint8_t*,
+        size_t, uint8_t*) override
+    {
+        // TODO(parity): Metal MSL shader for ecdsa_snark_witness_batch not yet
+        // implemented. CUDA and OpenCL backends are fully functional.
+        // tracking: snark-witness-metal
+        return set_error(GpuError::Unsupported,
+                         "ecdsa_snark_witness_batch not yet implemented on Metal");
+    }
+
 private:
     std::unique_ptr<secp256k1::metal::MetalRuntime> runtime_;
     bool lib_init_attempted_ = false;
