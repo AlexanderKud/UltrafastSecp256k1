@@ -1074,6 +1074,79 @@ UFSECP_API ufsecp_error_t ufsecp_zk_range_verify(
     const uint8_t commitment33[33],
     const uint8_t* proof, size_t proof_len);
 
+/** Foreign-field 5×52-bit limb decomposition (eprint 2025/695).
+ *  5 × uint64_t, each holding ≤ 52 bits of the field/scalar value. */
+typedef struct {
+    uint64_t limbs[5];  /**< little-endian 52-bit limbs */
+} ufsecp_ff_limbs_t;
+
+/** ECDSA-in-SNARK prover witness  (eprint 2025/695 §5).
+ *
+ *  Contains every intermediate value required by a PLONK circuit to verify
+ *  one secp256k1 ECDSA signature using foreign-field arithmetic.
+ *  Values are provided in canonical 32-byte big-endian encoding AND in
+ *  5×52-bit limb form (ufsecp_ff_limbs_t) for direct PLONK gate wiring.
+ *
+ *  ECDSA verify circuit steps:
+ *    s_inv = sig_s^{-1} mod n
+ *    u1    = msg * s_inv mod n
+ *    u2    = sig_r * s_inv mod n
+ *    R     = u1*G + u2*pubkey
+ *    valid = (R ≠ ∞) AND (R.x mod n == sig_r)
+ */
+typedef struct {
+    /* ── public inputs ─────────────────────────────────────────────────── */
+    uint8_t msg[32];       /**< message hash e (big-endian)   */
+    uint8_t sig_r[32];     /**< signature r                   */
+    uint8_t sig_s[32];     /**< signature s                   */
+    uint8_t pub_x[32];     /**< public key P.x (Fp element)   */
+    uint8_t pub_y[32];     /**< public key P.y (Fp element)   */
+
+    /* ── private witness (circuit signals) ─────────────────────────────── */
+    uint8_t s_inv[32];             /**< s^{-1} mod n           */
+    uint8_t u1[32];                /**< e * s^{-1} mod n       */
+    uint8_t u2[32];                /**< r * s^{-1} mod n       */
+    uint8_t result_x[32];          /**< R.x (Fp)               */
+    uint8_t result_y[32];          /**< R.y (Fp)               */
+    uint8_t result_x_mod_n[32];    /**< R.x mod n (Fr)         */
+
+    /* ── 5×52-bit foreign-field limb decompositions ─────────────────────── */
+    ufsecp_ff_limbs_t lmb_sig_r;           /**< sig_r limbs       */
+    ufsecp_ff_limbs_t lmb_sig_s;           /**< sig_s limbs       */
+    ufsecp_ff_limbs_t lmb_pub_x;           /**< pub_x limbs       */
+    ufsecp_ff_limbs_t lmb_pub_y;           /**< pub_y limbs       */
+    ufsecp_ff_limbs_t lmb_s_inv;           /**< s_inv limbs       */
+    ufsecp_ff_limbs_t lmb_u1;              /**< u1 limbs          */
+    ufsecp_ff_limbs_t lmb_u2;              /**< u2 limbs          */
+    ufsecp_ff_limbs_t lmb_result_x;        /**< R.x limbs         */
+    ufsecp_ff_limbs_t lmb_result_y;        /**< R.y limbs         */
+    ufsecp_ff_limbs_t lmb_result_x_mod_n;  /**< R.x mod n limbs   */
+
+    /* ── verdict ──────────────────────────────────────────────────────── */
+    int valid;  /**< 1 = signature valid, 0 = invalid */
+} ufsecp_ecdsa_snark_witness_t;
+
+/** Compute ECDSA foreign-field prover witness (eprint 2025/695).
+ *
+ *  Runs a full secp256k1 ECDSA verification and captures all intermediate
+ *  values (s_inv, u1, u2, MSM result) in both canonical bytes and 5×52-bit
+ *  foreign-field limb form — ready to feed into any PLONK framework.
+ *
+ *  msg_hash32  : 32-byte big-endian message hash
+ *  pubkey33    : 33-byte compressed secp256k1 public key
+ *  sig64       : 64-byte compact signature  (r[32] || s[32], big-endian)
+ *  out         : caller-allocated output structure (zero-initialised on call)
+ *
+ *  Returns UFSECP_OK on all well-formed inputs, even when the signature is
+ *  invalid — check out->valid for the verification result.
+ *  Returns UFSECP_ERR_BAD_INPUT on malformed pubkey, r=0, or s=0. */
+UFSECP_API ufsecp_error_t ufsecp_zk_ecdsa_snark_witness(
+    ufsecp_ctx* ctx,
+    const uint8_t msg_hash32[32],
+    const uint8_t pubkey33[33],
+    const uint8_t sig64[64],
+    ufsecp_ecdsa_snark_witness_t* out);
+
 /* ===========================================================================
  * Multi-coin wallet infrastructure
  * =========================================================================== */

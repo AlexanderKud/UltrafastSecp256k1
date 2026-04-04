@@ -3836,6 +3836,79 @@ ufsecp_error_t ufsecp_zk_range_verify(
     return UFSECP_OK;
 }
 
+/* ---------------------------------------------------------------------------
+ * ECDSA foreign-field SNARK witness (eprint 2025/695)
+ * ------------------------------------------------------------------------- */
+
+ufsecp_error_t ufsecp_zk_ecdsa_snark_witness(
+    ufsecp_ctx* ctx,
+    const uint8_t msg_hash32[32],
+    const uint8_t pubkey33[33],
+    const uint8_t sig64[64],
+    ufsecp_ecdsa_snark_witness_t* out)
+{
+    if (!ctx || !msg_hash32 || !pubkey33 || !sig64 || !out)
+        return UFSECP_ERR_NULL_ARG;
+    ctx_clear_err(ctx);
+
+    /* Parse public key from compressed 33-byte encoding */
+    auto pubkey = point_from_compressed(pubkey33);
+    if (pubkey.is_infinity())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid pubkey");
+
+    /* Parse r and s from compact 64-byte signature */
+    std::array<uint8_t, 32> r_bytes{};
+    std::array<uint8_t, 32> s_bytes{};
+    std::memcpy(r_bytes.data(), sig64,      32);
+    std::memcpy(s_bytes.data(), sig64 + 32, 32);
+
+    Scalar sig_r, sig_s;
+    if (!scalar_parse_strict(r_bytes.data(), sig_r) || sig_r.is_zero())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid sig r");
+    if (!scalar_parse_strict(s_bytes.data(), sig_s) || sig_s.is_zero())
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid sig s");
+
+    /* Compute witness via C++ layer */
+    std::array<uint8_t, 32> msg_arr{};
+    std::memcpy(msg_arr.data(), msg_hash32, 32);
+    auto w = secp256k1::zk::ecdsa_snark_witness(msg_arr, pubkey, sig_r, sig_s);
+
+    /* ── public inputs ──────────────────────────────────────────────── */
+    std::memcpy(out->msg,    msg_hash32, 32);
+    std::memcpy(out->sig_r,  r_bytes.data(), 32);
+    std::memcpy(out->sig_s,  s_bytes.data(), 32);
+
+    auto px_bytes = pubkey.x().to_bytes();
+    auto py_bytes = pubkey.y().to_bytes();
+    std::memcpy(out->pub_x, px_bytes.data(), 32);
+    std::memcpy(out->pub_y, py_bytes.data(), 32);
+
+    /* ── private witness bytes ──────────────────────────────────────── */
+    std::memcpy(out->s_inv,          w.bytes_s_inv.data(),          32);
+    std::memcpy(out->u1,             w.bytes_u1.data(),             32);
+    std::memcpy(out->u2,             w.bytes_u2.data(),             32);
+    std::memcpy(out->result_x,       w.bytes_result_x.data(),       32);
+    std::memcpy(out->result_y,       w.bytes_result_y.data(),       32);
+    std::memcpy(out->result_x_mod_n, w.bytes_result_x_mod_n.data(), 32);
+
+    /* ── 5×52-bit limb decompositions ───────────────────────────────── */
+    static_assert(sizeof(ufsecp_ff_limbs_t) == sizeof(secp256k1::zk::ForeignFieldLimbs),
+                  "limb struct size mismatch");
+    std::memcpy(&out->lmb_sig_r,          &w.sig_r,          sizeof(ufsecp_ff_limbs_t));
+    std::memcpy(&out->lmb_sig_s,          &w.sig_s,          sizeof(ufsecp_ff_limbs_t));
+    std::memcpy(&out->lmb_pub_x,          &w.pub_x,          sizeof(ufsecp_ff_limbs_t));
+    std::memcpy(&out->lmb_pub_y,          &w.pub_y,          sizeof(ufsecp_ff_limbs_t));
+    std::memcpy(&out->lmb_s_inv,          &w.s_inv,          sizeof(ufsecp_ff_limbs_t));
+    std::memcpy(&out->lmb_u1,             &w.u1,             sizeof(ufsecp_ff_limbs_t));
+    std::memcpy(&out->lmb_u2,             &w.u2,             sizeof(ufsecp_ff_limbs_t));
+    std::memcpy(&out->lmb_result_x,       &w.result_x,       sizeof(ufsecp_ff_limbs_t));
+    std::memcpy(&out->lmb_result_y,       &w.result_y,       sizeof(ufsecp_ff_limbs_t));
+    std::memcpy(&out->lmb_result_x_mod_n, &w.result_x_mod_n, sizeof(ufsecp_ff_limbs_t));
+
+    out->valid = w.valid ? 1 : 0;
+    return UFSECP_OK;
+}
+
 /* ===========================================================================
  * Multi-coin wallet infrastructure
  * =========================================================================== */

@@ -211,6 +211,90 @@ void batch_commit(const fast::Scalar* values,
                   PedersenCommitment* commitments_out,
                   std::size_t count);
 
+
+// ============================================================================
+// 4. ECDSA-in-SNARK Foreign-Field Witness  (eprint 2025/695)
+// ============================================================================
+// Generates all intermediate values needed by a PLONK circuit prover to
+// verify an ECDSA signature over secp256k1 with foreign-field arithmetic.
+//
+// Background (eprint 2025/695, Ambrona, Firsov, Querejeta-Azurmendi):
+//   secp256k1 p and n are both larger than common SNARK scalar fields (BN254 r,
+//   BLS12-381 r).  A PLONK circuit must therefore encode every secp256k1 field
+//   element as multiple "limbs" — the foreign-field representation.  Using 5×52-
+//   bit limbs with tight range bounds reduces the gate count for one ECDSA
+//   verification from ~50 000 constraints to ~5 000 (≈10× improvement).
+//
+//   This function is the **host-side witness generator**: it computes every
+//   intermediate value the PLONK prover needs as private inputs, and returns
+//   them in both canonical 32-byte encoding AND in 5×52-bit limb form so that
+//   the caller can feed them directly into a PLONK framework (Halo2, Plonky3,
+//   Circom, etc.) without any additional decomposition step.
+
+// ── Limb container ──────────────────────────────────────────────────────────
+// Per-value foreign-field representation for PLONK circuits.
+// 5 limbs × 52 bits = 260 bits total, covering the 256-bit secp256k1 prime.
+// Top limb (limbs[4]) uses at most 48 bits when the value is < p (or < n).
+// Each limb fits in uint64_t without overflow — no masking needed at capture.
+struct ForeignFieldLimbs {
+    std::uint64_t limbs[5];  // little-endian 52-bit limbs
+};
+
+// ── Witness struct ───────────────────────────────────────────────────────────
+// Complete PLONK prover witness for one secp256k1 ECDSA verification.
+// All scalar/field values are provided in both canonical form (Scalar/Point)
+// AND as 5×52-bit limbs ready for PLONK gate wiring.
+//
+// ECDSA verify steps (Fp = secp256k1 field, Fr = secp256k1 scalar field):
+//   1. s_inv   = sig_s^{-1}              mod n   (Fr)
+//   2. u1      = msg_hash * s_inv         mod n   (Fr)
+//   3. u2      = sig_r * s_inv            mod n   (Fr)
+//   4. R       = u1*G + u2*pubkey                 (Fp^2)
+//   5. valid   = (R ≠ ∞) AND (R.x mod n == sig_r)
+struct EcdsaSnarkWitness {
+    // ── public inputs ──────────────────────────────────────────────────────
+    ForeignFieldLimbs msg;       // message hash mod n         (Fr)
+    ForeignFieldLimbs sig_r;     // signature r                (Fr)
+    ForeignFieldLimbs sig_s;     // signature s                (Fr)
+    ForeignFieldLimbs pub_x;     // public key P.x             (Fp)
+    ForeignFieldLimbs pub_y;     // public key P.y             (Fp)
+
+    // ── private witness (circuit signals) ─────────────────────────────────
+    ForeignFieldLimbs s_inv;             // s^{-1} mod n       (Fr)
+    ForeignFieldLimbs u1;                // e * s^{-1} mod n   (Fr)
+    ForeignFieldLimbs u2;                // r * s^{-1} mod n   (Fr)
+    ForeignFieldLimbs result_x;          // R.x                (Fp)
+    ForeignFieldLimbs result_y;          // R.y                (Fp)
+    ForeignFieldLimbs result_x_mod_n;    // R.x mod n          (Fr)
+
+    // ── canonical byte encodings (big-endian) ─────────────────────────────
+    std::array<std::uint8_t, 32> bytes_s_inv;
+    std::array<std::uint8_t, 32> bytes_u1;
+    std::array<std::uint8_t, 32> bytes_u2;
+    std::array<std::uint8_t, 32> bytes_result_x;
+    std::array<std::uint8_t, 32> bytes_result_y;
+    std::array<std::uint8_t, 32> bytes_result_x_mod_n;
+
+    // ── verdict ───────────────────────────────────────────────────────────
+    bool valid;  // true iff the ECDSA signature is valid
+};
+
+// Compute the ECDSA-in-SNARK foreign-field witness.
+//
+// msg_hash : 32-byte big-endian message hash (hash of the signed message)
+// pubkey   : uncompressed public key point P = d*G
+// sig_r    : ECDSA signature r-scalar (must be in [1, n-1])
+// sig_s    : ECDSA signature s-scalar (must be in [1, n-1]; accepts high-S)
+//
+// Returns a fully populated EcdsaSnarkWitness.
+// If the signature is invalid, `valid` is false but witness values are still
+// populated (to allow the prover to build a failing-path proof if needed).
+EcdsaSnarkWitness ecdsa_snark_witness(
+    const std::array<std::uint8_t, 32>& msg_hash,
+    const fast::Point& pubkey,
+    const fast::Scalar& sig_r,
+    const fast::Scalar& sig_s);
+
 } // namespace zk
 } // namespace secp256k1
 

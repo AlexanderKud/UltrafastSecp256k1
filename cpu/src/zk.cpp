@@ -6,6 +6,7 @@
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/tagged_hash.hpp"
 #include "secp256k1/field.hpp"
+#include "secp256k1/field_52.hpp"
 #include "secp256k1/ct/point.hpp"
 #include "secp256k1/pippenger.hpp"
 #include "secp256k1/detail/secure_erase.hpp"
@@ -833,6 +834,110 @@ void batch_commit(const Scalar* values,
     for (std::size_t i = 0; i < count; ++i) {
         commitments_out[i] = pedersen_commit(values[i], blindings[i]);
     }
+}
+
+
+// ============================================================================
+// 4. ECDSA-in-SNARK Foreign-Field Witness  (eprint 2025/695)
+// ============================================================================
+
+namespace {
+
+// Convert a 4×64-bit scalar (little-endian limbs) to 5×52-bit ForeignFieldLimbs.
+// Implements the canonical 52-bit decomposition used by PLONK foreign-field
+// gadgets for tight range constraints.
+ForeignFieldLimbs scalar_to_ff_limbs(const Scalar& s) noexcept {
+    static constexpr std::uint64_t MASK52 = (1ULL << 52) - 1;
+    const auto& L = s.limbs();  // 4×64-bit, little-endian
+    ForeignFieldLimbs fl{};
+    fl.limbs[0] =  L[0]                          & MASK52;
+    fl.limbs[1] = ((L[0] >> 52) | (L[1] << 12)) & MASK52;
+    fl.limbs[2] = ((L[1] >> 40) | (L[2] << 24)) & MASK52;
+    fl.limbs[3] = ((L[2] >> 28) | (L[3] << 36)) & MASK52;
+    fl.limbs[4] =   L[3] >> 16;  // at most 48 bits for values < n < p
+    return fl;
+}
+
+// Convert a FieldElement (mod p, 4×64-bit Montgomery-reduced internally) to
+// 5×52-bit ForeignFieldLimbs via the FieldElement52 path (which already carries
+// out the 5×52 decomposition with lazy reduction).
+ForeignFieldLimbs fe_to_ff_limbs(const FieldElement& fe) noexcept {
+    secp256k1::fast::FieldElement52 fe52 = secp256k1::fast::FieldElement52::from_fe(fe);
+    fe52.normalize();  // ensure each limb is strictly < 2^52
+    ForeignFieldLimbs fl{};
+    for (int i = 0; i < 5; ++i) fl.limbs[i] = fe52.n[i];
+    return fl;
+}
+
+} // anonymous namespace
+
+EcdsaSnarkWitness ecdsa_snark_witness(
+    const std::array<std::uint8_t, 32>& msg_hash,
+    const fast::Point& pubkey,
+    const fast::Scalar& sig_r,
+    const fast::Scalar& sig_s) {
+
+    EcdsaSnarkWitness w{};
+
+    // ---- 1. Encode public inputs in foreign-field limb form ----
+    Scalar msg_scalar = Scalar::from_bytes(msg_hash);
+    w.msg    = scalar_to_ff_limbs(msg_scalar);
+    w.sig_r  = scalar_to_ff_limbs(sig_r);
+    w.sig_s  = scalar_to_ff_limbs(sig_s);
+
+    if (!pubkey.is_infinity()) {
+        w.pub_x = fe_to_ff_limbs(pubkey.x());
+        w.pub_y = fe_to_ff_limbs(pubkey.y());
+    }
+
+    // ---- 2. Reject degenerate inputs early ----
+    // s_inv = 0 if s = 0 (shouldn't happen in a well-formed signature)
+    if (sig_r.is_zero() || sig_s.is_zero() || pubkey.is_infinity()) {
+        w.valid = false;
+        return w;
+    }
+
+    // ---- 3. Compute private witness values ----
+
+    // s_inv = s^{-1} mod n
+    Scalar s_inv = sig_s.inverse();
+    w.bytes_s_inv = s_inv.to_bytes();
+    w.s_inv = scalar_to_ff_limbs(s_inv);
+
+    // u1 = msg * s^{-1} mod n
+    Scalar u1 = msg_scalar * s_inv;
+    w.bytes_u1 = u1.to_bytes();
+    w.u1 = scalar_to_ff_limbs(u1);
+
+    // u2 = r * s^{-1} mod n
+    Scalar u2 = sig_r * s_inv;
+    w.bytes_u2 = u2.to_bytes();
+    w.u2 = scalar_to_ff_limbs(u2);
+
+    // ---- 4. MSM: R = u1*G + u2*P ----
+    Point R = Point::dual_scalar_mul_gen_point(u1, u2, pubkey);
+    if (R.is_infinity()) {
+        w.valid = false;
+        return w;
+    }
+
+    // R.x, R.y in Fp
+    FieldElement rx = R.x();
+    FieldElement ry = R.y();
+    w.bytes_result_x = rx.to_bytes();
+    w.bytes_result_y = ry.to_bytes();
+    w.result_x = fe_to_ff_limbs(rx);
+    w.result_y = fe_to_ff_limbs(ry);
+
+    // R.x mod n  (Fp → Fr: same bytes, but reduced mod n if R.x >= n)
+    Scalar rx_mod_n = Scalar::from_bytes(rx.to_bytes());
+    w.bytes_result_x_mod_n = rx_mod_n.to_bytes();
+    w.result_x_mod_n = scalar_to_ff_limbs(rx_mod_n);
+
+    // ---- 5. Validity check ----
+    w.valid = (rx_mod_n == sig_r);
+
+    return w;
 }
 
 } // namespace zk

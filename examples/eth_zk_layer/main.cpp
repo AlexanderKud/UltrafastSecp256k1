@@ -19,6 +19,8 @@
 //    c. Knowledge proof      — proves the sender owns the signing key
 //    d. DLEQ proof           — binding between L2 key and commitment key
 // 6. Batch ECDSA verification — sequencer block processing throughput demo
+// 7. ECDSA foreign-field SNARK witness — 5×52-bit limb witness for PLONK
+//    circuits (eprint 2025/695 §5); enables 10-100× gate-count reduction
 //
 // Real-world integration notes (for the Ethereum developer)
 // ----------------------------------------------------------
@@ -364,6 +366,68 @@ int main() {
 
     if (rc != UFSECP_OK) { ufsecp_ctx_destroy(ctx); return 1; }
 
+    // ========================================================================
+    // STEP 7 -- ECDSA foreign-field SNARK witness (eprint 2025/695)
+    //
+    //   Generates every intermediate value required by a PLONK circuit to
+    //   verify one secp256k1 ECDSA signature using foreign-field arithmetic.
+    //
+    //   PLONK circuit verification steps:
+    //     s_inv  = sig_s^{-1}  mod n
+    //     u1     = msg * s_inv mod n
+    //     u2     = r   * s_inv mod n
+    //     R      = u1·G + u2·P           (fast dual scalar-mul)
+    //     valid?   R.x mod n == r
+    //
+    //   All values are returned in both 32-byte canonical encoding AND
+    //   5×52-bit little-endian limbs for direct PLONK gate wiring.
+    //   This gives 10-100× reduction in ECDSA-in-SNARK gate count
+    //   vs. naive 32-bit (eprint 2025/695 §5, Table 3).
+    // ========================================================================
+    section(7, "ECDSA foreign-field SNARK witness (eprint 2025/695)");
+
+    // Reuse the personal_sign message + signature from section 3.
+    // personal_hash[32]  = EIP-191 hash (as message digest)
+    // sig_r[32], sig_s[32] = compact ECDSA signature from section 3
+    // pubkey33[33]        = wallet public key from section 1
+
+    // Pack compact sig: r[32] || s[32]
+    uint8_t sig64_snark[64] = {};
+    memcpy(sig64_snark,      sig_r, 32);
+    memcpy(sig64_snark + 32, sig_s, 32);
+
+    ufsecp_ecdsa_snark_witness_t wt = {};
+    CHECK(ufsecp_zk_ecdsa_snark_witness(ctx, personal_hash, pubkey33, sig64_snark, &wt));
+
+    printf("    EIP-191 personal_sign message used as circuit public input\n");
+    print_hex("    msg hash:", wt.msg,   32);
+    print_hex("    sig r   :", wt.sig_r, 32);
+    print_hex("    sig s   :", wt.sig_s, 32);
+
+    printf("\n    Private witness values:\n");
+    print_hex("    s^{-1}  :", wt.s_inv,          32);
+    print_hex("    u1      :", wt.u1,              32);
+    print_hex("    u2      :", wt.u2,              32);
+    print_hex("    R.x     :", wt.result_x,        32);
+    print_hex("    R.y     :", wt.result_y,        32);
+    print_hex("    R.x mod n:", wt.result_x_mod_n, 32);
+
+    printf("\n    5×52-bit foreign-field limbs for PLONK gate wiring (s_inv):\n");
+    printf("        [");
+    for (int i = 0; i < 5; ++i)
+        printf("0x%013llx%s", (unsigned long long)wt.lmb_s_inv.limbs[i], i < 4 ? ", " : "");
+    printf("]\n");
+
+    printf("    5×52-bit foreign-field limbs for PLONK gate wiring (R.x):\n");
+    printf("        [");
+    for (int i = 0; i < 5; ++i)
+        printf("0x%013llx%s", (unsigned long long)wt.lmb_result_x.limbs[i], i < 4 ? ", " : "");
+    printf("]\n");
+
+    printf("\n    Signature valid: %s\n", wt.valid ? "YES" : "NO");
+    printf("\n    >> Witness ready for halo2/arkworks/plonky2 foreign-field circuit.\n");
+    printf("    >> eprint 2025/695 §5 — 10-100x gate reduction vs 32-bit encoding.\n");
+
     // ── Summary ──────────────────────────────────────────────────────────────
     printf("\n");
     printf("==========================================================================\n");
@@ -378,6 +442,7 @@ int main() {
     printf("   Knowledge proof       wallet proves key ownership\n");
     printf("   DLEQ proof            L2 key binds to commitment\n");
     printf("   Batch ECDSA verify    sequencer block processing\n");
+    printf("   ECDSA SNARK witness   5×52-bit foreign-field (eprint 2025/695)\n");
     printf("==========================================================================\n");
 
     ufsecp_ctx_destroy(ctx);
