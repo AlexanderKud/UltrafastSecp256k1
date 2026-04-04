@@ -123,6 +123,15 @@ jobs:
         run: echo "${RELEASE_VERSION#v}" > VERSION.txt
         shell: bash
 
+      # -- Python audit dependencies (must be before CMake configure) --
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python audit dependencies
+        run: pip install --quiet coincurve ecdsa hypothesis
+
       # -- Configure --
       - name: Configure
         run: |
@@ -140,6 +149,8 @@ jobs:
 
       # -- Test --
       - name: Test
+        env:
+          PYTHONUTF8: '1'
         run: ctest --test-dir build --output-on-failure -j4 -E "^ct_sidechannel"
 
       # -- Install into staging dir --

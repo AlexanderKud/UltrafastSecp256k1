@@ -181,7 +181,7 @@ def main():
             sys.exit(1)
         version = version_file.read_text().strip().lstrip('v')
 
-    if not re.match(r'^\d+\.\d+\.\d+$', version):
+    if not re.match(r'^\d+\.\d+(\.\d+)?$', version):
         print(f'ERROR: invalid version format: {version!r}', file=sys.stderr)
         sys.exit(1)
 
