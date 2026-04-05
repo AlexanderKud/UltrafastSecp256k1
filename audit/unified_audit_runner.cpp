@@ -140,6 +140,9 @@ int test_audit_fuzz_run();
 int test_fuzz_parsers_run();
 int test_fuzz_address_bip32_ffi_run();
 int test_fuzz_musig2_frost_run();
+int test_libfuzzer_unified_run();  // deterministic LibFuzzer harness regression suite
+int test_mutation_kill_rate_run(); // mutation kill-rate tracker (advisory: needs Python)
+int test_cryptol_specs_run();      // Cryptol formal spec property check (advisory: needs cryptol)
 
 // ============================================================================
 // Forward declarations -- Wycheproof & batch-randomness (Track I3, I6-3)
@@ -473,6 +476,9 @@ static const AuditModule ALL_MODULES[] = {
     { "fuzz_parsers",      "Parser fuzz (DER/Schnorr/Pubkey)",            "fuzzing",        test_fuzz_parsers_run, false },
     { "fuzz_addr_bip32",   "Address/BIP32/FFI boundary fuzz",             "fuzzing",        test_fuzz_address_bip32_ffi_run, false },
     { "fuzz_musig2_frost", "Parser fuzz: MuSig2/FROST/Adaptor (15 probes)","fuzzing",        test_fuzz_musig2_frost_run, false },
+    { "libfuzzer_unified", "LibFuzzer deterministic regression (6 parsers)","fuzzing",        test_libfuzzer_unified_run, false },
+    { "mutation_kill_rate","Mutation kill-rate audit (advisory)",          "fuzzing",        test_mutation_kill_rate_run, true  },
+    { "cryptol_specs",     "Cryptol formal spec properties (advisory)",    "fuzzing",        test_cryptol_specs_run, true  },
     { "fault_injection",   "Fault injection simulation",                   "fuzzing",        test_fault_injection_run, false },
 
     // ===================================================================

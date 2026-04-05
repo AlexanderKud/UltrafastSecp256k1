@@ -2002,6 +2002,10 @@ add_executable(unified_audit_runner
     test_fuzz_parsers.cpp
     test_fuzz_address_bip32_ffi.cpp
     test_fuzz_musig2_frost.cpp
+    # -- LibFuzzer deterministic regression + mutation + formal spec (advisory) --
+    test_libfuzzer_unified.cpp
+    test_mutation_kill_rate.cpp
+    test_cryptol_specs.cpp
     # -- Deep audit modules --
     audit_field.cpp
     audit_scalar.cpp
