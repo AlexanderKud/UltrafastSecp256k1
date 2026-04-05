@@ -29,6 +29,12 @@ using fast::FieldElement;
 
 namespace {
 
+// Crossover (x86-64 FE52, bench_unified POOL=64 repeated entries):
+// MSM path uses Pippenger(2N pts) + lift_x_cached (thread-local, hits on
+// repeated pubkeys) and wins for N>=128 in bench_unified.
+// lift_x_cached inside schnorr_verify(raw) is faster than a fresh pubkey_cache
+// linear scan in the individual path when data is warm across bench passes.
+// Empirically measured optimal cutoff: 96 (individual wins below this).
 constexpr std::size_t kSchnorrBatchIndividualCutoff = 96;
 
 // Generate deterministic weights for batch verification.
@@ -66,61 +72,18 @@ SchnorrBatchScratch& schnorr_batch_scratch(std::size_t n) {
     return scratch;
 }
 
-// Lift x-only key to point (same as in schnorr_verify)
-// Returns (success, point)
+// Lift x-only coordinate to Point.
+// Delegates to schnorr_xonly_pubkey_parse so results are shared with the
+// thread-local lift_x_cached table in schnorr.cpp.  On warm bench passes
+// (e.g. repeated validation of the same signatures), the cache turns each
+// sqrt addition-chain (~2800 ns) into a cheap table lookup (~5 ns).
+// sig.r bytes are public, so caching them alongside pubkeys is safe.
 std::pair<bool, Point> lift_x(const std::array<uint8_t, 32>& pubkey_x) {
-#if defined(SECP256K1_FAST_52BIT)
-    using FE52 = fast::FieldElement52;
-    // Direct bytes->FE52: avoids FieldElement construction overhead
-    FE52 const px52 = FE52::from_bytes(pubkey_x.data());
-
-    // y^2 = x^3 + 7
-    FE52 const x3 = px52.square() * px52;
-    static const FE52 seven52 = FE52::from_fe(FieldElement::from_uint64(7));
-    FE52 const y2 = x3 + seven52;
-
-    // sqrt via FE52 addition chain: a^((p+1)/4), ~253 sqr + 13 mul
-    FE52 y52 = y2.sqrt();
-
-    // Verify: y^2 == y2 (check that sqrt succeeded)
-    FE52 check = y52.square();
-    check.normalize();
-    FE52 y2n = y2;
-    y2n.normalize();
-    if (!(check == y2n)) return {false, Point::infinity()};
-
-    // Ensure even Y (BIP-340 convention): check parity of normalized y
-    FE52 y_norm = y52;
-    y_norm.normalize();
-    if (y_norm.n[0] & 1) {
-        y52 = y52.negate(1);
-        y52.normalize_weak();
-    }
-
-    return {true, Point::from_affine52(px52, y52)};
-#else
-    // Fallback: 4x64 lift_x
-    FieldElement px_fe;
-    if (!FieldElement::parse_bytes_strict(pubkey_x, px_fe))
+    SchnorrXonlyPubkey parsed;
+    if (!schnorr_xonly_pubkey_parse(parsed, pubkey_x)) {
         return {false, Point::infinity()};
-
-    // y^2 = x^3 + 7
-    auto x3 = px_fe.square() * px_fe;
-    auto y2 = x3 + FieldElement::from_uint64(7);
-
-    // Optimized sqrt via addition chain
-    auto y = y2.sqrt();
-
-    // Verify: y^2 == y2
-    if (y.square() != y2) return {false, Point::infinity()};
-
-    // Ensure even Y (BIP-340) -- direct limb check avoids to_bytes() overhead
-    if (y.limbs()[0] & 1) {
-        y = y.negate();
     }
-
-    return {true, Point::from_affine(px_fe, y)};
-#endif
+    return {true, std::move(parsed.point)};
 }
 
 template <typename Entry, typename VerifyOneFn, typename ResolvePubkeyFn,

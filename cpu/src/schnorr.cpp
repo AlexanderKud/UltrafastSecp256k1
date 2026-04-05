@@ -148,17 +148,23 @@ static inline bool lift_x_cached(const uint8_t* pubkey_x32,
                                  const std::uint64_t* pkL,
                                  Point& out) {
 #if defined(SECP256K1_PLATFORM_ESP32) || defined(SECP256K1_PLATFORM_STM32)
-    // Embedded: skip 36KB thread-local cache, compute directly.
+    // Embedded: skip thread-local cache, compute directly.
     Point const lifted = lift_x_from_limbs(pkL);
     if (lifted.is_infinity()) return false;
     out = lifted;
     return true;
 #else
-    // Direct-mapped table keeps lookup O(1) with minimal branch/memcmp overhead.
-    static constexpr std::size_t kCacheSlots = 256;
+    // Direct-mapped table with 1024 slots (10-bit index).
+    // Increased from 256 to reduce birthday collisions when both sig.r and
+    // pubkey_x bytes flow through the same cache (batch verify path).
+    // For N=192 unique entries the expected collisions drop from ~71 to ~18.
+    // Hash uses 10 bytes spread across the 32-byte key for better distribution.
+    static constexpr std::size_t kCacheSlots = 1024;
     thread_local std::array<XOnlyLiftCacheEntry, kCacheSlots> cache{};
-    auto const idx = static_cast<std::size_t>(
-        pubkey_x32[0] ^ pubkey_x32[7] ^ pubkey_x32[15] ^ pubkey_x32[23] ^ pubkey_x32[31]);
+
+    std::size_t const h0 = pubkey_x32[0] ^ pubkey_x32[7] ^ pubkey_x32[15] ^ pubkey_x32[23] ^ pubkey_x32[31];
+    std::size_t const h1 = pubkey_x32[1] ^ pubkey_x32[9] ^ pubkey_x32[17] ^ pubkey_x32[25];
+    auto const idx = (h0 | (h1 << 8)) & (kCacheSlots - 1);
 
     auto& slot = cache[idx];
     if (slot.valid && std::memcmp(slot.x.data(), pubkey_x32, 32) == 0) {
