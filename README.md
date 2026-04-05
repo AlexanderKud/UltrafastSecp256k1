@@ -1,4 +1,4 @@
-# UltrafastSecp256k1 — GPU-Accelerated secp256k1 · ECDSA · Schnorr · FROST · BIP-340 · BIP-352 · CUDA · OpenCL · Metal · ARM64 · RISC-V · WASM
+# UltrafastSecp256k1
 
 [![CI](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ci.yml)
 [![ct-verif](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ct-verif.yml/badge.svg?branch=main)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/ct-verif.yml)
@@ -6,16 +6,96 @@
 [![OSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/shrec/UltrafastSecp256k1/badge)](https://securityscorecards.dev/viewer/?uri=github.com/shrec/UltrafastSecp256k1)
 [![GPU Self-Hosted](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/gpu-selfhosted.yml/badge.svg)](https://github.com/shrec/UltrafastSecp256k1/actions/workflows/gpu-selfhosted.yml)
 
-**Audit-first, high-performance secp256k1 engine for C++ and GPU-scale batch workloads** — built independently from scratch for Bitcoin, Ethereum, Silent Payments, threshold signatures (FROST, MuSig2), embedded systems, and reproducible benchmarking. UltrafastSecp256k1 combines optimized CPU arithmetic, a stable multi-backend GPU C ABI, **world-first open-source GPU FROST partial verification**, constant-time CPU signing paths, HD key derivation (BIP-32/44), Taproot (BIP-340/341), ZK range proofs, and 12+ platform targets including CUDA, OpenCL, Metal, WebAssembly, RISC-V, ESP32, and STM32.
+High-performance, multi-backend secp256k1 engine with continuous audit and adversarial verification.
 
-> **This project is two things at once:**
-> **1. A high-performance secp256k1 engine** — GPU-accelerated, multi-platform, production-hardened.
-> **2. A continuous, self-evolving audit system** — every exploit attempt becomes a permanent regression test. Security is treated as an ongoing process, not a static document.
-> → [How the audit system works](#engineering-quality--self-audit-culture)
+---
 
-> **Keywords:** secp256k1 GPU · ECDSA batch verify · Schnorr BIP-340 · FROST threshold signatures · MuSig2 · Bitcoin cryptography · CUDA secp256k1 · OpenCL ECC · BIP-352 Silent Payments · constant-time cryptography · embedded ECC · WebAssembly crypto
+## What Is This?
 
-> **11.00 M BIP352 scans/s** · **4.88 M ECDSA signs/s** · **4.05 M ECDSA verifies/s** · **3.66 M Schnorr signs/s** · **5.38 M Schnorr verifies/s** · **1.34 M FROST partial verifies/s** · **97.2 M point compressions/s** — single GPU (RTX 5060 Ti SM 12.0)
+UltrafastSecp256k1 is:
+
+- ⚡ **High-throughput ECC engine** — CPU + GPU + embedded (CUDA, OpenCL, Metal, ARM64, RISC-V, WASM, ESP32, STM32)
+- 🔐 **Cryptographic stack** — ECDSA, Schnorr, FROST, MuSig2, Taproot, BIP-352 Silent Payments, ZK Proofs, ECDH
+- 🧠 **Continuous audit system** — 1,000,000+ assertions per build, 58 modules, 0 failures — not a snapshot
+- 🧪 **Adversarially tested** — 157 exploit PoC tests, 11 fuzzer harnesses, 39 formal Cryptol properties, 3 independent CT pipelines
+
+> Security is not assumed — it is continuously verified on every commit.
+
+**11.00 M BIP352 scans/s** · **4.88 M ECDSA signs/s** · **4.05 M ECDSA verifies/s** · **3.66 M Schnorr signs/s** · **5.38 M Schnorr verifies/s** · **1.34 M FROST partial verifies/s** · **97.2 M point compressions/s** — RTX 5060 Ti (CUDA 12)
+
+Known production use: [Sparrow Wallet Frigate](https://github.com/sparrowwallet/frigate) — [Details →](docs/ADOPTION.md)
+
+---
+
+## Quick Start
+
+**Option A — Linux (apt)**
+```bash
+sudo apt install libufsecp3
+ufsecp_selftest          # Expected: "OK (version 3.x, backend CPU)"
+```
+
+**Option B — npm (any OS)**
+```bash
+npm i ufsecp
+node -e "require('ufsecp').selftest()"
+```
+
+**Option C — Python (any OS)**
+```bash
+pip install ufsecp
+python -c "import ufsecp; ufsecp.selftest()"
+```
+
+**Option D — Build from source**
+```bash
+git clone https://github.com/shrec/UltrafastSecp256k1.git && cd UltrafastSecp256k1
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+./build/selftest          # Expected: "ALL TESTS PASSED"
+```
+
+→ [Full installation guide](#installation) · [Build from source](#building-secp256k1-from-source-cmake)
+
+---
+
+## Where to Start
+
+| If you want to… | Go here |
+|---|---|
+| 🔍 Run the audit | [docs/AUDIT_GUIDE.md](docs/AUDIT_GUIDE.md) |
+| ⚔️ Try to break the system | [docs/ATTACK_GUIDE.md](docs/ATTACK_GUIDE.md) |
+| 📊 Understand the guarantees | [docs/AUDIT_TRACEABILITY.md](docs/AUDIT_TRACEABILITY.md) |
+| 📄 See latest audit results | [AUDIT_REPORT.md](AUDIT_REPORT.md) |
+| 🏗️ Build guide | [docs/BUILDING.md](docs/BUILDING.md) |
+| 🔗 C ABI / FFI reference | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) |
+| 📦 Install packages | [Installation](#installation) |
+| 🤔 Why this library? | [WHY_ULTRAFASTSECP256K1.md](WHY_ULTRAFASTSECP256K1.md) |
+| 🌐 Sponsor | [github.com/sponsors/shrec](https://github.com/sponsors/shrec) |
+
+> **Claim map:** [docs/ASSURANCE_LEDGER.md](docs/ASSURANCE_LEDGER.md) · **Security policy:** [SECURITY.md](SECURITY.md) · **Discord:** [discord.gg/E4BK8SeMYU](https://discord.gg/E4BK8SeMYU)
+
+---
+
+## Why This Exists
+
+Traditional model: `code → audit PDF → trust`
+
+This project: `code → test → execution → evidence → continuous verification`
+
+We do not rely on trust. We provide reproducible evidence.
+
+- Every exploit attempt becomes a permanent regression test
+- Every commit runs 1,000,000+ assertions across 58 audit modules
+- Every claim maps to a test in [docs/AUDIT_TRACEABILITY.md](docs/AUDIT_TRACEABILITY.md)
+- Every performance number has pinned compiler/driver/toolkit versions and raw logs
+
+> If a claim cannot be traced to a test, it is not valid.
+
+For the full breakdown of the audit culture, CI/CD pipeline, formal verification layers, and supply-chain hardening, see [WHY_ULTRAFASTSECP256K1.md](WHY_ULTRAFASTSECP256K1.md).
+
+---
+
+<!-- Keywords (machine-readable): secp256k1 GPU · ECDSA batch verify · Schnorr BIP-340 · FROST threshold signatures · MuSig2 · Bitcoin cryptography · CUDA secp256k1 · OpenCL ECC · BIP-352 Silent Payments · constant-time cryptography · embedded ECC · WebAssembly crypto -->
 
 ## Recent Performance Milestones (March 2026)
 
@@ -31,7 +111,9 @@ All measurements: RTX 5060 Ti (SM 12.0, CUDA 12), batch=16 384, kernel-only thro
 
 > The ECDSA and Schnorr verify speedups come from the Shamir+GLV double-scalar multiplication, INT32 field arithmetic, and warp-level reduction pipeline. FROST partial verify is now callable via the stable C ABI as [`ufsecp_gpu_frost_verify_partial_batch()`](#gpu-c-abi-ufsecp_gpu).
 
-## Why UltrafastSecp256k1?
+## Why UltrafastSecp256k1? — Detail
+
+> TL;DR is above. This section covers what differentiates this library in depth.
 
 - **Continuous adversarial audit system** -- every exploit attempt becomes a permanent regression test; 1,000,000+ assertions per build, 135 exploit PoC modules across 134 attack vectors, 31 CI workflows, 3 formal CT verification pipelines, 1.3M+ nightly differential checks — security hardens on every commit, not just on release day ([→ how it works](#engineering-quality--self-audit-culture))
 - **Differentiated GPU secp256k1 surface** -- CUDA, OpenCL, and Metal all implement the stable 13-op GPU C ABI, while CUDA also carries the highest-throughput signing and verification kernels plus **GPU FROST partial verification** ([reproducible benchmark suite and raw logs](docs/BENCHMARKS.md))
