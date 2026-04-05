@@ -274,6 +274,71 @@ static void test_bip324_session(ufsecp_ctx* ctx) {
 #endif /* SECP256K1_BIP324 */
 
 // ============================================================================
+// ECDSA SNARK witness (CPU path — covers fe_to_ff_limbs / scalar_to_ff_limbs)
+// ============================================================================
+
+static void test_zk_ecdsa_snark_witness(ufsecp_ctx* ctx) {
+    std::printf("\n=== FFI: ufsecp_zk_ecdsa_snark_witness ===\n");
+
+    /* Deterministic LCG helper (same seed convention as audit file) */
+    auto fill_det = [](uint8_t* buf, std::size_t len, uint8_t seed) {
+        std::uint32_t st = seed;
+        for (std::size_t i = 0; i < len; ++i) {
+            st = st * 1103515245u + 12345u;
+            buf[i] = static_cast<uint8_t>((st >> 16) & 0xFF);
+        }
+    };
+
+    /* Build a deterministic key + message + signature */
+    std::uint8_t privkey[32];
+    fill_det(privkey, 32, 0xA7);
+    privkey[0] &= 0x7F;  /* keep in valid scalar range */
+
+    std::uint8_t pubkey33[33];
+    ufsecp_pubkey_create(ctx, privkey, pubkey33);
+
+    std::uint8_t msg[32];
+    fill_det(msg, 32, 0xB3);
+
+    std::uint8_t sig64[64];
+    ufsecp_ecdsa_sign(ctx, msg, privkey, sig64);
+
+    /* Happy-path: valid signature */
+    ufsecp_ecdsa_snark_witness_t w{};
+    auto err = ufsecp_zk_ecdsa_snark_witness(ctx, msg, pubkey33, sig64, &w);
+    CHECK(err == UFSECP_OK, "snark_witness: valid sig returns OK");
+    CHECK(w.valid == 1,     "snark_witness: valid == 1 for good sig");
+    CHECK(std::memcmp(w.sig_r, sig64, 32) == 0, "snark_witness: sig_r copied");
+
+    /* All 5×52-bit limbs must fit in 52 bits */
+    static constexpr std::uint64_t MASK52 = (1ULL << 52) - 1;
+    bool limbs_ok = true;
+    for (int i = 0; i < 5; ++i) {
+        if (w.lmb_sig_r.limbs[i]   > MASK52 ||
+            w.lmb_pub_x.limbs[i]   > MASK52 ||
+            w.lmb_result_x.limbs[i] > MASK52) {
+            limbs_ok = false;
+        }
+    }
+    CHECK(limbs_ok, "snark_witness: all ff-limbs ≤ 2^52");
+
+    /* ECDSA invariant: result_x_mod_n == sig_r */
+    CHECK(std::memcmp(w.result_x_mod_n, w.sig_r, 32) == 0,
+          "snark_witness: result_x_mod_n == sig_r (ECDSA invariant)");
+
+    /* Error cases: null ctx */
+    ufsecp_ecdsa_snark_witness_t w2{};
+    auto err_null = ufsecp_zk_ecdsa_snark_witness(nullptr, msg, pubkey33, sig64, &w2);
+    CHECK(err_null != UFSECP_OK, "snark_witness: null ctx returns error");
+
+    /* Error case: r = 0 */
+    std::uint8_t zero_sig[64] = {};          /* r=0, s=0 */
+    ufsecp_ecdsa_snark_witness_t w3{};
+    auto err_zero = ufsecp_zk_ecdsa_snark_witness(ctx, msg, pubkey33, zero_sig, &w3);
+    CHECK(err_zero != UFSECP_OK, "snark_witness: sig with r=0 returns error");
+}
+
+// ============================================================================
 // Entry point
 // ============================================================================
 
@@ -287,6 +352,7 @@ int test_ffi_coverage_run() {
     test_ctx_size();
     test_pedersen_switch_commit(ctx);
     test_zk_range(ctx);
+    test_zk_ecdsa_snark_witness(ctx);
 
 #ifdef SECP256K1_BIP324
     test_aead_roundtrip();

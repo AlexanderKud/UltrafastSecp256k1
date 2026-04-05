@@ -42,6 +42,9 @@ ignore:
   - "scripts/**"
   - "cmake/**"
   - "docs/**"
+  # Platform-specific code never compiled on Linux coverage runner
+  - "metal/**"
+  - "gpu/src/gpu_backend_metal.mm"
 
 comment:
   layout: "reach,diff,flags,files"
