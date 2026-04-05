@@ -346,9 +346,17 @@ All core arithmetic operations are tested on boundary values:
 
 | Harness | Target | Iterations (Nightly) | Location |
 |---------|--------|---------------------|----------|
-| `fuzz_field` | Field arithmetic | 100K+ | `tests/fuzz/fuzz_field.cpp` |
-| `fuzz_scalar` | Scalar arithmetic | 100K+ | `tests/fuzz/fuzz_scalar.cpp` |
-| `fuzz_point` | Point operations | 100K+ | `tests/fuzz/fuzz_point.cpp` |
+| `fuzz_field` | Field arithmetic | 100K+ | `cpu/fuzz/fuzz_field.cpp` |
+| `fuzz_scalar` | Scalar arithmetic | 100K+ | `cpu/fuzz/fuzz_scalar.cpp` |
+| `fuzz_point` | Point operations | 100K+ | `cpu/fuzz/fuzz_point.cpp` |
+| `fuzz_ecdsa` | ECDSA sign→verify invariant, wrong-msg | 100K+ | `cpu/fuzz/fuzz_ecdsa.cpp` |
+| `fuzz_schnorr` | BIP-340 sign→verify, adversarial verify | 100K+ | `cpu/fuzz/fuzz_schnorr.cpp` |
+| `fuzz_der_parse` | DER signature parse + round-trip | 100K+ | `audit/fuzz_der_parse.cpp` |
+| `fuzz_pubkey_parse` | Pubkey parse, tweak_add, encoding | 100K+ | `audit/fuzz_pubkey_parse.cpp` |
+| `fuzz_schnorr_verify` | BIP-340 sign→verify + forged-sig rejection | 100K+ | `audit/fuzz_schnorr_verify.cpp` |
+| `fuzz_ecdsa_verify` | ECDSA sign→verify round-trip | 100K+ | `audit/fuzz_ecdsa_verify.cpp` |
+| `fuzz_bip32_path` | BIP-32 path parser — boundary + overflow | 100K+ | `audit/fuzz_bip32_path.cpp` |
+| `fuzz_bip324_frame` | BIP-324 AEAD frame decrypt | 100K+ | `audit/fuzz_bip324_frame.cpp` |
 | DER parser fuzz | `test_fuzz_parsers.cpp` | 10K per suite | Suites 1-3 |
 | Schnorr parser fuzz | `test_fuzz_parsers.cpp` | 10K per suite | Suites 4-5 |
 | Pubkey parse fuzz | `test_fuzz_parsers.cpp` | 10K per suite | Suites 6-8 |
@@ -560,6 +568,6 @@ Eight functions with zero prior coverage: `ctx_clone`, `last_error_msg`, `last_e
 
 ---
 
-*Generated: 2026-03-23*
+*Generated: 2026-04-05*
 *Invariant source: [INVARIANTS.md](INVARIANTS.md)*
 *This document is auto-updatable via `scripts/generate_traceability.sh`*
