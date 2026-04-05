@@ -1164,7 +1164,7 @@ public:
         auto* h_pubs = g_metal_batch_scratch.ensure_pubkeys64(count);
         for (size_t i = 0; i < count; ++i) {
             if (!sec1_33_to_be64(pubkeys33 + i * 33, h_pubs + i * 64))
-                return set_error(GpuError::InvalidPoint,
+                return set_error(GpuError::BadPubkey,
                                  "invalid pubkey in snark_witness_batch");
         }
 
@@ -1203,7 +1203,7 @@ public:
         /* Decompress spend pubkey → MetalAffinePoint */
         MetalAffinePoint spend_pt;
         if (!sec1_33_to_metal_affine(spend_pubkey33, spend_pt))
-            return set_error(GpuError::InvalidPoint,
+            return set_error(GpuError::BadPubkey,
                              "invalid spend_pubkey in bip352_scan_batch");
 
         /* Decompress N tweak pubkeys → MetalAffinePoint[] */
@@ -1211,7 +1211,7 @@ public:
         scratch.ensure_affine_points(n_tweaks);
         for (size_t i = 0; i < n_tweaks; ++i) {
             if (!sec1_33_to_metal_affine(tweak_pubkeys33 + i * 33, scratch.affine_points[i]))
-                return set_error(GpuError::InvalidPoint,
+                return set_error(GpuError::BadPubkey,
                                  "invalid tweak_pubkey in bip352_scan_batch");
         }
 
