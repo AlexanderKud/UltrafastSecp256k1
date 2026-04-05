@@ -5,6 +5,7 @@
 #include "secp256k1/musig2.hpp"
 #include "secp256k1/schnorr.hpp"
 #include "secp256k1/sha256.hpp"
+#include "secp256k1/pippenger.hpp"
 #include "secp256k1/ct/point.hpp"
 #include "secp256k1/ct/scalar.hpp"
 #include "secp256k1/ct/field.hpp"
@@ -82,9 +83,11 @@ MuSig2KeyAggCtx musig2_key_agg(const std::vector<std::array<uint8_t, 32>>& pubke
     std::size_t const n = pubkeys.size();
     if (n == 0) return ctx;
 
-    // Validate ALL pubkeys upfront before computing anything.
+    // Validate ALL pubkeys upfront AND cache the lifted points, so we avoid
+    // computing sqrt twice per pubkey (once for validation, once for Q aggr).
     // If any key is invalid (x >= p or not on curve), reject the entire set.
     // Silently skipping invalid keys would allow rogue key attacks.
+    std::vector<Point> points(n);
     for (std::size_t i = 0; i < n; ++i) {
         FieldElement px;
         if (!FieldElement::parse_bytes_strict(pubkeys[i], px)) return ctx;
@@ -92,6 +95,11 @@ MuSig2KeyAggCtx musig2_key_agg(const std::vector<std::array<uint8_t, 32>>& pubke
         auto y2 = x3 + FieldElement::from_uint64(7);
         auto y = y2.sqrt();
         if (y.square() != y2) return ctx;  // x not on curve
+        // BIP-340: ensure even Y (cache the canonical point for Q aggregation)
+        if (y.limbs()[0] & 1) {
+            y = y.negate();
+        }
+        points[i] = Point::from_affine(px, y);
     }
 
     // Sort a canonical copy of the pubkeys so that L is identical regardless
@@ -139,25 +147,9 @@ MuSig2KeyAggCtx musig2_key_agg(const std::vector<std::array<uint8_t, 32>>& pubke
         }
     }
 
-    // Q = sum(a_i * P_i)
-    // All pubkeys validated upfront — lift to points unconditionally
-    Point Q = Point::infinity();
-    for (std::size_t i = 0; i < n; ++i) {
-        FieldElement px;
-        FieldElement::parse_bytes_strict(pubkeys[i], px);  // validated above
-        auto x3 = px.square() * px;
-        auto y2 = x3 + FieldElement::from_uint64(7);
-        auto y = y2.sqrt();
-
-        // BIP-340: ensure even Y
-        if (y.limbs()[0] & 1) {
-            y = y.negate();
-        }
-
-        auto Pi = Point::from_affine(px, y);
-        auto aiPi = Pi.scalar_mul(ctx.key_coefficients[i]);
-        Q = Q.add(aiPi);
-    }
+    // Q = sum(a_i * P_i) via MSM (Shamir trick for n=2, Pippenger for n>=48).
+    // Cached points from validation loop — no double sqrt.
+    Point Q = msm(ctx.key_coefficients, points);
 
     ctx.Q = Q;
 
