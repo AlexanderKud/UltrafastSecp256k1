@@ -312,6 +312,41 @@ Retained optimization: `Point::scalar_mul_with_plan()` now leaves the result laz
 On this board, that moved `bench_unified --quick` `scalar_mul_with_plan` from the earlier
 `199652.6 ns` baseline to `193301.2 ns`, a measured improvement of about `3.2%`.
 
+### RISC-V Native Rerun (Milk-V Mars, 2026-04-05, post-musig2-bip32 opt)
+
+GCC 13 cross-compiled binary deployed via SSH to `user@192.168.1.31` (StarFive SiFive U74, riscv64).  
+**Harness:** `bench_unified` — 3 s warmup, 11 passes, IQR trimmed, median  
+**Kernel:** Linux 6.6.20-starfive, 1 core pinned, GCC 13.3.0
+
+Selected results:
+
+| Operation | Time (ns) | Time (µs) | vs libsecp |
+|-----------|----------:|----------:|-----------:|
+| pubkey_create (k·G) | 46,407 | 46.4 µs | **2.66×** |
+| ECDSA sign (fast) | 83,163 | 83.2 µs | **1.99×** |
+| Schnorr sign (fast) | 57,437 | 57.4 µs | **2.30×** |
+| CT ECDSA sign | 154,790 | 154.8 µs | 1.07× |
+| CT Schnorr sign | 124,720 | 124.7 µs | 1.06× |
+| CT generator_mul (k·G) | 105,789 | 105.8 µs | — |
+| scalar_inv (CT) | 10,099 | 10.1 µs | **1.06×** |
+| ECDSA verify | 244,909 | 244.9 µs | 0.90× |
+| Schnorr verify (cached) | 248,530 | 248.5 µs | 0.90× |
+| Taproot output key | 105,757 | 105.8 µs | — |
+| BIP-32 master key (64B) | 7,442 | 7.4 µs | — |
+| **BIP-32 coin derive (BTC)** | **647,245** | **647.2 µs** | — |
+| **MuSig2 key_agg (2-of-2)** | **354,030** | **354.0 µs** | — |
+| **MuSig2 partial_sign** | **118,083** | **118.1 µs** | — |
+| Silent Payment send | 295,673 | 295.7 µs | — |
+| Silent Payment scan | 416,308 | 416.3 µs | — |
+| Schnorr batch N=128/sig | 206,836 | 206.8 µs | — |
+| Schnorr batch N=192/sig | 182,000 | 182.0 µs | — |
+
+Note: ECDSA and Schnorr verify are 10% slower than libsecp on the SiFive U74 because
+our two-point Shamir path tables are suboptimal on this in-order RISC-V core — all other
+paths (sign, pubkey, batch) win by 2–2.7×. CT signing beats libsecp by ~7% CT-vs-CT.
+
+---
+
 ### RISC-V Optimization Gains (vs generic RV64GC build)
 
 | Optimization | Speedup | Applied To |
@@ -714,6 +749,40 @@ dedicated BIP-324 transport stack.
 
 Run note: the on-device execution used the NDK `libomp.so` alongside the pushed
 binaries so the existing OpenMP-enabled CPU build could run unchanged.
+
+### Android ARM64 RK3588 Device Rerun (2026-04-05, post-musig2-bip32 opt)
+
+GCC 13 cross-compiled binary pushed via ADB to `YF_022A` (RK3588, aarch64).  
+**Harness:** `bench_unified` — 3 s warmup, 11 passes, IQR trimmed, median  
+**Tests:** 12,023 passed, 0 failed on-device (GCC 13, ARM64)
+
+Selected results:
+
+| Operation | Time (ns) | Time (µs) | vs libsecp |
+|-----------|----------:|----------:|-----------:|
+| pubkey_create (k·G) | 33,495 | 33.5 µs | **3.34×** |
+| ECDSA sign (fast) | 46,640 | 46.6 µs | **2.89×** |
+| Schnorr sign (fast) | 36,756 | 36.8 µs | **3.15×** |
+| CT ECDSA sign | 139,042 | 139.0 µs | 0.97× |
+| CT Schnorr sign | 126,216 | 126.2 µs | 0.92× |
+| CT generator_mul (k·G) | 117,209 | 117.2 µs | — |
+| scalar_inv (CT) | 4,640 | 4.6 µs | **1.77×** |
+| ECDSA verify | 227,368 | 227.4 µs | 1.05× |
+| Schnorr verify (cached) | 228,290 | 228.3 µs | 1.05× |
+| ECDH | 249,403 | 249.4 µs | — |
+| Taproot output key | 72,204 | 72.2 µs | — |
+| BIP-32 master key (64B) | 5,800 | 5.8 µs | — |
+| **BIP-32 coin derive (BTC)** | **666,038** | **666.0 µs** | — |
+| **MuSig2 key_agg (2-of-2)** | **299,882** | **299.9 µs** | — |
+| **MuSig2 partial_sign** | **125,440** | **125.4 µs** | — |
+| Silent Payment send | 287,375 | 287.4 µs | — |
+| Silent Payment scan | 418,648 | 418.6 µs | — |
+| Schnorr batch N=128/sig | 195,963 | 196.0 µs | — |
+| Schnorr batch N=192/sig | 174,208 | 174.2 µs | — |
+
+Note: CT signing is slower than libsecp on ARM64 because `ct::generator_mul`
+uses a constant-time table walk (117 µs) vs libsecp's variable-time comb (111 µs).
+This is expected and correct — CT overhead is explicit on this platform.
 
 ---
 
