@@ -1153,25 +1153,89 @@ public:
     }
 
     GpuError snark_witness_batch(
-        const uint8_t*, const uint8_t*, const uint8_t*,
-        size_t, uint8_t*) override
+        const uint8_t* msg_hashes32, const uint8_t* pubkeys33,
+        const uint8_t* sigs64, size_t count, uint8_t* witness_flat_out) override
     {
-        // TODO(parity): Metal MSL shader for ecdsa_snark_witness_batch not yet
-        // implemented. CUDA and OpenCL backends are fully functional.
-        // tracking: snark-witness-metal
-        return set_error(GpuError::Unsupported,
-                         "ecdsa_snark_witness_batch not yet implemented on Metal");
+        if (!msg_hashes32 || !pubkeys33 || !sigs64 || !witness_flat_out)
+            return set_error(GpuError::NullArg, "NULL pointer passed to snark_witness_batch");
+        if (!count) return GpuError::Ok;
+
+        /* Decompress pubkeys: 33-byte SEC1 → 64-byte uncompressed BE (x‖y) */
+        auto* h_pubs = g_metal_batch_scratch.ensure_pubkeys64(count);
+        for (size_t i = 0; i < count; ++i) {
+            if (!sec1_33_to_be64(pubkeys33 + i * 33, h_pubs + i * 64))
+                return set_error(GpuError::InvalidPoint,
+                                 "invalid pubkey in snark_witness_batch");
+        }
+
+        auto buf_msgs  = runtime_->alloc_buffer_shared(count * 32);
+        auto buf_pubs  = runtime_->alloc_buffer_shared(count * 64);
+        auto buf_sigs  = runtime_->alloc_buffer_shared(count * 64);
+        auto buf_out   = runtime_->alloc_buffer_shared(count * 760);
+        auto buf_count = runtime_->alloc_buffer_shared(sizeof(uint32_t));
+
+        std::memcpy(buf_msgs.contents(),  msg_hashes32,   count * 32);
+        std::memcpy(buf_pubs.contents(),  h_pubs,         count * 64);
+        std::memcpy(buf_sigs.contents(),  sigs64,         count * 64);
+        uint32_t n32 = (uint32_t)count;
+        std::memcpy(buf_count.contents(), &n32, sizeof(n32));
+
+        auto pipe = runtime_->make_pipeline("ecdsa_snark_witness_batch");
+        runtime_->dispatch_sync(pipe, n32, 64u,
+                                {&buf_msgs, &buf_pubs, &buf_sigs, &buf_out, &buf_count});
+
+        std::memcpy(witness_flat_out, buf_out.contents(), count * 760);
+        clear_error();
+        return GpuError::Ok;
     }
 
     GpuError bip352_scan_batch(
-        const uint8_t*, const uint8_t*,
-        const uint8_t*, size_t, uint64_t*) override
+        const uint8_t* scan_privkey32, const uint8_t* spend_pubkey33,
+        const uint8_t* tweak_pubkeys33, size_t n_tweaks, uint64_t* prefix64_out) override
     {
-        // TODO(parity): Metal MSL shader for bip352_scan_batch not yet implemented.
-        // CUDA and OpenCL backends are fully functional.
-        // tracking: bip352-scan-metal
-        return set_error(GpuError::Unsupported,
-                         "bip352_scan_batch not yet implemented on Metal");
+        if (!scan_privkey32 || !spend_pubkey33 || !tweak_pubkeys33 || !prefix64_out)
+            return set_error(GpuError::NullArg, "NULL pointer passed to bip352_scan_batch");
+        if (!n_tweaks) return GpuError::Ok;
+
+        /* Parse scan private key: BE 32 bytes → MetalScalar256 */
+        MetalScalar256 scan_scalar = be32_to_metal_scalar(scan_privkey32);
+
+        /* Decompress spend pubkey → MetalAffinePoint */
+        MetalAffinePoint spend_pt;
+        if (!sec1_33_to_metal_affine(spend_pubkey33, spend_pt))
+            return set_error(GpuError::InvalidPoint,
+                             "invalid spend_pubkey in bip352_scan_batch");
+
+        /* Decompress N tweak pubkeys → MetalAffinePoint[] */
+        auto& scratch = g_metal_batch_scratch;
+        scratch.ensure_affine_points(n_tweaks);
+        for (size_t i = 0; i < n_tweaks; ++i) {
+            if (!sec1_33_to_metal_affine(tweak_pubkeys33 + i * 33, scratch.affine_points[i]))
+                return set_error(GpuError::InvalidPoint,
+                                 "invalid tweak_pubkey in bip352_scan_batch");
+        }
+
+        /* Build Metal buffers */
+        auto buf_tweaks = runtime_->alloc_buffer_shared(n_tweaks * sizeof(MetalAffinePoint));
+        auto buf_scan   = runtime_->alloc_buffer_shared(sizeof(MetalScalar256));
+        auto buf_spend  = runtime_->alloc_buffer_shared(sizeof(MetalAffinePoint));
+        auto buf_prefix = runtime_->alloc_buffer_shared(n_tweaks * sizeof(uint64_t));
+        auto buf_count  = runtime_->alloc_buffer_shared(sizeof(uint32_t));
+
+        std::memcpy(buf_tweaks.contents(), scratch.affine_points.data(),
+                    n_tweaks * sizeof(MetalAffinePoint));
+        std::memcpy(buf_scan.contents(),  &scan_scalar, sizeof(scan_scalar));
+        std::memcpy(buf_spend.contents(), &spend_pt,    sizeof(spend_pt));
+        uint32_t n32 = (uint32_t)n_tweaks;
+        std::memcpy(buf_count.contents(), &n32, sizeof(n32));
+
+        auto pipe = runtime_->make_pipeline("bip352_scan_pipeline");
+        runtime_->dispatch_sync(pipe, n32, 64u,
+                                {&buf_tweaks, &buf_scan, &buf_spend, &buf_prefix, &buf_count});
+
+        std::memcpy(prefix64_out, buf_prefix.contents(), n_tweaks * sizeof(uint64_t));
+        clear_error();
+        return GpuError::Ok;
     }
 
 private:

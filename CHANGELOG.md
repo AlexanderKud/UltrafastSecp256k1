@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   threshold 60%. Committed `38108b89`.
 - **SLSA provenance verifier** (`scripts/verify_slsa_provenance.py`) — checks `cosign`
   bundle validity, subject digest, and builder identity for release artefacts. Committed `38108b89`.
-- **Cryptol formal specs** (`specs/`) — 4 machine-checkable Cryptol property files:
+- **Cryptol formal specs** (`formal/cryptol/`) — 4 machine-checkable Cryptol property files:
   `Secp256k1Field.cry` (10 props: field axioms, Fermat, sqrt), `Secp256k1Point.cry` (7 props:
   commutativity, associativity, scalar distribution), `Secp256k1ECDSA.cry` (6 props: sign→verify,
   wrong-msg reject, sk-uniqueness), `Secp256k1Schnorr.cry` (5 props: BIP-340 round-trip,

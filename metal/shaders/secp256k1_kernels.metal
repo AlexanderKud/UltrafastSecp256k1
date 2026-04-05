@@ -1191,3 +1191,271 @@ kernel void msm_block_sum_kernel(
     block_results[gid] = acc;
 }
 
+// =============================================================================
+// BIP-352 Silent Payment scan pipeline
+// =============================================================================
+// Pipeline per thread:
+//   1. shared  = scan_scalar × tweak_points[tid]   (scalar_mul_glv)
+//   2. ser[37] = compress(shared) ++ [0,0,0,0]     (SEC1 + k=0 index)
+//   3. hash    = SHA256("BIP0352/SharedSecret" || ser)  (tagged hash midstate)
+//   4. out_pt  = hash × G                          (scalar_mul_generator_windowed)
+//   5. cand    = out_pt + spend_point              (jacobian_add_mixed)
+//   6. prefix  = upper 64 bits of cand.x           (Jacobian → affine → extract)
+//
+// Buffers:
+//   0: device const AffinePoint* tweak_points  — N decompressed tweak points
+//   1: constant Scalar256&       scan_scalar   — scan private key as Scalar256
+//   2: device const AffinePoint* spend_point   — spend public key (1 point)
+//   3: device ulong*             prefixes      — N × 8-byte output prefix
+//   4: constant uint&            count         — N
+// =============================================================================
+
+constant uint BIP352_SHAREDSECRET_MIDSTATE[8] = {
+    0x88831537U, 0x5127079bU, 0x69c2137bU, 0xab0303e6U,
+    0x98fa21faU, 0x4a888523U, 0xbd99daabU, 0xf25e5e0aU
+};
+
+kernel void bip352_scan_pipeline(
+    device const AffinePoint* tweak_points [[buffer(0)]],
+    constant Scalar256&       scan_scalar  [[buffer(1)]],
+    device const AffinePoint* spend_point  [[buffer(2)]],
+    device ulong*             prefixes     [[buffer(3)]],
+    constant uint&            count        [[buffer(4)]],
+    uint tid [[thread_position_in_grid]]
+) {
+    if (tid >= count) return;
+
+    // Phase 1: shared_secret = scan_scalar × tweak_points[tid]
+    AffinePoint tweak = tweak_points[tid];
+    JacobianPoint shared = scalar_mul_glv(tweak, scan_scalar);
+    if (shared.infinity != 0) { prefixes[tid] = 0; return; }
+
+    // Phase 2: serialize to SEC1 compressed + 4 zero bytes (output index k=0)
+    AffinePoint shared_aff = jacobian_to_affine(shared);
+    uchar x_bytes[32], y_bytes[32];
+    field_to_bytes(shared_aff.x, x_bytes);
+    field_to_bytes(shared_aff.y, y_bytes);
+
+    uchar ser[37];
+    ser[0] = (y_bytes[31] & 1u) ? 0x03 : 0x02;
+    for (int i = 0; i < 32; i++) ser[1 + i] = x_bytes[i];
+    ser[33] = 0; ser[34] = 0; ser[35] = 0; ser[36] = 0;
+
+    // Phase 3: tagged SHA-256 with precomputed BIP0352/SharedSecret midstate
+    SHA256Ctx sha_ctx;
+    for (int i = 0; i < 8; i++) sha_ctx.h[i] = BIP352_SHAREDSECRET_MIDSTATE[i];
+    sha_ctx.buf_len = 0;
+    sha_ctx.total_len_lo = 64; // midstate already consumed one 64-byte tag block
+    sha_ctx.total_len_hi = 0;
+    sha256_update(sha_ctx, ser, 37);
+    uchar hash[32];
+    sha256_final(sha_ctx, hash);
+
+    // Phase 4: hash_scalar × G
+    Scalar256 hs = scalar_from_bytes(hash);
+    JacobianPoint out_pt = scalar_mul_generator_windowed(hs);
+
+    // Phase 5: cand = out_pt + spend_point[0]
+    AffinePoint spend = spend_point[0];
+    JacobianPoint cand = jacobian_add_mixed(out_pt, spend);
+    if (cand.infinity != 0) { prefixes[tid] = 0; return; }
+
+    // Phase 6: extract upper 64 bits of cand.x (Jacobian → affine → BE bytes)
+    AffinePoint cand_aff = jacobian_to_affine(cand);
+    uchar cx[32];
+    field_to_bytes(cand_aff.x, cx);
+    ulong prefix = 0;
+    for (int i = 0; i < 8; i++) prefix = (prefix << 8) | ulong(cx[i]);
+    prefixes[tid] = prefix;
+}
+
+// =============================================================================
+// ECDSA SNARK Witness Batch
+// =============================================================================
+// Computes one 760-byte foreign-field PLONK witness record per thread.
+// Record layout (identical to CUDA and OpenCL):
+//   11 × 32 bytes (msg, r, s, pub_x, pub_y, s_inv, u1, u2, rx, ry, rx_mod_n)
+//   10 × 5 × 8 bytes (52-bit foreign-field limbs for each of the above scalars)
+//   1 × 4 bytes (valid flag) + 1 × 4 bytes (padding) = 760 bytes total
+//
+// Buffers:
+//   0: device const uchar* msg_hashes  — N × 32 bytes (BE SHA-256)
+//   1: device const uchar* pubkeys64   — N × 64 bytes (x‖y big-endian, decompressed)
+//   2: device const uchar* sigs64      — N × 64 bytes (r‖s big-endian)
+//   3: device uchar*       out_flat    — N × 760 bytes
+//   4: constant uint&      count       — N
+// =============================================================================
+
+// Helper: Scalar256 → 5 × 52-bit foreign-field limbs (ulong each).
+inline void scalar_to_ff_limbs(thread const Scalar256 &s, thread ulong out[5]) {
+    // Reconstruct 4 × ulong LE from 8 × uint LE Metal limbs
+    ulong w0 = ulong(s.limbs[0]) | (ulong(s.limbs[1]) << 32);
+    ulong w1 = ulong(s.limbs[2]) | (ulong(s.limbs[3]) << 32);
+    ulong w2 = ulong(s.limbs[4]) | (ulong(s.limbs[5]) << 32);
+    ulong w3 = ulong(s.limbs[6]) | (ulong(s.limbs[7]) << 32);
+    const ulong M52 = (1UL << 52) - 1UL;
+    out[0] =  w0                          & M52;
+    out[1] = ((w0 >> 52) | (w1 << 12))   & M52;
+    out[2] = ((w1 >> 40) | (w2 << 24))   & M52;
+    out[3] = ((w2 >> 28) | (w3 << 36))   & M52;
+    out[4] =   w3 >> 16;
+}
+
+// Helper: 32 BE bytes → 5 × 52-bit foreign-field limbs (ulong each).
+inline void be32_to_ff_limbs(thread const uchar be[32], thread ulong out[5]) {
+    ulong w[4];
+    for (int i = 0; i < 4; i++) {
+        ulong v = 0;
+        int base = (3 - i) * 8;
+        for (int b = 0; b < 8; b++) v = (v << 8) | ulong(be[base + b]);
+        w[i] = v;
+    }
+    const ulong M52 = (1UL << 52) - 1UL;
+    out[0] =  w[0]                          & M52;
+    out[1] = ((w[0] >> 52) | (w[1] << 12)) & M52;
+    out[2] = ((w[1] >> 40) | (w[2] << 24)) & M52;
+    out[3] = ((w[2] >> 28) | (w[3] << 36)) & M52;
+    out[4] =   w[3] >> 16;
+}
+
+// Helper: write uint at a byte offset into a device buffer.
+inline void write_u32_le(device uchar* buf, uint offset, int val) {
+    uint v = uint(val);
+    buf[offset+0] = uchar(v & 0xFFu);
+    buf[offset+1] = uchar((v >> 8) & 0xFFu);
+    buf[offset+2] = uchar((v >> 16) & 0xFFu);
+    buf[offset+3] = uchar((v >> 24) & 0xFFu);
+}
+
+// Helper: write ulong FF limbs at byte offset (LE 8 bytes each limb).
+inline void write_ff_limbs(device uchar* buf, uint offset, thread ulong limbs[5]) {
+    for (int i = 0; i < 5; i++) {
+        ulong v = limbs[i];
+        for (int b = 0; b < 8; b++) buf[offset + i*8 + b] = uchar((v >> (b*8)) & 0xFFu);
+    }
+}
+
+kernel void ecdsa_snark_witness_batch(
+    device const uchar* msg_hashes  [[buffer(0)]],
+    device const uchar* pubkeys64   [[buffer(1)]],
+    device const uchar* sigs64      [[buffer(2)]],
+    device       uchar* out_flat    [[buffer(3)]],
+    constant uint&      count       [[buffer(4)]],
+    uint tid [[thread_position_in_grid]]
+) {
+    if (tid >= count) return;
+
+    // Output record: 760 bytes starting at tid*760
+    const uint rec_off = tid * 760u;
+
+    // -- zero the record (valid=0 by default) --
+    for (uint i = 0; i < 760u; i++) out_flat[rec_off + i] = 0;
+
+    // -- load message hash (32 BE bytes) --
+    uchar msg[32];
+    for (int i = 0; i < 32; i++) msg[i] = msg_hashes[tid * 32 + i];
+
+    // -- load sig r and s (each 32 BE bytes) --
+    uchar r_be[32], s_be[32];
+    for (int i = 0; i < 32; i++) {
+        r_be[i] = sigs64[tid * 64 + i];
+        s_be[i] = sigs64[tid * 64 + 32 + i];
+    }
+    Scalar256 sig_r = scalar_from_bytes(r_be);
+    Scalar256 sig_s = scalar_from_bytes(s_be);
+    if (scalar256_is_zero(sig_r) || scalar256_is_zero(sig_s)) return;
+
+    // -- load decompressed pubkey (64 BE bytes: x‖y) --
+    uchar pub_x_be[32], pub_y_be[32];
+    for (int i = 0; i < 32; i++) {
+        pub_x_be[i] = pubkeys64[tid * 64 + i];
+        pub_y_be[i] = pubkeys64[tid * 64 + 32 + i];
+    }
+    AffinePoint pub_aff;
+    // Load x limbs from BE bytes (LE limb order: limbs[0]=LSW, limbs[7]=MSW)
+    for (int i = 0; i < 8; i++) {
+        int base = (7 - i) * 4;
+        pub_aff.x.limbs[i] = (uint(pub_x_be[base])   << 24) |
+                              (uint(pub_x_be[base+1]) << 16) |
+                              (uint(pub_x_be[base+2]) << 8)  |
+                              (uint(pub_x_be[base+3]));
+        pub_aff.y.limbs[i] = (uint(pub_y_be[base])   << 24) |
+                              (uint(pub_y_be[base+1]) << 16) |
+                              (uint(pub_y_be[base+2]) << 8)  |
+                              (uint(pub_y_be[base+3]));
+    }
+    pub_aff.infinity = 0; // valid non-infinity point from host decompression
+
+    // -- witness scalars: z, s_inv, u1, u2 --
+    Scalar256 z     = scalar_from_bytes(msg);
+    Scalar256 s_inv = scalar_inverse(sig_s);
+    Scalar256 u1    = scalar_mul_mod_n(z,     s_inv);
+    Scalar256 u2    = scalar_mul_mod_n(sig_r, s_inv);
+
+    // -- R = u1·G + u2·Q using separate muls + jacobian_add --
+    AffinePoint G  = generator_affine();
+    JacobianPoint u1G = scalar_mul_glv(G,       u1);
+    JacobianPoint u2Q = scalar_mul_glv(pub_aff, u2);
+    JacobianPoint R   = jacobian_add(u1G, u2Q);
+    if (R.infinity != 0) return;
+
+    // -- R affine --
+    AffinePoint R_aff = jacobian_to_affine(R);
+    uchar rx[32], ry[32];
+    field_to_bytes(R_aff.x, rx);
+    field_to_bytes(R_aff.y, ry);
+
+    // -- result_x mod n = scalar parse of rx --
+    Scalar256 v = scalar_from_bytes(rx);
+    uchar rx_mod_n[32];
+    scalar_to_bytes(v, rx_mod_n);
+
+    // -- validity: v == sig_r --
+    bool valid = scalar256_eq(v, sig_r);
+
+    // ---- serialize into flat 760-byte record ----
+    // bytes 0-31:   msg
+    for (int i = 0; i < 32; i++) out_flat[rec_off +   0 + i] = msg[i];
+    // bytes 32-63:  sig_r
+    for (int i = 0; i < 32; i++) out_flat[rec_off +  32 + i] = r_be[i];
+    // bytes 64-95:  sig_s
+    for (int i = 0; i < 32; i++) out_flat[rec_off +  64 + i] = s_be[i];
+    // bytes 96-127: pub_x
+    for (int i = 0; i < 32; i++) out_flat[rec_off +  96 + i] = pub_x_be[i];
+    // bytes 128-159: pub_y
+    for (int i = 0; i < 32; i++) out_flat[rec_off + 128 + i] = pub_y_be[i];
+    // bytes 160-191: s_inv
+    uchar s_inv_bytes[32]; scalar_to_bytes(s_inv, s_inv_bytes);
+    for (int i = 0; i < 32; i++) out_flat[rec_off + 160 + i] = s_inv_bytes[i];
+    // bytes 192-223: u1
+    uchar u1_bytes[32]; scalar_to_bytes(u1, u1_bytes);
+    for (int i = 0; i < 32; i++) out_flat[rec_off + 192 + i] = u1_bytes[i];
+    // bytes 224-255: u2
+    uchar u2_bytes[32]; scalar_to_bytes(u2, u2_bytes);
+    for (int i = 0; i < 32; i++) out_flat[rec_off + 224 + i] = u2_bytes[i];
+    // bytes 256-287: result_x
+    for (int i = 0; i < 32; i++) out_flat[rec_off + 256 + i] = rx[i];
+    // bytes 288-319: result_y
+    for (int i = 0; i < 32; i++) out_flat[rec_off + 288 + i] = ry[i];
+    // bytes 320-351: result_x_mod_n
+    for (int i = 0; i < 32; i++) out_flat[rec_off + 352 - 32 + i] = rx_mod_n[i];
+
+    // 10 foreign-field limb arrays × 5 × 8 bytes = 400 bytes, offset 352..751
+    // Each array is exactly 40 bytes (5 × ulong) with step = 40.
+    ulong lmb[5];
+    scalar_to_ff_limbs(sig_r,  lmb); write_ff_limbs(out_flat, rec_off + 352, lmb); // [0]
+    scalar_to_ff_limbs(sig_s,  lmb); write_ff_limbs(out_flat, rec_off + 392, lmb); // [1]
+    be32_to_ff_limbs(pub_x_be, lmb); write_ff_limbs(out_flat, rec_off + 432, lmb); // [2]
+    be32_to_ff_limbs(pub_y_be, lmb); write_ff_limbs(out_flat, rec_off + 472, lmb); // [3]
+    scalar_to_ff_limbs(s_inv,  lmb); write_ff_limbs(out_flat, rec_off + 512, lmb); // [4]
+    scalar_to_ff_limbs(u1,     lmb); write_ff_limbs(out_flat, rec_off + 552, lmb); // [5]
+    scalar_to_ff_limbs(u2,     lmb); write_ff_limbs(out_flat, rec_off + 592, lmb); // [6]
+    be32_to_ff_limbs(rx,       lmb); write_ff_limbs(out_flat, rec_off + 632, lmb); // [7]
+    be32_to_ff_limbs(ry,       lmb); write_ff_limbs(out_flat, rec_off + 672, lmb); // [8]
+    be32_to_ff_limbs(rx_mod_n, lmb); write_ff_limbs(out_flat, rec_off + 712, lmb); // [9]
+    // bytes 752-755: valid (int32 LE)
+    write_u32_le(out_flat, rec_off + 752, valid ? 1 : 0);
+    // bytes 756-759: _pad (already zero)
+    // Total record size: 352 + 400 + 8 = 760 bytes ✓
+}
+

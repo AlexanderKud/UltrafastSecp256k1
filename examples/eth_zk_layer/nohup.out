@@ -1,0 +1,24 @@
+nohup: ignoring input
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ UltrafastSecp256k1 — Node Activator Server
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Library : /home/shrek/Secp256K1/Secp256K1fast/build-cuda/libs/UltrafastSecp256k1/include/ufsecp/libufsecp.so
+ ABI     : loaded OK
+ Node    : parking-node-01
+ Listening on  http://0.0.0.0:8765
+
+ Open activate.html on Windows and set backend URL to:
+[93m   http://192.168.1.35:8765[0m
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[36m[127.0.0.1][0m  "GET / HTTP/1.1" 200 -
+[36m[127.0.0.1][0m  "GET / HTTP/1.1" 200 -
+[36m[127.0.0.1][0m  "GET /bench?json=1&n=100 HTTP/1.1" 200 -
+[36m[192.168.1.6][0m  "GET /bench?json=1&n=2000 HTTP/1.1" 200 -
+[36m[127.0.0.1][0m  "GET / HTTP/1.1" 200 -
+[36m[192.168.1.6][0m  "GET /challenge HTTP/1.1" 200 -
+[36m[192.168.1.6][0m  "OPTIONS /activate HTTP/1.1" 204 -
+[32m  ecrecover: claimed=0x58b232d35e5c6f768a8bb9a721e681bf18719957  recovered=0x58b232d35e5c6f768a8bb9a721e681bf18719957  PASS ✓[0m
+[36m[192.168.1.6][0m  "POST /activate HTTP/1.1" 200 -
+[36m[192.168.1.6][0m  "GET /bench?json=1&n=500 HTTP/1.1" 200 -
+[36m[192.168.1.6][0m  "GET /bench?json=1&n=2000 HTTP/1.1" 200 -
