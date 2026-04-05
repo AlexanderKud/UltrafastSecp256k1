@@ -265,9 +265,89 @@ Requires Apple Silicon or discrete AMD GPU on macOS.
 | Gap | Status |
 |-----|--------|
 | External reviewer reproducibility and onboarding | keep audit playbooks, traces, and commands easy to rerun outside the core team |
-| CT branch/memory formal proof (beyond dudect + Valgrind CT + review) | still partial |
+| CT branch/memory formal proof (beyond dudect + Valgrind CT + review) | still partial — Cryptol specs cover functional correctness, not CT; SAW CT proofs not yet in CI |
 | Dedicated multi-threaded C ABI stress harness | still partial |
 | Native Android device-farm audit automation | still open |
+
+---
+
+## Cryptol Formal Verification Layer
+
+The library ships a Cryptol specification layer (`formal/cryptol/`) that formalises
+the mathematical model of the core secp256k1 operations.  This layer is independent
+of the C implementation and gives external reviewers a second oracle to check against.
+
+### What Is Covered
+
+| Spec file | Properties | Covers |
+|-----------|-----------|--------|
+| `Secp256k1Field.cry` | 15 | Field arithmetic axioms: closure, commutativity, associativity, identity, inverse, distributive, sqrt |
+| `Secp256k1Point.cry` | 10 | Group axioms: generator correctness, point add/double, scalar mul, identity, negation |
+| `Secp256k1ECDSA.cry` | 8 | ECDSA sign→verify, component ranges, BIP-62 low-S, idempotence |
+| `Secp256k1Schnorr.cry` | 6 | BIP-340 sign→verify, component ranges, even-Y normalisation, idempotence |
+| **Total** | **39** | All core crypto primitives |
+
+### How to Run the Cryptol Layer (requires `cryptol ≥ 3.0`)
+
+Install Cryptol:
+
+```bash
+# macOS
+brew install cryptol
+
+# Ubuntu / Debian (from Galois release tarball)
+wget https://github.com/GaloisInc/cryptol/releases/latest/download/cryptol-linux-x86_64.tar.gz
+tar xf cryptol-linux-x86_64.tar.gz && sudo cp cryptol-*/cryptol /usr/local/bin/
+```
+
+Run all four spec files:
+
+```bash
+cd formal/cryptol
+
+# Each file runs `:check` on all its properties; exit code 0 = all pass
+cryptol --batch Secp256k1Field.cry     # 15 properties
+cryptol --batch Secp256k1Point.cry    # 10 properties
+cryptol --batch Secp256k1ECDSA.cry    # 8 properties
+cryptol --batch Secp256k1Schnorr.cry  # 6 properties
+```
+
+Expected output (per file):
+
+```
+Loading module Secp256k1Field
+Checking 15 properties ...
+All 15 checks passed.
+```
+
+### Run via the Unified Audit Runner
+
+The unified audit runner includes a `cryptol_specs` module (advisory — skips
+gracefully if Cryptol is not installed):
+
+```bash
+./build/audit/unified_audit_runner --module cryptol_specs --json /tmp/cry_out.json
+cat /tmp/cry_out.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('verdict','N/A'), d.get('cryptol_specs',{}))"
+```
+
+### SAW (Software Analysis Workbench) Integration
+
+The same `.cry` files are SAW-compatible.  To run bounded proofs (not yet in CI):
+
+```bash
+saw scripts/saw_verify_field.saw       # Field arithmetic (20 bounded tests)
+saw scripts/saw_verify_point.saw       # Point group axioms
+```
+
+See `formal/cryptol/README.md` for the full SAW integration roadmap.
+
+### Relationship to C Implementation
+
+The Cryptol specs are **not auto-generated from C source**.  They are written
+independently from the mathematical specification (SEC1, BIP-340, BIP-62,
+RFC 6979).  A divergence between Cryptol output and C output is a finding — use
+the differential oracle module (`unified_audit_runner --module differential_tests`)
+to compare both paths on the same inputs.
 
 ---
 

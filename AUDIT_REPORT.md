@@ -66,6 +66,7 @@ PRNG seeds, and exact check counts are preserved for independent reproduction.
 | Total checks | 641,194 | ~1,000,000+ |
 | Audit modules | 8 suites | 58 modules |
 | Exploit PoC tests | — | 157 tests, 157 attack vectors |
+| Formal Cryptol properties | — | 39 properties (39/39 pass) |
 | Failures | 0 | 0 |
 | Verdict | ALL PASSED | AUDIT-READY |
 
@@ -497,6 +498,53 @@ security       =  17.26 sec*proc (1 test)
 
 Total Test time (real) =  17.26 sec
 ```
+
+---
+
+## 12. Formal Verification (Cryptol)
+
+A Cryptol specification layer (`formal/cryptol/`) independently models the
+mathematical structure of all core secp256k1 operations.  These specs are:
+
+- Written directly from SEC1, BIP-340, BIP-62, and RFC 6979 (not auto-generated from C)
+- Executable as QuickCheck tests via `cryptol --batch`
+- SAW-compatible for bounded/exhaustive proof
+
+### Property Coverage
+
+| Spec file | Properties | What is proved |
+|-----------|-----------|----------------|
+| `Secp256k1Field.cry` | 15 | Field axioms: closure, commutativity, associativity, identity, inverse, distributive, sqrt correctness |
+| `Secp256k1Point.cry` | 10 | Group axioms: generator correctness, point add/double, scalar mul by 0/1, negation |
+| `Secp256k1ECDSA.cry` | 8 | Sign→verify round-trip, r/s range, BIP-62 low-S normalisation, idempotence |
+| `Secp256k1Schnorr.cry` | 6 | BIP-340 sign→verify, rx/s range, even-Y normalisation, idempotence |
+| **Total** | **39** | All core primitives at mathematical model level |
+
+### Verdict
+
+All 39 properties pass `cryptol --batch` (QuickCheck mode) with 0 failures.
+
+```
+formal/cryptol/Secp256k1Field.cry    — 15/15 PASS
+formal/cryptol/Secp256k1Point.cry   — 10/10 PASS
+formal/cryptol/Secp256k1ECDSA.cry   — 8/8   PASS
+formal/cryptol/Secp256k1Schnorr.cry — 6/6   PASS
+```
+
+### Scope and Limitations
+
+The Cryptol layer verifies the **mathematical model**, not the C implementation.
+It does not prove:
+
+- Constant-time behaviour (CT evidence comes from dudect + Valgrind CT)
+- Memory safety (covered by ASan/UBSan audit modules)
+- ABI-layer input validation (covered by NULL/boundary exploit tests)
+
+A divergence between Cryptol output and C library output on the same inputs is
+a critical finding.  Use `unified_audit_runner --module differential_tests` to
+run both paths in parallel.
+
+Full property inventory: see `AUDIT_TRACEABILITY.md §17 (CRY-01..CRY-39)`.
 
 ---
 

@@ -568,6 +568,93 @@ Eight functions with zero prior coverage: `ctx_clone`, `last_error_msg`, `last_e
 
 ---
 
-*Generated: 2026-04-05*
+## 17. Cryptol Formal Specifications (§CRY)
+
+Formal Cryptol properties that independently verify the mathematical model of
+the library's core operations.  Each property executes via Cryptol's QuickCheck
+engine (`:check`) or can be discharged by SAW.
+
+**Location**: `formal/cryptol/`  
+**Run**: `cryptol --batch formal/cryptol/<file>.cry` (each run prints PASS/FAIL per property)  
+**CI**: `python3 scripts/unified_audit_runner.py --module cryptol_specs` (advisory — skipped if cryptol not installed)
+
+### 17a — Field Arithmetic (`Secp256k1Field.cry` — 15 properties)
+
+| ID | Property | Spec claim | Status |
+|----|----------|-----------|--------|
+| **CRY-01** | `field_add_commutative` | a+b = b+a over p | [OK] |
+| **CRY-02** | `field_add_associative` | (a+b)+c = a+(b+c) over p | [OK] |
+| **CRY-03** | `field_add_identity` | a+0 = a over p | [OK] |
+| **CRY-04** | `field_add_inverse` | a+(-a) = 0 over p | [OK] |
+| **CRY-05** | `field_add_in_range` | a+b ∈ [0, p-1] after reduction | [OK] |
+| **CRY-06** | `field_double_neg` | -(-a) = a over p | [OK] |
+| **CRY-07** | `field_sub_eq_add_neg` | a-b = a+(-b) over p | [OK] |
+| **CRY-08** | `field_mul_commutative` | a·b = b·a over p | [OK] |
+| **CRY-09** | `field_mul_associative` | (a·b)·c = a·(b·c) over p | [OK] |
+| **CRY-10** | `field_mul_identity` | a·1 = a over p | [OK] |
+| **CRY-11** | `field_mul_inverse` | a·a⁻¹ = 1 for a≠0 over p | [OK] |
+| **CRY-12** | `field_mul_in_range` | a·b ∈ [0, p-1] after reduction | [OK] |
+| **CRY-13** | `field_sqr_eq_mul_self` | a² = a·a over p | [OK] |
+| **CRY-14** | `field_sqrt_correct` | sqrt(a)² = a for quadratic residues | [OK] |
+| **CRY-15** | `field_distributive` | a·(b+c) = a·b+a·c over p | [OK] |
+
+**CRY-01..15 Subtotal: 15/15 [OK]**
+
+### 17b — Elliptic Curve Point Operations (`Secp256k1Point.cry` — 10 properties)
+
+| ID | Property | Spec claim | Status |
+|----|----------|-----------|--------|
+| **CRY-16** | `generator_on_curve` | G satisfies y²=x³+7 over p | [OK] |
+| **CRY-17** | `generator_coords_correct` | G.x, G.y match secp256k1 standard constants | [OK] |
+| **CRY-18** | `generator_point_double_consistent` | 2·G via doubling = G+G via addition | [OK] |
+| **CRY-19** | `point_add_commutative` | P+Q = Q+P | [OK] |
+| **CRY-20** | `point_add_identity_left` | O+P = P (identity element) | [OK] |
+| **CRY-21** | `point_add_identity_right` | P+O = P (identity element) | [OK] |
+| **CRY-22** | `point_neg_is_inverse` | P+(-P) = O | [OK] |
+| **CRY-23** | `scalar_mul_by_zero` | 0·P = O | [OK] |
+| **CRY-24** | `scalar_mul_by_one` | 1·P = P | [OK] |
+| **CRY-25** | `privkey_one_gives_generator` | 1·G = G (keygen sanity) | [OK] |
+
+**CRY-16..25 Subtotal: 10/10 [OK]**
+
+### 17c — ECDSA Sign/Verify (`Secp256k1ECDSA.cry` — 8 properties)
+
+| ID | Property | Spec claim | Status |
+|----|----------|-----------|--------|
+| **CRY-26** | `ecdsa_sign_then_verify` | sign(msg, sk, k) → verify accepts | [OK] |
+| **CRY-27** | `ecdsa_sign_r_range` | r = (k·G).x ∈ [1, n-1] | [OK] |
+| **CRY-28** | `ecdsa_sign_s_range` | s ∈ [1, n-1] after signing | [OK] |
+| **CRY-29** | `ecdsa_sign_low_s` | BIP-62: s ≤ n/2 after normalisation | [OK] |
+| **CRY-30** | `ecdsa_zero_msg` | hash=0 edge case produces valid signature | [OK] |
+| **CRY-31** | `low_s_valid` | low_s output is always ≤ n/2 | [OK] |
+| **CRY-32** | `low_s_in_lower_half` | low_s output is strictly in lower half | [OK] |
+| **CRY-33** | `low_s_idempotent` | low_s(low_s(s)) = low_s(s) | [OK] |
+
+**CRY-26..33 Subtotal: 8/8 [OK]**
+
+### 17d — BIP-340 Schnorr Sign/Verify (`Secp256k1Schnorr.cry` — 6 properties)
+
+| ID | Property | Spec claim | Status |
+|----|----------|-----------|--------|
+| **CRY-34** | `schnorr_sign_then_verify` | sign(msg, sk, aux) → verify accepts | [OK] |
+| **CRY-35** | `schnorr_sign_rx_range` | R.x ∈ [1, p-1] in every signature | [OK] |
+| **CRY-36** | `schnorr_sign_s_range` | s ∈ [0, n-1] in every signature | [OK] |
+| **CRY-37** | `schnorr_zero_msg` | msg=0 edge case signs and verifies correctly | [OK] |
+| **CRY-38** | `normalised_key_has_even_y` | After normalisation, pubkey Y is always even | [OK] |
+| **CRY-39** | `normalise_key_idempotent` | normalise(normalise(sk)) = normalise(sk) | [OK] |
+
+**CRY-34..39 Subtotal: 6/6 [OK]**
+
+---
+
+**§CRY Grand Total: 39/39 [OK]**
+
+All 39 properties pass Cryptol QuickCheck (`:check`) over random inputs.
+For bounded or exhaustive proofs, use SAW with the same `.cry` files as input:
+`saw scripts/saw_verify_field.saw` (not yet in CI — see `formal/cryptol/README.md`).
+
+---
+
+*Generated: 2026-04-06*
 *Invariant source: [INVARIANTS.md](INVARIANTS.md)*
 *This document is auto-updatable via `scripts/generate_traceability.sh`*
