@@ -4,7 +4,7 @@
 import re
 from pathlib import Path
 
-BASE = Path('/home/shrek/Secp256K1/Secp256K1fast/libs/UltrafastSecp256k1')
+BASE = Path(__file__).resolve().parent
 
 
 def read(path):
