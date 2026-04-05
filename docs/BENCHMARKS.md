@@ -316,7 +316,13 @@ On this board, that moved `bench_unified --quick` `scalar_mul_with_plan` from th
 
 GCC 13 cross-compiled binary deployed via SSH to `user@192.168.1.31` (StarFive SiFive U74, riscv64).  
 **Harness:** `bench_unified` — 3 s warmup, 11 passes, IQR trimmed, median  
-**Kernel:** Linux 6.6.20-starfive, 1 core pinned, GCC 13.3.0
+**Kernel:** Linux 6.6.20-starfive, 1 core pinned, GCC 13.3.0  
+**Audit (2026-04-05):** 6 audit/test binaries passed on-device:
+- `test_comprehensive`: 12,023/12,023 ✓  
+- `test_ct_equivalence`: 320/320 ✓  
+- `test_cross_platform_kat`: 29/29 ✓  
+- `test_ct_sidechannel`: 36/36 ✓ (some required multiple RDTSC attempts — expected)  
+- BIP-340 vectors: 27/27 ✓ · BIP-340 strict: 31/31 ✓
 
 Selected results:
 
@@ -754,7 +760,20 @@ binaries so the existing OpenMP-enabled CPU build could run unchanged.
 
 GCC 13 cross-compiled binary pushed via ADB to `YF_022A` (RK3588, aarch64).  
 **Harness:** `bench_unified` — 3 s warmup, 11 passes, IQR trimmed, median  
-**Tests:** 12,023 passed, 0 failed on-device (GCC 13, ARM64)
+**Tests:** 12,023 passed, 0 failed (`test_comprehensive_standalone`, ARM64)  
+**Audit (2026-04-05, fresh rebuild):** all 17 audit/test binaries passed on-device:
+- `test_c_abi_negative`: 164/164 ✓ (was 161/164 with Mar-21 stale binary — stale artefact confirmed not a code bug)
+- `test_differential`: 13,007/13,007 ✓  
+- `test_fiat_crypto_vectors`: 755/755 ✓  
+- `test_carry_propagation`: 253/253 ✓  
+- `test_fault_injection`: 1,110/1,110 ✓  
+- `test_batch_randomness`: 1,022/1,022 ✓  
+- `test_ct_equivalence`: 320/320 ✓  
+- `test_cross_platform_kat`: 29/29 ✓  
+- Wycheproof ECDSA: 89/89 ✓ · Wycheproof ECDH: 36/36 ✓  
+- BIP-32 vectors: 90/90 ✓ · RFC-6979 vectors: 35/35 ✓  
+- BIP-340 vectors: 27/27 ✓ · BIP-340 strict: 31/31 ✓  
+- ECC properties: 89/89 ✓ · Ethereum: 32/32 ✓ · edge cases: 60/60 ✓ · ZK: 24/24 ✓ · wallet: 34/34 ✓
 
 Selected results:
 
