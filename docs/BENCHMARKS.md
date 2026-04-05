@@ -93,6 +93,50 @@ Run after 60-exploit-PoC audit (commit `8b25d420`). No regression detected.
 
 No regressions vs previous rerun (2026-03-17). All 70/70 audit modules pass.
 
+### x86-64 Full Rerun (2026-04-05, post-musig2-bip32 optimization)
+
+MuSig2 key aggregation and BIP-32 HD derivation optimizations committed.  
+**Machine:** Intel Core i5-14400F · Linux · Clang 19.1.7 · TSC 2.501 GHz  
+**Harness:** `bench_unified` — 3 s warmup, 11 passes, IQR trimmed, median  
+**Tests:** 12,023 passed, 0 failed
+
+**Key improvements:**
+
+| Operation | Before | After | Delta |
+|-----------|--------|-------|-------|
+| MuSig2 key_agg (2-of-2) | 46.73 µs | 33.00 µs | **−29.4%** |
+| MuSig2 partial_sign | 12.04 µs | 10.53 µs | **−12.5%** |
+| BIP-32 coin derive (m/84'/0'/0'/0/0) | 157.23 µs | 56.72 µs | **−63.9%** |
+
+Selected full primitives from the rerun:
+
+| Operation | Ultra (ns/op) | libsecp (ns/op) | Ratio |
+|-----------|:---:|:---:|:---:|
+| field_mul | 11.7 | 10.7 | 1.09× |
+| field_inv | 823.3 | 757.4 | 1.09× |
+| scalar_inv (CT) | 890.8 | 1434.4 | **1.61×** |
+| pubkey_create (k·G) | 6,465 | 11,629 | **1.80×** |
+| ecmult (a·P+b·G) | 19,404 | 19,115 | 1.02× |
+| ECDSA sign (fast) | 10,061 | 16,388 | **1.63×** |
+| Schnorr sign (fast) | 6,944 | 12,213 | **1.76×** |
+| CT ECDSA sign | 14,656 | 16,388 | **1.12×** |
+| CT Schnorr sign | 11,249 | 12,213 | **1.09×** |
+| ECDSA verify | 22,023 | 22,255 | 1.01× |
+| Schnorr verify (cached) | 21,021 | 20,892 | 1.01× |
+| ecrecover | 27,431 | 24,021 | 0.88× |
+| compressed serialize | 2.7 | 12.7 | **4.65×** |
+| ECDH | 21,431 | — | — |
+| Taproot output key | 12,064 | — | — |
+| BIP-32 master key (64B) | 1,110 | — | — |
+| BIP-32 coin derive (BTC) | 56,716 | — | — |
+| Silent Payment send | 27,125 | — | — |
+| Silent Payment scan | 38,795 | — | — |
+| MuSig2 key_agg (2-of-2) | 33,001 | — | — |
+| MuSig2 partial_sign | 10,530 | — | — |
+| ct::generator_mul (k·G) | 9,039 | 11,629 | 1.29× |
+
+No regressions vs 2026-03-24 baseline.
+
 ### x86-64 Batch Verify Rerun (2026-03-17)
 
 A retained low-risk x86 CPU improvement was keeping the Schnorr batch pubkey cache
