@@ -9,10 +9,10 @@ Traditional audits produce documents. This system produces **continuous evidence
 | Differentiator | UltrafastSecp256k1 |
 |---------------|---------------------|
 | Audit model | Continuous — every commit, not one-time |
-| Exploit tests | 135 PoC modules, 134 attack vectors, 0 failures |
+| Exploit tests | 157 PoC files, 147 registered modules, 0 failures |
 | Checks per run | ~1,000,000+ assertions |
 | Nightly checks | ~1,300,000+ random differential tests |
-| CI workflows | 31 workflows, 16 platform combinations |
+| CI workflows | 33 workflows, 16 platform combinations |
 | CT verification | 3 formal pipelines (LLVM ct-verif + empirical + Valgrind) |
 | GPU performance | 11.00 M BIP-352 scans/s · 4.88 M ECDSA signs/s |
 | Philosophy | Don't trust — reproduce |
@@ -51,7 +51,7 @@ These top-level differentiators are claim-keyed in the ledger: exploit-audit sur
 | Scalar arithmetic (ℤ_n) | Reduction mod n, overflow, GLV decomposition, negation, edge cases (0, 1, n−1) | 93,215 |
 | Point operations | Infinity handling, Jacobian↔Affine round-trip, scalar multiplication, 100K stress | 116,124 |
 | Constant-time layer | No secret-dependent branches, no secret-dependent memory access, formal CT verification | 120,652 |
-| Exploit PoC tests | 86 dedicated adversarial PoC tests across 14 coverage areas (`audit/test_exploit_*.cpp`) | 86 test files, 0 failures |
+| Exploit PoC tests | 147 dedicated adversarial PoC modules across 14 coverage categories (`audit/test_exploit_*.cpp`) | 157 test files, 0 failures |
 | Fuzz / adversarial | libFuzzer harnesses + 530K deterministic corpus adversarial checks | ~530,000+ |
 | Wycheproof vectors | Google's cryptographic test vectors for ECDSA and ECDH | Hundreds of vectors |
 | Independent reference linkage | Cross-validates field arithmetic against independent schoolbook oracle + golden vectors | Full suite |
@@ -60,11 +60,11 @@ These top-level differentiators are claim-keyed in the ledger: exploit-audit sur
 | ABI gate | FFI round-trip stability, C ABI regression detection | Full suite |
 | Performance regression | Automated micro-benchmark gate — fails CI if throughput regresses | Every push |
 | **Nightly differential** | Random round-trip differential tests against reference implementations | **~1,300,000+/night** |
-| **Total (audit runner)** | **unified_audit_runner** across 55 modules plus standalone audit surfaces | **~1,000,000+** |
-| **Total (exploit PoC tests)** | **86 exploit-style PoC tests** across 14 coverage areas, all in `audit/test_exploit_*.cpp` | **86 tests, 0 failures** |
+| **Total (audit runner)** | **unified_audit_runner** across 73 non-exploit modules + 147 exploit-PoC modules (220 total) | **~1,000,000+** |
+| **Total (exploit PoC tests)** | **147 exploit-style PoC modules** across 14 coverage categories, all in `audit/test_exploit_*.cpp` | **147 modules, 0 failures** |
 
-All 55 audit modules across all tested platforms return **AUDIT-READY**. Zero failures.
-All 86 exploit PoC tests pass. Zero failures across all 14 coverage areas.
+All 73 non-exploit audit modules across all tested platforms return **AUDIT-READY**. Zero failures.
+All 147 exploit PoC modules pass. Zero failures across all 14 coverage categories.
 
 ### Self-Audit Documents
 
@@ -85,10 +85,10 @@ All 86 exploit PoC tests pass. Zero failures across all 14 coverage areas.
 
 ---
 
-## 2. CI/CD Pipeline — 31 Automated Workflows
+## 2. CI/CD Pipeline — 33 Automated Workflows
 
 The continuous integration pipeline is not a basic build-and-test gate.
-It is a multi-layer quality enforcement system with 25 GitHub Actions workflows
+It is a multi-layer quality enforcement system with 33 GitHub Actions workflows
 covering security, correctness, performance, supply chain, and formal analysis.
 
 It is also only one part of the assurance model. The repository is routinely reviewed
@@ -105,11 +105,12 @@ reproducible audit framework.
 | `ci.yml` | Core build + full test suite across 17 configurations × 7 architectures × 5 OSes | Every push / PR |
 | `preflight.yml` | Fast pre-merge smoke check — blocks merge on basic failures | Every PR |
 | `nightly.yml` | Nightly stress: 1.3M+ differential checks, extended fuzz, full sanitizer run | Nightly |
-| `security-audit.yml` | Runs the full `unified_audit_runner` (55 modules, ~1M assertions) plus sanitizer and warning gates | Every push |
+| `security-audit.yml` | Runs the full `unified_audit_runner` (73 non-exploit + 147 exploit-PoC modules, ~1M assertions) plus sanitizer and warning gates | Every push |
 | `audit-report.yml` | Generates and archives structured audit report artifacts | On release / manual |
 | `ct-arm64.yml` | Constant-time verification on native ARM64 hardware | Every push |
 | `ct-verif.yml` | Formal constant-time verification pass | Every push |
 | `valgrind-ct.yml` | Valgrind memcheck + CT analysis on Linux x64 | Every push |
+| `compute-sanitizer.yml` | NVIDIA compute-sanitizer GPU memory and race checks | Every push |
 | `bench-regression.yml` | Performance regression gate — CI fails if throughput drops | Every push |
 | `benchmark.yml` | Full benchmark suite — results published to live dashboard | On push to dev/main |
 | `codeql.yml` | GitHub CodeQL static analysis (C++) | Every push |
@@ -121,7 +122,7 @@ reproducible audit framework.
 | `bindings.yml` | Tests all 12 language bindings (Python, Rust, Node, Go, C#, Java, Swift, ...) | Every push |
 | `dependency-review.yml` | Scans dependency changes for known vulnerabilities | Every PR |
 | `scorecard.yml` | OpenSSF Scorecard supply-chain security scan | Weekly |
-| `valgrind-ct.yml` | Valgrind constant-time path analysis | Every push |
+| `klee.yml` | KLEE symbolic execution for reachability and path coverage | Scheduled |
 | `docs.yml` | Docs build and deployment validation | Every push |
 | `packaging.yml` | NuGet, vcpkg, Conan, Swift Package, CocoaPods packaging validation | On release |
 | `release.yml` | Full release pipeline: build, sign, attest, publish | On tag |
