@@ -2445,3 +2445,105 @@ if(Python3_FOUND)
 else()
     message(STATUS "  Python3 not found — skipping Python audit scripts")
 endif()
+
+# ===========================================================================
+# LibFuzzer harnesses (parser boundary + AEAD + BIP-32 path fuzzing)
+# ===========================================================================
+#
+# These harnesses expose LLVMFuzzerTestOneInput() for use with LibFuzzer /
+# OSS-Fuzz.  They also build in standalone mode (SECP256K1_STANDALONE_FUZZ)
+# for deterministic CI runs without the LibFuzzer runtime.
+#
+# LibFuzzer mode (requires Clang + -fsanitize=fuzzer):
+#   cmake -S . -B build-fuzz -DSECP256K1_BUILD_LIBFUZZER=ON \
+#         -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+#         -DCMAKE_CXX_FLAGS="-fsanitize=fuzzer,address,undefined"
+#   cmake --build build-fuzz --target fuzz_der_parse fuzz_pubkey_parse \
+#         fuzz_schnorr_verify fuzz_ecdsa_verify fuzz_bip32_path fuzz_bip324_frame
+#   ./build-fuzz/audit/fuzz_der_parse  corpus/
+#
+# Standalone / deterministic CTest mode (no LibFuzzer required):
+#   cmake -S . -B build -DSECP256K1_BUILD_LIBFUZZER_STANDALONE=ON
+#   ctest -R "^fuzz_"
+#
+# ===========================================================================
+
+option(SECP256K1_BUILD_LIBFUZZER
+       "Build LibFuzzer harnesses (requires clang -fsanitize=fuzzer,address)" OFF)
+
+option(SECP256K1_BUILD_LIBFUZZER_STANDALONE
+       "Build LibFuzzer harnesses in standalone deterministc mode (no fuzzer runtime)" OFF)
+
+# Helper: list of all LibFuzzer harness sources
+set(_FUZZ_HARNESSES
+    fuzz_der_parse
+    fuzz_pubkey_parse
+    fuzz_schnorr_verify
+    fuzz_ecdsa_verify
+    fuzz_bip32_path
+    fuzz_bip324_frame
+)
+
+# Helper macro: shared include/link setup for a fuzz harness target
+macro(fuzz_target_defaults target_name)
+    target_link_libraries(${target_name} PRIVATE ufsecp_static fastsecp256k1)
+    target_include_directories(${target_name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_BINARY_DIR}/include/ufsecp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../cpu/include
+    )
+    target_compile_definitions(${target_name} PRIVATE "UFSECP_API=")
+    if(MSVC OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND WIN32))
+        target_link_options(${target_name} PRIVATE "LINKER:/STACK:8388608")
+    endif()
+    if(SECP256K1_BUILD_CUDA)
+        set_target_properties(${target_name} PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE)
+    endif()
+endmacro()
+
+# ---------------------------------------------------------------------------
+# A) LibFuzzer mode (-fsanitize=fuzzer) — fuzz binary only, no CTest entry
+# ---------------------------------------------------------------------------
+if(SECP256K1_BUILD_LIBFUZZER AND TARGET ufsecp_static)
+
+    # Verify the compiler supports -fsanitize=fuzzer
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-fsanitize=fuzzer" _COMPILER_HAS_FUZZER)
+    if(NOT _COMPILER_HAS_FUZZER)
+        message(WARNING "  -fsanitize=fuzzer not supported by ${CMAKE_CXX_COMPILER} — "
+                        "LibFuzzer harnesses will not be built.  Use Clang.")
+    else()
+        foreach(_harness ${_FUZZ_HARNESSES})
+            add_executable(${_harness} ${_harness}.cpp)
+            fuzz_target_defaults(${_harness})
+            # Link against LibFuzzer; do NOT register a CTest entry (fuzzer runs
+            # interactively against a corpus directory, not with a fixed timeout).
+            target_compile_options(${_harness} PRIVATE -fsanitize=fuzzer,address,undefined)
+            target_link_options(${_harness}    PRIVATE -fsanitize=fuzzer,address,undefined)
+        endforeach()
+        message(STATUS "  LibFuzzer harnesses: ${_FUZZ_HARNESSES}")
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# B) Standalone / deterministic mode — registered as CTest targets
+# ---------------------------------------------------------------------------
+if(SECP256K1_BUILD_LIBFUZZER_STANDALONE AND TARGET ufsecp_static)
+
+    foreach(_harness ${_FUZZ_HARNESSES})
+        set(_target "${_harness}_standalone")
+        add_executable(${_target} ${_harness}.cpp)
+        fuzz_target_defaults(${_target})
+        target_compile_definitions(${_target} PRIVATE
+            SECP256K1_STANDALONE_FUZZ
+            LIBFUZZER_STANDALONE
+        )
+        add_test(NAME ${_harness} COMMAND ${_target})
+        set_tests_properties(${_harness} PROPERTIES
+            TIMEOUT 300
+            LABELS "audit;fuzz;libfuzzer_standalone"
+        )
+    endforeach()
+
+    message(STATUS "  LibFuzzer standalone harnesses: ${_FUZZ_HARNESSES} (${CMAKE_CURRENT_BINARY_DIR})")
+endif()

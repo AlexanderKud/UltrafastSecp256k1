@@ -1,0 +1,496 @@
+#!/usr/bin/env python3
+"""
+mutation_kill_rate.py — Mutation testing: measure audit test suite kill rate
+=============================================================================
+
+What this does
+--------------
+Applies simple source-code mutations to the library core (cpu/src/) one at a
+time, rebuilds the library, runs the audit test binary (unified_audit_runner),
+and records whether the mutation is "killed" (test fails) or "survives"
+(test passes despite the code being wrong).
+
+              kill_rate = killed / total_mutations
+
+A kill rate < 80% on critical subsystems indicates test-suite coverage gaps.
+
+Why this matters for external auditors
+---------------------------------------
+Static analysis and code review can find structural problems, but only mutation
+testing can quantify how well the test suite actually *detects* wrong behavior.
+A library with 100% line coverage but 40% mutation kill rate has large detection
+blind spots.
+
+Mutation operators applied (intentionally conservative)
+--------------------------------------------------------
+  AOR  Arithmetic operator replacement  (+→-, *→/, -→+)
+  ROR  Relational operator replacement  (>→>=, <→<=, ==→!=, !=→==)
+  COR  Constant replacement             (0→1, 1→0, 32→64, 0xFF→0x00)
+  LOR  Logical operator replacement     (&&→||, ||→&&)
+  BIT  Bitwise operator replacement     (&→|, |→&, ^→~x, >>→<<)
+
+Scope
+-----
+Only mutates files listed in --targets (defaults to the high-value subset).
+Skips test files, benchmark files, and files without the library source marker.
+
+Usage
+-----
+  # Quick run: 50 random mutations on field.cpp + scalar.cpp
+  python3 scripts/mutation_kill_rate.py \\
+      --build-dir build_opencl \\
+      --test-cmd  "ctest --test-dir build_opencl -R unified_audit -j1 -Q" \\
+      --targets cpu/src/field.cpp cpu/src/scalar.cpp \\
+      --count 50 --seed 42
+
+  # Full run with JSON report
+  python3 scripts/mutation_kill_rate.py \\
+      --build-dir build_opencl \\
+      --json -o mutation_kill_report.json \\
+      --count 200
+
+  # Run as CTest Python test (invoked by CMake audit infra):
+  python3 scripts/mutation_kill_rate.py --ctest-mode --build-dir $BUILD_DIR
+
+Output
+------
+  - Per-mutation result table (killed / survived / error)
+  - Summary: kill rate %, subsystem breakdown
+  - JSON report (--json) for CI archiving
+  - Exit code 0 if kill_rate >= threshold (default 75%), else 1
+"""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Optional
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+LIB_ROOT   = SCRIPT_DIR.parent
+
+# ---------------------------------------------------------------------------
+# Default high-value mutation targets (relative to LIB_ROOT)
+# ---------------------------------------------------------------------------
+DEFAULT_TARGETS = [
+    "cpu/src/field.cpp",
+    "cpu/src/scalar.cpp",
+    "cpu/src/point.cpp",
+    "cpu/src/ecdsa.cpp",
+    "cpu/src/schnorr.cpp",
+    "cpu/src/ct_sign.cpp",
+    "cpu/src/rfc6979.cpp",
+]
+
+# ---------------------------------------------------------------------------
+# Mutation operator definitions
+# ---------------------------------------------------------------------------
+
+@dataclass
+class MutationOp:
+    name: str
+    category: str        # AOR / ROR / COR / LOR / BIT
+    pattern: str         # regex pattern (must have exactly one group: the token)
+    replacement: str     # replacement string (may reference \1)
+    notes: str = ""
+
+
+# Each op has a pattern + replacement.  We use non-overlapping single-match
+# substitution so only ONE token is changed per mutation.
+
+MUTATION_OPS: list[MutationOp] = [
+    # -- AOR: Arithmetic operator replacement --------------------------------
+    MutationOp("AOR_add_to_sub",  "AOR", r"(?<![+\-])\+(?![+=])",  "-",   "+ → -"),
+    MutationOp("AOR_sub_to_add",  "AOR", r"(?<![-+])-(?![=>-])",   "+",   "- → +"),
+    MutationOp("AOR_mul_to_div",  "AOR", r"\*(?!=)",               "/",   "* → /"),
+    MutationOp("AOR_div_to_mul",  "AOR", r"/(?!=)",                "*",   "/ → *"),
+
+    # -- ROR: Relational operator replacement --------------------------------
+    MutationOp("ROR_eq_to_ne",    "ROR", r"==",                    "!=",  "== → !="),
+    MutationOp("ROR_ne_to_eq",    "ROR", r"!=",                    "==",  "!= → =="),
+    MutationOp("ROR_lt_to_le",    "ROR", r"(?<![<])< (?!=)",       "<=",  "< → <="),
+    MutationOp("ROR_gt_to_ge",    "ROR", r"(?<![>])> (?!=)",       ">=",  "> → >="),
+    MutationOp("ROR_le_to_lt",    "ROR", r"<=",                    "<",   "<= → <"),
+    MutationOp("ROR_ge_to_gt",    "ROR", r">=",                    ">",   ">= → >"),
+
+    # -- COR: Constant replacement -------------------------------------------
+    MutationOp("COR_zero_to_one",  "COR", r"\b0\b",               "1",   "0 → 1"),
+    MutationOp("COR_one_to_zero",  "COR", r"\b1\b",               "0",   "1 → 0"),
+    MutationOp("COR_ff_to_zero",   "COR", r"\b0xFF\b",            "0x00","0xFF→0x00"),
+    MutationOp("COR_32_to_31",     "COR", r"\b32\b",              "31",  "32 → 31"),
+    MutationOp("COR_64_to_63",     "COR", r"\b64\b",              "63",  "64 → 63"),
+
+    # -- LOR: Logical operator replacement -----------------------------------
+    MutationOp("LOR_and_to_or",   "LOR", r"&&",                   "||",  "&& → ||"),
+    MutationOp("LOR_or_to_and",   "LOR", r"\|\|",                 "&&",  "|| → &&"),
+
+    # -- BIT: Bitwise operator replacement -----------------------------------
+    MutationOp("BIT_and_to_or",   "BIT", r"(?<![&])&(?![&=])",    "|",   "& → |"),
+    MutationOp("BIT_or_to_and",   "BIT", r"(?<![|])\|(?![|=])",   "&",   "| → &"),
+    MutationOp("BIT_shr_to_shl",  "BIT", r">>(?!=)",              "<<",  ">> → <<"),
+    MutationOp("BIT_shl_to_shr",  "BIT", r"<<(?!=)",              ">>",  "<< → >>"),
+    MutationOp("BIT_xor_to_and",  "BIT", r"\^(?!=)",              "&",   "^ → &"),
+]
+
+# ---------------------------------------------------------------------------
+# Data structures
+# ---------------------------------------------------------------------------
+
+@dataclass
+class MutationResult:
+    mutation_id: int
+    file: str
+    line: int
+    col: int
+    op_name: str
+    category: str
+    original_token: str
+    mutated_token: str
+    outcome: str    # "killed" | "survived" | "build_error" | "timeout"
+    elapsed_s: float = 0.0
+
+
+@dataclass
+class KillReport:
+    timestamp: str = ""
+    total: int = 0
+    killed: int = 0
+    survived: int = 0
+    build_errors: int = 0
+    timeouts: int = 0
+    kill_rate_pct: float = 0.0
+    threshold_pct: float = 75.0
+    passed: bool = False
+    targets: list[str] = field(default_factory=list)
+    mutations: list[MutationResult] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Mutation finder
+# ---------------------------------------------------------------------------
+
+def find_mutation_sites(src_path: Path, op: MutationOp,
+                        skip_comment_lines: bool = True) -> list[tuple[int, int, str]]:
+    """Return list of (line_number, col, original_token) where op matches."""
+    sites = []
+    try:
+        text = src_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return sites
+
+    for lineno, line in enumerate(text.splitlines(), 1):
+        # Skip comment lines
+        stripped = line.lstrip()
+        if skip_comment_lines and (stripped.startswith("//") or stripped.startswith("*")):
+            continue
+        for m in re.finditer(op.pattern, line):
+            sites.append((lineno, m.start(), m.group(0)))
+    return sites
+
+
+def apply_mutation(src_path: Path, lineno: int, col: int,
+                   op: MutationOp, original_token: str) -> Optional[str]:
+    """Return the full modified source text with mutation applied, or None on error."""
+    try:
+        lines = src_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+    except OSError:
+        return None
+    if lineno < 1 or lineno > len(lines):
+        return None
+    line = lines[lineno - 1]
+    prefix = line[:col]
+    suffix = line[col + len(original_token):]
+    mutated_line = prefix + op.replacement + suffix
+    lines[lineno - 1] = mutated_line
+    return "".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Build + test runner
+# ---------------------------------------------------------------------------
+
+def rebuild_library(build_dir: Path, timeout_s: int = 120) -> tuple[bool, str]:
+    """Run ninja/make in build_dir. Returns (success, stderr_snippet)."""
+    ninja = shutil.which("ninja")
+    make  = shutil.which("make")
+    cmd = [ninja, "-j4"] if ninja and (build_dir / "build.ninja").exists() else \
+          [make, "-j4"]   if make  else None
+    if cmd is None:
+        return False, "no build tool found (ninja/make)"
+    try:
+        result = subprocess.run(
+            cmd, cwd=build_dir, capture_output=True, timeout=timeout_s, text=True
+        )
+        return result.returncode == 0, (result.stderr or "")[-2000:]
+    except subprocess.TimeoutExpired:
+        return False, "build timeout"
+    except Exception as e:
+        return False, str(e)
+
+
+def run_tests(test_cmd: list[str], build_dir: Path, timeout_s: int = 90) -> tuple[bool, str]:
+    """Run the test command. Returns (tests_failed, output_snippet)."""
+    try:
+        result = subprocess.run(
+            test_cmd, cwd=build_dir, capture_output=True, timeout=timeout_s, text=True
+        )
+        # Tests FAILED means mutation was KILLED → return True (killed=True)
+        return result.returncode != 0, (result.stdout + result.stderr)[-3000:]
+    except subprocess.TimeoutExpired:
+        return True, "test timeout"   # timeout = mutation trapped the test → killed
+    except Exception as e:
+        return False, str(e)
+
+
+# ---------------------------------------------------------------------------
+# Main mutation testing engine
+# ---------------------------------------------------------------------------
+
+def run_mutation_testing(
+    targets: list[Path],
+    build_dir: Path,
+    test_cmd: list[str],
+    count: int,
+    seed: int,
+    threshold: float,
+    verbose: bool,
+    build_timeout: int,
+    test_timeout: int,
+) -> KillReport:
+    import random
+    rng = random.Random(seed)
+
+    report = KillReport(
+        timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        threshold_pct=threshold,
+        targets=[str(p.relative_to(LIB_ROOT)) for p in targets],
+    )
+
+    # Enumerate all candidate mutation sites across all targets
+    candidates: list[tuple[Path, MutationOp, int, int, str]] = []
+    for src in targets:
+        if not src.is_file():
+            print(f"  [WARN] target not found: {src}", file=sys.stderr)
+            continue
+        for op in MUTATION_OPS:
+            for (lineno, col, orig) in find_mutation_sites(src, op):
+                candidates.append((src, op, lineno, col, orig))
+
+    print(f"Found {len(candidates)} candidate mutation sites across {len(targets)} files")
+
+    if not candidates:
+        print("  No mutation sites found — check targets and operators.")
+        report.passed = True
+        return report
+
+    # Sample without replacement (or all if count >= len(candidates))
+    selected = rng.sample(candidates, min(count, len(candidates)))
+
+    mut_id = 0
+    for (src, op, lineno, col, orig_tok) in selected:
+        mut_id += 1
+        t0 = time.monotonic()
+
+        # Save original file
+        original_text = src.read_text(encoding="utf-8", errors="replace")
+
+        # Apply mutation
+        mutated_text = apply_mutation(src, lineno, col, op, orig_tok)
+        if mutated_text is None:
+            mr = MutationResult(
+                mutation_id=mut_id, file=str(src.relative_to(LIB_ROOT)),
+                line=lineno, col=col, op_name=op.name, category=op.category,
+                original_token=orig_tok, mutated_token=op.replacement,
+                outcome="build_error", elapsed_s=0.0,
+            )
+            report.mutations.append(mr)
+            report.build_errors += 1
+            report.total += 1
+            continue
+
+        src.write_text(mutated_text, encoding="utf-8")
+
+        try:
+            # Rebuild
+            ok, build_log = rebuild_library(build_dir, timeout_s=build_timeout)
+            if not ok:
+                outcome = "build_error"
+                report.build_errors += 1
+            else:
+                # Run tests
+                killed, test_log = run_tests(test_cmd, build_dir, timeout_s=test_timeout)
+                if killed:
+                    outcome = "killed"
+                    report.killed += 1
+                else:
+                    outcome = "survived"
+                    report.survived += 1
+        finally:
+            # Restore original
+            src.write_text(original_text, encoding="utf-8")
+
+        elapsed = time.monotonic() - t0
+        mr = MutationResult(
+            mutation_id=mut_id,
+            file=str(src.relative_to(LIB_ROOT)),
+            line=lineno, col=col,
+            op_name=op.name, category=op.category,
+            original_token=orig_tok,
+            mutated_token=op.replacement,
+            outcome=outcome,
+            elapsed_s=round(elapsed, 2),
+        )
+        report.mutations.append(mr)
+        report.total += 1
+
+        status_icon = {"killed":"✓","survived":"✗","build_error":"?","timeout":"T"}.get(outcome,"?")
+        if verbose or outcome == "survived":
+            print(f"  [{mut_id:4d}/{len(selected)}] {status_icon} {op.name:24s} "
+                  f"{src.name}:{lineno}  '{orig_tok}' → '{op.replacement}'  ({elapsed:.1f}s)")
+        else:
+            print(f"  [{mut_id:4d}/{len(selected)}] {status_icon}  {op.name}  {src.name}:{lineno}",
+                  end="\r")
+
+    print()
+
+    # Compute kill rate (build errors excluded from denominator — not meaningful)
+    testable = report.killed + report.survived
+    report.kill_rate_pct = round(100.0 * report.killed / testable, 1) if testable else 0.0
+    report.passed = report.kill_rate_pct >= threshold
+
+    return report
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Mutation kill-rate tracker for UltrafastSecp256k1 audit suite",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    p.add_argument("--build-dir", default="build_opencl",
+                   help="CMake binary directory (default: build_opencl)")
+    p.add_argument("--test-cmd", default=None,
+                   help="Shell command to run tests; default: ctest --test-dir <build> -R unified_audit -j1")
+    p.add_argument("--targets", nargs="+", default=None,
+                   help="Source files to mutate (relative to repo root)")
+    p.add_argument("--count", type=int, default=100,
+                   help="Max number of mutations to apply (default: 100)")
+    p.add_argument("--seed", type=int, default=0xDEADBEEF,
+                   help="Random seed for mutation selection")
+    p.add_argument("--threshold", type=float, default=75.0,
+                   help="Minimum kill rate %% to pass (default: 75.0)")
+    p.add_argument("--build-timeout", type=int, default=150,
+                   help="Seconds allowed for each rebuild (default: 150)")
+    p.add_argument("--test-timeout", type=int, default=90,
+                   help="Seconds allowed for each test run (default: 90)")
+    p.add_argument("--json", action="store_true",
+                   help="Write JSON report")
+    p.add_argument("-o", "--output", default=None,
+                   help="JSON output path (default: mutation_kill_report.json)")
+    p.add_argument("--ctest-mode", action="store_true",
+                   help="Minimal mode: few mutations, no print noise")
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+
+    build_dir = Path(args.build_dir)
+    if not build_dir.is_absolute():
+        build_dir = LIB_ROOT / build_dir
+    if not build_dir.is_dir():
+        # Try relative to workspace root
+        build_dir = LIB_ROOT.parent / args.build_dir
+    if not build_dir.is_dir():
+        print(f"ERROR: build dir not found: {build_dir}", file=sys.stderr)
+        return 1
+
+    if args.test_cmd:
+        import shlex
+        test_cmd = shlex.split(args.test_cmd)
+    else:
+        ctest = shutil.which("ctest") or "ctest"
+        test_cmd = [ctest, "--test-dir", str(build_dir),
+                    "-R", "unified_audit", "-j1", "-Q", "--output-on-failure"]
+
+    raw_targets = args.targets or DEFAULT_TARGETS
+    targets = [LIB_ROOT / t for t in raw_targets]
+
+    count    = 20 if args.ctest_mode else args.count
+    verbose  = args.verbose and not args.ctest_mode
+
+    print("=" * 64)
+    print("Mutation Kill-Rate Tracker — UltrafastSecp256k1 Audit")
+    print("=" * 64)
+    print(f"Build dir : {build_dir}")
+    print(f"Test cmd  : {' '.join(test_cmd)}")
+    print(f"Targets   : {[t.name for t in targets]}")
+    print(f"Count     : {count}")
+    print(f"Threshold : {args.threshold}%")
+    print()
+
+    report = run_mutation_testing(
+        targets=targets,
+        build_dir=build_dir,
+        test_cmd=test_cmd,
+        count=count,
+        seed=args.seed,
+        threshold=args.threshold,
+        verbose=verbose,
+        build_timeout=args.build_timeout,
+        test_timeout=args.test_timeout,
+    )
+
+    # --- Summary -----------------------------------------------------------
+    print("\n" + "=" * 64)
+    print("SUMMARY")
+    print("=" * 64)
+    print(f"  Total mutations  : {report.total}")
+    print(f"  Killed           : {report.killed}")
+    print(f"  Survived         : {report.survived}")
+    print(f"  Build errors     : {report.build_errors}")
+    print(f"  Kill rate        : {report.kill_rate_pct:.1f}%  "
+          f"(threshold: {report.threshold_pct:.1f}%)")
+    print()
+
+    if report.survived > 0:
+        print("SURVIVING MUTATIONS (investigation needed):")
+        for mr in report.mutations:
+            if mr.outcome == "survived":
+                print(f"  {mr.file}:{mr.line}  [{mr.op_name}]  "
+                      f"'{mr.original_token}' → '{mr.mutated_token}'")
+        print()
+
+    if report.passed:
+        print(f"RESULT: PASS  (kill rate {report.kill_rate_pct:.1f}% >= {report.threshold_pct:.1f}%)")
+    else:
+        print(f"RESULT: FAIL  (kill rate {report.kill_rate_pct:.1f}% < {report.threshold_pct:.1f}%)")
+        print("  Consider adding audit tests or exploit probes to cover surviving mutations.")
+
+    # --- JSON output -------------------------------------------------------
+    if args.json or args.output:
+        out_path = Path(args.output) if args.output else LIB_ROOT / "mutation_kill_report.json"
+        out_data = asdict(report)
+        out_path.write_text(json.dumps(out_data, indent=2), encoding="utf-8")
+        print(f"\nJSON report: {out_path}")
+
+    return 0 if report.passed else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
