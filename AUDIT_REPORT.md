@@ -45,7 +45,7 @@
 
 > This is a historical baseline report (v3.9.0, 2026-02-11). The audit system has grown
 > significantly since then. See [AUDIT_COVERAGE.md](AUDIT_COVERAGE.md) for the current state:
-> 56 modules, ~1,000,000+ checks, 135 exploit PoC tests, 0 failures.
+> 58 modules, ~1,000,000+ checks, 157 exploit PoC tests, 0 failures.
 
 ### What this report IS
 
@@ -64,8 +64,8 @@ PRNG seeds, and exact check counts are preserved for independent reproduction.
 | Metric | v3.9.0 (this report) | Current |
 |--------|---------------------|---------|
 | Total checks | 641,194 | ~1,000,000+ |
-| Audit modules | 8 suites | 56 modules |
-| Exploit PoC tests | — | 135 tests, 134 attack vectors |
+| Audit modules | 8 suites | 58 modules |
+| Exploit PoC tests | — | 157 tests, 157 attack vectors |
 | Failures | 0 | 0 |
 | Verdict | ALL PASSED | AUDIT-READY |
 
