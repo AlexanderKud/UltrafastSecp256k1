@@ -416,8 +416,10 @@ Scalar rfc6979_nonce_hedged(const Scalar& private_key,
         hmac.compute_short(V, 32, V);
         std::array<uint8_t, 32> t;
         std::memcpy(t.data(), V, 32);
-        auto candidate = Scalar::from_bytes(t);
-        if (!candidate.is_zero()) {
+        // RFC 6979 §3.2(h): reject k == 0 or k >= n (no implicit mod-n reduction).
+        // Use parse_bytes_strict_nonzero, matching the standard nonce path above.
+        Scalar candidate;
+        if (Scalar::parse_bytes_strict_nonzero(t.data(), candidate)) {
             secure_erase(V, sizeof(V));
             secure_erase(K, sizeof(K));
             secure_erase(x_bytes.data(), x_bytes.size());
