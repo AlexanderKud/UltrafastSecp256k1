@@ -360,9 +360,9 @@ static void test_pubkey_adversarial(ufsecp_ctx* ctx) {
     uint8_t x_zero[33] = {0x02};
     {
         ufsecp_error_t const rc = ufsecp_pubkey_parse(ctx, x_zero, 33, out33);
-        // x=0 is a valid curve point, parser may accept; just verify no crash
-        (void)rc;
-        CHECK(true, "x=0 no crash");
+        uint8_t canonical33[33] = {};
+        CHECK(rc != UFSECP_OK || ufsecp_pubkey_parse(ctx, out33, 33, canonical33) == UFSECP_OK,
+              "x=0 accepted only as canonical compressed pubkey");
     }
 
     // x = p (field prime): field reduction maps x to 0, same as above.
@@ -378,8 +378,9 @@ static void test_pubkey_adversarial(ufsecp_ctx* ctx) {
     std::memcpy(x_eq_p + 1, p_bytes, 32);
     {
         ufsecp_error_t const rc = ufsecp_pubkey_parse(ctx, x_eq_p, 33, out33);
-        (void)rc;
-        CHECK(true, "x=p no crash");
+        uint8_t canonical33[33] = {};
+        CHECK(rc != UFSECP_OK || ufsecp_pubkey_parse(ctx, out33, 33, canonical33) == UFSECP_OK,
+              "x=p accepted only as canonical compressed pubkey");
     }
 
     // x > p (all 0xFF): field reduction yields x mod p, may land on valid point.
@@ -388,8 +389,9 @@ static void test_pubkey_adversarial(ufsecp_ctx* ctx) {
     std::memset(x_gt_p + 1, 0xFF, 32);
     {
         ufsecp_error_t const rc = ufsecp_pubkey_parse(ctx, x_gt_p, 33, out33);
-        (void)rc;
-        CHECK(true, "x>p no crash");
+        uint8_t canonical33[33] = {};
+        CHECK(rc != UFSECP_OK || ufsecp_pubkey_parse(ctx, out33, 33, canonical33) == UFSECP_OK,
+              "x>p accepted only as canonical compressed pubkey");
     }
 
     std::printf("    %d checks OK\n\n", g_pass);

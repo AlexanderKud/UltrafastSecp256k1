@@ -40,7 +40,7 @@ static int g_pass = 0, g_fail = 0;
 
 static ufsecp_ctx* make_ctx() {
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+        CHECK((ufsecp_ctx_create(&ctx)) == UFSECP_OK, "ctx_create");
     return ctx;
 }
 
@@ -61,7 +61,7 @@ static const uint8_t TEST_PRIVKEY2[32] = {
 };
 
 static void get_pubkey(ufsecp_ctx* ctx, const uint8_t privkey[32], uint8_t pubkey33[33]) {
-    ufsecp_pubkey_create(ctx, privkey, pubkey33);
+    CHECK((ufsecp_pubkey_create(ctx, privkey, pubkey33)) == UFSECP_OK, "pubkey_create");
 }
 
 // Create a valid ECIES envelope for subsequent tamper tests
@@ -425,14 +425,11 @@ static void test_rng_fail_closed(ufsecp_ctx* ctx) {
     int status = 0;
     waitpid(pid, &status, 0);
 
-    if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) {
-        CHECK(true, "RNG failure causes abort (fail-closed)");
-    } else if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-        CHECK(false, "RNG failure was silently swallowed (NOT fail-closed!)");
-    } else {
-        // SIGKILL, SIGSYS, or non-zero exit also means fail-closed behavior
-        CHECK(true, "RNG failure caused process termination (fail-closed)");
-    }
+    bool const fail_closed =
+        (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) ||
+        WIFSIGNALED(status) ||
+        (WIFEXITED(status) && WEXITSTATUS(status) != 0);
+    CHECK(fail_closed, "RNG failure caused process termination (fail-closed)");
 }
 #endif // __linux__ && __x86_64__
 

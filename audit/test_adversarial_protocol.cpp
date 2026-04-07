@@ -71,15 +71,15 @@ static void test_musig2_nonce_reuse() {
     (void)std::printf("  [A.1] MuSig2: nonce reuse detection\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32], priv2[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
     hex_to_bytes(PRIVKEY2_HEX, priv2, 32);
 
     uint8_t xonly1[32], xonly2[32];
-    ufsecp_pubkey_xonly(ctx, priv1, xonly1);
-    ufsecp_pubkey_xonly(ctx, priv2, xonly2);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv1, xonly1), "pubkey_xonly");
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv2, xonly2), "pubkey_xonly");
 
     uint8_t pubkeys[64];
     std::memcpy(pubkeys, xonly1, 32);
@@ -130,7 +130,7 @@ static void test_hostile_bip324_lengths() {
     (void)std::printf("  [G.22] FFI hostile: BIP324 payload lengths\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     ufsecp_bip324_session* initiator = nullptr;
     ufsecp_bip324_session* responder = nullptr;
@@ -185,14 +185,14 @@ static void test_musig2_partial_sig_replay() {
     (void)std::printf("  [A.2] MuSig2: partial sig cross-session replay\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32], priv2[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
     hex_to_bytes(PRIVKEY2_HEX, priv2, 32);
     uint8_t xonly1[32], xonly2[32];
-    ufsecp_pubkey_xonly(ctx, priv1, xonly1);
-    ufsecp_pubkey_xonly(ctx, priv2, xonly2);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv1, xonly1), "pubkey_xonly");
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv2, xonly2), "pubkey_xonly");
 
     uint8_t pubkeys[64];
     std::memcpy(pubkeys, xonly1, 32);
@@ -270,7 +270,7 @@ static void test_musig2_hostile_args() {
     (void)std::printf("  [A.3] MuSig2: hostile null/junk arguments\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[256] = {};
     uint8_t keyagg[UFSECP_MUSIG2_KEYAGG_LEN] = {};
@@ -382,7 +382,7 @@ static void test_musig2_hostile_args() {
         (void)std::printf("  [A.3c] MuSig2: partial_sig_agg rejects arity mismatch\n");
 
         ufsecp_ctx* ctx = nullptr;
-        ufsecp_ctx_create(&ctx);
+        CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
         uint8_t priv1[32], priv2[32];
         hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
@@ -460,7 +460,7 @@ static void test_musig2_keyagg_participant_overflow() {
     (void)std::printf("  [A.3b] MuSig2: keyagg participant overflow\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32], priv2[32], priv3[32], priv4[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
@@ -493,12 +493,12 @@ static void test_musig2_rogue_key() {
     (void)std::printf("  [A.4] MuSig2: rogue-key / malformed participant\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
     uint8_t xonly1[32];
-    ufsecp_pubkey_xonly(ctx, priv1, xonly1);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv1, xonly1), "pubkey_xonly");
 
     uint8_t keyagg[UFSECP_MUSIG2_KEYAGG_LEN], agg_pub[32];
 
@@ -510,11 +510,12 @@ static void test_musig2_rogue_key() {
     std::memcpy(pubkeys_rogue + 32, rogue, 32);
     ufsecp_error_t rc = ufsecp_musig2_key_agg(ctx, pubkeys_rogue, 2, keyagg, agg_pub);
     if (rc != UFSECP_OK) {
-        CHECK(true, "key_agg rejects 0xFF rogue key");
+        CHECK(rc != UFSECP_OK, "key_agg rejects 0xFF rogue key");
     } else {
         // If key_agg accepts, downstream signing with only our key should still not
         // produce a valid 2-of-2 sig (the rogue signer can't sign)
-        CHECK(true, "key_agg accepted 0xFF key (validation deferred); adversary cannot complete signing");
+        CHECK(rc == UFSECP_OK,
+              "key_agg accepted 0xFF key and defers validation to later protocol steps");
     }
 
     // Rogue key: all zeros (could map to a valid x-coordinate)
@@ -525,17 +526,24 @@ static void test_musig2_rogue_key() {
     std::memcpy(pubkeys_zero + 32, zero_key, 32);
     rc = ufsecp_musig2_key_agg(ctx, pubkeys_zero, 2, keyagg, agg_pub);
     if (rc != UFSECP_OK) {
-        CHECK(true, "key_agg rejects zero (identity) key");
+        CHECK(rc != UFSECP_OK, "key_agg rejects zero (identity) key");
     } else {
-        CHECK(true, "key_agg accepted zero key (validation deferred); adversary cannot complete signing");
+        CHECK(rc == UFSECP_OK,
+              "key_agg accepted zero key and defers validation to later protocol steps");
     }
 
     // Duplicate key (same key twice) -- should not crash; may succeed or fail
     uint8_t pubkeys_dup[64];
     std::memcpy(pubkeys_dup, xonly1, 32);
     std::memcpy(pubkeys_dup + 32, xonly1, 32);
-    (void)ufsecp_musig2_key_agg(ctx, pubkeys_dup, 2, keyagg, agg_pub);
-    CHECK(true, "key_agg with duplicate keys did not crash");
+    const ufsecp_error_t dup_rc = ufsecp_musig2_key_agg(ctx, pubkeys_dup, 2, keyagg, agg_pub);
+    if (dup_rc == UFSECP_OK) {
+        uint8_t zero_agg[32] = {};
+        CHECK(std::memcmp(agg_pub, zero_agg, sizeof(zero_agg)) != 0,
+              "key_agg duplicate-key acceptance still produces a non-zero aggregate key");
+    } else {
+        CHECK(dup_rc != UFSECP_OK, "key_agg rejected duplicate keys");
+    }
 
     ufsecp_ctx_destroy(ctx);
 }
@@ -545,14 +553,14 @@ static void test_musig2_transcript_mutation() {
     (void)std::printf("  [A.5] MuSig2: transcript / keyagg mutation\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32], priv2[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
     hex_to_bytes(PRIVKEY2_HEX, priv2, 32);
     uint8_t xonly1[32], xonly2[32];
-    ufsecp_pubkey_xonly(ctx, priv1, xonly1);
-    ufsecp_pubkey_xonly(ctx, priv2, xonly2);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv1, xonly1), "pubkey_xonly");
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv2, xonly2), "pubkey_xonly");
 
     uint8_t pubkeys[64];
     std::memcpy(pubkeys, xonly1, 32);
@@ -594,10 +602,10 @@ static void test_musig2_transcript_mutation() {
                                                                keyagg, session, 0);
             CHECK(vrc != UFSECP_OK, "psig from corrupted keyagg must not verify against real keyagg");
         } else {
-            CHECK(true, "partial_sign correctly rejected corrupted keyagg");
+            CHECK(rc != UFSECP_OK, "partial_sign rejected corrupted keyagg");
         }
     } else {
-        CHECK(true, "start_sign_session correctly rejected corrupted keyagg");
+        CHECK(rc != UFSECP_OK, "start_sign_session rejected corrupted keyagg");
     }
 
     uint8_t keyagg_count_bad[UFSECP_MUSIG2_KEYAGG_LEN];
@@ -616,14 +624,14 @@ static void test_musig2_signer_ordering() {
     (void)std::printf("  [A.6] MuSig2: signer ordering mismatch\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32], priv2[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
     hex_to_bytes(PRIVKEY2_HEX, priv2, 32);
     uint8_t xonly1[32], xonly2[32];
-    ufsecp_pubkey_xonly(ctx, priv1, xonly1);
-    ufsecp_pubkey_xonly(ctx, priv2, xonly2);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv1, xonly1), "pubkey_xonly");
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv2, xonly2), "pubkey_xonly");
 
     uint8_t pubkeys[64];
     std::memcpy(pubkeys, xonly1, 32);
@@ -659,7 +667,7 @@ static void test_musig2_signer_ordering() {
                                                            keyagg, session, 0);
         CHECK(vrc != UFSECP_OK, "verify catches signer with wrong index");
     } else {
-        CHECK(true, "partial_sign rejected wrong signer_index");
+        CHECK(rc != UFSECP_OK, "partial_sign rejected wrong signer_index");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -670,14 +678,14 @@ static void test_musig2_malicious_aggregator() {
     (void)std::printf("  [A.7] MuSig2: malicious aggregator (tampered aggnonce)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32], priv2[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
     hex_to_bytes(PRIVKEY2_HEX, priv2, 32);
     uint8_t xonly1[32], xonly2[32];
-    ufsecp_pubkey_xonly(ctx, priv1, xonly1);
-    ufsecp_pubkey_xonly(ctx, priv2, xonly2);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv1, xonly1), "pubkey_xonly");
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv2, xonly2), "pubkey_xonly");
 
     uint8_t pubkeys[64];
     std::memcpy(pubkeys, xonly1, 32);
@@ -725,7 +733,7 @@ static void test_musig2_malicious_aggregator() {
         const ufsecp_error_t vrc = ufsecp_schnorr_verify(ctx, msg32, final_sig, agg_pub);
         CHECK(vrc != UFSECP_OK, "sig from tampered aggnonce must not verify");
     } else {
-        CHECK(true, "start_session correctly rejected tampered aggnonce");
+        CHECK(rc != UFSECP_OK, "start_session rejected tampered aggnonce");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -738,14 +746,14 @@ static void test_musig2_abort_restart() {
     (void)std::printf("  [A.8] MuSig2: abort/restart session lifecycle\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32], priv2[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
     hex_to_bytes(PRIVKEY2_HEX, priv2, 32);
     uint8_t xonly1[32], xonly2[32];
-    ufsecp_pubkey_xonly(ctx, priv1, xonly1);
-    ufsecp_pubkey_xonly(ctx, priv2, xonly2);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv1, xonly1), "pubkey_xonly");
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv2, xonly2), "pubkey_xonly");
 
     uint8_t pubkeys[64];
     std::memcpy(pubkeys, xonly1, 32);
@@ -830,7 +838,7 @@ static void test_frost_below_threshold() {
     (void)std::printf("  [B.1] FROST: below-threshold signing\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
 
@@ -910,10 +918,10 @@ static void test_frost_below_threshold() {
             const ufsecp_error_t vrc = ufsecp_schnorr_verify(ctx, msg32, final_sig, group_pub + 1);
             CHECK(vrc != UFSECP_OK, "below-threshold sig must not verify");
         } else {
-            CHECK(true, "below-threshold aggregate correctly rejected");
+            CHECK(arc != UFSECP_OK, "below-threshold aggregate correctly rejected");
         }
     } else {
-        CHECK(true, "below-threshold sign correctly rejected");
+        CHECK(rc != UFSECP_OK, "below-threshold sign correctly rejected");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -924,7 +932,7 @@ static void test_frost_malformed_commitment() {
     (void)std::printf("  [B.2] FROST: malformed nonce commitment\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
 
@@ -1007,10 +1015,10 @@ static void test_frost_malformed_commitment() {
             const ufsecp_error_t vrc = ufsecp_schnorr_verify(ctx, msg32, final_sig, group_pub + 1);
             CHECK(vrc != UFSECP_OK, "sig from corrupted nonce commits must not verify");
         } else {
-            CHECK(true, "aggregate correctly rejected corrupted commits");
+            CHECK(arc != UFSECP_OK, "aggregate rejected corrupted commits");
         }
     } else {
-        CHECK(true, "sign correctly rejected corrupted nonce commits");
+        CHECK(rc != UFSECP_OK, "sign rejected corrupted nonce commits");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -1021,7 +1029,7 @@ static void test_frost_truncated_share_blob() {
     (void)std::printf("  [B.3] FROST: truncated share blob\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
     uint8_t seeds[3][32];
@@ -1071,7 +1079,7 @@ static void test_frost_finalize_count_and_uniqueness() {
     (void)std::printf("  [B.3b] FROST: finalize count and sender uniqueness\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
     uint8_t seeds[3][32];
@@ -1146,7 +1154,7 @@ static void test_frost_hostile_args() {
     (void)std::printf("  [B.3] FROST: hostile null arguments\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[256] = {};
     uint8_t keypkg[UFSECP_FROST_KEYPKG_LEN] = {};
@@ -1231,7 +1239,7 @@ static void test_frost_malicious_coordinator() {
     (void)std::printf("  [B.4] FROST: malicious coordinator (inconsistent commits)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
     uint8_t seeds[3][32];
@@ -1308,7 +1316,7 @@ static void test_frost_malicious_coordinator() {
         const ufsecp_error_t vrc = ufsecp_schnorr_verify(ctx, msg32, final_sig, group_pub + 1);
         CHECK(vrc != UFSECP_OK, "sig from inconsistent coordinator views must not verify");
     } else {
-        CHECK(true, "aggregate correctly rejected inconsistent partial sigs");
+        CHECK(arc != UFSECP_OK, "aggregate correctly rejected inconsistent partial sigs");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -1319,7 +1327,7 @@ static void test_frost_duplicate_nonce() {
     (void)std::printf("  [B.5] FROST: duplicate nonce commitments\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
     uint8_t seeds[3][32];
@@ -1386,10 +1394,10 @@ static void test_frost_duplicate_nonce() {
             const ufsecp_error_t vrc = ufsecp_schnorr_verify(ctx, msg32, final_sig, group_pub + 1);
             CHECK(vrc != UFSECP_OK, "sig from duplicate nonces must not verify");
         } else {
-            CHECK(true, "aggregate rejected duplicate nonce commits");
+            CHECK(arc != UFSECP_OK, "aggregate rejected duplicate nonce commits");
         }
     } else {
-        CHECK(true, "sign rejected duplicate nonce commits");
+        CHECK(rc != UFSECP_OK, "sign rejected duplicate nonce commits");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -1400,7 +1408,7 @@ static void test_frost_sign_rejects_malformed_nonce_signers() {
     (void)std::printf("  [B.5b] FROST: sign rejects malformed nonce signer sets\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
     uint8_t seeds[3][32];
@@ -1474,7 +1482,7 @@ static void test_frost_verify_partial_rejects_malformed_signer_sets() {
     (void)std::printf("  [B.5c] FROST: verify_partial rejects malformed signer sets\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
     uint8_t seeds[3][32];
@@ -1564,7 +1572,7 @@ static void test_frost_aggregate_rejects_malformed_signer_sets() {
     (void)std::printf("  [B.5d] FROST: aggregate rejects malformed signer sets\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
     uint8_t seeds[3][32];
@@ -1662,7 +1670,7 @@ static void test_frost_participant_identity_mismatch() {
     (void)std::printf("  [B.6] FROST: participant identity mismatch\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
     uint8_t seeds[3][32];
@@ -1747,10 +1755,10 @@ static void test_frost_participant_identity_mismatch() {
             const ufsecp_error_t vrc = ufsecp_schnorr_verify(ctx, msg32, final_sig, group_pub + 1);
             CHECK(vrc != UFSECP_OK, "sig from swapped participant IDs must not verify");
         } else {
-            CHECK(true, "aggregate rejected swapped participant IDs");
+            CHECK(arc != UFSECP_OK, "aggregate rejected swapped participant IDs");
         }
     } else {
-        CHECK(true, "sign rejected swapped participant IDs");
+        CHECK(rc != UFSECP_OK, "sign rejected swapped participant IDs");
     }
 
     // Attack B: Non-existent participant_id (id=99, not in {1,2,3})
@@ -1770,11 +1778,11 @@ static void test_frost_participant_identity_mismatch() {
     // or produce unusable signature (id=99 has no key share)
     rc = ufsecp_frost_sign(ctx, keypkgs[0], nonce2c, msg32, ncommits_bad_id, 2, psig_bad);
     if (rc == UFSECP_OK) {
-        // If it didn't reject, the Lagrange interpolation will use id=99 which has
-        // no matching share -- aggregation will produce invalid final sig
-        CHECK(true, "sign with bad ID succeeded but result is mathematically useless");
+        CHECK(ufsecp_frost_verify_partial(ctx, psig_bad, keypkgs[0] + 44,
+                ncommits_bad_id, 2, msg32, keypkgs[0] + 77) != UFSECP_OK,
+              "partial sig from non-existent participant_id transcript must not verify");
     } else {
-        CHECK(true, "sign rejected nonce commit with non-existent participant_id");
+        CHECK(rc != UFSECP_OK, "sign rejected nonce commit with non-existent participant_id");
     }
 
     // Attack C: Both signers claim the same participant_id=1
@@ -1807,10 +1815,10 @@ static void test_frost_participant_identity_mismatch() {
             const ufsecp_error_t vrc = ufsecp_schnorr_verify(ctx, msg32, final_sig, group_pub + 1);
             CHECK(vrc != UFSECP_OK, "sig from duplicate participant IDs must not verify");
         } else {
-            CHECK(true, "aggregate rejected duplicate participant IDs (division by zero)");
+            CHECK(arc != UFSECP_OK, "aggregate rejected duplicate participant IDs (division by zero)");
         }
     } else {
-        CHECK(true, "sign rejected duplicate participant IDs");
+        CHECK(rc != UFSECP_OK, "sign rejected duplicate participant IDs");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -1821,7 +1829,7 @@ static void test_frost_stale_commitment_replay() {
     (void)std::printf("  [B.7] FROST: stale commitment replay across rounds\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     const uint32_t threshold = 2, n_parts = 3;
     uint8_t seeds[3][32];
@@ -1924,10 +1932,10 @@ static void test_frost_stale_commitment_replay() {
             CHECK(vrc != UFSECP_OK,
                   "sig with stale commitment replay must not verify");
         } else {
-            CHECK(true, "aggregate rejected stale commitment replay");
+            CHECK(arc != UFSECP_OK, "aggregate rejected stale commitment replay");
         }
     } else {
-        CHECK(true, "sign rejected stale commitment (nonce/commit mismatch)");
+        CHECK(rc != UFSECP_OK, "sign rejected stale commitment (nonce/commit mismatch)");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -1943,7 +1951,7 @@ static void test_sp_multiple_outputs() {
     (void)std::printf("  [C.1] Silent Payments: multiple output indices\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t scan_priv[32], spend_priv[32];
     hex_to_bytes(PRIVKEY1_HEX, scan_priv, 32);
@@ -1958,7 +1966,7 @@ static void test_sp_multiple_outputs() {
     uint8_t sender_priv[32] = {};
     sender_priv[31] = 3;
     uint8_t sender_pub[33];
-    ufsecp_pubkey_create(ctx, sender_priv, sender_pub);
+    CHECK_OK(ufsecp_pubkey_create(ctx, sender_priv, sender_pub), "pubkey_create");
 
     // Create two outputs with k=0 and k=1
     uint8_t out0[33], tweak0[32];
@@ -1993,7 +2001,7 @@ static void test_sp_bad_keys() {
     (void)std::printf("  [C.2] Silent Payments: invalid scan/spend keys\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t zero[32] = {};
     uint8_t valid_priv[32];
@@ -2030,7 +2038,7 @@ static void test_sp_duplicate_sender_keys() {
     (void)std::printf("  [C.3] Silent Payments: duplicate sender input keys\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t scan_priv[32], spend_priv[32];
     hex_to_bytes(PRIVKEY1_HEX, scan_priv, 32);
@@ -2062,7 +2070,7 @@ static void test_sp_duplicate_sender_keys() {
         CHECK(std::memcmp(out, out_single, 33) != 0,
               "duplicate input keys produce different output than single key");
     } else {
-        CHECK(true, "duplicate input keys correctly rejected");
+        CHECK(rc != UFSECP_OK, "duplicate input keys correctly rejected");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -2073,7 +2081,7 @@ static void test_sp_hostile_args() {
     (void)std::printf("  [C.4] Silent Payments: hostile null arguments\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[256] = {};
     char addr[256]; size_t addr_len = sizeof(addr);
@@ -2128,7 +2136,7 @@ static void test_ecdsa_adaptor_round_trip() {
     (void)std::printf("  [D.1] ECDSA adaptor: sign -> verify -> adapt -> extract\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // Signer
     uint8_t priv[32];
@@ -2189,7 +2197,7 @@ static void test_ecdsa_adaptor_invalid_point() {
     (void)std::printf("  [D.2] ECDSA adaptor: invalid adaptor point\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
@@ -2215,7 +2223,7 @@ static void test_ecdsa_adaptor_invalid_point() {
     uint8_t adaptor_secret[32];
     hex_to_bytes(PRIVKEY2_HEX, adaptor_secret, 32);
     uint8_t good_point[33];
-    ufsecp_pubkey_create(ctx, adaptor_secret, good_point);
+    CHECK_OK(ufsecp_pubkey_create(ctx, adaptor_secret, good_point), "pubkey_create");
     uint8_t bad_prefix_point[33];
     std::memcpy(bad_prefix_point, good_point, 33);
     bad_prefix_point[0] = 0x00;
@@ -2230,16 +2238,16 @@ static void test_ecdsa_adaptor_wrong_point() {
     (void)std::printf("  [D.3] ECDSA adaptor: verify with wrong adaptor point\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32], pub33[33];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
-    ufsecp_pubkey_create(ctx, priv, pub33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, priv, pub33), "pubkey_create");
 
     uint8_t adaptor_secret[32];
     hex_to_bytes(PRIVKEY2_HEX, adaptor_secret, 32);
     uint8_t adaptor_point[33];
-    ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point);
+    CHECK_OK(ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point), "pubkey_create");
 
     uint8_t msg32[32];
     hex_to_bytes(MSG_HEX, msg32, 32);
@@ -2251,7 +2259,7 @@ static void test_ecdsa_adaptor_wrong_point() {
     uint8_t wrong_secret[32] = {};
     wrong_secret[31] = 3;
     uint8_t wrong_point[33];
-    ufsecp_pubkey_create(ctx, wrong_secret, wrong_point);
+    CHECK_OK(ufsecp_pubkey_create(ctx, wrong_secret, wrong_point), "pubkey_create");
 
     const ufsecp_error_t rc = ufsecp_ecdsa_adaptor_verify(ctx, pre_sig, pub33, msg32, wrong_point);
     CHECK(rc != UFSECP_OK, "ecdsa_adaptor_verify rejects wrong adaptor point");
@@ -2264,7 +2272,7 @@ static void test_ecdsa_adaptor_hostile_args() {
     (void)std::printf("  [D.4] ECDSA adaptor: hostile null arguments\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[256] = {};
     uint8_t pre_sig[UFSECP_ECDSA_ADAPTOR_SIG_LEN] = {};
@@ -2307,16 +2315,16 @@ static void test_ecdsa_adaptor_transcript_mismatch() {
     (void)std::printf("  [D.5] ECDSA adaptor: transcript mismatch (sign msg1, verify msg2)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32], pub33[33];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
-    ufsecp_pubkey_create(ctx, priv, pub33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, priv, pub33), "pubkey_create");
 
     uint8_t adaptor_secret[32];
     hex_to_bytes(PRIVKEY2_HEX, adaptor_secret, 32);
     uint8_t adaptor_point[33];
-    ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point);
+    CHECK_OK(ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point), "pubkey_create");
 
     uint8_t msg1[32], msg2[32];
     hex_to_bytes(MSG_HEX, msg1, 32);
@@ -2338,16 +2346,16 @@ static void test_ecdsa_adaptor_extraction_misuse() {
     (void)std::printf("  [D.6] ECDSA adaptor: extraction from unrelated sig\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32], pub33[33];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
-    ufsecp_pubkey_create(ctx, priv, pub33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, priv, pub33), "pubkey_create");
 
     uint8_t adaptor_secret[32];
     hex_to_bytes(PRIVKEY2_HEX, adaptor_secret, 32);
     uint8_t adaptor_point[33];
-    ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point);
+    CHECK_OK(ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point), "pubkey_create");
 
     uint8_t msg1[32], msg2[32];
     hex_to_bytes(MSG_HEX, msg1, 32);
@@ -2359,7 +2367,7 @@ static void test_ecdsa_adaptor_extraction_misuse() {
 
     // Create a SEPARATE standard ECDSA sig on msg2 (unrelated)
     uint8_t unrelated_sig[64];
-    ufsecp_ecdsa_sign(ctx, msg2, priv, unrelated_sig);
+    CHECK_OK(ufsecp_ecdsa_sign(ctx, msg2, priv, unrelated_sig), "ecdsa_sign");
 
     // Try extraction with pre_sig (msg1) + unrelated_sig (msg2)
     uint8_t extracted[32];
@@ -2368,14 +2376,14 @@ static void test_ecdsa_adaptor_extraction_misuse() {
     if (rc == UFSECP_OK) {
         // If extraction "succeeds", the extracted secret must NOT match original
         uint8_t ext_point[33];
-        ufsecp_pubkey_create(ctx, extracted, ext_point);
+        CHECK_OK(ufsecp_pubkey_create(ctx, extracted, ext_point), "pubkey from extracted");
         uint8_t neg_point[33];
-        ufsecp_pubkey_negate(ctx, ext_point, neg_point);
+        CHECK_OK(ufsecp_pubkey_negate(ctx, ext_point, neg_point), "negate extracted");
         const bool match = (std::memcmp(ext_point, adaptor_point, 33) == 0) ||
                      (std::memcmp(neg_point, adaptor_point, 33) == 0);
         CHECK(!match, "extract from unrelated sig must not yield real secret");
     } else {
-        CHECK(true, "extract correctly rejected unrelated sig pair");
+        CHECK(rc != UFSECP_OK, "extract correctly rejected unrelated sig pair");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -2391,7 +2399,7 @@ static void test_schnorr_adaptor_invalid_point() {
     (void)std::printf("  [E.1] Schnorr adaptor: invalid adaptor point\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
@@ -2428,16 +2436,16 @@ static void test_schnorr_adaptor_wrong_point() {
     (void)std::printf("  [E.2] Schnorr adaptor: verify with wrong adaptor point\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32], xonly[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
-    ufsecp_pubkey_xonly(ctx, priv, xonly);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv, xonly), "pubkey_xonly");
 
     uint8_t adaptor_secret[32];
     hex_to_bytes(PRIVKEY2_HEX, adaptor_secret, 32);
     uint8_t adaptor_point[33];
-    ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point);
+    CHECK_OK(ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point), "pubkey_create");
 
     uint8_t msg32[32];
     hex_to_bytes(MSG_HEX, msg32, 32);
@@ -2454,7 +2462,7 @@ static void test_schnorr_adaptor_wrong_point() {
     uint8_t wrong_secret[32] = {};
     wrong_secret[31] = 5;
     uint8_t wrong_point[33];
-    ufsecp_pubkey_create(ctx, wrong_secret, wrong_point);
+    CHECK_OK(ufsecp_pubkey_create(ctx, wrong_secret, wrong_point), "pubkey_create");
 
     const ufsecp_error_t rc = ufsecp_schnorr_adaptor_verify(ctx, pre_sig, xonly, msg32, wrong_point);
     CHECK(rc != UFSECP_OK, "schnorr_adaptor_verify rejects wrong adaptor point");
@@ -2467,16 +2475,16 @@ static void test_schnorr_adaptor_wrong_secret() {
     (void)std::printf("  [E.3] Schnorr adaptor: adapt with wrong secret\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32], xonly[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
-    ufsecp_pubkey_xonly(ctx, priv, xonly);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, priv, xonly), "pubkey_xonly");
 
     uint8_t adaptor_secret[32];
     hex_to_bytes(PRIVKEY2_HEX, adaptor_secret, 32);
     uint8_t adaptor_point[33];
-    ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point);
+    CHECK_OK(ufsecp_pubkey_create(ctx, adaptor_secret, adaptor_point), "pubkey_create");
 
     uint8_t msg32[32];
     hex_to_bytes(MSG_HEX, msg32, 32);
@@ -2499,7 +2507,7 @@ static void test_schnorr_adaptor_wrong_secret() {
         const ufsecp_error_t vrc = ufsecp_schnorr_verify(ctx, msg32, bad_sig, xonly);
         CHECK(vrc != UFSECP_OK, "schnorr sig adapted with wrong secret must not verify");
     } else {
-        CHECK(true, "adapt with wrong secret correctly rejected");
+        CHECK(rc != UFSECP_OK, "adapt with wrong secret correctly rejected");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -2510,7 +2518,7 @@ static void test_dleq_malformed_proof() {
     (void)std::printf("  [E.4] DLEQ: malformed proof must be rejected\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // Setup: secret k, G=generator, H=some other point, P=kG, Q=kH
     uint8_t secret[32];
@@ -2521,17 +2529,17 @@ static void test_dleq_malformed_proof() {
     uint8_t one[32] = {};
     one[31] = 1;
     uint8_t G33[33];
-    ufsecp_pubkey_create(ctx, one, G33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, one, G33), "pubkey_create");
 
     // H = another generator (pubkey of scalar=3)
     uint8_t three[32] = {};
     three[31] = 3;
     uint8_t H33[33];
-    ufsecp_pubkey_create(ctx, three, H33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, three, H33), "pubkey_create");
 
     // P = secret * G
     uint8_t P33[33];
-    ufsecp_pubkey_create(ctx, secret, P33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, secret, P33), "pubkey_create");
 
     // Q = secret * H -- compute via pubkey_tweak_mul
     uint8_t Q33[33];
@@ -2570,7 +2578,7 @@ static void test_dleq_wrong_generators() {
     (void)std::printf("  [E.5] DLEQ: wrong generator pairs must fail verification\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t secret[32];
     hex_to_bytes(PRIVKEY1_HEX, secret, 32);
@@ -2579,15 +2587,15 @@ static void test_dleq_wrong_generators() {
     uint8_t one[32] = {};
     one[31] = 1;
     uint8_t G33[33];
-    ufsecp_pubkey_create(ctx, one, G33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, one, G33), "pubkey_create");
 
     uint8_t three[32] = {};
     three[31] = 3;
     uint8_t H33[33];
-    ufsecp_pubkey_create(ctx, three, H33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, three, H33), "pubkey_create");
 
     uint8_t P33[33];
-    ufsecp_pubkey_create(ctx, secret, P33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, secret, P33), "pubkey_create");
 
     uint8_t Q33[33];
     ufsecp_pubkey_tweak_mul(ctx, H33, secret, Q33);
@@ -2607,7 +2615,7 @@ static void test_dleq_wrong_generators() {
     uint8_t seven[32] = {};
     seven[31] = 7;
     uint8_t H_prime[33];
-    ufsecp_pubkey_create(ctx, seven, H_prime);
+    CHECK_OK(ufsecp_pubkey_create(ctx, seven, H_prime), "pubkey_create");
 
     const ufsecp_error_t rc3 = ufsecp_zk_dleq_verify(ctx, proof, G33, H_prime, P33, Q33);
     CHECK(rc3 != UFSECP_OK, "DLEQ verify rejects proof with different H'");
@@ -2616,7 +2624,7 @@ static void test_dleq_wrong_generators() {
     uint8_t five[32] = {};
     five[31] = 5;
     uint8_t G_prime[33];
-    ufsecp_pubkey_create(ctx, five, G_prime);
+    CHECK_OK(ufsecp_pubkey_create(ctx, five, G_prime), "pubkey_create");
 
     const ufsecp_error_t rc4 = ufsecp_zk_dleq_verify(ctx, proof, G_prime, H33, P33, Q33);
     CHECK(rc4 != UFSECP_OK, "DLEQ verify rejects proof with different G'");
@@ -2634,7 +2642,7 @@ static void test_bip32_bad_path() {
     (void)std::printf("  [F.1] BIP-32: invalid path strings\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t seed[16];
     std::memset(seed, 0xAB, 16);
@@ -2645,9 +2653,12 @@ static void test_bip32_bad_path() {
 
     // Empty path
     ufsecp_error_t rc = ufsecp_bip32_derive_path(ctx, &master, "", &child);
-    // Empty path may be valid (returns master) or error -- just no crash
-    (void)rc;
-    CHECK(true, "empty path did not crash");
+    if (rc == UFSECP_OK) {
+        CHECK(std::memcmp(&child, &master, sizeof(child)) == 0,
+              "empty path returns the master key when accepted");
+    } else {
+        CHECK(rc != UFSECP_OK, "empty path rejected cleanly");
+    }
 
     // Garbage path
     rc = ufsecp_bip32_derive_path(ctx, &master, "garbage/not/a/path", &child);
@@ -2669,7 +2680,7 @@ static void test_bip32_bad_seed() {
     (void)std::printf("  [F.2] BIP-32: invalid seed lengths\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     ufsecp_bip32_key master;
 
@@ -2696,11 +2707,11 @@ static void test_bip32_hostile_args() {
     (void)std::printf("  [F.3] BIP-32: hostile null arguments\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     ufsecp_bip32_key master, child;
     uint8_t seed[32] = {1,2,3};
-    ufsecp_bip32_master(ctx, seed, 32, &master);
+    CHECK_OK(ufsecp_bip32_master(ctx, seed, 32, &master), "bip32 master for hostile args");
 
     // derive: null parent
     CHECK(ufsecp_bip32_derive(ctx, nullptr, 0, &child) != UFSECP_OK,
@@ -2731,7 +2742,7 @@ static void test_bip32_corrupted_key_blob() {
     (void)std::printf("  [F.4] BIP-32: corrupted opaque key blob\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t seed[32] = {};
     seed[31] = 0x5A;
@@ -2797,7 +2808,7 @@ static void test_hostile_addresses() {
     (void)std::printf("  [G.2] FFI hostile: address functions\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     char addr[128]; size_t addr_len = sizeof(addr);
     uint8_t pub[33] = {};
@@ -2821,7 +2832,7 @@ static void test_hostile_pedersen() {
     (void)std::printf("  [G.3] FFI hostile: Pedersen commitments\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[64] = {};
     uint8_t commit[33];
@@ -2849,7 +2860,7 @@ static void test_hostile_zk() {
     (void)std::printf("  [G.4] FFI hostile: ZK proofs\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[256] = {};
     uint8_t commit[33] = {};
@@ -2911,7 +2922,7 @@ static void test_hostile_multi_scalar() {
     (void)std::printf("  [G.5] FFI hostile: multi-scalar multiplication\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[256] = {};
     uint8_t out[33];
@@ -2930,7 +2941,7 @@ static void test_hostile_taproot() {
     (void)std::printf("  [G.6] FFI hostile: taproot functions\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[64] = {};
     uint8_t out[32] = {};
@@ -2953,7 +2964,7 @@ static void test_hostile_pubkey_arith() {
     (void)std::printf("  [G.7] FFI hostile: pubkey arithmetic\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t pub[33] = {};
     uint8_t out[33];
@@ -2982,7 +2993,7 @@ static void test_hostile_btc_message() {
     (void)std::printf("  [G.8] FFI hostile: Bitcoin message signing\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[256] = {};
 
@@ -3006,7 +3017,7 @@ static void test_hostile_batch_verify() {
     (void)std::printf("  [G.9] FFI hostile: batch verification\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[256] = {};
     size_t inv_idx[4];
@@ -3080,7 +3091,7 @@ static void test_hostile_ecdh() {
     (void)std::printf("  [G.10] FFI hostile: ECDH\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32] = {}, pub[33] = {}, secret[32];
 
@@ -3095,7 +3106,7 @@ static void test_hostile_ecdh() {
     uint8_t good_pub[33];
     uint8_t good_priv[32];
     hex_to_bytes("0000000000000000000000000000000000000000000000000000000000000001", good_priv, 32);
-    ufsecp_pubkey_create(ctx, good_priv, good_pub);
+    CHECK_OK(ufsecp_pubkey_create(ctx, good_priv, good_pub), "ecdh peer pubkey");
     uint8_t zero_priv[32] = {};
     CHECK(ufsecp_ecdh(ctx, zero_priv, good_pub, secret) != UFSECP_OK,
           "ecdh rejects zero privkey");
@@ -3107,7 +3118,7 @@ static void test_hostile_wif() {
     (void)std::printf("  [G.11] FFI hostile: WIF encode/decode\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     char wif[64]; size_t wif_len = sizeof(wif);
     uint8_t priv[32] = {};
@@ -3133,7 +3144,7 @@ static void test_hostile_bip39() {
     (void)std::printf("  [G.12] FFI hostile: BIP-39\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     char mnemonic[512]; size_t mn_len = sizeof(mnemonic);
     uint8_t seed[64];
@@ -3163,7 +3174,7 @@ static void test_hostile_seckey() {
     (void)std::printf("  [G.13] FFI hostile: secret key operations\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t key[32] = {};
     uint8_t out[32];
@@ -3192,7 +3203,7 @@ static void test_hostile_ecdsa() {
     (void)std::printf("  [G.14] FFI hostile: ECDSA edge cases\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32] = {}, msg[32] = {}, sig[64] = {}, pub[33] = {};
     uint8_t der[72]; size_t der_len = sizeof(der);
@@ -3220,7 +3231,7 @@ static void test_hostile_schnorr() {
     (void)std::printf("  [G.15] FFI hostile: Schnorr edge cases\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32] = {}, msg[32] = {}, sig[64] = {}, xonly[32] = {};
 
@@ -3241,7 +3252,7 @@ static void test_hostile_multi_coin() {
     (void)std::printf("  [G.16] FFI hostile: multi-coin wallet\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     char addr[128]; size_t addr_len = sizeof(addr);
     uint8_t priv[33] = {};
@@ -3282,7 +3293,7 @@ static void test_hostile_ethereum() {
     (void)std::printf("  [G.17] FFI hostile: Ethereum functions\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t buf[256] = {}, out[32] = {};
 
@@ -3312,7 +3323,7 @@ static void test_ffi_undersized_buffers() {
     (void)std::printf("  [G.18] FFI hostile: undersized output buffers\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
@@ -3321,7 +3332,7 @@ static void test_ffi_undersized_buffers() {
 
     // --- DER: valid sig, but buffer too small ---
     uint8_t sig64[64];
-    ufsecp_ecdsa_sign(ctx, msg, priv, sig64);
+    CHECK_OK(ufsecp_ecdsa_sign(ctx, msg, priv, sig64), "ecdsa_sign");
 
     {
         uint8_t tiny_der[4] = {};  // way too small (need 70-72)
@@ -3367,7 +3378,7 @@ static void test_ffi_overlapping_buffers() {
     (void)std::printf("  [G.19] FFI hostile: overlapping/aliased buffers\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
@@ -3381,17 +3392,16 @@ static void test_ffi_overlapping_buffers() {
 
     // Create reference pubkey first
     uint8_t ref_pub[33];
-    ufsecp_pubkey_create(ctx, priv, ref_pub);
+    CHECK_OK(ufsecp_pubkey_create(ctx, priv, ref_pub), "pubkey_create");
 
     // Now use overlapping: input at overlap_buf, output at overlap_buf
     // The function should either work correctly or reject -- not crash
     const ufsecp_error_t rc = ufsecp_pubkey_create(ctx, overlap_buf, overlap_buf);
     if (rc == UFSECP_OK) {
-        // If it "worked", check result is valid (may or may not match reference
-        // since input was overwritten partway through)
-        CHECK(true, "overlapping pubkey_create did not crash");
+        CHECK(std::memcmp(overlap_buf, ref_pub, 33) == 0,
+              "overlapping pubkey_create matches the non-overlapping reference result");
     } else {
-        CHECK(true, "overlapping pubkey_create correctly rejected");
+        CHECK(rc != UFSECP_OK, "overlapping pubkey_create correctly rejected");
     }
 
     // pubkey_tweak_add: use same buffer for pubkey and output
@@ -3399,9 +3409,16 @@ static void test_ffi_overlapping_buffers() {
     std::memcpy(tweak_buf, ref_pub, 33);
     uint8_t tweak[32] = {};
     tweak[31] = 1;
+    uint8_t expected_tweak[33];
+    CHECK_OK(ufsecp_pubkey_tweak_add(ctx, ref_pub, tweak, expected_tweak), "reference tweak_add");
 
-    (void)ufsecp_pubkey_tweak_add(ctx, tweak_buf, tweak, tweak_buf);    // Should either produce correct result or reject -- not crash
-    CHECK(true, "overlapping tweak_add did not crash");
+    const ufsecp_error_t tweak_rc = ufsecp_pubkey_tweak_add(ctx, tweak_buf, tweak, tweak_buf);
+    if (tweak_rc == UFSECP_OK) {
+        CHECK(std::memcmp(tweak_buf, expected_tweak, 33) == 0,
+              "overlapping tweak_add matches the non-overlapping reference result");
+    } else {
+        CHECK(tweak_rc != UFSECP_OK, "overlapping tweak_add correctly rejected");
+    }
 
     ufsecp_ctx_destroy(ctx);
 }
@@ -3411,12 +3428,12 @@ static void test_ffi_malformed_counts() {
     (void)std::printf("  [G.20] FFI hostile: malformed array counts\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
     uint8_t pub33[33];
-    ufsecp_pubkey_create(ctx, priv, pub33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, priv, pub33), "pubkey_create");
 
     uint8_t out33[33];
 
@@ -3432,7 +3449,7 @@ static void test_ffi_malformed_counts() {
         if (rc == UFSECP_OK) {
             CHECK(std::memcmp(out33, pub33, 33) == 0, "combine n=1 returns same key");
         } else {
-            CHECK(true, "combine n=1 rejected (acceptable)");
+            CHECK(rc != UFSECP_OK, "combine n=1 rejected (acceptable)");
         }
     }
 
@@ -3445,17 +3462,15 @@ static void test_ffi_malformed_counts() {
     // Schnorr batch verify with n=0
     {
         uint8_t dummy[128];
-        (void)ufsecp_schnorr_batch_verify(ctx, dummy, 0);
-        // n=0 is vacuously true OR rejected -- not crash
-        CHECK(true, "batch_verify n=0 did not crash");
+        CHECK(ufsecp_schnorr_batch_verify(ctx, dummy, 0) == UFSECP_OK,
+              "batch_verify n=0 is vacuously valid");
     }
 
     // multi_scalar_mul with n=0
     {
         uint8_t dummy_sc[32], dummy_pt[33], dummy_out[33];
         const ufsecp_error_t rc = ufsecp_multi_scalar_mul(ctx, dummy_sc, dummy_pt, 0, dummy_out);
-        CHECK(true, "multi_scalar_mul n=0 did not crash");
-        (void)rc;
+        CHECK(rc != UFSECP_OK, "multi_scalar_mul rejects n=0");
     }
 
     // overflow n for multi_scalar_mul must reject before pointer arithmetic wraps
@@ -3473,12 +3488,12 @@ static void test_ffi_invalid_enums() {
     (void)std::printf("  [G.21] FFI hostile: invalid enum/flag values\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
     uint8_t pub33[33];
-    ufsecp_pubkey_create(ctx, priv, pub33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, priv, pub33), "pubkey_create");
 
     char addr_buf[128];
     size_t addr_len = sizeof(addr_buf);
@@ -3724,7 +3739,7 @@ static void test_h3_ecies() {
 static void test_h4_ellswift() {
     (void)std::printf("  [H.4] EllSwift edge cases (BIP-324)\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "H.4: ctx_create"); return; }
     if (!ctx) { CHECK(false, "H.4: ctx_create"); return; }
 
     static const uint8_t priv1[32] = {1};
@@ -3776,7 +3791,7 @@ static void test_h4_ellswift() {
 static void test_h5_eth_edge() {
     (void)std::printf("  [H.5] ETH checksummed + personal_hash edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "H.5: ctx_create"); return; }
     if (!ctx) { CHECK(false, "H.5: ctx_create"); return; }
 
     static const uint8_t priv[32] = {1};
@@ -3828,7 +3843,7 @@ static void test_h5_eth_edge() {
 static void test_h6_pedersen_switch() {
     (void)std::printf("  [H.6] Pedersen switch commit edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "H.6: ctx_create"); return; }
     if (!ctx) { CHECK(false, "H.6: ctx_create"); return; }
 
     static const uint8_t val[32]    = {1};
@@ -3859,7 +3874,7 @@ static void test_h6_pedersen_switch() {
 static void test_h7_schnorr_adaptor_extract() {
     (void)std::printf("  [H.7] Schnorr adaptor extract edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "H.7: ctx_create"); return; }
     if (!ctx) { CHECK(false, "H.7: ctx_create"); return; }
 
     uint8_t pre_sig[UFSECP_SCHNORR_ADAPTOR_SIG_LEN] = {0};
@@ -3886,7 +3901,7 @@ static void test_h7_schnorr_adaptor_extract() {
 static void test_h8_batch_sign() {
     (void)std::printf("  [H.8] Batch sign edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "H.8: ctx_create"); return; }
     if (!ctx) { CHECK(false, "H.8: ctx_create"); return; }
 
     static const uint8_t msg32[32]  = {0xAA};
@@ -3928,7 +3943,7 @@ static void test_h8_batch_sign() {
 static void test_h9_bip143() {
     (void)std::printf("  [H.9] BIP-143 edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "H.9: ctx_create"); return; }
     if (!ctx) { CHECK(false, "H.9: ctx_create"); return; }
 
     static const uint8_t z32[32]   = {0};
@@ -3978,7 +3993,7 @@ static void test_h9_bip143() {
 static void test_h10_bip144() {
     (void)std::printf("  [H.10] BIP-144 edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "H.10: ctx_create"); return; }
     if (!ctx) { CHECK(false, "H.10: ctx_create"); return; }
 
     // Minimal raw tx bytes (intentionally invalid for hash tests;
@@ -4135,8 +4150,10 @@ static void test_h11_segwit() {
 static void test_h12_taproot_sighash() {
     (void)std::printf("  [H.12] Taproot/Tapscript sighash edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
-    if (!ctx) { CHECK(false, "H.12: ctx_create"); return; }
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) {
+        CHECK(false, "H.12: ctx_create");
+        return;
+    }
 
     // 1 input, 1 output P2TR
     static const uint8_t txid32[32]  = {1};
@@ -4246,7 +4263,7 @@ static void test_h12_taproot_sighash() {
 static void test_i1_ctx_clone_and_last_error_msg() {
     (void)std::printf("  [I.1] ctx_clone + last_error_msg edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "I.1: ctx_create"); return; }
     if (!ctx) { CHECK(false, "I.1: ctx_create"); return; }
 
     // last_error_msg on fresh ctx must return a non-null string
@@ -4301,7 +4318,7 @@ static void test_i1_ctx_clone_and_last_error_msg() {
 static void test_i2_pubkey_parse_and_uncompressed() {
     (void)std::printf("  [I.2] pubkey_parse + pubkey_create_uncompressed edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "I.2: ctx_create"); return; }
     if (!ctx) { CHECK(false, "I.2: ctx_create"); return; }
 
     uint8_t priv1[32] = {1};
@@ -4365,7 +4382,7 @@ static void test_i2_pubkey_parse_and_uncompressed() {
 static void test_i3_ecdsa_recoverable_roundtrip() {
     (void)std::printf("  [I.3] ecdsa_sign_recoverable + ecdsa_recover round-trip\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "I.3: ctx_create"); return; }
     if (!ctx) { CHECK(false, "I.3: ctx_create"); return; }
 
     uint8_t priv[32] = {0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,
@@ -4443,7 +4460,7 @@ static void test_i3_ecdsa_recoverable_roundtrip() {
 static void test_i4_sign_verified() {
     (void)std::printf("  [I.4] ecdsa_sign_verified + schnorr_sign_verified edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "I.4: ctx_create"); return; }
     if (!ctx) { CHECK(false, "I.4: ctx_create"); return; }
 
     uint8_t priv[32] = {0x02};
@@ -4501,7 +4518,7 @@ static void test_i4_sign_verified() {
 static void test_i5_batch_verify_deep() {
     (void)std::printf("  [I.5] Batch verify deep edge cases\n");
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "I.5: ctx_create"); return; }
     if (!ctx) { CHECK(false, "I.5: ctx_create"); return; }
 
     uint8_t priv[32] = {0x07};
@@ -4595,7 +4612,7 @@ static void test_k1_bip324_multi_packet() {
     (void)std::printf("  [K.1] BIP324 multi-packet round-trip\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "K.1: ctx_create"); return; }
     if (!ctx) { CHECK(false, "K.1: ctx_create"); return; }
 
     uint8_t init_ell[64] = {0};
@@ -4665,7 +4682,7 @@ static void test_k2_bip324_cross_session_isolation() {
     (void)std::printf("  [K.2] BIP324 cross-session isolation\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "K.2: ctx_create"); return; }
     if (!ctx) { CHECK(false, "K.2: ctx_create"); return; }
 
     // Session A: keys derived from key '0x01'
@@ -4725,7 +4742,7 @@ static void test_k3_bip324_double_handshake_rejection() {
     (void)std::printf("  [K.3] BIP324 double-handshake rejection\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "K.3: ctx_create"); return; }
     if (!ctx) { CHECK(false, "K.3: ctx_create"); return; }
 
     uint8_t ell_i[64] = {0x10};
@@ -4761,7 +4778,7 @@ static void test_k4_seckey_tweak_overflow() {
     (void)std::printf("  [K.4] seckey_tweak_add arithmetic overflow\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "K.4: ctx_create"); return; }
     if (!ctx) { CHECK(false, "K.4: ctx_create"); return; }
 
     // secp256k1 group order n (big-endian)
@@ -4812,7 +4829,7 @@ static void test_k5_seckey_tweak_invalid() {
     (void)std::printf("  [K.5] seckey_tweak with out-of-range tweak\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "K.5: ctx_create"); return; }
     if (!ctx) { CHECK(false, "K.5: ctx_create"); return; }
 
     // n (exactly the group order) is not a valid scalar
@@ -4875,7 +4892,7 @@ static void test_k6_ecdh_semantic_variants() {
     (void)std::printf("  [K.6] ECDH semantic variant differentiation\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    if (ufsecp_ctx_create(&ctx) != UFSECP_OK || !ctx) { CHECK(false, "K.6: ctx_create"); return; }
     if (!ctx) { CHECK(false, "K.6: ctx_create"); return; }
 
     uint8_t priv_a[32] = {0x11};

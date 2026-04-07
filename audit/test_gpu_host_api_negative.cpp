@@ -157,7 +157,7 @@ static void test_invalid_content_core_ops(ufsecp_gpu_ctx* ctx) {
     }
 
     ufsecp_ctx* cpu_ctx = nullptr;
-    CHECK(ufsecp_ctx_create(&cpu_ctx) == UFSECP_OK, "cpu ctx for invalid-content setup");
+      CHECK(ufsecp_ctx_create(&cpu_ctx) == UFSECP_OK, "cpu ctx for core-op fixture setup");
     if (!cpu_ctx) {
         return;
     }
@@ -180,13 +180,13 @@ static void test_invalid_content_core_ops(ufsecp_gpu_ctx* ctx) {
     aux32[0] = 7;
 
     CHECK(ufsecp_pubkey_create(cpu_ctx, seckey32, valid_pub33) == UFSECP_OK,
-          "cpu pubkey_create for invalid-content setup");
+          "cpu pubkey_create for core-op fixture setup");
     CHECK(ufsecp_pubkey_xonly(cpu_ctx, seckey32, xonly_pub32) == UFSECP_OK,
-          "cpu pubkey_xonly for invalid-content setup");
+          "cpu pubkey_xonly for core-op fixture setup");
     CHECK(ufsecp_ecdsa_sign(cpu_ctx, msg32, seckey32, ecdsa_sig64) == UFSECP_OK,
-          "cpu ecdsa_sign for invalid-content setup");
+          "cpu ecdsa_sign for core-op fixture setup");
     CHECK(ufsecp_schnorr_sign(cpu_ctx, msg32, seckey32, aux32, schnorr_sig64) == UFSECP_OK,
-          "cpu schnorr_sign for invalid-content setup");
+          "cpu schnorr_sign for core-op fixture setup");
 
     std::memcpy(invalid_pub33, valid_pub33, sizeof(valid_pub33));
     invalid_pub33[0] = 0x05;
@@ -304,7 +304,7 @@ static void test_ecrecover_zero_and_invalid(ufsecp_gpu_ctx* ctx) {
           "ecrecover_batch(count=0) = OK");
 
     ufsecp_ctx* cpu_ctx = nullptr;
-    CHECK(ufsecp_ctx_create(&cpu_ctx) == UFSECP_OK, "cpu ctx for invalid ecrecover setup");
+      CHECK(ufsecp_ctx_create(&cpu_ctx) == UFSECP_OK, "cpu ctx for ecrecover fixture setup");
     if (!cpu_ctx) {
         return;
     }
@@ -321,7 +321,7 @@ static void test_ecrecover_zero_and_invalid(ufsecp_gpu_ctx* ctx) {
     seckey32[31] = 1;
 
     CHECK(ufsecp_ecdsa_sign_recoverable(cpu_ctx, msg32, seckey32, sig64, &recid) == UFSECP_OK,
-          "cpu recoverable sign for invalid ecrecover setup");
+          "cpu recoverable sign for ecrecover fixture setup");
 
     auto err = ufsecp_gpu_ecrecover_batch(ctx, msg32, sig64, &invalid_recid, 1, out_pub33, out_valid);
     CHECK(err == UFSECP_ERR_GPU_UNSUPPORTED || err != UFSECP_OK || out_valid[0] == 0,
@@ -465,6 +465,8 @@ static void test_unsupported_ops(ufsecp_gpu_ctx* ctx) {
 static void test_error_strings() {
     std::printf("[gpu_negative] Error strings\n");
 
+      const char* unknown_fallback = "unknown error";
+
     /* All GPU error codes should have non-empty descriptions */
     const int gpu_codes[] = {
         UFSECP_ERR_GPU_UNAVAILABLE, UFSECP_ERR_GPU_DEVICE,
@@ -484,8 +486,8 @@ static void test_error_strings() {
     }
 
     /* Unknown code returns "unknown error" */
-    CHECK(std::strcmp(ufsecp_gpu_error_str(999), "unknown error") == 0,
-          "error_str(999) = 'unknown error'");
+      CHECK(std::strcmp(ufsecp_gpu_error_str(999), unknown_fallback) == 0,
+          "code 999 uses the fallback string");
 }
 
 /* ============================================================================

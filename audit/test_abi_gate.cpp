@@ -119,7 +119,7 @@ int main() {
     } else {
         printf("  ABI version matches binding expectation (%u). LOAD OK.\n",
                binding_expected_abi);
-        CHECK(true, "ABI gate: version matches");
+        CHECK(UFSECP_ABI_VERSION == binding_expected_abi, "ABI gate: version matches");
     }
 
     // 8. Backward compatibility: packed encoding fits in valid 24-bit range

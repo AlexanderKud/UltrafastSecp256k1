@@ -303,7 +303,7 @@ static void test_roundtrip_kat(ufsecp_ctx* ctx) {
             outs_xonly.data(), static_cast<size_t>(n_outs),
             found_idx.data(), found_privkeys.data(), &n_found);
 
-        CHECK_KAT(rc == UFSECP_OK,        c.id, "scan returned error");
+        CHECK_KAT(rc == UFSECP_OK,        c.id, "scan completed successfully");
         CHECK_KAT(n_found == n_outs,       c.id, "scan found fewer outputs than expected");
 
         /* Verify each found spending key matches its respective output */
@@ -373,7 +373,7 @@ static void test_rejection_kat(ufsecp_ctx* ctx) {
             found_idx, found_privkeys, &n_found);
 
         /* Scan should succeed but find nothing */
-        CHECK_KAT(rc == UFSECP_OK, ids[i], "scan returned unexpected error");
+        CHECK_KAT(rc == UFSECP_OK, ids[i], "scan completed successfully for unrelated outputs");
         CHECK_KAT(n_found == 0, ids[i], "scan falsely matched an unrelated output");
     }
 }

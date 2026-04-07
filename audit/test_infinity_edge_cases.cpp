@@ -405,11 +405,11 @@ static void run_inf21_taproot_bip32(ufsecp_ctx* ctx) {
                       "INF-24: BIP-32 master from zero seed produces valid key");
             } else {
                 // If privkey extraction failed, the implementation handled it
-                CHECK(true, "INF-24: BIP-32 master from zero seed handled safely");
+                 CHECK(prc != UFSECP_OK, "INF-24: BIP-32 master from zero seed handled safely");
             }
         } else {
             // Some implementations reject all-zero seed at the master level
-            CHECK(true, "INF-24: BIP-32 rejected all-zero seed (safe)");
+              CHECK(rc != UFSECP_OK, "INF-24: BIP-32 rejected all-zero seed (safe)");
         }
     }
 }

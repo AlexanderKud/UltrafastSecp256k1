@@ -173,14 +173,18 @@ static void run_neg1_context(ufsecp_ctx* ctx) {
 
     // Destroy null: must not crash (void, no error code to check)
     ufsecp_ctx_destroy(nullptr);
-    CHECK(true, "NEG-1.4: ctx_destroy(null) does not crash");
+        ufsecp_ctx* cloned = nullptr;
+        CHECK_CODE(ufsecp_ctx_clone(ctx, &cloned), UFSECP_OK,
+               "NEG-1.4: destroy(null) leaves live ctx usable");
+        CHECK(cloned != nullptr, "NEG-1.4: cloned ctx returned after destroy(null)");
+        ufsecp_ctx_destroy(cloned);
 
     // last_error on null: must return UFSECP_ERR_NULL_ARG or some non-crash value
-    (void)ufsecp_last_error(nullptr);
-    CHECK(true, "NEG-1.5: last_error(null_ctx) does not crash");
+        CHECK(ufsecp_last_error(nullptr) == UFSECP_ERR_NULL_ARG,
+            "NEG-1.5: last_error(null_ctx) returns NULL_ARG");
 
-    (void)ufsecp_last_error_msg(nullptr);
-    CHECK(true, "NEG-1.6: last_error_msg(null_ctx) does not crash");
+        CHECK(std::strcmp(ufsecp_last_error_msg(nullptr), "NULL context") == 0,
+            "NEG-1.6: last_error_msg(null_ctx) returns sentinel message");
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +411,7 @@ static void run_neg4_ecdsa(ufsecp_ctx* ctx, const uint8_t* valid_sig64,
                    UFSECP_ERR_VERIFY_FAIL,
                    "NEG-4.14: ecdsa_verify(wrong_pubkey) -> VERIFY_FAIL");
     } else {
-        CHECK(true, "NEG-4.14: skipped (pubkey2 derivation failed)");
+           CHECK(ufsecp_pubkey_create(ctx, VALID_KEY2, pubkey2) != UFSECP_OK, "NEG-4.14: skipped (pubkey2 derivation failed)");
     }
 
     // sig_to_der: null ctx
@@ -574,7 +578,7 @@ static void run_neg5_schnorr(ufsecp_ctx* ctx, const uint8_t* valid_sig64,
                    UFSECP_ERR_VERIFY_FAIL,
                    "NEG-5.14: schnorr_verify(wrong_key) -> VERIFY_FAIL");
     } else {
-        CHECK(true, "NEG-5.14: skipped (xonly2 derivation failed)");
+           CHECK(ufsecp_pubkey_xonly(ctx, VALID_KEY2, xonly2) != UFSECP_OK, "NEG-5.14: skipped (xonly2 derivation failed)");
     }
 }
 

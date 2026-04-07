@@ -30,6 +30,7 @@
 #include <chrono>
 #include <algorithm>
 #include <atomic>
+#include <map>
 #include <vector>
 #include <set>
 #include <string>
@@ -51,6 +52,7 @@
 #include "secp256k1/ct/scalar.hpp"
 #include "secp256k1/ct/point.hpp"
 #include "secp256k1/ct_utils.hpp"
+#include "secp256k1/benchmark_harness.hpp"
 
 using namespace secp256k1::fast;
 
@@ -176,6 +178,16 @@ static int g_pass = 0, g_fail = 0;
 // Noise-induced failures are intermittent and clear on at least one retry.
 static std::set<std::string> g_ever_passed;   // tests that passed >= 1 attempt
 static std::set<std::string> g_ever_failed;   // tests that failed >= 1 attempt
+static std::map<std::string, int> g_pass_attempts;
+static std::map<std::string, int> g_fail_attempts;
+
+static void prepare_timing_environment() {
+    static bool prepared = false;
+    if (!prepared) {
+        bench::pin_thread_and_elevate();
+        prepared = true;
+    }
+}
 
 // Smoke mode: short run for CI (compile with -DDUDECT_SMOKE).
 // Full mode: longer statistical run for local/nightly testing.
@@ -202,9 +214,11 @@ static void check(bool cond, const char* msg) {
     if (cond) {
         ++g_pass;
         g_ever_passed.insert(msg);
+        ++g_pass_attempts[msg];
     } else {
         ++g_fail;
         g_ever_failed.insert(msg);
+        ++g_fail_attempts[msg];
         printf("    [x] FAIL: %s\n", msg);
     }
 }
@@ -242,8 +256,8 @@ static void test_ct_primitives() {
             BARRIER_OPAQUE(val);
             uint64_t const t0 = rdtsc();
             BARRIER_FENCE();
-            volatile uint64_t const r = secp256k1::ct::is_zero_mask(val);
-            (void)r;
+            uint64_t const r = secp256k1::ct::is_zero_mask(val);
+            bench::DoNotOptimize(r);
             BARRIER_FENCE();
             uint64_t const t1 = rdtsc();
             BARRIER_FENCE();
@@ -477,7 +491,7 @@ static void test_ct_field() {
         WelchState ws;
         for (int i = 0; i < N; ++i) {
             int const cls = classes[i];
-            auto& op = fe_input[i].v[cls];
+            auto op = fe_input[i].v[cls];
 
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
@@ -501,7 +515,7 @@ static void test_ct_field() {
         WelchState ws;
         for (int i = 0; i < N; ++i) {
             int const cls = classes[i];
-            auto& op = fe_input[i].v[cls];
+            auto op = fe_input[i].v[cls];
 
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
@@ -528,7 +542,7 @@ static void test_ct_field() {
         WelchState ws;
         for (int i = 0; i < N; ++i) {
             int const cls = classes[i];
-            auto& op = fe_input[i].v[cls];
+            auto op = fe_input[i].v[cls];
 
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
@@ -560,7 +574,7 @@ static void test_ct_field() {
         WelchState ws;
         for (int i = 0; i < NSLOW; ++i) {
             int const cls = classes[i];
-            auto& op = fe_input[i].v[cls];
+            auto op = fe_input[i].v[cls];
 
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
@@ -616,13 +630,13 @@ static void test_ct_field() {
         WelchState ws;
         for (int i = 0; i < N; ++i) {
             int const cls = classes[i];
-            auto& op = fe_input[i].v[cls];
+            auto op = fe_input[i].v[cls];
 
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
             BARRIER_FENCE();
-            volatile auto m = secp256k1::ct::field_is_zero(op);
-            (void)m;
+            auto const m = secp256k1::ct::field_is_zero(op);
+            bench::DoNotOptimize(m);
             BARRIER_FENCE();
             uint64_t const t1 = rdtsc();
             BARRIER_FENCE();
@@ -676,7 +690,7 @@ static void test_ct_scalar() {
         WelchState ws;
         for (int i = 0; i < N; ++i) {
             int const cls = classes[i];
-            auto& op = sc_input[i].v[cls];
+            auto op = sc_input[i].v[cls];
 
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
@@ -700,7 +714,7 @@ static void test_ct_scalar() {
         WelchState ws;
         for (int i = 0; i < N; ++i) {
             int const cls = classes[i];
-            auto& op = sc_input[i].v[cls];
+            auto op = sc_input[i].v[cls];
 
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
@@ -753,13 +767,13 @@ static void test_ct_scalar() {
         WelchState ws;
         for (int i = 0; i < N; ++i) {
             int const cls = classes[i];
-            auto& op = sc_input[i].v[cls];
+            auto op = sc_input[i].v[cls];
 
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
             BARRIER_FENCE();
-            volatile auto m = secp256k1::ct::scalar_is_zero(op);
-            (void)m;
+            auto const m = secp256k1::ct::scalar_is_zero(op);
+            bench::DoNotOptimize(m);
             BARRIER_FENCE();
             uint64_t const t1 = rdtsc();
             BARRIER_FENCE();
@@ -1261,8 +1275,10 @@ static void test_ct_utils() {
         WelchState ws;
         for (int i = 0; i < N; ++i) {
             int const cls = classes[i];
-            const uint8_t* a = cmp_data[i].a[cls];
-            const uint8_t* b = cmp_data[i].b[cls];
+            alignas(64) uint8_t a[32];
+            alignas(64) uint8_t b[32];
+            std::memcpy(a, cmp_data[i].a[cls], 32);
+            std::memcpy(b, cmp_data[i].b[cls], 32);
 
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
@@ -1662,6 +1678,7 @@ int test_ct_sidechannel_smoke_run() {
     printf("  [ct_sidechannel_smoke] SKIP -- ESP32 (stack/timer limits)\n");
     return 0;
 #endif
+    prepare_timing_environment();
     g_pass = g_fail = 0;
     test_ct_primitives();
     test_ct_field();
@@ -1727,11 +1744,16 @@ int main() {
     // -----------------------------------------------------------------------
     constexpr int MAX_ATTEMPTS = 7;
     constexpr std::uint64_t BASE_SEED = 0xA0D17'51DE0;
+    int attempts_run = 0;
 
+    prepare_timing_environment();
     g_ever_passed.clear();
     g_ever_failed.clear();
+    g_pass_attempts.clear();
+    g_fail_attempts.clear();
 
     for (int attempt = 1; attempt <= MAX_ATTEMPTS; ++attempt) {
+        attempts_run = attempt;
         // Re-seed PRNG: different measurement ordering breaks correlation
         // with OS interrupts / TurboBoost transitions.
         rng.seed(BASE_SEED + static_cast<std::uint64_t>(attempt));
@@ -1764,13 +1786,36 @@ int main() {
             ++persistent;
         }
     }
+    int intermittent = 0;
+    for (auto const& entry : g_fail_attempts) {
+        if (g_pass_attempts.find(entry.first) != g_pass_attempts.end()) {
+            ++intermittent;
+        }
+    }
 
     printf("\n===============================================================\n");
-    if (persistent == 0) {
+    if (persistent == 0 && intermittent == 0) {
         printf("  SIDE-CHANNEL AUDIT: PASS\n");
-        printf("  All %zu tests passed (some required multiple attempts due\n",
-               g_ever_passed.size());
-        printf("  to RDTSC measurement noise -- this is expected behavior).\n");
+        printf("  All %zu tracked checks passed cleanly across %d attempt(s).\n",
+               g_ever_passed.size(), attempts_run);
+    } else if (persistent == 0) {
+        printf("  SIDE-CHANNEL AUDIT: INCONCLUSIVE (%d INTERMITTENT SPIKE(S))\n",
+               intermittent);
+        printf("  No test failed on every attempt, but the following checks\n");
+        printf("  crossed the leak threshold before later recovering:\n");
+        for (auto const& entry : g_fail_attempts) {
+            auto const pass_it = g_pass_attempts.find(entry.first);
+            if (pass_it != g_pass_attempts.end()) {
+                printf("    [~] %s -- failed %d/%d, passed %d/%d\n",
+                       entry.first.c_str(), entry.second, attempts_run,
+                       pass_it->second, attempts_run);
+            }
+        }
+        printf("\n  Treat this as unstable timing evidence, not a clean CT pass.\n");
+        printf("  Next steps:\n");
+        printf("  1. Re-run on a quieter machine / isolated core\n");
+        printf("  2. Validate with Valgrind CT or hardware tracing\n");
+        printf("  3. Inspect generated asm for the listed helpers\n");
     } else {
         printf("  SIDE-CHANNEL AUDIT: %d PERSISTENT LEAK(s) DETECTED\n", persistent);
         printf("  The following tests failed on ALL %d attempts:\n", MAX_ATTEMPTS);
@@ -1786,6 +1831,9 @@ int main() {
     }
     printf("===============================================================\n\n");
 
-    return persistent > 0 ? 1 : 0;
+    if (persistent > 0) {
+        return 1;
+    }
+    return intermittent > 0 ? 2 : 0;
 }
 #endif // UNIFIED_AUDIT_RUNNER

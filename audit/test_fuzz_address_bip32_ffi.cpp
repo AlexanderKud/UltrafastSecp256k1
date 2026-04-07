@@ -606,7 +606,7 @@ static void suite_8_ffi_context_stress() {
     // 8b: Clone and destroy
     {
         ufsecp_ctx* c1 = nullptr;
-        ufsecp_ctx_create(&c1);
+        CHECK(ufsecp_ctx_create(&c1) == UFSECP_OK && c1 != nullptr, "ffi_ctx_create_clone_src");
         if (c1) {
             ufsecp_ctx* c2 = nullptr;
             ufsecp_error_t const err = ufsecp_ctx_clone(c1, &c2);
@@ -616,8 +616,8 @@ static void suite_8_ffi_context_stress() {
             // Both contexts should work independently
             uint8_t pk[32] = {}; pk[31] = 42;
             uint8_t pub1[33], pub2[33];
-            ufsecp_pubkey_create(c1, pk, pub1);
-            ufsecp_pubkey_create(c2, pk, pub2);
+            CHECK(ufsecp_pubkey_create(c1, pk, pub1) == UFSECP_OK, "ffi_ctx_clone_pubkey_1");
+            CHECK(ufsecp_pubkey_create(c2, pk, pub2) == UFSECP_OK, "ffi_ctx_clone_pubkey_2");
             CHECK(std::memcmp(pub1, pub2, 33) == 0, "ffi_ctx_clone_equivalent");
 
             ufsecp_ctx_destroy(c2);
@@ -759,8 +759,9 @@ static void suite_11_ffi_ecdh_tweak(ufsecp_ctx* ctx) {
         fill_random(sk_a, 32);
         fill_random(sk_b, 32);
 
-        if (ufsecp_pubkey_create(ctx, sk_a, pub_a) == UFSECP_OK &&
-            ufsecp_pubkey_create(ctx, sk_b, pub_b) == UFSECP_OK) {
+        const ufsecp_error_t create_a_rc = ufsecp_pubkey_create(ctx, sk_a, pub_a);
+        const ufsecp_error_t create_b_rc = ufsecp_pubkey_create(ctx, sk_b, pub_b);
+        if (create_a_rc == UFSECP_OK && create_b_rc == UFSECP_OK) {
             uint8_t secret_ab[32], secret_ba[32];
             ufsecp_error_t const e1 = ufsecp_ecdh(ctx, sk_a, pub_b, secret_ab);
             ufsecp_error_t const e2 = ufsecp_ecdh(ctx, sk_b, pub_a, secret_ba);

@@ -410,7 +410,7 @@ static void run_kat26_der(ufsecp_ctx* ctx) {
 
     // KAT-27: DER starts with 0x30 (SEQUENCE tag) and has valid length
     CHECK(der[0] == 0x30, "KAT-27: DER starts with SEQUENCE tag 0x30");
-    CHECK(der_len >= 8 && der_len <= 72, "KAT-28: DER length 8..72 bytes");
+    CHECK(der_len >= 70 && der_len <= 72, "KAT-28: DER length 70..72 bytes");
 
     // KAT-29: decode back to compact sig
     uint8_t sig64_back[64] = {};

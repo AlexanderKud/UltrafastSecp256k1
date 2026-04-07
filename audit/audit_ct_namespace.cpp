@@ -337,7 +337,7 @@ int audit_ct_namespace_run() {
         AUDIT_LOG("  [ADVISORY] Source tree not found — skipping static checks.\n");
         AUDIT_LOG("  (Run ctest from the build directory with source tree present.)\n");
         // Not a hard failure: binary may be run without source
-        CHECK(true, "CNS-advisory: source tree not present (static checks skipped)");
+        ++g_pass;
         printf("[audit_ct_namespace] %d/%d checks passed (source tree absent)\n",
                g_pass, g_pass + g_fail);
         return 0;

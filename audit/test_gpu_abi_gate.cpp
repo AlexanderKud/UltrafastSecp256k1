@@ -150,6 +150,8 @@ static void test_null_buffer_ops() {
 static void test_error_strings() {
     std::printf("[gpu_abi_gate] Error strings\n");
 
+      const char* unknown_fallback = "unknown error";
+
     CHECK(std::strcmp(ufsecp_gpu_error_str(UFSECP_OK), "OK") == 0,
           "error_str(OK)");
     CHECK(std::strcmp(ufsecp_gpu_error_str(UFSECP_ERR_GPU_UNAVAILABLE),
@@ -158,8 +160,8 @@ static void test_error_strings() {
     CHECK(std::strcmp(ufsecp_gpu_error_str(UFSECP_ERR_GPU_UNSUPPORTED),
                       "operation not supported on this GPU backend") == 0,
           "error_str(GPU_UNSUPPORTED)");
-    CHECK(std::strcmp(ufsecp_gpu_error_str(999), "unknown error") == 0,
-          "error_str(999) returns 'unknown error'");
+      CHECK(std::strcmp(ufsecp_gpu_error_str(999), unknown_fallback) == 0,
+          "code 999 uses the fallback string");
 }
 
 static void test_gpu_ops_if_available() {

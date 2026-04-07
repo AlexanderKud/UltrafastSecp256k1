@@ -110,7 +110,7 @@ static void test_key_generation() {
     (void)std::printf("[2] FFI: Key generation (compressed, uncompressed, xonly)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
@@ -155,14 +155,14 @@ static void test_ecdsa_round_trip() {
     (void)std::printf("[3] FFI: ECDSA sign -> verify -> DER encode/decode\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32], msg32[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
     hex_to_bytes(MSG_HEX, msg32, 32);
 
     uint8_t pub33[33];
-    ufsecp_pubkey_create(ctx, privkey, pub33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, privkey, pub33), "pubkey_create");
 
     // Sign
     uint8_t sig64[64] = {};
@@ -203,14 +203,14 @@ static void test_ecdsa_recovery() {
     (void)std::printf("[4] FFI: ECDSA recoverable sign -> recover pubkey\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32], msg32[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
     hex_to_bytes(MSG_HEX, msg32, 32);
 
     uint8_t pub33_expected[33];
-    ufsecp_pubkey_create(ctx, privkey, pub33_expected);
+    CHECK_OK(ufsecp_pubkey_create(ctx, privkey, pub33_expected), "pubkey_create");
 
     // Recoverable sign
     uint8_t sig64[64] = {};
@@ -236,7 +236,7 @@ static void test_ecdsa_recovery() {
               "wrong recid -> different pubkey");
     } else {
         // Recovery failure is also acceptable
-        CHECK(true, "wrong recid -> recovery failed (expected)");
+        CHECK(err != UFSECP_OK, "wrong recid -> recovery failed (expected)");
     }
 
     ufsecp_ctx_destroy(ctx);
@@ -249,14 +249,14 @@ static void test_schnorr_round_trip() {
     (void)std::printf("[5] FFI: Schnorr/BIP-340 sign -> verify\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32], msg32[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
     hex_to_bytes(MSG_HEX, msg32, 32);
 
     uint8_t xonly[32];
-    ufsecp_pubkey_xonly(ctx, privkey, xonly);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, privkey, xonly), "pubkey_xonly");
 
     // Sign with deterministic aux (all zeros)
     uint8_t aux32[32] = {};
@@ -288,15 +288,15 @@ static void test_ecdh_agreement() {
     (void)std::printf("[6] FFI: ECDH shared secret agreement\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t sk_a[32], sk_b[32];
     hex_to_bytes(PRIVKEY1_HEX, sk_a, 32);
     hex_to_bytes(PRIVKEY2_HEX, sk_b, 32);
 
     uint8_t pub_a[33], pub_b[33];
-    ufsecp_pubkey_create(ctx, sk_a, pub_a);
-    ufsecp_pubkey_create(ctx, sk_b, pub_b);
+    CHECK_OK(ufsecp_pubkey_create(ctx, sk_a, pub_a), "pubkey_create");
+    CHECK_OK(ufsecp_pubkey_create(ctx, sk_b, pub_b), "pubkey_create");
 
     // A computes: ECDH(sk_a, pub_b)
     uint8_t secret_ab[32] = {};
@@ -332,7 +332,7 @@ static void test_bip32_derivation() {
     (void)std::printf("[7] FFI: BIP-32 master -> derive -> extract\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // BIP-32 TV1 seed
     uint8_t seed[16];
@@ -391,13 +391,13 @@ static void test_address_generation() {
     (void)std::printf("[8] FFI: Address generation (P2PKH, P2WPKH, P2TR)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
 
     uint8_t pub33[33];
-    ufsecp_pubkey_create(ctx, privkey, pub33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, privkey, pub33), "pubkey_create");
 
     // P2PKH (mainnet)
     char addr_buf[128] = {};
@@ -421,7 +421,7 @@ static void test_address_generation() {
 
     // P2TR (mainnet)
     uint8_t xonly[32];
-    ufsecp_pubkey_xonly(ctx, privkey, xonly);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, privkey, xonly), "pubkey_xonly");
 
     addr_len = sizeof(addr_buf);
     std::memset(addr_buf, 0, sizeof(addr_buf));
@@ -442,7 +442,7 @@ static void test_wif_round_trip() {
     (void)std::printf("[9] FFI: WIF encode -> decode round-trip\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
@@ -522,13 +522,13 @@ static void test_taproot_operations() {
     (void)std::printf("[11] FFI: Taproot output key + verification\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
 
     uint8_t internal_x[32];
-    ufsecp_pubkey_xonly(ctx, privkey, internal_x);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, privkey, internal_x), "pubkey_xonly");
 
     // Key-path-only: no merkle root
     uint8_t output_x[32] = {};
@@ -552,7 +552,8 @@ static void test_taproot_operations() {
 
     // Tweaked privkey should produce the output_x as its xonly pubkey
     uint8_t tweaked_xonly[32] = {};
-    ufsecp_pubkey_xonly(ctx, tweaked_sk, tweaked_xonly);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, tweaked_sk, tweaked_xonly),
+             "pubkey_xonly(tweaked)");
     CHECK(std::memcmp(tweaked_xonly, output_x, 32) == 0,
           "tweaked_seckey -> output_x matches");
 
@@ -566,7 +567,7 @@ static void test_error_paths() {
     (void)std::printf("[12] FFI: Error paths (NULL, bad key, invalid sig)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // NULL context for create
     CHECK(ufsecp_ctx_create(nullptr) != UFSECP_OK, "ctx_create(NULL) fails");
@@ -606,7 +607,7 @@ static void test_key_tweaks() {
     (void)std::printf("[13] FFI: Key tweak add/mul + negate\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
@@ -657,7 +658,7 @@ static void test_cross_api_ecdsa() {
     (void)std::printf("[14] FFI: Cross-check C ABI vs C++ (ECDSA sign+verify)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32], msg32[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
@@ -669,7 +670,7 @@ static void test_cross_api_ecdsa() {
 
     // C ABI verify
     uint8_t pub33[33];
-    ufsecp_pubkey_create(ctx, privkey, pub33);
+    CHECK_OK(ufsecp_pubkey_create(ctx, privkey, pub33), "pubkey_create");
     CHECK_OK(ufsecp_ecdsa_verify(ctx, msg32, c_sig64, pub33), "c_ecdsa_verify");
 
     // The C API should produce a valid, low-S signature
@@ -686,14 +687,14 @@ static void test_cross_api_schnorr() {
     (void)std::printf("[15] FFI: Cross-check C ABI vs C++ (Schnorr sign+verify)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t privkey[32], msg32[32];
     hex_to_bytes(PRIVKEY1_HEX, privkey, 32);
     hex_to_bytes(MSG_HEX, msg32, 32);
 
     uint8_t xonly[32];
-    ufsecp_pubkey_xonly(ctx, privkey, xonly);
+    CHECK_OK(ufsecp_pubkey_xonly(ctx, privkey, xonly), "pubkey_xonly");
 
     // C ABI Schnorr sign
     uint8_t aux[32] = {};
@@ -719,7 +720,7 @@ static void test_negative_vectors() {
     (void)std::printf("[16] FFI: Negative test vectors (strict parsing)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // -- secp256k1 curve order n (hex) --
     // n = FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -980,7 +981,7 @@ static void test_pubkey_arithmetic() {
     (void)std::printf("[18] FFI: Pubkey arithmetic (add, negate, combine, tweak)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32], priv2[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
@@ -1035,7 +1036,7 @@ static void test_bip39_round_trip() {
     (void)std::printf("[19] FFI: BIP-39 (generate -> validate -> seed)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // Generate 12-word mnemonic from known entropy
     uint8_t entropy[16];
@@ -1084,7 +1085,7 @@ static void test_batch_verify() {
     (void)std::printf("[20] FFI: Batch verification (ECDSA + Schnorr)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
@@ -1149,7 +1150,7 @@ static void test_pedersen_commitments() {
     (void)std::printf("[21] FFI: Pedersen commitments (commit -> verify -> sum)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t value[32] = {};
     value[31] = 42; // value = 42
@@ -1191,7 +1192,7 @@ static void test_zk_proofs() {
     (void)std::printf("[22] FFI: ZK proofs (knowledge prove -> verify)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t secret[32];
     hex_to_bytes(PRIVKEY1_HEX, secret, 32);
@@ -1224,7 +1225,7 @@ static void test_multi_scalar_mul() {
     (void)std::printf("[23] FFI: Multi-scalar multiplication (Shamir + MSM)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv1[32], priv2[32];
     hex_to_bytes(PRIVKEY1_HEX, priv1, 32);
@@ -1265,7 +1266,7 @@ static void test_multi_coin_wallet() {
     (void)std::printf("[24] FFI: Multi-coin wallet (address dispatch)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
@@ -1309,7 +1310,7 @@ static void test_btc_message_sign() {
     (void)std::printf("[25] FFI: Bitcoin message sign/verify (BIP-137)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
@@ -1352,7 +1353,7 @@ static void test_ethereum_round_trip() {
     (void)std::printf("[26] FFI: Ethereum (keccak256, address, sign, ecrecover)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // Keccak-256 known vector: keccak256("") = c5d2460186f7233c9...
     uint8_t keccak_out[32];
@@ -1409,7 +1410,7 @@ static void test_musig2_flow() {
     (void)std::printf("[27] FFI: MuSig2 (2-of-2 key agg -> sign -> aggregate)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // Two signers
     uint8_t priv1[32], priv2[32];
@@ -1488,7 +1489,7 @@ static void test_adaptor_signatures() {
     (void)std::printf("[28] FFI: Adaptor signatures (pre-sign -> adapt -> extract)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     uint8_t priv[32];
     hex_to_bytes(PRIVKEY1_HEX, priv, 32);
@@ -1553,7 +1554,7 @@ static void test_ecies_round_trip() {
     (void)std::printf("[29] FFI: ECIES (encrypt -> decrypt -> tamper -> wrong key)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // Use PRIVKEY1 as recipient
     uint8_t priv[32];
@@ -1667,7 +1668,7 @@ static void test_silent_payments() {
     (void)std::printf("[30] FFI: Silent Payments (address -> create_output -> scan)\n");
 
     ufsecp_ctx* ctx = nullptr;
-    ufsecp_ctx_create(&ctx);
+    CHECK_OK(ufsecp_ctx_create(&ctx), "ctx_create");
 
     // Use PRIVKEY1 as scan key, PRIVKEY2 as spend key
     uint8_t scan_priv[32], spend_priv[32];
