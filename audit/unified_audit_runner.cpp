@@ -149,6 +149,9 @@ int test_exploit_network_validation_bypass_run(); // Network selector validation
 int test_exploit_ecdsa_half_half_nonce_run();     // ePrint 2023/841 half-half nonce key recovery
 int test_exploit_ecdsa_nonce_modular_bias_run();  // CVE-2024-31497 nonce modular reduction bias
 int test_exploit_ecdsa_differential_fault_run();  // ePrint 2017/975 differential fault on RFC 6979
+int test_exploit_eucleak_inversion_timing_run();   // ePrint 2024/1380 EUCLEAK non-CT inversion
+int test_exploit_ecdsa_cross_key_nonce_reuse_run(); // ePrint 2025/654 cross-key nonce reuse cascade
+int test_exploit_schnorr_hash_order_run();          // ePrint 2025/1846 Fiat-Shamir hash order
 int test_cryptol_specs_run();      // Cryptol formal spec property check (advisory: needs cryptol)
 
 // ============================================================================
@@ -692,6 +695,9 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_half_half_nonce",         "Half-Half Nonce Key Recovery (HH-1..HH-10)", "exploit_poc", test_exploit_ecdsa_half_half_nonce_run, false },
     { "exploit_nonce_modular_bias",      "Nonce Modular Reduction Bias (NMB-1..NMB-6)","exploit_poc", test_exploit_ecdsa_nonce_modular_bias_run, false },
     { "exploit_differential_fault",      "Differential Fault RFC 6979 (DF-1..DF-8)",   "exploit_poc", test_exploit_ecdsa_differential_fault_run, false },
+    { "exploit_eucleak_inversion",        "EUCLEAK Inversion Timing (EUC-1..EUC-12)",   "exploit_poc", test_exploit_eucleak_inversion_timing_run, false },
+    { "exploit_cross_key_nonce_reuse",    "Cross-Key Nonce Reuse (CKN-1..CKN-10)",      "exploit_poc", test_exploit_ecdsa_cross_key_nonce_reuse_run, false },
+    { "exploit_schnorr_hash_order",       "Schnorr Hash Order (SHO-1..SHO-10)",         "exploit_poc", test_exploit_schnorr_hash_order_run, false },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);
