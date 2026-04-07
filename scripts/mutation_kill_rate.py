@@ -63,10 +63,12 @@ Output
 from __future__ import annotations
 
 import argparse
+import atexit
 import copy
 import json
 import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -78,6 +80,39 @@ from typing import Optional
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 LIB_ROOT   = SCRIPT_DIR.parent
+
+# ---------------------------------------------------------------------------
+# Mutation rollback safety net
+# ---------------------------------------------------------------------------
+# Tracks files currently mutated so they can be restored on abnormal exit.
+# Uses `git checkout -- <file>` as the ultimate fallback because it is
+# immune to Python-level state corruption (OOM, segfault, signal).
+_MUTATED_FILES: set[Path] = set()
+
+
+def _rollback_mutated_files() -> None:
+    """Restore any files mutated by this process via git checkout."""
+    for src in list(_MUTATED_FILES):
+        try:
+            subprocess.run(
+                ["git", "checkout", "--", str(src)],
+                cwd=LIB_ROOT, timeout=10,
+                capture_output=True,
+            )
+        except Exception:
+            pass
+    _MUTATED_FILES.clear()
+
+
+def _signal_handler(signum, _frame):
+    """Handle SIGTERM/SIGINT by restoring mutated files before exit."""
+    _rollback_mutated_files()
+    sys.exit(128 + signum)
+
+
+atexit.register(_rollback_mutated_files)
+signal.signal(signal.SIGTERM, _signal_handler)
+signal.signal(signal.SIGINT, _signal_handler)
 
 # ---------------------------------------------------------------------------
 # Default high-value mutation targets (relative to LIB_ROOT)
@@ -410,6 +445,7 @@ def run_mutation_testing(
             continue
 
         src.write_text(mutated_text, encoding="utf-8")
+        _MUTATED_FILES.add(src)
 
         try:
             # Rebuild
@@ -428,8 +464,9 @@ def run_mutation_testing(
                     outcome = "survived"
                     report.survived += 1
         finally:
-            # Restore original
+            # Restore original (fast path — in-memory copy)
             src.write_text(original_text, encoding="utf-8")
+            _MUTATED_FILES.discard(src)
 
         elapsed = time.monotonic() - t0
         mr = MutationResult(
