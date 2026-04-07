@@ -2300,6 +2300,14 @@ add_executable(unified_audit_runner
     test_exploit_metal_field_reduce.cpp
     # -- Network selector validation bypass --
     test_exploit_network_validation_bypass.cpp
+    # -- Previously standalone-only exploit tests (unified audit gap closure) --
+    test_exploit_bip32_child_key_attack.cpp
+    test_exploit_boundary_sentinels.cpp
+    test_exploit_ecdsa_r_overflow.cpp
+    test_exploit_ecdsa_sign_sentinels.cpp
+    test_exploit_frost_identifiable_abort.cpp
+    test_exploit_hash_algo_sig_isolation.cpp
+    test_exploit_schnorr_nonce_reuse.cpp
 )
 # Conditionally add 5x52 field test (requires __uint128_t; skip on MSVC)
 if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
