@@ -635,4 +635,4 @@ ctest --test-dir build-audit -R "exploit" --output-on-failure
 
 ---
 
-*UltrafastSecp256k1 v3.50.0 -- Test Coverage Matrix*
+*UltrafastSecp256k1 v3.60.0 -- Test Coverage Matrix*

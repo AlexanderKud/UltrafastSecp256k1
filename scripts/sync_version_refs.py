@@ -72,6 +72,21 @@ RULES = [
 
     # Version: 3.4.0  (plain key: value in tables without bold)
     (r'^(Version:\s*)[\d]+\.[\d]+\.[\d]+\s*$', r'\g<1>{v}'),
+
+    # | 3.50.x  | [OK] Active |  (SECURITY.md supported-version table)
+    (r'(\|\s*)[\d]+\.[\d]+\.x(\s*\|\s*\[OK\]\s*Active)', r'\g<1>{major}.{minor}.x\g<2>'),
+
+    # *Generated from unified_audit_runner v3.4.0 output ...
+    (r'(unified_audit_runner\s+v)[\d]+\.[\d]+\.[\d]+', r'\g<1>{v}'),
+
+    # **Library Version:** UltrafastSecp256k1 v3.4.0
+    (r'(\*\*Library Version:\*\*\s*UltrafastSecp256k1\s+v)[\d]+\.[\d]+\.[\d]+', r'\g<1>{v}'),
+
+    # description: 'Existing tag to backfill (e.g. v3.4.0)'
+    (r'(e\.g\.\s+v)[\d]+\.[\d]+\.[\d]+', r'\g<1>{v}'),
+
+    # Library:    UltrafastSecp256k1 v3.4.0  (bench/audit output headers)
+    (r'(Library:\s+UltrafastSecp256k1\s+v)[\d]+\.[\d]+\.[\d]+', r'\g<1>{v}'),
 ]
 
 # Files to skip entirely (binary, build artifacts, historical records)
@@ -99,7 +114,9 @@ SKIP_PATTERNS = [
 def should_skip_path(path: Path, root: Path) -> bool:
     rel = str(path.relative_to(root))
     for skip in SKIP_DIRS:
-        if skip in rel:
+        # Use path-component matching to avoid '.git' matching '.github'
+        if any(part == skip or part.startswith(skip) and skip.endswith('-')
+               for part in Path(rel).parts):
             return True
     if path.name in SKIP_FILES:
         return True
@@ -111,13 +128,22 @@ def should_skip_path(path: Path, root: Path) -> bool:
 
 def apply_rules(content: str, version: str) -> tuple[str, int]:
     """Apply all version-replacement rules. Returns (new_content, change_count)."""
+    parts = version.split('.')
+    major = parts[0] if len(parts) > 0 else '0'
+    minor = parts[1] if len(parts) > 1 else '0'
+    patch = parts[2] if len(parts) > 2 else '0'
     changes = 0
     lines = content.split('\n')
     new_lines = []
     for line in lines:
         new_line = line
         for pattern, repl in RULES:
-            repl_filled = repl.replace('{v}', version).replace('{vv}', 'v' + version)
+            repl_filled = (repl
+                           .replace('{v}', version)
+                           .replace('{vv}', 'v' + version)
+                           .replace('{major}', major)
+                           .replace('{minor}', minor)
+                           .replace('{patch}', patch))
             result = re.sub(pattern, repl_filled, new_line)
             if result != new_line:
                 changes += 1
@@ -130,34 +156,35 @@ def sync_version(root: Path, version: str, dry_run: bool) -> int:
     total_changed = 0
     total_files = 0
 
-    # Scan .md files in docs/, include/, root
-    scan_dirs = [root / 'docs', root / 'include', root]
-    target_suffixes = {'.md'}
+    # Scan .md and .yml files in docs/, include/, .github/, root
+    scan_dirs = [root / 'docs', root / 'include', root / '.github', root]
+    target_suffixes = {'.md', '.yml', '.yaml'}
 
     visited = set()
     for scan_dir in scan_dirs:
         if not scan_dir.exists():
             continue
-        pattern = '*.md' if scan_dir == root else '**/*.md'
-        for path in sorted(scan_dir.glob(pattern)):
-            if path in visited:
-                continue
-            visited.add(path)
-            if should_skip_path(path, root):
-                continue
-            try:
-                original = path.read_text(encoding='utf-8')
-            except Exception:
-                continue
-            updated, changes = apply_rules(original, version)
-            if changes:
-                total_changed += changes
-                total_files += 1
-                if dry_run:
-                    print(f'  [dry-run] {path.relative_to(root)}: {changes} replacement(s)')
-                else:
-                    path.write_text(updated, encoding='utf-8')
-                    print(f'  {path.relative_to(root)}: {changes} replacement(s)')
+        for suffix in target_suffixes:
+            glob_pat = f'*{suffix}' if scan_dir == root else f'**/*{suffix}'
+            for path in sorted(scan_dir.glob(glob_pat)):
+                if path in visited:
+                    continue
+                visited.add(path)
+                if should_skip_path(path, root):
+                    continue
+                try:
+                    original = path.read_text(encoding='utf-8')
+                except Exception:
+                    continue
+                updated, changes = apply_rules(original, version)
+                if changes:
+                    total_changed += changes
+                    total_files += 1
+                    if dry_run:
+                        print(f'  [dry-run] {path.relative_to(root)}: {changes} replacement(s)')
+                    else:
+                        path.write_text(updated, encoding='utf-8')
+                        print(f'  {path.relative_to(root)}: {changes} replacement(s)')
 
     return total_files
 

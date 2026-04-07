@@ -1,6 +1,6 @@
 # Audit Guide
 
-**UltrafastSecp256k1 v3.50.0** -- Independent Auditor Navigation
+**UltrafastSecp256k1 v3.60.0** -- Independent Auditor Navigation
 
 > The audit is not a document.
 > It is a reproducible system: clone, build, run, verify.
@@ -425,4 +425,4 @@ clang++ -fsanitize=fuzzer,address -O2 -std=c++20 \
 
 ---
 
-*UltrafastSecp256k1 v3.50.0 -- Audit Guide*
+*UltrafastSecp256k1 v3.60.0 -- Audit Guide*
