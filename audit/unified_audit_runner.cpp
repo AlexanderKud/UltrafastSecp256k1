@@ -146,6 +146,9 @@ int test_exploit_mutation_residue_run(); // mutation residue exploit vectors (wN
 int test_mutation_artifact_scan_run();   // source-file integrity scanner for mutation artifacts
 int test_exploit_metal_field_reduce_run(); // Metal field_reduce_512 acc[8] truncation (issue #226)
 int test_exploit_network_validation_bypass_run(); // Network selector validation bypass (address/WIF ABI)
+int test_exploit_ecdsa_half_half_nonce_run();     // ePrint 2023/841 half-half nonce key recovery
+int test_exploit_ecdsa_nonce_modular_bias_run();  // CVE-2024-31497 nonce modular reduction bias
+int test_exploit_ecdsa_differential_fault_run();  // ePrint 2017/975 differential fault on RFC 6979
 int test_cryptol_specs_run();      // Cryptol formal spec property check (advisory: needs cryptol)
 
 // ============================================================================
@@ -686,6 +689,9 @@ static const AuditModule ALL_MODULES[] = {
     { "mutation_artifact_scan",          "Source Integrity Scanner (MA-1..MA-4)",       "exploit_poc", test_mutation_artifact_scan_run, false },
     { "exploit_metal_field_reduce",       "Metal field_reduce_512 Regression (#226)",    "exploit_poc", test_exploit_metal_field_reduce_run, false },
     { "exploit_network_validation_bypass", "Network Selector Bypass (NVB-1..NVB-8)",     "exploit_poc", test_exploit_network_validation_bypass_run, false },
+    { "exploit_half_half_nonce",         "Half-Half Nonce Key Recovery (HH-1..HH-10)", "exploit_poc", test_exploit_ecdsa_half_half_nonce_run, false },
+    { "exploit_nonce_modular_bias",      "Nonce Modular Reduction Bias (NMB-1..NMB-6)","exploit_poc", test_exploit_ecdsa_nonce_modular_bias_run, false },
+    { "exploit_differential_fault",      "Differential Fault RFC 6979 (DF-1..DF-8)",   "exploit_poc", test_exploit_ecdsa_differential_fault_run, false },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);

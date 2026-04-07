@@ -1397,6 +1397,33 @@ target_compile_definitions(test_exploit_ecdsa_affine_nonce_relation_standalone P
 add_test(NAME exploit_ecdsa_affine_nonce_relation COMMAND test_exploit_ecdsa_affine_nonce_relation_standalone)
 set_tests_properties(exploit_ecdsa_affine_nonce_relation PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
 
+# -- PoC: Half-half nonce key recovery (HH-1..HH-10) [ePrint 2023/841] --
+add_executable(test_exploit_ecdsa_half_half_nonce_standalone
+    test_exploit_ecdsa_half_half_nonce.cpp)
+audit_target_defaults(test_exploit_ecdsa_half_half_nonce_standalone)
+target_link_libraries(test_exploit_ecdsa_half_half_nonce_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_ecdsa_half_half_nonce_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdsa_half_half_nonce COMMAND test_exploit_ecdsa_half_half_nonce_standalone)
+set_tests_properties(exploit_ecdsa_half_half_nonce PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
+
+# -- PoC: Nonce modular reduction bias (NMB-1..NMB-8) [CVE-2024-31497] --
+add_executable(test_exploit_ecdsa_nonce_modular_bias_standalone
+    test_exploit_ecdsa_nonce_modular_bias.cpp)
+audit_target_defaults(test_exploit_ecdsa_nonce_modular_bias_standalone)
+target_link_libraries(test_exploit_ecdsa_nonce_modular_bias_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_ecdsa_nonce_modular_bias_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdsa_nonce_modular_bias COMMAND test_exploit_ecdsa_nonce_modular_bias_standalone)
+set_tests_properties(exploit_ecdsa_nonce_modular_bias PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
+
+# -- PoC: Differential fault on RFC 6979 (DF-1..DF-8) [ePrint 2017/975] --
+add_executable(test_exploit_ecdsa_differential_fault_standalone
+    test_exploit_ecdsa_differential_fault.cpp)
+audit_target_defaults(test_exploit_ecdsa_differential_fault_standalone)
+target_link_libraries(test_exploit_ecdsa_differential_fault_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_ecdsa_differential_fault_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdsa_differential_fault COMMAND test_exploit_ecdsa_differential_fault_standalone)
+set_tests_properties(exploit_ecdsa_differential_fault PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
+
 # -- PoC: Cross-scheme pubkey consistency (CSP-1..CSP-8) -------------------
 add_executable(test_exploit_cross_scheme_pubkey_standalone
     test_exploit_cross_scheme_pubkey.cpp
@@ -2319,6 +2346,12 @@ add_executable(unified_audit_runner
     test_exploit_schnorr_nonce_reuse.cpp
     # -- Affine nonce relation key recovery (ePrint 2025/705) --
     test_exploit_ecdsa_affine_nonce_relation.cpp
+    # -- Half-half nonce key recovery (ePrint 2023/841) --
+    test_exploit_ecdsa_half_half_nonce.cpp
+    # -- Nonce modular reduction bias (CVE-2024-31497) --
+    test_exploit_ecdsa_nonce_modular_bias.cpp
+    # -- Differential fault on RFC 6979 (ePrint 2017/975) --
+    test_exploit_ecdsa_differential_fault.cpp
 )
 # Conditionally add 5x52 field test (requires __uint128_t; skip on MSVC)
 if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
