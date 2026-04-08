@@ -37,8 +37,15 @@ evidence upgrades, and changes to what the repository can honestly claim.
   BINDING_NO_VALIDATION — Trail-of-Bits/NCC-style static analysis layer
   for crypto hygiene enforcement.
 
-- **Integrated** dev_bug_scanner into `scripts/preflight.py` as [13/13]
-  check — crypto-specific HIGH findings are now surface in preflight gate.
+- **Integrated** dev_bug_scanner into `scripts/preflight.py` as [13/14]
+  check — crypto-specific HIGH findings are now surfaced in preflight gate.
+
+- **Added** `scripts/test_audit_scripts.py` — Python audit infrastructure
+  self-test: validates syntax, shebang, docstring, `--help` exit codes,
+  structural integrity (category coverage, step count), and smoke tests
+  for all 31 audit Python scripts. 99/99 checks pass. Integrated into
+  `scripts/preflight.py` as [14/14] and into `preflight.yml` CI workflow
+  as a hard-fail gate.
 
 ## 2026-04-13 (6 new ePrint/CVE exploit PoCs: ZVP-DCP, lattice HNP, DFA, type confusion, ROS, FROST binding)
 

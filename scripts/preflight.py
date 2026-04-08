@@ -24,6 +24,7 @@ Usage:
     python3 scripts/preflight.py --secret-paths     # fail closed on secret-bearing edits without doc updates
     python3 scripts/preflight.py --abi              # ABI surface check
     python3 scripts/preflight.py --bug-scan         # crypto-aware dev bug scanner
+    python3 scripts/preflight.py --py-audit          # Python audit infrastructure self-test
 """
 
 import json
@@ -549,7 +550,7 @@ def run_all(args):
 
     # Security
     if mode in ('--all', '--security'):
-        print(f"{BOLD}[1/13] Security Invariants{RESET}")
+        print(f"{BOLD}[1/14] Security Invariants{RESET}")
         issues = check_security_invariants()
         if issues:
             for i in issues:
@@ -564,7 +565,7 @@ def run_all(args):
 
     # CUDA / MSVC portability
     if mode in ('--all', '--cuda-msvc'):
-        print(f"{BOLD}[2/13] CUDA / MSVC Portability{RESET}")
+        print(f"{BOLD}[2/14] CUDA / MSVC Portability{RESET}")
         cuda_msvc_issues = check_cuda_msvc_portability()
         if cuda_msvc_issues:
             for issue in cuda_msvc_issues:
@@ -577,7 +578,7 @@ def run_all(args):
 
     # Narrative drift
     if mode in ('--all', '--drift'):
-        print(f"{BOLD}[3/13] Narrative Drift Detection{RESET}")
+        print(f"{BOLD}[3/14] Narrative Drift Detection{RESET}")
         drift_issues = check_narrative_drift()
         if drift_issues:
             for i in drift_issues:
@@ -589,7 +590,7 @@ def run_all(args):
 
     # Coverage
     if mode in ('--all', '--coverage'):
-        print(f"{BOLD}[4/13] Test Coverage Gaps{RESET}")
+        print(f"{BOLD}[4/14] Test Coverage Gaps{RESET}")
         gaps = check_coverage_gaps()
         if gaps:
             for path, lines in sorted(gaps, key=lambda x: -x[1])[:20]:
@@ -601,7 +602,7 @@ def run_all(args):
 
     # Freshness
     if mode in ('--all', '--freshness'):
-        print(f"{BOLD}[5/13] Graph Freshness{RESET}")
+        print(f"{BOLD}[5/14] Graph Freshness{RESET}")
         stale, built = check_freshness()
         if stale:
             for kind, path, lines in stale[:15]:
@@ -615,7 +616,7 @@ def run_all(args):
 
     # Changed files
     if mode in ('--all', '--claims'):
-        print(f"{BOLD}[6/13] Assurance Claim Surfaces{RESET}")
+        print(f"{BOLD}[6/14] Assurance Claim Surfaces{RESET}")
         claim_issues = check_claim_surfaces()
         if claim_issues:
             for issue in claim_issues:
@@ -627,7 +628,7 @@ def run_all(args):
             print(f"  {GREEN}[OK] Claim surfaces resolve and are graph-indexed{RESET}\n")
 
     if mode in ('--all', '--ai-review'):
-        print(f"{BOLD}[7/13] AI Review Event Log{RESET}")
+        print(f"{BOLD}[7/14] AI Review Event Log{RESET}")
         ai_review_issues = check_ai_review_log()
         if ai_review_issues:
             for issue in ai_review_issues:
@@ -639,7 +640,7 @@ def run_all(args):
             print(f"  {GREEN}[OK] AI review-event log is schema-valid{RESET}\n")
 
     if mode in ('--all', '--gpu-evidence'):
-        print(f"{BOLD}[8/13] GPU Backend Evidence{RESET}")
+        print(f"{BOLD}[8/14] GPU Backend Evidence{RESET}")
         gpu_issues = check_gpu_backend_evidence()
         if gpu_issues:
             for issue in gpu_issues:
@@ -652,7 +653,7 @@ def run_all(args):
 
     # Changed files
     if mode in ('--all', '--changed'):
-        print(f"{BOLD}[9/13] Changed Files Impact{RESET}")
+        print(f"{BOLD}[9/14] Changed Files Impact{RESET}")
         changed = get_changed_files()
         if changed:
             print(f"  {len(changed)} files changed vs HEAD:")
@@ -682,7 +683,7 @@ def run_all(args):
             print(f"  {GREEN}[OK] No uncommitted changes{RESET}\n")
 
     if mode in ('--all', '--secret-paths'):
-        print(f"{BOLD}[10/13] Secret-Path Change Gate{RESET}")
+        print(f"{BOLD}[10/14] Secret-Path Change Gate{RESET}")
         secret_report, secret_fail = check_secret_path_changes(changed)
         if secret_report['triggered_rules']:
             for rule in secret_report['triggered_rules']:
@@ -705,7 +706,7 @@ def run_all(args):
 
     # ABI
     if mode in ('--all', '--abi'):
-        print(f"{BOLD}[11/13] ABI Surface{RESET}")
+        print(f"{BOLD}[11/14] ABI Surface{RESET}")
         added, removed = check_abi_surface()
         if added:
             print(f"  {CYAN}NEW functions (not in graph):{RESET}")
@@ -723,7 +724,7 @@ def run_all(args):
 
     # Doc Consistency
     if mode in ('--all', '--doc-sync'):
-        print(f"{BOLD}[12/13] Documentation Consistency{RESET}")
+        print(f"{BOLD}[12/14] Documentation Consistency{RESET}")
         try:
             import importlib.util
             spec = importlib.util.spec_from_file_location(
@@ -764,7 +765,7 @@ def run_all(args):
 
     # Dev Bug Scanner (crypto-aware static checks)
     if mode in ('--all', '--bug-scan'):
-        print(f"{BOLD}[13/13] Dev Bug Scanner (crypto){RESET}")
+        print(f"{BOLD}[13/14] Dev Bug Scanner (crypto){RESET}")
         try:
             scanner_path = SCRIPT_DIR / "dev_bug_scanner.py"
             result = subprocess.run(
@@ -808,6 +809,40 @@ def run_all(args):
             print(f"  {YELLOW}WARNING: dev_bug_scanner timed out (120s){RESET}\n")
         except Exception as exc:
             print(f"  {YELLOW}WARNING: dev_bug_scanner check failed: {exc}{RESET}\n")
+
+    # Python audit infrastructure self-test
+    if mode in ('--all', '--py-audit'):
+        print(f"{BOLD}[14/14] Python Audit Self-Test{RESET}")
+        try:
+            selftest_path = SCRIPT_DIR / "test_audit_scripts.py"
+            result = subprocess.run(
+                [sys.executable, str(selftest_path), "--quick"],
+                capture_output=True, text=True, timeout=60,
+                cwd=str(LIB_ROOT),
+            )
+            output = result.stdout + result.stderr
+            if result.returncode == 0:
+                # Extract pass count from output
+                import re as _re
+                m = _re.search(r'(\d+) passed', output)
+                count = m.group(1) if m else "?"
+                print(f"  {GREEN}[OK] {count} checks passed{RESET}\n")
+            else:
+                # Show failures
+                for line in output.split('\n'):
+                    if 'FAIL' in line:
+                        print(f"  {RED}{line.strip()}{RESET}")
+                fail_m = _re.search(r'(\d+) FAILED', output) if '_re' in dir() else None
+                n_fail = fail_m.group(1) if fail_m else "?"
+                total_issues += int(n_fail) if isinstance(n_fail, str) and n_fail.isdigit() else 1
+                exit_code = 1
+                print(f"  {RED}{n_fail} Python audit self-test failure(s){RESET}\n")
+        except FileNotFoundError:
+            print(f"  {YELLOW}WARNING: test_audit_scripts.py not found{RESET}\n")
+        except subprocess.TimeoutExpired:
+            print(f"  {YELLOW}WARNING: Python self-test timed out (60s){RESET}\n")
+        except Exception as exc:
+            print(f"  {YELLOW}WARNING: Python self-test failed: {exc}{RESET}\n")
 
     # Summary
     print(f"{BOLD}{'='*60}{RESET}")
