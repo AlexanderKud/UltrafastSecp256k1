@@ -152,6 +152,12 @@ int test_exploit_ecdsa_differential_fault_run();  // ePrint 2017/975 differentia
 int test_exploit_eucleak_inversion_timing_run();   // ePrint 2024/1380 EUCLEAK non-CT inversion
 int test_exploit_ecdsa_cross_key_nonce_reuse_run(); // ePrint 2025/654 cross-key nonce reuse cascade
 int test_exploit_schnorr_hash_order_run();          // ePrint 2025/1846 Fiat-Shamir hash order
+int test_exploit_zvp_glv_dcp_multiscalar_run();     // ePrint 2025/076 ZVP-DCP on GLV multiscalar
+int test_exploit_lattice_sieve_hnp_run();            // ePrint 2024/296 lattice sieve HNP sub-bit
+int test_exploit_deterministic_sig_dfa_run();        // ePrint 2017/975 DFA on RFC 6979 det. sigs
+int test_exploit_sign_type_confusion_kreuse_run();   // CVE-2024-49364/49365/2022-41340 type confusion k-reuse
+int test_exploit_ros_concurrent_schnorr_run();       // ePrint 2020/945 ROS concurrent Schnorr
+int test_exploit_frost_weak_binding_run();            // ePrint 2026/075, 2025/1001 FROST weak binding
 int test_cryptol_specs_run();      // Cryptol formal spec property check (advisory: needs cryptol)
 
 // ============================================================================
@@ -698,6 +704,12 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_eucleak_inversion",        "EUCLEAK Inversion Timing (EUC-1..EUC-12)",   "exploit_poc", test_exploit_eucleak_inversion_timing_run, false },
     { "exploit_cross_key_nonce_reuse",    "Cross-Key Nonce Reuse (CKN-1..CKN-10)",      "exploit_poc", test_exploit_ecdsa_cross_key_nonce_reuse_run, false },
     { "exploit_schnorr_hash_order",       "Schnorr Hash Order (SHO-1..SHO-10)",         "exploit_poc", test_exploit_schnorr_hash_order_run, false },
+    { "exploit_zvp_glv_dcp_multiscalar",   "ZVP-DCP GLV Multiscalar (ZVPDCP-1..8)",      "exploit_poc", test_exploit_zvp_glv_dcp_multiscalar_run, false },
+    { "exploit_lattice_sieve_hnp",         "Lattice Sieve HNP Sub-bit (LSHNP-1..8)",    "exploit_poc", test_exploit_lattice_sieve_hnp_run, false },
+    { "exploit_deterministic_sig_dfa",     "Det. Sig DFA RFC 6979 (DSDFA-1..8)",         "exploit_poc", test_exploit_deterministic_sig_dfa_run, false },
+    { "exploit_sign_type_confusion",       "Type Confusion k-Reuse (STCK-1..10)",        "exploit_poc", test_exploit_sign_type_confusion_kreuse_run, false },
+    { "exploit_ros_concurrent_schnorr",    "ROS Concurrent Schnorr (ROS-1..10)",         "exploit_poc", test_exploit_ros_concurrent_schnorr_run, false },
+    { "exploit_frost_weak_binding",        "FROST Weak Binding (FWB-1..8)",              "exploit_poc", test_exploit_frost_weak_binding_run, false },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);

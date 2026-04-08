@@ -1928,6 +1928,84 @@ target_compile_definitions(test_exploit_network_validation_bypass_standalone PRI
 add_test(NAME exploit_network_validation_bypass COMMAND test_exploit_network_validation_bypass_standalone)
 set_tests_properties(exploit_network_validation_bypass PROPERTIES TIMEOUT 60 LABELS "audit;exploit;address;abi;network")
 
+# -- ePrint 2025/076: ZVP-DCP attack on GLV multiscalar multiplication ------
+add_executable(test_exploit_zvp_glv_dcp_multiscalar_standalone
+    test_exploit_zvp_glv_dcp_multiscalar.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_zvp_glv_dcp_multiscalar_standalone)
+target_include_directories(test_exploit_zvp_glv_dcp_multiscalar_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_zvp_glv_dcp_multiscalar_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_zvp_glv_dcp_multiscalar COMMAND test_exploit_zvp_glv_dcp_multiscalar_standalone)
+set_tests_properties(exploit_zvp_glv_dcp_multiscalar PROPERTIES TIMEOUT 60 LABELS "audit;exploit;glv;zvp;dcp;nonce")
+
+# -- ePrint 2024/296: Lattice sieve HNP with sub-bit nonce leakage ----------
+add_executable(test_exploit_lattice_sieve_hnp_standalone
+    test_exploit_lattice_sieve_hnp.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_lattice_sieve_hnp_standalone)
+target_include_directories(test_exploit_lattice_sieve_hnp_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_lattice_sieve_hnp_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_lattice_sieve_hnp COMMAND test_exploit_lattice_sieve_hnp_standalone)
+set_tests_properties(exploit_lattice_sieve_hnp PROPERTIES TIMEOUT 60 LABELS "audit;exploit;hnp;lattice;nonce")
+
+# -- ePrint 2017/975: DFA on RFC 6979 deterministic signatures ---------------
+add_executable(test_exploit_deterministic_sig_dfa_standalone
+    test_exploit_deterministic_sig_dfa.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_deterministic_sig_dfa_standalone)
+target_include_directories(test_exploit_deterministic_sig_dfa_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_deterministic_sig_dfa_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_deterministic_sig_dfa COMMAND test_exploit_deterministic_sig_dfa_standalone)
+set_tests_properties(exploit_deterministic_sig_dfa PROPERTIES TIMEOUT 60 LABELS "audit;exploit;rfc6979;dfa;deterministic")
+
+# -- CVE-2024-49364/49365/2022-41340: Type confusion → k-reuse & verify bypass
+add_executable(test_exploit_sign_type_confusion_kreuse_standalone
+    test_exploit_sign_type_confusion_kreuse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_sign_type_confusion_kreuse_standalone)
+target_include_directories(test_exploit_sign_type_confusion_kreuse_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_sign_type_confusion_kreuse_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_sign_type_confusion_kreuse COMMAND test_exploit_sign_type_confusion_kreuse_standalone)
+set_tests_properties(exploit_sign_type_confusion_kreuse PROPERTIES TIMEOUT 60 LABELS "audit;exploit;cve;kreuse;typeconfusion")
+
+# -- ePrint 2020/945: ROS problem → concurrent blind Schnorr forgery --------
+add_executable(test_exploit_ros_concurrent_schnorr_standalone
+    test_exploit_ros_concurrent_schnorr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_ros_concurrent_schnorr_standalone)
+target_include_directories(test_exploit_ros_concurrent_schnorr_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_ros_concurrent_schnorr_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_ros_concurrent_schnorr COMMAND test_exploit_ros_concurrent_schnorr_standalone)
+set_tests_properties(exploit_ros_concurrent_schnorr PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ros;schnorr;concurrent")
+
+# -- ePrint 2026/075, 2025/1001: FROST weak binding & adaptive corruption ----
+add_executable(test_exploit_frost_weak_binding_standalone
+    test_exploit_frost_weak_binding.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_frost_weak_binding_standalone)
+target_include_directories(test_exploit_frost_weak_binding_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_frost_weak_binding_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_frost_weak_binding COMMAND test_exploit_frost_weak_binding_standalone)
+set_tests_properties(exploit_frost_weak_binding PROPERTIES TIMEOUT 60 LABELS "audit;exploit;frost;binding;adaptive")
+
 # -- Source integrity scanner: known mutation artifact patterns -------------
 add_executable(test_mutation_artifact_scan_standalone test_mutation_artifact_scan.cpp)
 audit_target_defaults(test_mutation_artifact_scan_standalone)
@@ -2385,6 +2463,18 @@ add_executable(unified_audit_runner
     test_exploit_ecdsa_cross_key_nonce_reuse.cpp
     # -- Fiat-Shamir hash order in BIP-340 (ePrint 2025/1846) --
     test_exploit_schnorr_hash_order.cpp
+    # -- ZVP-DCP on GLV multiscalar (ePrint 2025/076) --
+    test_exploit_zvp_glv_dcp_multiscalar.cpp
+    # -- Lattice sieve HNP sub-bit leakage (ePrint 2024/296) --
+    test_exploit_lattice_sieve_hnp.cpp
+    # -- DFA on RFC 6979 deterministic signatures (ePrint 2017/975) --
+    test_exploit_deterministic_sig_dfa.cpp
+    # -- Type confusion k-reuse (CVE-2024-49364/49365/2022-41340) --
+    test_exploit_sign_type_confusion_kreuse.cpp
+    # -- ROS concurrent blind Schnorr forgery (ePrint 2020/945) --
+    test_exploit_ros_concurrent_schnorr.cpp
+    # -- FROST weak binding adaptive corruption (ePrint 2026/075, 2025/1001) --
+    test_exploit_frost_weak_binding.cpp
 )
 # Conditionally add 5x52 field test (requires __uint128_t; skip on MSVC)
 if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))

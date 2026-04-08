@@ -7,6 +7,48 @@ evidence upgrades, and changes to what the repository can honestly claim.
 
 ---
 
+## 2026-04-13 (6 new ePrint/CVE exploit PoCs: ZVP-DCP, lattice HNP, DFA, type confusion, ROS, FROST binding)
+
+- **Added** `audit/test_exploit_zvp_glv_dcp_multiscalar.cpp` — ePrint 2025/076
+  "Decompose and conquer: ZVP attacks on GLV curves" (ACNS 2025): 8 sub-tests
+  (ZVPDCP-1..8) verifying GLV r-value distribution, β-endomorphism probing,
+  DCP adaptive probing with λ-related scalars, static key stability after
+  256-probe barrage, and Schnorr batch with GLV-edge pubkeys.
+
+- **Added** `audit/test_exploit_lattice_sieve_hnp.cpp` — ePrint 2024/296
+  "Lattice sieving for the HNP" (ASIACRYPT 2024): 8 sub-tests (LSHNP-1..8)
+  demonstrating sub-1-bit nonce leakage defense: r-value uniqueness, MSB/LSB
+  bit distribution, low-s normalisation enforcement, chi-squared uniformity,
+  and deterministic nonce consistency across key pairs.
+
+- **Added** `audit/test_exploit_deterministic_sig_dfa.cpp` — ePrint 2017/975
+  "Differential attacks on deterministic signatures" (NXP/BSI): 8 sub-tests
+  (DSDFA-1..8) verifying triple determinism, 1-bit message fault Hamming
+  distance ≥40 between signatures, 1-bit key fault correlation check across
+  128 messages, low-s normalisation under fault, and Schnorr determinism.
+
+- **Added** `audit/test_exploit_sign_type_confusion_kreuse.cpp` —
+  CVE-2024-49364/CVE-2024-49365/CVE-2022-41340: 10 sub-tests (STCK-1..10)
+  covering 1024-message k-reuse scan, r/s boundary validation (r=0, s=0, r≥n,
+  s≥n), 256 1-bit signature flip false-positive check, wrong pubkey rejection,
+  and Schnorr boundary validation.
+
+- **Added** `audit/test_exploit_ros_concurrent_schnorr.cpp` — ePrint 2020/945
+  "On the (in)security of ROS" (Eurocrypt 2021): 10 sub-tests (ROS-1..10)
+  verifying 256-session nonce independence, XOR/additive forgery rejection,
+  batch verify with corruption detection, identify-invalid index flagging,
+  error code uniformity (no verification oracle).
+
+- **Added** `audit/test_exploit_frost_weak_binding.cpp` — ePrint 2026/075
+  (FROST2 TS-SUF-2→TS-SUF-4) + ePrint 2025/1001 (adaptive threshold Schnorr):
+  8 sub-tests (FWB-1..8) covering session nonce uniqueness, adaptive corruption
+  key tweak resilience, taproot tweak binding, mixed-key batch verify,
+  key negation x-only consistency.
+
+**Running total after this wave: 172 audit files.**
+
+---
+
 ## 2026-04-09 (3 new ePrint exploit PoCs: EUCLEAK, cross-key nonce reuse, Fiat-Shamir hash order)
 
 - **Added** `audit/test_exploit_eucleak_inversion_timing.cpp` — ePrint 2024/1380

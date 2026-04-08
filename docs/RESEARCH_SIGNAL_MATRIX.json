@@ -356,6 +356,77 @@
         "cpu/src/schnorr.cpp"
       ],
       "reason": "ePrint 2025/1846 proves that hash input ordering in Fiat-Shamir schemes affects multi-user security. BIP-340 uses R||P||msg (correct: commitment before message). PoC verifies all 4 wrong orderings produce different challenges and fail verification."
+    },
+    {
+      "id": "zvp_dcp_glv_multiscalar",
+      "status": "covered",
+      "priority": "high",
+      "action": "monitor",
+      "keywords": ["ZVP", "DCP", "GLV", "multiscalar", "ePrint 2025/076", "ACNS 2025", "endomorphism"],
+      "repo_evidence": [
+        "audit/test_exploit_zvp_glv_dcp_multiscalar.cpp",
+        "audit/test_exploit_ecdh_zvp_glv_static.cpp"
+      ],
+      "reason": "ePrint 2025/076 extends classical ZVP to the Dependent Coordinates Problem on GLV multiscalar multiplication, recovering ~63% of key bits. PoC validates r-value distribution, β-endomorphism probing resilience, and static-key stability."
+    },
+    {
+      "id": "lattice_sieve_hnp_subbit",
+      "status": "covered",
+      "priority": "high",
+      "action": "monitor",
+      "keywords": ["lattice", "sieve", "HNP", "sub-bit", "ePrint 2024/296", "ASIACRYPT 2024", "nonce leakage"],
+      "repo_evidence": [
+        "audit/test_exploit_lattice_sieve_hnp.cpp",
+        "audit/test_exploit_ladderleak_subbit_nonce.cpp"
+      ],
+      "reason": "ePrint 2024/296 demonstrates lattice sieving with interval reduction that breaks ECDSA with <1 bit nonce leakage. PoC validates bit distribution uniformity, low-s normalisation, and chi-squared test on MSB buckets."
+    },
+    {
+      "id": "deterministic_sig_dfa_rfc6979",
+      "status": "covered",
+      "priority": "high",
+      "action": "monitor",
+      "keywords": ["DFA", "deterministic", "RFC 6979", "ePrint 2017/975", "fault injection"],
+      "repo_evidence": [
+        "audit/test_exploit_deterministic_sig_dfa.cpp",
+        "audit/test_exploit_ecdsa_differential_fault.cpp"
+      ],
+      "reason": "ePrint 2017/975 shows deterministic nonces (RFC 6979) are vulnerable to DFA: two faulted signatures with same message yield differential that reveals the key. PoC validates triple determinism, high Hamming distance under 1-bit fault, and Schnorr determinism."
+    },
+    {
+      "id": "type_confusion_kreuse_cve",
+      "status": "covered",
+      "priority": "high",
+      "action": "monitor",
+      "keywords": ["CVE-2024-49364", "CVE-2024-49365", "CVE-2022-41340", "k-reuse", "type confusion", "tiny-secp256k1"],
+      "repo_evidence": [
+        "audit/test_exploit_sign_type_confusion_kreuse.cpp",
+        "audit/test_exploit_ecdsa_nonce_reuse.cpp"
+      ],
+      "reason": "CVE-2024-49364: tiny-secp256k1 type confusion allows k-reuse → key extraction. CVE-2024-49365: verify() false positive. CVE-2022-41340: missing r,s range validation. PoC validates k-uniqueness across 1024 signatures, boundary r/s rejection, and false-positive resistance."
+    },
+    {
+      "id": "ros_concurrent_schnorr_forgery",
+      "status": "covered",
+      "priority": "high",
+      "action": "monitor",
+      "keywords": ["ROS", "concurrent", "blind Schnorr", "ePrint 2020/945", "Eurocrypt 2021", "Wagner"],
+      "repo_evidence": [
+        "audit/test_exploit_ros_concurrent_schnorr.cpp"
+      ],
+      "reason": "ePrint 2020/945 breaks blind Schnorr in concurrent sessions via polynomial-time ROS solver. PoC validates 256-session nonce independence, algebraic forgery rejection, batch corruption detection, and uniform error codes."
+    },
+    {
+      "id": "frost_weak_binding_adaptive",
+      "status": "covered",
+      "priority": "medium",
+      "action": "monitor",
+      "keywords": ["FROST", "FROST2", "binding factor", "ePrint 2026/075", "ePrint 2025/1001", "adaptive corruption", "threshold Schnorr"],
+      "repo_evidence": [
+        "audit/test_exploit_frost_weak_binding.cpp",
+        "audit/test_exploit_frost_adaptive_corruption.cpp"
+      ],
+      "reason": "ePrint 2026/075 shows FROST2 has TS-SUF-2 not TS-SUF-4 security (weak binding). ePrint 2025/1001 attacks adaptive security of threshold Schnorr. PoC validates session nonce uniqueness, key tweak resilience, taproot binding, and batch verify with mixed keys."
     }
   ]
 }
