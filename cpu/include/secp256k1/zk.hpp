@@ -295,6 +295,63 @@ EcdsaSnarkWitness ecdsa_snark_witness(
     const fast::Scalar& sig_r,
     const fast::Scalar& sig_s);
 
+
+// ============================================================================
+// 5. BIP340 Schnorr-in-SNARK Foreign-Field Witness
+// ============================================================================
+// Generates all intermediate values needed by a PLONK circuit prover to
+// verify a BIP-340 Schnorr signature over secp256k1.
+//
+// BIP-340 verification in a circuit:
+//   1. Lift R (even Y) from 32-byte R.x
+//   2. Lift P (even Y) from 32-byte x-only pubkey
+//   3. e = H("BIP0340/challenge" || R.x || P.x || msg) mod n
+//   4. R' = s*G - e*P
+//   5. valid = (R' == R) => equivalently, s*G == R + e*P
+//
+// Schnorr is simpler than ECDSA for circuits: no modular inverse, only
+// one multi-scalar multiplication, and the challenge is a plain hash.
+//
+// Like EcdsaSnarkWitness, all values are returned in both canonical
+// 32-byte form and 5×52-bit ForeignFieldLimbs for PLONK/Halo2/Circom.
+
+struct SchnorrSnarkWitness {
+    // ── public inputs ──────────────────────────────────────────────────
+    ForeignFieldLimbs msg;       // message (32 bytes)            (Fr)
+    ForeignFieldLimbs sig_r;     // R.x (nonce x-coordinate)     (Fp)
+    ForeignFieldLimbs sig_s;     // s scalar                     (Fr)
+    ForeignFieldLimbs pub_x;     // P.x (x-only pubkey)          (Fp)
+
+    // ── private witness (circuit signals) ─────────────────────────────
+    ForeignFieldLimbs r_y;       // R.y (lifted, even Y)         (Fp)
+    ForeignFieldLimbs pub_y;     // P.y (lifted, even Y)         (Fp)
+    ForeignFieldLimbs e;         // challenge scalar             (Fr)
+
+    // ── canonical byte encodings (big-endian) ─────────────────────────
+    std::array<std::uint8_t, 32> bytes_r_y;
+    std::array<std::uint8_t, 32> bytes_pub_y;
+    std::array<std::uint8_t, 32> bytes_e;
+
+    // ── verdict ───────────────────────────────────────────────────────
+    bool valid;  // true iff the BIP-340 signature is valid
+};
+
+// Compute the BIP340 Schnorr-in-SNARK foreign-field witness.
+//
+// msg       : 32-byte message (per BIP-340, this is the message, not a hash)
+// pubkey_x  : 32-byte x-only public key (big-endian)
+// sig_r     : 32-byte R.x from signature (big-endian)
+// sig_s     : s scalar from signature
+//
+// Returns a fully populated SchnorrSnarkWitness.
+// If the signature is invalid, `valid` is false but witness values are still
+// populated (to allow the prover to build a failing-path proof if needed).
+SchnorrSnarkWitness schnorr_snark_witness(
+    const std::array<std::uint8_t, 32>& msg,
+    const std::array<std::uint8_t, 32>& pubkey_x,
+    const std::array<std::uint8_t, 32>& sig_r,
+    const fast::Scalar& sig_s);
+
 } // namespace zk
 } // namespace secp256k1
 

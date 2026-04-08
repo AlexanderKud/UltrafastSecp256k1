@@ -202,6 +202,35 @@ public:
         return GpuError::Unsupported;
     }
 
+    /* -- BIP340 Schnorr SNARK witness batch -------------------------------- */
+
+    /** Schnorr SNARK witness output size in bytes per item.
+     *  Layout: msg[32] + sig_r[32] + sig_s[32] + pub_x[32] +
+     *          r_y[32] + pub_y[32] + e[32] +
+     *          6 * limbs[40] + valid[4] + padding[4] = 464 + 4 + 4 = 472 */
+    static constexpr size_t SCHNORR_SNARK_WITNESS_BYTES = 472;
+
+    /** Batch-compute BIP-340 Schnorr SNARK foreign-field witnesses on GPU.
+     *  Each item lifts R and P from x-only, computes BIP340 challenge e,
+     *  and verifies s*G == R + e*P.
+     *  @param msgs32       count * 32 bytes (messages, per BIP-340)
+     *  @param pubkeys_x32  count * 32 bytes (x-only public keys)
+     *  @param sigs64       count * 64 bytes (BIP-340 sigs: R.x[32]||s[32])
+     *  @param count        Number of witnesses to produce.
+     *  @param out_flat     Output: count * SCHNORR_SNARK_WITNESS_BYTES bytes.
+     *  PUBLIC-DATA operation (no secret values touched). */
+    virtual GpuError schnorr_snark_witness_batch(
+        const uint8_t* msgs32,         ///< count * 32 bytes
+        const uint8_t* pubkeys_x32,    ///< count * 32 bytes
+        const uint8_t* sigs64,         ///< count * 64 bytes
+        size_t count,
+        uint8_t* out_flat)             ///< count * SCHNORR_SNARK_WITNESS_BYTES bytes
+    {
+        (void)msgs32; (void)pubkeys_x32; (void)sigs64;
+        (void)count; (void)out_flat;
+        return GpuError::Unsupported;
+    }
+
     /* -- BIP-324 transport batch operations -------------------------------- */
 
     /** Batch BIP-324 AEAD encrypt.

@@ -543,6 +543,23 @@ ufsecp_error_t ufsecp_gpu_zk_ecdsa_snark_witness_batch(
     } UFSECP_GPU_CATCH
 }
 
+ufsecp_error_t ufsecp_gpu_zk_schnorr_snark_witness_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t*  msgs32,
+    const uint8_t*  pubkeys_x32,
+    const uint8_t*  sigs64,
+    size_t          count,
+    uint8_t*        out_witnesses)
+{
+    if (!ctx || !msgs32 || !pubkeys_x32 || !sigs64 || !out_witnesses)
+        return UFSECP_ERR_NULL_ARG;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+        return to_abi_error(ctx->backend->schnorr_snark_witness_batch(
+            msgs32, pubkeys_x32, sigs64, count, out_witnesses));
+    } UFSECP_GPU_CATCH
+}
+
 /* ===========================================================================
  * BIP-352 scan plan precomputation (CPU utility, no GPU ctx needed)
  * =========================================================================== */

@@ -339,6 +339,91 @@ static void test_zk_ecdsa_snark_witness(ufsecp_ctx* ctx) {
 }
 
 // ============================================================================
+// ufsecp_zk_schnorr_snark_witness
+// ============================================================================
+
+static void test_zk_schnorr_snark_witness(ufsecp_ctx* ctx) {
+    std::printf("\n=== FFI: ufsecp_zk_schnorr_snark_witness ===\n");
+
+    auto fill_det = [](uint8_t* buf, std::size_t len, uint8_t seed) {
+        std::uint32_t st = seed;
+        for (std::size_t i = 0; i < len; ++i) {
+            st = st * 1103515245u + 12345u;
+            buf[i] = static_cast<uint8_t>((st >> 16) & 0xFF);
+        }
+    };
+
+    /* Build deterministic key + BIP-340 signature */
+    std::uint8_t privkey[32];
+    fill_det(privkey, 32, 0xC5);
+    privkey[0] &= 0x7F;
+
+    std::uint8_t pubkey33[33];
+    ufsecp_pubkey_create(ctx, privkey, pubkey33);
+
+    /* Extract x-only from compressed pubkey (drop prefix byte) */
+    std::uint8_t pubkey_x32[32];
+    std::memcpy(pubkey_x32, pubkey33 + 1, 32);
+
+    std::uint8_t msg[32];
+    fill_det(msg, 32, 0xD1);
+
+    std::uint8_t aux[32];
+    fill_det(aux, 32, 0xE2);
+
+    /* Sign with BIP-340 Schnorr */
+    std::uint8_t sig64[64];
+    auto sign_err = ufsecp_schnorr_sign(ctx, msg, privkey, aux, sig64);
+    CHECK(sign_err == UFSECP_OK, "schnorr_snark: sign OK");
+
+    /* Happy-path: valid signature */
+    ufsecp_schnorr_snark_witness_t w{};
+    auto err = ufsecp_zk_schnorr_snark_witness(ctx, msg, pubkey_x32, sig64, &w);
+    CHECK(err == UFSECP_OK, "schnorr_snark: valid sig returns OK");
+    CHECK(w.valid == 1,     "schnorr_snark: valid == 1 for good sig");
+
+    /* Public inputs should be copies */
+    CHECK(std::memcmp(w.msg,   msg,       32) == 0, "schnorr_snark: msg copied");
+    CHECK(std::memcmp(w.sig_r, sig64,     32) == 0, "schnorr_snark: sig_r copied");
+    CHECK(std::memcmp(w.sig_s, sig64+32,  32) == 0, "schnorr_snark: sig_s copied");
+    CHECK(std::memcmp(w.pub_x, pubkey_x32, 32) == 0, "schnorr_snark: pub_x copied");
+
+    /* Witness fields must be non-zero */
+    std::uint8_t zero32[32] = {};
+    CHECK(std::memcmp(w.r_y,   zero32, 32) != 0, "schnorr_snark: r_y != 0");
+    CHECK(std::memcmp(w.pub_y, zero32, 32) != 0, "schnorr_snark: pub_y != 0");
+    CHECK(std::memcmp(w.e,     zero32, 32) != 0, "schnorr_snark: e != 0");
+
+    /* All 5×52-bit limbs must fit in 52 bits */
+    static constexpr std::uint64_t MASK52 = (1ULL << 52) - 1;
+    bool limbs_ok = true;
+    for (int i = 0; i < 5; ++i) {
+        if (w.lmb_sig_r.limbs[i] > MASK52 ||
+            w.lmb_pub_x.limbs[i] > MASK52 ||
+            w.lmb_r_y.limbs[i]   > MASK52 ||
+            w.lmb_pub_y.limbs[i] > MASK52 ||
+            w.lmb_e.limbs[i]     > MASK52) {
+            limbs_ok = false;
+        }
+    }
+    CHECK(limbs_ok, "schnorr_snark: all ff-limbs ≤ 2^52");
+
+    /* Error: null ctx */
+    ufsecp_schnorr_snark_witness_t w2{};
+    CHECK(ufsecp_zk_schnorr_snark_witness(nullptr, msg, pubkey_x32, sig64, &w2) != UFSECP_OK,
+          "schnorr_snark: null ctx returns error");
+
+    /* Error: tampered sig (flip bit in s) → valid == 0 but OK return */
+    std::uint8_t bad_sig[64];
+    std::memcpy(bad_sig, sig64, 64);
+    bad_sig[33] ^= 0x01;  /* flip a bit in s */
+    ufsecp_schnorr_snark_witness_t w3{};
+    auto err_bad = ufsecp_zk_schnorr_snark_witness(ctx, msg, pubkey_x32, bad_sig, &w3);
+    CHECK(err_bad == UFSECP_OK, "schnorr_snark: tampered sig still returns OK");
+    CHECK(w3.valid == 0,        "schnorr_snark: tampered sig → valid == 0");
+}
+
+// ============================================================================
 // Entry point
 // ============================================================================
 
@@ -353,6 +438,7 @@ int test_ffi_coverage_run() {
     test_pedersen_switch_commit(ctx);
     test_zk_range(ctx);
     test_zk_ecdsa_snark_witness(ctx);
+    test_zk_schnorr_snark_witness(ctx);
 
 #ifdef SECP256K1_BIP324
     test_aead_roundtrip();

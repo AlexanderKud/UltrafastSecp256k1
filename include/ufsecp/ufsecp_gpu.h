@@ -490,6 +490,33 @@ UFSECP_API ufsecp_error_t ufsecp_gpu_zk_ecdsa_snark_witness_batch(
     size_t          count,
     uint8_t*        out_witnesses);
 
+/* -- BIP340 Schnorr SNARK witness batch --------------------------------------- */
+
+/** Size in bytes of one flat Schnorr witness record produced by
+ *  ufsecp_gpu_zk_schnorr_snark_witness_batch(). */
+#define UFSECP_SCHNORR_SNARK_WITNESS_BYTES 472
+
+/**
+ * Compute BIP-340 Schnorr SNARK witnesses for a batch of (message, xonly-pubkey, sig) tuples.
+ *
+ * @param ctx          GPU context returned by ufsecp_gpu_context_create().
+ * @param msgs32       Input: count × 32 bytes (messages, per BIP-340).
+ * @param pubkeys_x32  Input: count × 32 bytes (x-only public keys).
+ * @param sigs64       Input: count × 64 bytes (BIP-340 sigs: R.x[32] || s[32]).
+ * @param count        Number of items to process.
+ * @param out_witnesses Output: count × UFSECP_SCHNORR_SNARK_WITNESS_BYTES bytes.
+ *                      Each record contains public inputs, lifted point witnesses,
+ *                      challenge scalar, and 5×52-bit foreign-field limbs.
+ * @return UFSECP_OK on success, or an error code on failure.
+ */
+UFSECP_API ufsecp_error_t ufsecp_gpu_zk_schnorr_snark_witness_batch(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t*  msgs32,
+    const uint8_t*  pubkeys_x32,
+    const uint8_t*  sigs64,
+    size_t          count,
+    uint8_t*        out_witnesses);
+
 /* ============================================================================
  * BIP-352 Silent Payment scanning (GPU + CPU plan utility)
  * ============================================================================ */

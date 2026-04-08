@@ -1148,6 +1148,63 @@ UFSECP_API ufsecp_error_t ufsecp_zk_ecdsa_snark_witness(
     ufsecp_ecdsa_snark_witness_t* out);
 
 /* ===========================================================================
+ * BIP340 Schnorr-in-SNARK Foreign-Field Witness
+ * =========================================================================== */
+
+/** Complete PLONK prover witness for one BIP-340 Schnorr verification.
+ *
+ *  BIP-340 verify steps:
+ *    R      = lift_x(sig_r)       (even Y)
+ *    P      = lift_x(pubkey_x)    (even Y)
+ *    e      = H("BIP0340/challenge" || R.x || P.x || msg) mod n
+ *    valid  = (s*G == R + e*P) AND (R.y is even)
+ */
+typedef struct {
+    /* ── public inputs ─────────────────────────────────────────────────── */
+    uint8_t msg[32];       /**< message (32 bytes, per BIP-340)   */
+    uint8_t sig_r[32];     /**< R.x from signature                */
+    uint8_t sig_s[32];     /**< s scalar from signature           */
+    uint8_t pub_x[32];     /**< x-only public key                 */
+
+    /* ── private witness (circuit signals) ─────────────────────────────── */
+    uint8_t r_y[32];       /**< R.y (lifted, even Y)              */
+    uint8_t pub_y[32];     /**< P.y (lifted, even Y)              */
+    uint8_t e[32];         /**< challenge scalar                  */
+
+    /* ── 5×52-bit foreign-field limb decompositions ─────────────────────── */
+    ufsecp_ff_limbs_t lmb_sig_r;           /**< R.x limbs         */
+    ufsecp_ff_limbs_t lmb_sig_s;           /**< s limbs           */
+    ufsecp_ff_limbs_t lmb_pub_x;           /**< P.x limbs         */
+    ufsecp_ff_limbs_t lmb_r_y;             /**< R.y limbs         */
+    ufsecp_ff_limbs_t lmb_pub_y;           /**< P.y limbs         */
+    ufsecp_ff_limbs_t lmb_e;               /**< challenge limbs   */
+
+    /* ── verdict ──────────────────────────────────────────────────────── */
+    int valid;  /**< 1 = signature valid, 0 = invalid */
+} ufsecp_schnorr_snark_witness_t;
+
+/** Compute BIP-340 Schnorr foreign-field prover witness.
+ *
+ *  Runs a full BIP-340 Schnorr verification and captures all intermediate
+ *  values (R.y, P.y, challenge e) in both canonical bytes and 5×52-bit
+ *  foreign-field limb form — ready to feed into any PLONK framework.
+ *
+ *  msg32       : 32-byte message (per BIP-340 spec)
+ *  pubkey_x32  : 32-byte x-only public key (big-endian)
+ *  sig64       : 64-byte BIP-340 signature (R.x[32] || s[32])
+ *  out         : caller-allocated output structure
+ *
+ *  Returns UFSECP_OK on all well-formed inputs, even when the signature is
+ *  invalid — check out->valid for the verification result.
+ *  Returns UFSECP_ERR_BAD_INPUT on malformed inputs . */
+UFSECP_API ufsecp_error_t ufsecp_zk_schnorr_snark_witness(
+    ufsecp_ctx* ctx,
+    const uint8_t msg32[32],
+    const uint8_t pubkey_x32[32],
+    const uint8_t sig64[64],
+    ufsecp_schnorr_snark_witness_t* out);
+
+/* ===========================================================================
  * Multi-coin wallet infrastructure
  * =========================================================================== */
 

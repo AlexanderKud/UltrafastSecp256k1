@@ -945,5 +945,85 @@ EcdsaSnarkWitness ecdsa_snark_witness(
     return w;
 }
 
+
+// ============================================================================
+// 5. BIP340 Schnorr-in-SNARK Foreign-Field Witness
+// ============================================================================
+
+SchnorrSnarkWitness schnorr_snark_witness(
+    const std::array<std::uint8_t, 32>& msg,
+    const std::array<std::uint8_t, 32>& pubkey_x,
+    const std::array<std::uint8_t, 32>& sig_r,
+    const fast::Scalar& sig_s) {
+
+    SchnorrSnarkWitness w{};
+
+    // ---- 1. Encode public inputs in foreign-field limb form ----
+    Scalar msg_scalar = Scalar::from_bytes(msg);
+    w.msg   = scalar_to_ff_limbs(msg_scalar);
+    w.sig_s = scalar_to_ff_limbs(sig_s);
+
+    // sig_r and pub_x are Fp (field) elements, parse as FieldElement
+    FieldElement rx_fe = FieldElement::from_bytes(sig_r);
+    FieldElement px_fe = FieldElement::from_bytes(pubkey_x);
+    w.sig_r = fe_to_ff_limbs(rx_fe);
+    w.pub_x = fe_to_ff_limbs(px_fe);
+
+    // ---- 2. Reject degenerate inputs early ----
+    if (sig_s.is_zero()) {
+        w.valid = false;
+        return w;
+    }
+
+    // ---- 3. Lift R from R.x (even Y, per BIP-340) ----
+    Point R = lift_x_even(rx_fe);
+    if (R.is_infinity()) {
+        w.valid = false;
+        return w;
+    }
+    FieldElement ry_fe = R.y();
+    w.bytes_r_y = ry_fe.to_bytes();
+    w.r_y = fe_to_ff_limbs(ry_fe);
+
+    // ---- 4. Lift P from P.x (even Y, per BIP-340) ----
+    Point P = lift_x_even(px_fe);
+    if (P.is_infinity()) {
+        w.valid = false;
+        return w;
+    }
+    FieldElement py_fe = P.y();
+    w.bytes_pub_y = py_fe.to_bytes();
+    w.pub_y = fe_to_ff_limbs(py_fe);
+
+    // ---- 5. Compute challenge: e = H("BIP0340/challenge" || R.x || P.x || msg) mod n ----
+    std::uint8_t challenge_input[96]; // R.x[32] || P.x[32] || msg[32]
+    std::memcpy(challenge_input,      sig_r.data(), 32);
+    std::memcpy(challenge_input + 32, pubkey_x.data(), 32);
+    std::memcpy(challenge_input + 64, msg.data(), 32);
+
+    auto e_hash = detail::cached_tagged_hash(
+        detail::g_challenge_midstate, challenge_input, 96);
+    Scalar e_scalar = Scalar::from_bytes(e_hash);
+    w.bytes_e = e_scalar.to_bytes();
+    w.e = scalar_to_ff_limbs(e_scalar);
+
+    // ---- 6. Verify: s*G == R + e*P  <=>  s*G - e*P == R ----
+    Point sG_minus_eP = Point::dual_scalar_mul_gen_point(
+        sig_s, Scalar::zero() - e_scalar, P);
+    if (sG_minus_eP.is_infinity()) {
+        w.valid = false;
+        return w;
+    }
+
+    // BIP-340: compare x-coordinates and ensure even Y
+    auto rx_check = sG_minus_eP.x().to_bytes();
+    auto ry_check = sG_minus_eP.y().to_bytes();
+    bool x_match = std::memcmp(rx_check.data(), sig_r.data(), 32) == 0;
+    bool y_even  = (ry_check[31] & 1) == 0;
+    w.valid = x_match && y_even;
+
+    return w;
+}
+
 } // namespace zk
 } // namespace secp256k1
