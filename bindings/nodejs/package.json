@@ -1,7 +1,7 @@
 {
   "name": "ultrafast-secp256k1",
   "version": "1.0.0",
-  "description": "Node.js bindings for UltrafastSecp256k1 — high-performance secp256k1 elliptic curve library",
+  "description": "Node.js bindings for UltrafastSecp256k1 \u2014 high-performance secp256k1 ECDSA, Schnorr, FROST, MuSig2, BIP-352 with GPU acceleration",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
@@ -27,10 +27,22 @@
     "ecdsa",
     "schnorr",
     "bitcoin",
+    "ethereum",
     "cryptography",
     "elliptic-curve",
     "bip-340",
-    "taproot"
+    "taproot",
+    "bip-352",
+    "frost",
+    "musig2",
+    "gpu",
+    "cuda",
+    "signing",
+    "verification",
+    "wallet",
+    "constant-time",
+    "threshold-signatures",
+    "silent-payments"
   ],
   "license": "MIT",
   "homepage": "https://github.com/shrec/UltrafastSecp256k1",
