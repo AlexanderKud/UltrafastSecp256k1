@@ -7,6 +7,29 @@ evidence upgrades, and changes to what the repository can honestly claim.
 
 ---
 
+## 2026-04-15 (SchnorrSnarkWitness ZK primitive + GPU ABI surface expansion)
+
+- **Added** `SchnorrSnarkWitness` — BIP-340 Schnorr foreign-field witness
+  generator for PLONK/Halo2/Circom circuits. Mirrors the existing
+  `EcdsaSnarkWitness` but for BIP-340 x-only Schnorr signatures. Decomposes
+  `(msg, R.x, s, pubkey_x)` into 5×52-bit ForeignFieldLimbs with private
+  witness fields `(R.y, P.y, e)` where `e = H("BIP0340/challenge" || R.x || P.x || msg)`.
+  Verification: `s·G = R + e·P` with even-Y lift.
+
+- **Expanded** C ABI surface: `ufsecp_zk_schnorr_snark_witness()` (472-byte output struct)
+  added to `ufsecp.h` + `ufsecp_impl.cpp`.
+
+- **Expanded** GPU batch ABI: `ufsecp_gpu_zk_schnorr_snark_witness_batch()` declared in
+  `ufsecp_gpu.h`, dispatch in `ufsecp_gpu_impl.cpp`, virtual method in
+  `gpu_backend.hpp`. GPU backend kernels (CUDA/OpenCL/Metal) not yet implemented —
+  default returns `GpuError::Unsupported`.
+
+- **Added** FFI coverage tests in `test_ffi_coverage.cpp`: 12 checks covering
+  valid signature witness, all field non-zero assertions, limb bound enforcement
+  (≤ 2^52), tampered signature → `valid=0`, null context → error.
+
+- Commit: `d5e8c916`.
+
 ## 2026-04-14 (4 new ePrint exploit PoCs + crypto-aware dev_bug_scanner layer)
 
 - **Added** `audit/test_exploit_blind_spa_cmov_leak.cpp` — ePrint 2024/589 +

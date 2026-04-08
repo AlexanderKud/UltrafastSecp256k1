@@ -36,6 +36,7 @@ Complete API documentation for CPU, CUDA, and WASM implementations.
    - [DLEQ Proof (Discrete Log Equality)](#dleq-proof-discrete-log-equality)
    - [Bulletproof Range Proof](#bulletproof-range-proof)
    - [Batch Operations](#zk-batch-operations)
+   - [SNARK Witness Generation](#snark-witness-generation)
 8. [CUDA API](#cuda-api)
    - [Data Structures](#cuda-data-structures)
    - [Field Operations](#cuda-field-operations)
@@ -1329,6 +1330,90 @@ const GeneratorVectors& get_generator_vectors();
 
 ---
 
+### SNARK Witness Generation
+
+Foreign-field witness generators that decompose secp256k1 signature verification
+into 5×52-bit limbs suitable for PLONK / Halo2 / Circom circuit wiring.
+All fields are split into `ForeignFieldLimbs` (five `uint64_t` values, each ≤ 2^52).
+
+#### EcdsaSnarkWitness
+
+Decomposes an ECDSA signature `(r, s)` on message `msg` under `pubkey` into
+circuit-ready witness data: `s_inv`, `u1 = msg·s⁻¹`, `u2 = r·s⁻¹`, recovered
+`R` point, and the full public key coordinates.
+
+```cpp
+struct EcdsaSnarkWitness {
+    // --- public inputs (circuit "instance") ---
+    ForeignFieldLimbs msg;       // H(m) mod n
+    ForeignFieldLimbs sig_r;     // r
+    ForeignFieldLimbs pub_x;     // pubkey.x   (field element)
+    ForeignFieldLimbs pub_y;     // pubkey.y   (field element)
+
+    // --- private witness ---
+    ForeignFieldLimbs sig_s;     // s
+    ForeignFieldLimbs s_inv;     // s⁻¹ mod n
+    ForeignFieldLimbs u1;        // msg·s⁻¹ mod n
+    ForeignFieldLimbs u2;        // r·s⁻¹ mod n
+    ForeignFieldLimbs r_x;       // R.x  (recovered nonce point)
+    ForeignFieldLimbs r_y;       // R.y
+
+    // canonical 32-byte encodings
+    std::array<uint8_t, 32> bytes_s_inv;
+    std::array<uint8_t, 32> bytes_u1;
+    std::array<uint8_t, 32> bytes_u2;
+    std::array<uint8_t, 32> bytes_r_x;
+    std::array<uint8_t, 32> bytes_r_y;
+    std::array<uint8_t, 32> bytes_pub_y;
+
+    bool valid;  // false if signature fails verification
+};
+
+EcdsaSnarkWitness ecdsa_snark_witness(
+    const std::array<uint8_t, 32>& msg32,
+    const fast::Point& pubkey,
+    const fast::Scalar& sig_r,
+    const fast::Scalar& sig_s);
+```
+
+#### SchnorrSnarkWitness
+
+Decomposes a BIP-340 Schnorr signature `(R.x, s)` on message `msg` under
+`pubkey_x` (x-only) into circuit-ready witness data. Lifts both `R` and
+pubkey to full affine points (even Y via `lift_x_even`), computes the
+BIP-340 challenge `e = H("BIP0340/challenge" || R.x || P.x || msg)`, and
+verifies `s·G = R + e·P`.
+
+```cpp
+struct SchnorrSnarkWitness {
+    // --- public inputs ---
+    ForeignFieldLimbs msg;       // 32-byte message
+    ForeignFieldLimbs sig_r;     // R.x (from sig64[0:32])
+    ForeignFieldLimbs sig_s;     // s   (from sig64[32:64])
+    ForeignFieldLimbs pub_x;     // x-only pubkey
+
+    // --- private witness ---
+    ForeignFieldLimbs r_y;       // lifted R.y (even)
+    ForeignFieldLimbs pub_y;     // lifted P.y (even)
+    ForeignFieldLimbs e;         // BIP-340 challenge scalar
+
+    // canonical 32-byte encodings
+    std::array<uint8_t, 32> bytes_r_y;
+    std::array<uint8_t, 32> bytes_pub_y;
+    std::array<uint8_t, 32> bytes_e;
+
+    bool valid;  // false if signature fails BIP-340 verification
+};
+
+SchnorrSnarkWitness schnorr_snark_witness(
+    const std::array<uint8_t, 32>& msg32,
+    const std::array<uint8_t, 32>& pubkey_x,
+    const fast::Scalar& sig_r,
+    const fast::Scalar& sig_s);
+```
+
+---
+
 ## CUDA API
 
 **Namespace:** `secp256k1::cuda`
@@ -2117,6 +2202,8 @@ Size constants: `UFSECP_ZK_KNOWLEDGE_PROOF_LEN` (64), `UFSECP_ZK_DLEQ_PROOF_LEN`
 | `ufsecp_zk_dleq_verify` | `(ctx, proof[64], G33, H33, P33, Q33) -> error_t` | Verify DLEQ proof |
 | `ufsecp_zk_range_prove` | `(ctx, value, blinding, commitment33, aux_rand, proof_out, proof_len*) -> error_t` | Bulletproof range proof |
 | `ufsecp_zk_range_verify` | `(ctx, commitment33, proof, proof_len) -> error_t` | Verify Bulletproof range proof |
+| `ufsecp_zk_ecdsa_snark_witness` | `(ctx, msg32, pubkey33, sig64, witness_out*) -> error_t` | ECDSA SNARK witness (760 bytes) — ForeignFieldLimbs decomposition for PLONK/Halo2 |
+| `ufsecp_zk_schnorr_snark_witness` | `(ctx, msg32, pubkey_x32, sig64, witness_out*) -> error_t` | BIP-340 Schnorr SNARK witness (472 bytes) — ForeignFieldLimbs decomposition for PLONK/Halo2 |
 
 <a id="c-abi-multicoin"></a>
 ### Multi-Coin Wallet
@@ -2191,6 +2278,7 @@ Backend-neutral GPU acceleration surface. All functions use opaque `ufsecp_gpu_c
 | `ufsecp_gpu_bip324_aead_encrypt_batch` | `(ctx, keys32[], nonces12[], plain[], sizes[], max_payload, n, wire_out[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD encrypt (PUBLIC) |
 | `ufsecp_gpu_bip324_aead_decrypt_batch` | `(ctx, keys32[], nonces12[], wire[], sizes[], max_payload, n, plain_out[], valid[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD decrypt (SECRET) |
 | `ufsecp_gpu_zk_ecdsa_snark_witness_batch` | `(ctx, msgs32[], pubs33[], sigs64[], n, witnesses760_out[]) -> error_t` | Batch ECDSA SNARK witness generation — eprint 2025/695 (PUBLIC inputs) |
+| `ufsecp_gpu_zk_schnorr_snark_witness_batch` | `(ctx, msgs32[], pubkeys_x32[], sigs64[], n, witnesses472_out[]) -> error_t` | Batch BIP-340 Schnorr SNARK witness generation (PUBLIC inputs). GPU kernels pending — CPU fallback returns `Unsupported` via virtual dispatch. |
 | `ufsecp_gpu_bip352_scan_batch` | `(ctx, scan_privkey32, spend_pubkey33, tweaks33[], n, prefix64_out[]) -> error_t` | BIP-352 Silent Payment batch scan — returns upper-64-bit x-coordinate prefix per tweak (SECRET-BEARING: scan key sent to GPU) |
 
 #### BIP-352 CPU utility

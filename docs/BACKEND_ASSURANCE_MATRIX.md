@@ -35,7 +35,7 @@ The table below distinguishes between the **public GPU ABI** (functions exposed 
 compiled into the device code but not directly callable through the stable C ABI).
 A kernel being present internally does not imply a public API exists for it.
 
-### Public GPU ABI operations (13 functions, backend-neutral)
+### Public GPU ABI operations (16 functions, backend-neutral)
 
 | Function | CPU (fast) | CPU (CT) | CUDA | OpenCL | Metal |
 |---|---|---|---|---|---|
@@ -53,6 +53,7 @@ A kernel being present internally does not imply a public API exists for it.
 | `ufsecp_gpu_bip324_aead_encrypt_batch` | Y | - | Y | Y | Y |
 | `ufsecp_gpu_bip324_aead_decrypt_batch` | Y | - | Y | Y | Y |
 | `ufsecp_gpu_zk_ecdsa_snark_witness_batch` | Y | - | Y | Y | Y |
+| `ufsecp_gpu_zk_schnorr_snark_witness_batch` ² | Y | - | stub | stub | stub |
 | `ufsecp_gpu_bip352_scan_batch` | Y | - | Y | Y | Y |
 
 ¹ Several GPU public API functions accept private or secret key material:
@@ -63,6 +64,10 @@ transport encryption) where the secret-bearing step cannot be split from the GPU
 pipeline without losing throughput. Callers must accept the implied security posture
 of sending keys to the GPU driver and must ensure a trusted single-tenant
 environment. See *Secret-Use Policy* below.
+
+² `ufsecp_gpu_zk_schnorr_snark_witness_batch` has C ABI + virtual dispatch in place.
+GPU backend kernels (CUDA/OpenCL/Metal) are pending — default returns `GpuError::Unsupported`.
+CPU-side `ufsecp_zk_schnorr_snark_witness()` is fully functional.
 
 ### CPU-only operations (no GPU public API)
 
@@ -105,8 +110,13 @@ through `ufsecp_gpu.h`.
 
 ## Parity Status
 
-All 13 public GPU ABI operations are implemented on CUDA, OpenCL, and Metal.
-No partial stubs remain. Last resolved: 2026-03-25.
+All 15 of the original public GPU ABI operations are implemented on CUDA, OpenCL, and Metal.
+No partial stubs remain for those. Last resolved: 2026-03-25.
+
+`ufsecp_gpu_zk_schnorr_snark_witness_batch` (added 2026-04-15) has its C ABI and
+virtual dispatch in place but GPU backend kernels (CUDA/OpenCL/Metal) are not yet
+implemented — the default virtual method returns `GpuError::Unsupported`.
+CPU-side `ufsecp_zk_schnorr_snark_witness()` is fully functional.
 
 ROCm/HIP: early-development compatibility path via the shared CUDA/HIP portability
 layer. Not yet part of the hardware-validated matrix. Promotion requires archived

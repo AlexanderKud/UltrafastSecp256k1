@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **BIP-340 SchnorrSnarkWitness** — foreign-field witness generator for PLONK/Halo2/Circom
+  circuits. Decomposes a BIP-340 Schnorr signature into 5×52-bit `ForeignFieldLimbs`:
+  public inputs (msg, R.x, s, P.x) and private witness (R.y, P.y, e = BIP0340/challenge).
+  - C++ API: `secp256k1::zk::schnorr_snark_witness()` in `zk.hpp`
+  - C ABI: `ufsecp_zk_schnorr_snark_witness()` in `ufsecp.h`
+  - GPU batch ABI: `ufsecp_gpu_zk_schnorr_snark_witness_batch()` in `ufsecp_gpu.h`
+    (GPU backend interface ready; native CUDA/OpenCL/Metal kernels pending)
+  - FFI coverage tests: 12 checks (valid sig, witness fields, limb bounds, null/tampered)
+  - Commit: `d5e8c916`
+
 ### Security / Audit
 - **Point::scalar_mul exploit PoC** — `test_exploit_scalar_mul.cpp` (59 checks, SM-1..SM-12)
   targeting edge cases across the CPU scalar multiplication path: zero/identity/order-n scalars,
