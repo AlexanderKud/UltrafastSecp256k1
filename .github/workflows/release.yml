@@ -30,7 +30,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-      administration: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
@@ -54,6 +53,7 @@ jobs:
         run: python3 scripts/sync_version_refs.py
 
       - name: Commit synced docs (if changed)
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -62,9 +62,10 @@ jobs:
           if ! git diff --quiet; then
             git add -A
             git commit -m "chore: sync version refs to ${RELEASE_VERSION#v} [skip ci]"
-            gh api repos/shrec/UltrafastSecp256k1/rulesets/14202596 --method PUT --field enforcement=disabled --silent
-            git push origin dev || true
-            gh api repos/shrec/UltrafastSecp256k1/rulesets/14202596 --method PUT --field enforcement=active --silent
+            # Try to disable ruleset for push; may fail if GITHUB_TOKEN lacks admin scope
+            gh api repos/shrec/UltrafastSecp256k1/rulesets/14202596 --method PUT --field enforcement=disabled --silent 2>/dev/null || true
+            git push origin dev || echo "::warning::Could not push synced docs to dev (ruleset active)"
+            gh api repos/shrec/UltrafastSecp256k1/rulesets/14202596 --method PUT --field enforcement=active --silent 2>/dev/null || true
           fi
         shell: bash
 
