@@ -7,6 +7,87 @@ evidence upgrades, and changes to what the repository can honestly claim.
 
 ---
 
+## 2026-04-09 (3 new ePrint exploit PoCs: EUCLEAK, cross-key nonce reuse, Fiat-Shamir hash order)
+
+- **Added** `audit/test_exploit_eucleak_inversion_timing.cpp` — ePrint 2024/1380
+  "EUCLEAK" (NinjaLab): 12 sub-tests (EUC-1..EUC-12, 28 checks) verifying
+  constant-time modular inversion across pathological inputs (zero, near-order,
+  high/low Hamming weight, alternating bits, batch context, CT vs fast path).
+  Infineon's 14-year non-CT Extended Euclidean Algorithm vulnerability.
+
+- **Added** `audit/test_exploit_ecdsa_cross_key_nonce_reuse.cpp` — ePrint 2025/654
+  "ECDSA Cracking Methods" (Edinburgh Napier): 10 sub-tests (CKN-1..CKN-10, 16 checks)
+  demonstrating cascading key compromise when multiple keys share a weak-PRNG nonce.
+  One compromised key immediately reveals all others sharing the same nonce stream.
+  RFC 6979 immunity verified.
+
+- **Added** `audit/test_exploit_schnorr_hash_order.cpp` — ePrint 2025/1846
+  "The Order of Hashing in Fiat-Shamir Schemes" (ASIACRYPT 2025): 10 sub-tests
+  (SHO-1..SHO-10, 15 checks) verifying BIP-340 challenge hash input ordering
+  R||P||msg is correct. Wrong orderings (msg-first, R-last, pubkey-first, reversed)
+  produce different challenges and signatures that fail verification.
+
+**Running total after this wave: 166 audit files, 59 new checks (28+16+15).**
+
+---
+
+## 2026-04-08 (Research-driven exploit test expansion: 4 new ePrint/CVE attack classes)
+
+- **Added** `audit/test_exploit_ecdsa_affine_nonce_relation.cpp` — ePrint 2025/705
+  "Breaking ECDSA with Two Affinely Related Nonces": 12 sub-tests (ANR-1..ANR-12)
+  demonstrating algebraic private key recovery when k₂ = a·k₁ + b, plus RFC 6979
+  immunity verification, key-bit sensitivity, and multi-pair confirmation.
+
+- **Added** `audit/test_exploit_ecdsa_half_half_nonce.cpp` — ePrint 2023/841
+  "Half-half Bitcoin ECDSA nonces": 10 sub-tests (HH-1..HH-10, 13 checks)
+  demonstrating key recovery when nonce is composed from hash upper bits and key
+  lower bits, plus RFC 6979 immunity and random-nonce resistance.
+
+- **Added** `audit/test_exploit_ecdsa_nonce_modular_bias.cpp` — CVE-2024-31497 (PuTTY)
+  / CVE-2024-1544 (wolfSSL) modular reduction nonce bias: 6 sub-tests (NMB-1..NMB-6,
+  19 checks) demonstrating statistical bias from oversized random mod n reduction
+  instead of rejection sampling, plus RFC 6979 immunity.
+
+- **Added** `audit/test_exploit_ecdsa_differential_fault.cpp` — ePrint 2017/975
+  "Differential Attacks on Deterministic Signatures": 8 sub-tests (DF-1..DF-8,
+  10 checks) demonstrating key recovery via bit-flip/additive/multiplicative fault
+  injection during RFC 6979 nonce computation, plus determinism verification.
+
+- **Added** strict Documentation Discipline rule to `.github/copilot-instructions.md`,
+  `AGENTS.md`, `CLAUDE.md` — documentation must be maintained in parallel with code
+  changes; deferred documentation is treated as a hard error.
+
+---
+
+## 2026-04-07 (CT scalar_inverse(0) fix + boundary sentinel test suite)
+
+- **Fixed** `cpu/src/ct_scalar.cpp`: both SafeGCD and Fermat fallback `ct::scalar_inverse`
+  paths now return `Scalar::zero()` for zero input. Previously only the FAST-path
+  `Scalar::inverse()` had this guard; the CT paths had undefined behavior on zero.
+  Defense-in-depth fix — the zero check is on the input scalar (not secret-derived data),
+  so it does not break constant-time guarantees.
+
+- **Added** `audit/test_exploit_boundary_sentinels.cpp` — 10 test groups, 18 individual
+  checks covering literature-derived boundary edge cases:
+  - BS-1: `ct::scalar_inverse(0)` → zero (verifies the fix)
+  - BS-2: `fast::Scalar::inverse(0)` → zero
+  - BS-3: `FieldElement::inverse(0)` → throws `runtime_error`
+  - BS-4: `schnorr_batch_verify({})` → true (empty batch vacuously true)
+  - BS-5: ECDSA low-S half-order boundary (4 sub-checks: max low-S, min high-S, normalize, idempotence)
+  - BS-6: MuSig2 `key_agg` with duplicate pubkeys (3 sub-checks)
+  - BS-7: Schnorr sign with `aux_rand=0xFF…FF` (2 sub-checks: verifies, differs from zero aux)
+  - BS-8: `Point::has_even_y()` on infinity is deterministic
+  - BS-9: `ecdsa_batch_verify({})` → true (empty batch)
+  - BS-10: CT `scalar_inverse` round-trips: inverse(1)==1, val×inverse(val)==1, (n-1)×inverse(n-1)==1
+
+- **Updated** docs: `SECURITY_CLAIMS.md` (perimeter items 9-10), `SECRET_LIFECYCLE.md`
+  (change-control note 5), `CT_VERIFICATION.md` (audit checklist), `ECDSA_EDGE_CASE_COVERAGE.md`
+  (Category XII — 13 boundary sentinels, total 101/101).
+
+**Running total: edge case coverage 101/101 (100%). 18/18 boundary sentinel tests PASS.**
+
+---
+
 ## 2026-04-05 (LibFuzzer harnesses, mutation tracker, Cryptol specs, SLSA verifier, unified_audit_runner 3 new modules — commits `38108b89`, `00522b57`)
 
 - **Added** `cpu/fuzz/fuzz_ecdsa.cpp` + `cpu/fuzz/fuzz_schnorr.cpp` (ClusterFuzzLite, ECDSA and BIP-340

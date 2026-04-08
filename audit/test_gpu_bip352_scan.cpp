@@ -25,6 +25,7 @@
  *   SW-BIP352-11: GPU scan: batch of 16 tweaks → all prefixes non-zero
  *   SW-BIP352-12: GPU scan: determinism — same inputs → same prefixes
  *   SW-BIP352-13: GPU scan: distinct tweaks → prefixes are not all identical
+ *   SW-BIP352-14: GPU scan: invalid compressed tweak pubkey is rejected
  *
  * Compiles as standalone (define STANDALONE_TEST) or as part of the audit runner.
  * ============================================================================ */
@@ -205,6 +206,18 @@ static void test_bip352_4_13_gpu(ufsecp_ctx* cpu_ctx) {
     auto rc9 = ufsecp_gpu_bip352_scan_batch(gpu, SCAN_KEY, SPEND_PUBKEY,
                                              tweaks, 0, &dummy1);
     CHECK(rc9 == UFSECP_OK, "SW-BIP352-9", "n_tweaks==0 → UFSECP_OK");
+
+    uint8_t bad_tweak[33] = {};
+    std::memcpy(bad_tweak, tweaks, sizeof(bad_tweak));
+    bad_tweak[0] = 0x05;
+    auto rc9b = ufsecp_gpu_bip352_scan_batch(gpu, SCAN_KEY, SPEND_PUBKEY,
+                                              bad_tweak, 1, &dummy1);
+    if (rc9b == UFSECP_ERR_GPU_UNSUPPORTED) {
+        SKIP("SW-BIP352-14", "bip352_scan_batch not supported on this backend");
+    } else {
+        CHECK(rc9b != UFSECP_OK,
+              "SW-BIP352-14", "invalid compressed tweak pubkey is rejected");
+    }
 
     /* SW-BIP352-10: single tweak → prefix non-zero */
     uint64_t p1 = 0;

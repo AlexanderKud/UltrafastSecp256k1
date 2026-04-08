@@ -34,6 +34,8 @@ static int g_skip = 0;
         else { ++g_fail; std::printf("  FAIL: %s\n", msg); }       \
     } while (0)
 
+#define CHECK_OK(expr, msg) CHECK((expr) == UFSECP_OK, msg)
+
 #define SKIP(msg)                                                   \
     do { ++g_skip; std::printf("  SKIP: %s\n", msg); } while (0)
 
@@ -66,7 +68,7 @@ static void test_generator_mul_equiv(ufsecp_gpu_ctx* ctx) {
 
     /* CPU reference */
     ufsecp_ctx* cpu_ctx = nullptr;
-    ufsecp_ctx_create(&cpu_ctx);
+    CHECK_OK(ufsecp_ctx_create(&cpu_ctx), "CPU ctx_create succeeds");
 
     for (size_t i = 0; i < N; ++i) {
         uint8_t cpu_pub[33];
@@ -89,7 +91,7 @@ static void test_ecdsa_verify_equiv(ufsecp_gpu_ctx* ctx) {
 
     constexpr size_t N = 4;
     ufsecp_ctx* cpu_ctx = nullptr;
-    ufsecp_ctx_create(&cpu_ctx);
+    CHECK_OK(ufsecp_ctx_create(&cpu_ctx), "CPU ctx_create succeeds");
 
     uint8_t msg_hashes[N * 32];
     uint8_t privkeys[N * 32];
@@ -102,10 +104,12 @@ static void test_ecdsa_verify_equiv(ufsecp_gpu_ctx* ctx) {
     /* Generate keys and sign with CPU */
     for (size_t i = 0; i < N; ++i) {
         privkeys[i * 32] &= 0x7F;
-        ufsecp_pubkey_create(cpu_ctx, privkeys + i * 32, pubkeys + i * 33);
+        CHECK_OK(ufsecp_pubkey_create(cpu_ctx, privkeys + i * 32, pubkeys + i * 33),
+                 "CPU pubkey_create succeeds");
 
-        ufsecp_ecdsa_sign(cpu_ctx, msg_hashes + i * 32, privkeys + i * 32,
-                          sigs + i * 64);
+        CHECK_OK(ufsecp_ecdsa_sign(cpu_ctx, msg_hashes + i * 32, privkeys + i * 32,
+                 sigs + i * 64),
+                 "CPU ecdsa_sign succeeds");
     }
 
     /* GPU verify */
@@ -138,7 +142,7 @@ static void test_schnorr_verify_equiv(ufsecp_gpu_ctx* ctx) {
 
     constexpr size_t N = 4;
     ufsecp_ctx* cpu_ctx = nullptr;
-    ufsecp_ctx_create(&cpu_ctx);
+    CHECK_OK(ufsecp_ctx_create(&cpu_ctx), "CPU ctx_create succeeds");
 
     uint8_t msg_hashes[N * 32];
     uint8_t privkeys[N * 32];
@@ -152,12 +156,14 @@ static void test_schnorr_verify_equiv(ufsecp_gpu_ctx* ctx) {
     for (size_t i = 0; i < N; ++i) {
         privkeys[i * 32] &= 0x7F;
         uint8_t xonly[32];
-        ufsecp_pubkey_xonly(cpu_ctx, privkeys + i * 32, xonly);
+        CHECK_OK(ufsecp_pubkey_xonly(cpu_ctx, privkeys + i * 32, xonly),
+                 "CPU pubkey_xonly succeeds");
         std::memcpy(pubkeys_x + i * 32, xonly, 32);
 
         uint8_t aux[32] = {};
-        ufsecp_schnorr_sign(cpu_ctx, msg_hashes + i * 32, privkeys + i * 32,
-                            aux, sigs + i * 64);
+        CHECK_OK(ufsecp_schnorr_sign(cpu_ctx, msg_hashes + i * 32, privkeys + i * 32,
+                 aux, sigs + i * 64),
+                 "CPU schnorr_sign succeeds");
     }
 
     /* GPU verify */
@@ -189,7 +195,7 @@ static void test_ecdh_equiv(ufsecp_gpu_ctx* ctx) {
 
     constexpr size_t N = 4;
     ufsecp_ctx* cpu_ctx = nullptr;
-    ufsecp_ctx_create(&cpu_ctx);
+    CHECK_OK(ufsecp_ctx_create(&cpu_ctx), "CPU ctx_create succeeds");
 
     uint8_t alice_keys[N * 32];
     uint8_t bob_keys[N * 32];
@@ -201,7 +207,8 @@ static void test_ecdh_equiv(ufsecp_gpu_ctx* ctx) {
     for (size_t i = 0; i < N; ++i) {
         alice_keys[i * 32] &= 0x7F;
         bob_keys[i * 32] &= 0x7F;
-        ufsecp_pubkey_create(cpu_ctx, bob_keys + i * 32, bob_pubs + i * 33);
+        CHECK_OK(ufsecp_pubkey_create(cpu_ctx, bob_keys + i * 32, bob_pubs + i * 33),
+                 "CPU pubkey_create succeeds");
     }
 
     /* GPU ECDH */
@@ -236,7 +243,7 @@ static void test_hash160_equiv(ufsecp_gpu_ctx* ctx) {
 
     constexpr size_t N = 8;
     ufsecp_ctx* cpu_ctx = nullptr;
-    ufsecp_ctx_create(&cpu_ctx);
+    CHECK_OK(ufsecp_ctx_create(&cpu_ctx), "CPU ctx_create succeeds");
 
     uint8_t privkeys[N * 32];
     uint8_t pubkeys[N * 33];
@@ -244,7 +251,8 @@ static void test_hash160_equiv(ufsecp_gpu_ctx* ctx) {
     fill_deterministic(privkeys, sizeof(privkeys), 0xE1);
     for (size_t i = 0; i < N; ++i) {
         privkeys[i * 32] &= 0x7F;
-        ufsecp_pubkey_create(cpu_ctx, privkeys + i * 32, pubkeys + i * 33);
+        CHECK_OK(ufsecp_pubkey_create(cpu_ctx, privkeys + i * 32, pubkeys + i * 33),
+                 "CPU pubkey_create succeeds");
     }
 
     /* GPU hash160 */
@@ -278,7 +286,7 @@ static void test_ecrecover_equiv(ufsecp_gpu_ctx* ctx) {
 
     constexpr size_t N = 4;
     ufsecp_ctx* cpu_ctx = nullptr;
-    ufsecp_ctx_create(&cpu_ctx);
+    CHECK_OK(ufsecp_ctx_create(&cpu_ctx), "CPU ctx_create succeeds");
 
     uint8_t msg_hashes[N * 32];
     uint8_t privkeys[N * 32];
@@ -347,7 +355,7 @@ static void test_msm_equiv(ufsecp_gpu_ctx* ctx) {
 
     constexpr size_t N = 4;
     ufsecp_ctx* cpu_ctx = nullptr;
-    ufsecp_ctx_create(&cpu_ctx);
+    CHECK_OK(ufsecp_ctx_create(&cpu_ctx), "CPU ctx_create succeeds");
 
     /* Use known points: k[i]*G for small k values */
     uint8_t base_scalars[N * 32] = {};
@@ -357,7 +365,8 @@ static void test_msm_equiv(ufsecp_gpu_ctx* ctx) {
     /* base_scalars = {1, 2, 3, 4} → points = {G, 2G, 3G, 4G} */
     for (size_t i = 0; i < N; ++i) {
         base_scalars[i * 32 + 31] = static_cast<uint8_t>(i + 1);
-        ufsecp_pubkey_create(cpu_ctx, base_scalars + i * 32, points + i * 33);
+        CHECK_OK(ufsecp_pubkey_create(cpu_ctx, base_scalars + i * 32, points + i * 33),
+                 "CPU pubkey_create succeeds");
     }
 
     /* msm_scalars = {5, 6, 7, 8} */
@@ -378,7 +387,8 @@ static void test_msm_equiv(ufsecp_gpu_ctx* ctx) {
         uint8_t scalar_70[32] = {};
         scalar_70[31] = 70;
         uint8_t cpu_pub[33];
-        ufsecp_pubkey_create(cpu_ctx, scalar_70, cpu_pub);
+        CHECK_OK(ufsecp_pubkey_create(cpu_ctx, scalar_70, cpu_pub),
+                 "CPU pubkey_create for MSM reference succeeds");
         CHECK(std::memcmp(gpu_result, cpu_pub, 33) == 0, "msm result == 70*G (CPU reference)");
     }
 

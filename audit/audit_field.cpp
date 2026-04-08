@@ -328,6 +328,18 @@ static void test_inverse() {
     printf("[8] Inverse correctness\n");
 
     auto one = FieldElement::one();
+    auto check_direct_inverse_paths = [&](const FieldElement& value) {
+        auto inv_default = value.inverse();
+        auto inv_safegcd = fe_inverse_safegcd(value);
+        auto inv_addchain = fe_inverse_addchain(value);
+        auto inv_inplace = value;
+        inv_inplace.inverse_inplace();
+
+        CHECK(inv_safegcd == inv_default, "safegcd wrapper matches default inverse");
+        CHECK(inv_safegcd == inv_addchain, "safegcd wrapper matches addchain inverse oracle");
+        CHECK(inv_inplace == inv_default, "inverse_inplace matches default inverse");
+        CHECK((value * inv_safegcd) == one, "safegcd inverse yields multiplicative identity");
+    };
 
     for (int i = 0; i < SCALED(10000, 200); ++i) {
         auto a = random_fe();
@@ -343,6 +355,28 @@ static void test_inverse() {
         if (a == FieldElement::from_uint64(0)) continue;
         auto inv_inv = a.inverse().inverse();
         CHECK(inv_inv == a, "(a^-1)^-1 == a");
+    }
+
+    // Direct wrapper/oracle cross-checks for safegcd-based inversion.
+    {
+        auto p_minus_1 = FieldElement::from_bytes(P_BYTES) - one;
+        const std::array<FieldElement, 6> edge_values = {
+            one,
+            FieldElement::from_uint64(2),
+            FieldElement::from_uint64(3),
+            FieldElement::from_uint64(17),
+            p_minus_1,
+            FieldElement::from_limbs({0xFFFFFFFFFFFFFFFEULL, 0ULL, 0ULL, 0ULL}),
+        };
+        for (const auto& value : edge_values) {
+            check_direct_inverse_paths(value);
+        }
+    }
+
+    for (int i = 0; i < SCALED(2000, 50); ++i) {
+        auto a = random_fe();
+        if (a == FieldElement::from_uint64(0)) continue;
+        check_direct_inverse_paths(a);
     }
 
     // Inverse of 1 == 1

@@ -104,31 +104,31 @@ jobs:
             # Pattern: look for branch conditions that depend on function args
             # marked as secret (convention: parameters named *sec* or *priv*)
             python3 -c "
-import re, sys
-with open('$ll_file') as f:
-    content = f.read()
-# Find functions with 'secret' or 'priv' or 'sec' parameters
-funcs = re.findall(r'define\s+\S+\s+@(\w+)\([^)]*\)', content)
-# Check for select/br on values derived from getelementptr on secret arrays
-patterns = [
-    (r'br\s+i1\s+%.*secret', 'secret-dependent branch'),
-    (r'br\s+i1\s+%.*priv', 'private-key-dependent branch'),
-    (r'sdiv\s+.*%.*secret', 'secret-dependent division'),
-    (r'urem\s+.*%.*secret', 'secret-dependent remainder'),
-]
-issues = []
-for pat, desc in patterns:
-    matches = re.findall(pat, content)
-    for m in matches:
-        issues.append(f'  WARNING: {desc}: {m[:80]}')
-if issues:
-    print(f'Issues in $ll_file:')
-    for i in issues[:10]:
-        print(i)
-    sys.exit(1)
-else:
-    print(f'  PASS: no obvious CT violations')
-" || VIOLATIONS=$((VIOLATIONS + 1))
+          import re, sys
+          with open('$ll_file') as f:
+              content = f.read()
+          # Find functions with 'secret' or 'priv' or 'sec' parameters
+          funcs = re.findall(r'define\s+\S+\s+@(\w+)\([^)]*\)', content)
+          # Check for select/br on values derived from getelementptr on secret arrays
+          patterns = [
+              (r'br\s+i1\s+%.*secret', 'secret-dependent branch'),
+              (r'br\s+i1\s+%.*priv', 'private-key-dependent branch'),
+              (r'sdiv\s+.*%.*secret', 'secret-dependent division'),
+              (r'urem\s+.*%.*secret', 'secret-dependent remainder'),
+          ]
+          issues = []
+          for pat, desc in patterns:
+              matches = re.findall(pat, content)
+              for m in matches:
+                  issues.append(f'  WARNING: {desc}: {m[:80]}')
+          if issues:
+              print(f'Issues in $ll_file:')
+              for i in issues[:10]:
+                  print(i)
+              sys.exit(1)
+          else:
+              print(f'  PASS: no obvious CT violations')
+          " || VIOLATIONS=$((VIOLATIONS + 1))
           done
           echo "=== CT-Prover Summary ==="
           echo "Violations found: $VIOLATIONS"

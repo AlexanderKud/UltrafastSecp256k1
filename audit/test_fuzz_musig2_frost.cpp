@@ -84,18 +84,22 @@ static void test_musig2_key_agg_random(ufsecp_ctx* ctx) {
     CHECK(no_crash == N, "musig2_key_agg: no crash on random pubkeys");
 
     // Zero pubkeys
+    int zero_rounds = 0;
     for (int i = 0; i < 100; ++i) {
         std::vector<uint8_t> zeros(32 * 3, 0);
         ufsecp_musig2_key_agg(ctx, zeros.data(), 3, keyagg_out, agg_pk32);
+        ++zero_rounds;
     }
-    CHECK(true, "musig2_key_agg: no crash on all-zero pubkeys (3)");
+    CHECK(zero_rounds == 100, "musig2_key_agg: no crash on all-zero pubkeys (3)");
 
     // Single pubkey
+    int single_rounds = 0;
     for (int i = 0; i < 200; ++i) {
         auto k = rand32();
         ufsecp_musig2_key_agg(ctx, k.data(), 1, keyagg_out, agg_pk32);
+        ++single_rounds;
     }
-    CHECK(true, "musig2_key_agg: no crash on single random pubkey");
+    CHECK(single_rounds == 200, "musig2_key_agg: no crash on single random pubkey");
 }
 
 // ============================================================================

@@ -63,10 +63,12 @@ Output
 from __future__ import annotations
 
 import argparse
+import atexit
 import copy
 import json
 import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -80,6 +82,39 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 LIB_ROOT   = SCRIPT_DIR.parent
 
 # ---------------------------------------------------------------------------
+# Mutation rollback safety net
+# ---------------------------------------------------------------------------
+# Tracks files currently mutated so they can be restored on abnormal exit.
+# Uses `git checkout -- <file>` as the ultimate fallback because it is
+# immune to Python-level state corruption (OOM, segfault, signal).
+_MUTATED_FILES: set[Path] = set()
+
+
+def _rollback_mutated_files() -> None:
+    """Restore any files mutated by this process via git checkout."""
+    for src in list(_MUTATED_FILES):
+        try:
+            subprocess.run(
+                ["git", "checkout", "--", str(src)],
+                cwd=LIB_ROOT, timeout=10,
+                capture_output=True,
+            )
+        except Exception:
+            pass
+    _MUTATED_FILES.clear()
+
+
+def _signal_handler(signum, _frame):
+    """Handle SIGTERM/SIGINT by restoring mutated files before exit."""
+    _rollback_mutated_files()
+    sys.exit(128 + signum)
+
+
+atexit.register(_rollback_mutated_files)
+signal.signal(signal.SIGTERM, _signal_handler)
+signal.signal(signal.SIGINT, _signal_handler)
+
+# ---------------------------------------------------------------------------
 # Default high-value mutation targets (relative to LIB_ROOT)
 # ---------------------------------------------------------------------------
 DEFAULT_TARGETS = [
@@ -89,7 +124,23 @@ DEFAULT_TARGETS = [
     "cpu/src/ecdsa.cpp",
     "cpu/src/schnorr.cpp",
     "cpu/src/ct_sign.cpp",
-    "cpu/src/rfc6979.cpp",
+    "cpu/src/recovery.cpp",
+]
+
+# Fast standalone suite for --ctest-mode. This avoids running the full
+# unified_audit CTest target for every mutation, which is too slow for a
+# practical kill-rate lane.
+DEFAULT_CTEST_MODE_COMMANDS = [
+    ["./cpu/test_comprehensive_standalone"],
+    ["./audit/test_fiat_crypto_vectors"],
+    ["./audit/test_cross_platform_kat"],
+    ["./audit/test_differential_standalone"],
+    ["./audit/test_ct_equivalence_standalone"],
+    ["./audit/test_ct_verif_formal_standalone"],
+    ["./audit/test_parse_strictness_standalone"],
+    ["./audit/test_nonce_uniqueness_standalone"],
+    ["./audit/test_exploit_ecdsa_edge_cases_standalone"],
+    ["./audit/test_exploit_schnorr_edge_cases_standalone"],
 ]
 
 # ---------------------------------------------------------------------------
@@ -171,7 +222,11 @@ class KillReport:
     kill_rate_pct: float = 0.0
     threshold_pct: float = 75.0
     passed: bool = False
+    baseline_build_ok: bool = True
+    baseline_test_ok: bool = True
+    baseline_note: str = ""
     targets: list[str] = field(default_factory=list)
+    test_commands: list[str] = field(default_factory=list)
     mutations: list[MutationResult] = field(default_factory=list)
 
 
@@ -219,14 +274,32 @@ def apply_mutation(src_path: Path, lineno: int, col: int,
 # Build + test runner
 # ---------------------------------------------------------------------------
 
-def rebuild_library(build_dir: Path, timeout_s: int = 120) -> tuple[bool, str]:
+def infer_build_targets(test_cmds: list[list[str]]) -> list[str]:
+    targets: list[str] = []
+    for test_cmd in test_cmds:
+        if not test_cmd:
+            continue
+        exe = test_cmd[0]
+        if exe.startswith("./"):
+            targets.append(exe[2:])
+    return list(dict.fromkeys(targets))
+
+
+def rebuild_library(build_dir: Path, build_targets: Optional[list[str]] = None,
+                    timeout_s: int = 120) -> tuple[bool, str]:
     """Run ninja/make in build_dir. Returns (success, stderr_snippet)."""
     ninja = shutil.which("ninja")
     make  = shutil.which("make")
-    cmd = [ninja, "-j4"] if ninja and (build_dir / "build.ninja").exists() else \
-          [make, "-j4"]   if make  else None
+    if ninja and (build_dir / "build.ninja").exists():
+        cmd = [ninja, "-j4"]
+    elif make:
+        cmd = [make, "-j4"]
+    else:
+        cmd = None
     if cmd is None:
         return False, "no build tool found (ninja/make)"
+    if build_targets:
+        cmd.extend(build_targets)
     try:
         result = subprocess.run(
             cmd, cwd=build_dir, capture_output=True, timeout=timeout_s, text=True
@@ -238,18 +311,48 @@ def rebuild_library(build_dir: Path, timeout_s: int = 120) -> tuple[bool, str]:
         return False, str(e)
 
 
-def run_tests(test_cmd: list[str], build_dir: Path, timeout_s: int = 90) -> tuple[bool, str]:
-    """Run the test command. Returns (tests_failed, output_snippet)."""
+def format_cmd(cmd: list[str]) -> str:
+    return " ".join(cmd)
+
+
+def run_tests(test_cmds: list[list[str]], build_dir: Path, timeout_s: int = 90) -> tuple[bool, str]:
+    """Run one or more test commands. Returns (tests_failed, output_snippet)."""
+    combined_output: list[str] = []
     try:
-        result = subprocess.run(
-            test_cmd, cwd=build_dir, capture_output=True, timeout=timeout_s, text=True
-        )
-        # Tests FAILED means mutation was KILLED → return True (killed=True)
-        return result.returncode != 0, (result.stdout + result.stderr)[-3000:]
-    except subprocess.TimeoutExpired:
-        return True, "test timeout"   # timeout = mutation trapped the test → killed
+        for test_cmd in test_cmds:
+            result = subprocess.run(
+                test_cmd, cwd=build_dir, capture_output=True, timeout=timeout_s, text=True
+            )
+            output = (result.stdout + result.stderr).strip()
+            if output:
+                combined_output.append(f"$ {format_cmd(test_cmd)}\n{output[-1500:]}")
+            else:
+                combined_output.append(f"$ {format_cmd(test_cmd)}")
+            if result.returncode != 0:
+                return True, "\n\n".join(combined_output)[-3000:]
+        return False, "\n\n".join(combined_output)[-3000:]
+    except subprocess.TimeoutExpired as exc:
+        cmd = exc.cmd if isinstance(exc.cmd, list) else [str(exc.cmd)]
+        return True, f"test timeout: {format_cmd(cmd)}"
     except Exception as e:
         return False, str(e)
+
+
+def preflight_baseline(
+    build_dir: Path,
+    test_cmds: list[list[str]],
+    build_targets: Optional[list[str]],
+    build_timeout: int,
+    test_timeout: int,
+) -> tuple[bool, str]:
+    """Validate that the unmutated tree builds and the selected tests pass."""
+    ok, build_log = rebuild_library(build_dir, build_targets=build_targets, timeout_s=build_timeout)
+    if not ok:
+        return False, f"baseline build failed: {build_log}"
+    tests_failed, test_log = run_tests(test_cmds, build_dir, timeout_s=test_timeout)
+    if tests_failed:
+        return False, f"baseline tests failed: {test_log}"
+    return True, test_log
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +362,8 @@ def run_tests(test_cmd: list[str], build_dir: Path, timeout_s: int = 90) -> tupl
 def run_mutation_testing(
     targets: list[Path],
     build_dir: Path,
-    test_cmd: list[str],
+    test_cmds: list[list[str]],
+    build_targets: Optional[list[str]],
     count: int,
     seed: int,
     threshold: float,
@@ -274,7 +378,29 @@ def run_mutation_testing(
         timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         threshold_pct=threshold,
         targets=[str(p.relative_to(LIB_ROOT)) for p in targets],
+        test_commands=[format_cmd(cmd) for cmd in test_cmds],
     )
+
+    print("Running baseline preflight...")
+    baseline_ok, baseline_note = preflight_baseline(
+        build_dir=build_dir,
+        test_cmds=test_cmds,
+        build_targets=build_targets,
+        build_timeout=build_timeout,
+        test_timeout=test_timeout,
+    )
+    if not baseline_ok:
+        report.baseline_build_ok = not baseline_note.startswith("baseline build failed:")
+        report.baseline_test_ok = False if baseline_note.startswith("baseline tests failed:") else report.baseline_test_ok
+        if baseline_note.startswith("baseline build failed:"):
+            report.baseline_build_ok = False
+        report.baseline_note = baseline_note[-3000:]
+        report.passed = False
+        print(f"  [FAIL] {report.baseline_note}")
+        return report
+
+    report.baseline_note = "baseline build + quick suite passed"
+    print("  [OK] baseline build + quick suite passed")
 
     # Enumerate all candidate mutation sites across all targets
     candidates: list[tuple[Path, MutationOp, int, int, str]] = []
@@ -319,16 +445,18 @@ def run_mutation_testing(
             continue
 
         src.write_text(mutated_text, encoding="utf-8")
+        _MUTATED_FILES.add(src)
 
         try:
             # Rebuild
-            ok, build_log = rebuild_library(build_dir, timeout_s=build_timeout)
+            ok, build_log = rebuild_library(build_dir, build_targets=build_targets,
+                                            timeout_s=build_timeout)
             if not ok:
                 outcome = "build_error"
                 report.build_errors += 1
             else:
                 # Run tests
-                killed, test_log = run_tests(test_cmd, build_dir, timeout_s=test_timeout)
+                killed, test_log = run_tests(test_cmds, build_dir, timeout_s=test_timeout)
                 if killed:
                     outcome = "killed"
                     report.killed += 1
@@ -336,8 +464,9 @@ def run_mutation_testing(
                     outcome = "survived"
                     report.survived += 1
         finally:
-            # Restore original
+            # Restore original (fast path — in-memory copy)
             src.write_text(original_text, encoding="utf-8")
+            _MUTATED_FILES.discard(src)
 
         elapsed = time.monotonic() - t0
         mr = MutationResult(
@@ -387,8 +516,8 @@ def parse_args() -> argparse.Namespace:
                    help="Shell command to run tests; default: ctest --test-dir <build> -R unified_audit -j1")
     p.add_argument("--targets", nargs="+", default=None,
                    help="Source files to mutate (relative to repo root)")
-    p.add_argument("--count", type=int, default=100,
-                   help="Max number of mutations to apply (default: 100)")
+    p.add_argument("--count", type=int, default=None,
+                   help="Max number of mutations to apply (default: 20 in --ctest-mode, else 100)")
     p.add_argument("--seed", type=int, default=0xDEADBEEF,
                    help="Random seed for mutation selection")
     p.add_argument("--threshold", type=float, default=75.0,
@@ -422,23 +551,31 @@ def main() -> int:
 
     if args.test_cmd:
         import shlex
-        test_cmd = shlex.split(args.test_cmd)
+        test_cmds = [shlex.split(args.test_cmd)]
     else:
-        ctest = shutil.which("ctest") or "ctest"
-        test_cmd = [ctest, "--test-dir", str(build_dir),
-                    "-R", "unified_audit", "-j1", "-Q", "--output-on-failure"]
+        if args.ctest_mode:
+            test_cmds = [cmd[:] for cmd in DEFAULT_CTEST_MODE_COMMANDS]
+        else:
+            ctest = shutil.which("ctest") or "ctest"
+            test_cmds = [[ctest, "--test-dir", str(build_dir),
+                          "-R", "unified_audit", "-j1", "-Q", "--output-on-failure"]]
 
     raw_targets = args.targets or DEFAULT_TARGETS
     targets = [LIB_ROOT / t for t in raw_targets]
+    build_targets = infer_build_targets(test_cmds)
 
-    count    = 20 if args.ctest_mode else args.count
+    count    = args.count if args.count is not None else (20 if args.ctest_mode else 100)
     verbose  = args.verbose and not args.ctest_mode
 
     print("=" * 64)
     print("Mutation Kill-Rate Tracker — UltrafastSecp256k1 Audit")
     print("=" * 64)
     print(f"Build dir : {build_dir}")
-    print(f"Test cmd  : {' '.join(test_cmd)}")
+    print("Test cmds :")
+    for cmd in test_cmds:
+        print(f"  - {format_cmd(cmd)}")
+    if build_targets:
+        print(f"Build tgts: {build_targets}")
     print(f"Targets   : {[t.name for t in targets]}")
     print(f"Count     : {count}")
     print(f"Threshold : {args.threshold}%")
@@ -447,7 +584,8 @@ def main() -> int:
     report = run_mutation_testing(
         targets=targets,
         build_dir=build_dir,
-        test_cmd=test_cmd,
+        test_cmds=test_cmds,
+        build_targets=build_targets,
         count=count,
         seed=args.seed,
         threshold=args.threshold,
@@ -460,6 +598,10 @@ def main() -> int:
     print("\n" + "=" * 64)
     print("SUMMARY")
     print("=" * 64)
+    print(f"  Baseline build    : {'PASS' if report.baseline_build_ok else 'FAIL'}")
+    print(f"  Baseline tests    : {'PASS' if report.baseline_test_ok else 'FAIL'}")
+    if report.baseline_note:
+        print(f"  Baseline note     : {report.baseline_note}")
     print(f"  Total mutations  : {report.total}")
     print(f"  Killed           : {report.killed}")
     print(f"  Survived         : {report.survived}")

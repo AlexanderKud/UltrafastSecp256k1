@@ -519,7 +519,7 @@ static void run_ps41_pubkey_uncompressed(ufsecp_ctx* ctx) {
             CHECK(std::memcmp(out65, valid65, 65) == 0,
                   "PS-46: if overlong accepted, output must match the 65-byte key");
         } else {
-            CHECK(true, "PS-46: overlong uncompressed pubkey rejected");
+              CHECK(rc != UFSECP_OK, "PS-46: overlong uncompressed pubkey rejected");
         }
     }
     // PS-47: hybrid encoding prefix 0x06 (deprecated, must reject)
@@ -572,10 +572,11 @@ static void run_ps49_pubkey_xonly(ufsecp_ctx* ctx) {
     // PS-52: privkey = n+1 (out of canonical range but ≡ 1 mod n)
     {
         ufsecp_error_t rc = ufsecp_pubkey_xonly(ctx, SCALAR_N_PLUS1, xonly32);
-        // Some implementations reduce mod n, some reject. Either is acceptable.
-        // We just require it doesn't crash or produce garbage.
-        (void)rc;
-        CHECK(true, "PS-52: privkey = n+1 handled without crash");
+        uint8_t canonical_xonly[32] = {};
+        CHECK_CODE(ufsecp_pubkey_xonly(ctx, PRIVKEY1, canonical_xonly), UFSECP_OK,
+                   "PS-52a: privkey = 1 x-only derivation OK");
+        CHECK(rc != UFSECP_OK || std::memcmp(xonly32, canonical_xonly, 32) == 0,
+              "PS-52: privkey = n+1 rejected or canonicalized to privkey = 1");
     }
     // PS-53: valid privkey=1 → x-only derivation succeeds
     {

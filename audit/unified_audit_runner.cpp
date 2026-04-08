@@ -142,6 +142,16 @@ int test_fuzz_address_bip32_ffi_run();
 int test_fuzz_musig2_frost_run();
 int test_libfuzzer_unified_run();  // deterministic LibFuzzer harness regression suite
 int test_mutation_kill_rate_run(); // mutation kill-rate tracker (advisory: needs Python)
+int test_exploit_mutation_residue_run(); // mutation residue exploit vectors (wNAF OOB + divsteps mask)
+int test_mutation_artifact_scan_run();   // source-file integrity scanner for mutation artifacts
+int test_exploit_metal_field_reduce_run(); // Metal field_reduce_512 acc[8] truncation (issue #226)
+int test_exploit_network_validation_bypass_run(); // Network selector validation bypass (address/WIF ABI)
+int test_exploit_ecdsa_half_half_nonce_run();     // ePrint 2023/841 half-half nonce key recovery
+int test_exploit_ecdsa_nonce_modular_bias_run();  // CVE-2024-31497 nonce modular reduction bias
+int test_exploit_ecdsa_differential_fault_run();  // ePrint 2017/975 differential fault on RFC 6979
+int test_exploit_eucleak_inversion_timing_run();   // ePrint 2024/1380 EUCLEAK non-CT inversion
+int test_exploit_ecdsa_cross_key_nonce_reuse_run(); // ePrint 2025/654 cross-key nonce reuse cascade
+int test_exploit_schnorr_hash_order_run();          // ePrint 2025/1846 Fiat-Shamir hash order
 int test_cryptol_specs_run();      // Cryptol formal spec property check (advisory: needs cryptol)
 
 // ============================================================================
@@ -523,7 +533,7 @@ static const AuditModule ALL_MODULES[] = {
     // Section 8: Performance Validation & Regression
     // ===================================================================
     { "hash_accel",        "Accelerated hashing",                          "performance",    test_hash_accel_run, false },
-    { "edge_cases",         "Edge cases & coverage gaps",                  "correctness",   test_edge_cases_run, false },
+    { "edge_cases",         "Edge cases & coverage gaps",                  "math_invariants",test_edge_cases_run, false },
     { "multiscalar",       "Multi-scalar & batch verify",                  "performance",    test_multiscalar_batch_run, false },
     { "audit_perf",        "Performance smoke (sign/verify roundtrip)",    "performance",    audit_perf_run, false },
 
@@ -678,6 +688,16 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_hertzbleed_dvfs_timing",  "Hertzbleed-Style DVFS Timing Surface",       "exploit_poc", test_exploit_hertzbleed_dvfs_timing_run, false },
     { "exploit_biased_nonce_chain_scan", "Biased-Nonce Chain-Scale Scan Surface",      "exploit_poc", test_exploit_biased_nonce_chain_scan_run, false },
     { "exploit_kr_ecdsa_buff_binding",   "KR-ECDSA/BUFF Binding Regression Surface",   "exploit_poc", test_exploit_kr_ecdsa_buff_binding_run, false },
+    { "exploit_mutation_residue",        "Mutation Residue Detection (MR-1..MR-7)",    "exploit_poc", test_exploit_mutation_residue_run, false },
+    { "mutation_artifact_scan",          "Source Integrity Scanner (MA-1..MA-4)",       "exploit_poc", test_mutation_artifact_scan_run, false },
+    { "exploit_metal_field_reduce",       "Metal field_reduce_512 Regression (#226)",    "exploit_poc", test_exploit_metal_field_reduce_run, false },
+    { "exploit_network_validation_bypass", "Network Selector Bypass (NVB-1..NVB-8)",     "exploit_poc", test_exploit_network_validation_bypass_run, false },
+    { "exploit_half_half_nonce",         "Half-Half Nonce Key Recovery (HH-1..HH-10)", "exploit_poc", test_exploit_ecdsa_half_half_nonce_run, false },
+    { "exploit_nonce_modular_bias",      "Nonce Modular Reduction Bias (NMB-1..NMB-6)","exploit_poc", test_exploit_ecdsa_nonce_modular_bias_run, false },
+    { "exploit_differential_fault",      "Differential Fault RFC 6979 (DF-1..DF-8)",   "exploit_poc", test_exploit_ecdsa_differential_fault_run, false },
+    { "exploit_eucleak_inversion",        "EUCLEAK Inversion Timing (EUC-1..EUC-12)",   "exploit_poc", test_exploit_eucleak_inversion_timing_run, false },
+    { "exploit_cross_key_nonce_reuse",    "Cross-Key Nonce Reuse (CKN-1..CKN-10)",      "exploit_poc", test_exploit_ecdsa_cross_key_nonce_reuse_run, false },
+    { "exploit_schnorr_hash_order",       "Schnorr Hash Order (SHO-1..SHO-10)",         "exploit_poc", test_exploit_schnorr_hash_order_run, false },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);
@@ -787,7 +807,16 @@ static std::string json_escape(const std::string& s) {
             case '\n': out += "\\n";  break;
             case '\r': out += "\\r";  break;
             case '\t': out += "\\t";  break;
-            default:   out += c;      break;
+            case '\b': out += "\\b";  break;
+            case '\f': out += "\\f";  break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buf[8]; std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned char>(c));
+                    out += buf;
+                } else {
+                    out += c;
+                }
+                break;
         }
     }
     return out;
@@ -1000,7 +1029,7 @@ static void write_text_report(const char* path,
     for (int s = 0; s < (int)sections.size(); ++s) {
         auto& sec = sections[s];
         (void)std::fprintf(f, "================================================================\n");
-        (void)std::fprintf(f, "  Section %d/8: %s\n", s + 1, sec.title_en);
+        (void)std::fprintf(f, "  Section %d/%d: %s\n", s + 1, NUM_SECTIONS, sec.title_en);
         (void)std::fprintf(f, "================================================================\n");
 
         for (auto& r : results) {
@@ -1075,6 +1104,14 @@ static void write_sarif_report(const char* path,
     (void)std::fprintf(f, "          \"informationUri\": \"https://github.com/shrec/UltrafastSecp256k1\",\n");
     (void)std::fprintf(f, "          \"rules\": [\n");
 
+    (void)std::fprintf(f, "            {\n");
+    (void)std::fprintf(f, "              \"id\": \"AUDIT/selftest\",\n");
+    (void)std::fprintf(f, "              \"name\": \"Library selftest (core KAT)\",\n");
+    (void)std::fprintf(f, "              \"shortDescription\": { \"text\": \"Library selftest (core KAT)\" },\n");
+    (void)std::fprintf(f, "              \"defaultConfiguration\": { \"level\": \"error\" },\n");
+    (void)std::fprintf(f, "              \"properties\": { \"section\": \"selftest\" }\n");
+    (void)std::fprintf(f, "            },\n");
+
     // Emit rule definitions for all modules
     for (int i = 0; i < NUM_MODULES; ++i) {
         auto& m = ALL_MODULES[i];
@@ -1135,6 +1172,10 @@ static void write_sarif_report(const char* path,
             uri = "audit/test_abi_gate.cpp";
         } else if (std::strcmp(r.section, "performance") == 0) {
             uri = "cpu/bench/bench_unified.cpp";
+        } else if (std::strcmp(r.section, "differential") == 0) {
+            uri = "audit/test_fiat_crypto_vectors.cpp";
+        } else if (std::strcmp(r.section, "exploit_poc") == 0) {
+            uri = "audit/test_exploit_ecdsa_malleability.cpp";
         }
 
         (void)std::fprintf(f, "        {\n");
@@ -1152,7 +1193,7 @@ static void write_sarif_report(const char* path,
     // Invocation properties
     (void)std::fprintf(f, "      \"invocations\": [\n");
     (void)std::fprintf(f, "        {\n");
-    (void)std::fprintf(f, "          \"executionSuccessful\": %s,\n", (result_count == 0) ? "true" : "false");
+    (void)std::fprintf(f, "          \"executionSuccessful\": true,\n");
     (void)std::fprintf(f, "          \"toolExecutionNotifications\": []\n");
     (void)std::fprintf(f, "        }\n");
     (void)std::fprintf(f, "      ],\n");
@@ -1345,7 +1386,7 @@ int main(int argc, char* argv[]) {
             for (int s = 0; s < NUM_SECTIONS; ++s) {
                 if (std::strcmp(SECTIONS[s].id, current_section) == 0) {
                     std::printf("  ----------------------------------------------------------\n");
-                    std::printf("  Section %d/8: %s\n", section_num, SECTIONS[s].title_en);
+                    std::printf("  Section %d/%d: %s\n", section_num, NUM_SECTIONS, SECTIONS[s].title_en);
                     std::printf("  ----------------------------------------------------------\n");
                     break;
                 }

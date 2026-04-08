@@ -327,6 +327,10 @@ static inline void secure_erase_scalar_vector(std::vector<Scalar>& values) {
     }
 }
 
+static bool valid_network(int n) {
+    return n == UFSECP_NET_MAINNET || n == UFSECP_NET_TESTNET;
+}
+
 static secp256k1::Network to_network(int n) {
     return n == UFSECP_NET_TESTNET ? secp256k1::Network::Testnet
                                    : secp256k1::Network::Mainnet;
@@ -1153,6 +1157,7 @@ ufsecp_error_t ufsecp_addr_p2pkh(ufsecp_ctx* ctx,
                                  const uint8_t pubkey33[33], int network,
                                  char* addr_out, size_t* addr_len) {
     if (!ctx || !pubkey33 || !addr_out || !addr_len) return UFSECP_ERR_NULL_ARG;
+    if (!valid_network(network)) return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid network");
     ctx_clear_err(ctx);
 
     auto pk = point_from_compressed(pubkey33);
@@ -1177,6 +1182,7 @@ ufsecp_error_t ufsecp_addr_p2wpkh(ufsecp_ctx* ctx,
                                   const uint8_t pubkey33[33], int network,
                                   char* addr_out, size_t* addr_len) {
     if (!ctx || !pubkey33 || !addr_out || !addr_len) return UFSECP_ERR_NULL_ARG;
+    if (!valid_network(network)) return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid network");
     ctx_clear_err(ctx);
 
     auto pk = point_from_compressed(pubkey33);
@@ -1201,6 +1207,7 @@ ufsecp_error_t ufsecp_addr_p2tr(ufsecp_ctx* ctx,
                                 const uint8_t internal_key_x[32], int network,
                                 char* addr_out, size_t* addr_len) {
     if (!ctx || !internal_key_x || !addr_out || !addr_len) return UFSECP_ERR_NULL_ARG;
+    if (!valid_network(network)) return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid network");
     ctx_clear_err(ctx);
 
     // Reject all-zero x-only key (not a valid curve point)
@@ -1232,13 +1239,12 @@ ufsecp_error_t ufsecp_addr_p2sh(
     char* addr_out, size_t* addr_len) {
     if (!redeem_script && redeem_script_len > 0) return UFSECP_ERR_NULL_ARG;
     if (!addr_out || !addr_len) return UFSECP_ERR_NULL_ARG;
+    if (!valid_network(network)) return UFSECP_ERR_BAD_INPUT;
 
     try {
     // hash160 of redeem_script
     auto script_hash = secp256k1::hash160(redeem_script, redeem_script_len);
-    secp256k1::Network const net = (network == UFSECP_NET_MAINNET)
-        ? secp256k1::Network::Mainnet : secp256k1::Network::Testnet;
-    auto addr = secp256k1::address_p2sh(script_hash, net);
+    auto addr = secp256k1::address_p2sh(script_hash, to_network(network));
     if (addr.empty()) return UFSECP_ERR_INTERNAL;
     if (*addr_len < addr.size() + 1) return UFSECP_ERR_BUF_TOO_SMALL;
     std::memcpy(addr_out, addr.c_str(), addr.size() + 1);
@@ -1253,6 +1259,7 @@ ufsecp_error_t ufsecp_addr_p2sh_p2wpkh(
     int network,
     char* addr_out, size_t* addr_len) {
     if (!ctx || !pubkey33 || !addr_out || !addr_len) return UFSECP_ERR_NULL_ARG;
+    if (!valid_network(network)) return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid network");
     ctx_clear_err(ctx);
 
     auto pk = point_from_compressed(pubkey33);
@@ -1282,6 +1289,7 @@ ufsecp_error_t ufsecp_wif_encode(ufsecp_ctx* ctx,
                                  int compressed, int network,
                                  char* wif_out, size_t* wif_len) {
     if (!ctx || !privkey || !wif_out || !wif_len) return UFSECP_ERR_NULL_ARG;
+    if (!valid_network(network)) return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid network");
     ctx_clear_err(ctx);
 
     Scalar sk;

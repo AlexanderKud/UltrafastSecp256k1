@@ -20,6 +20,8 @@
  *   SW-12 : GPU macro UFSECP_ECDSA_SNARK_WITNESS_BYTES == 760 (ABI parity)
  *   SW-13 : GPU batch (when available): 1-item result matches CPU reference
  *   SW-14 : GPU batch with null ctx → error != UFSECP_OK
+ *   SW-15 : GPU batch with count=0 returns OK
+ *   SW-16 : GPU batch rejects invalid compressed pubkey content
  *
  * This file compiles as standalone (define STANDALONE_TEST) or as part of
  * the main audit runner (link test_gpu_ecdsa_snark_witness_run()).
@@ -284,6 +286,8 @@ static void test_sw13_sw14_gpu_batch(ufsecp_ctx* cpu_ctx,
 
     if (avail_id == 0) {
         SKIP("SW-13", "no GPU backend available");
+        SKIP("SW-15", "no GPU backend available");
+        SKIP("SW-16", "no GPU backend available");
         return;
     }
 
@@ -293,11 +297,34 @@ static void test_sw13_sw14_gpu_batch(ufsecp_ctx* cpu_ctx,
     auto cerr = ufsecp_gpu_ctx_create(&gctx, avail_id, 0);
     if (cerr != UFSECP_OK || !gctx) {
         SKIP("SW-13", "could not create GPU context");
+        SKIP("SW-15", "could not create GPU context");
+        SKIP("SW-16", "could not create GPU context");
         return;
     }
 
     uint8_t gpu_out[UFSECP_ECDSA_SNARK_WITNESS_BYTES];
     std::memset(gpu_out, 0, sizeof(gpu_out));
+
+    auto gerr_zero = ufsecp_gpu_zk_ecdsa_snark_witness_batch(
+        gctx, msg, pubkey33, sig64, 0, gpu_out);
+    if (gerr_zero == UFSECP_ERR_GPU_UNSUPPORTED) {
+        SKIP("SW-15", "GPU backend does not support snark_witness_batch (Metal stub)");
+    } else {
+        CHECK(gerr_zero == UFSECP_OK,
+              "SW-15", "GPU snark_witness_batch count=0 returns OK");
+    }
+
+    uint8_t bad_pubkey33[33];
+    std::memcpy(bad_pubkey33, pubkey33, sizeof(bad_pubkey33));
+    bad_pubkey33[0] = 0x05;
+    auto gerr_bad = ufsecp_gpu_zk_ecdsa_snark_witness_batch(
+        gctx, msg, bad_pubkey33, sig64, 1, gpu_out);
+    if (gerr_bad == UFSECP_ERR_GPU_UNSUPPORTED) {
+        SKIP("SW-16", "GPU backend does not support snark_witness_batch (Metal stub)");
+    } else {
+        CHECK(gerr_bad != UFSECP_OK,
+              "SW-16", "GPU snark_witness_batch rejects invalid compressed pubkey");
+    }
 
     auto gerr = ufsecp_gpu_zk_ecdsa_snark_witness_batch(
         gctx, msg, pubkey33, sig64, 1, gpu_out);
@@ -351,13 +378,13 @@ int test_gpu_ecdsa_snark_witness_run() {
     privkey[0] &= 0x7F;  /* keep within scalar range */
 
     uint8_t pubkey33[33];
-    ufsecp_pubkey_create(cpu_ctx, privkey, pubkey33);
+        CHECK((ufsecp_pubkey_create(cpu_ctx, privkey, pubkey33)) == UFSECP_OK, "SW-setup", "pubkey_create");
 
     uint8_t msg[32];
     fill_det(msg, 32, 0xB3);
 
     uint8_t sig64[64];
-    ufsecp_ecdsa_sign(cpu_ctx, msg, privkey, sig64);
+        CHECK((ufsecp_ecdsa_sign(cpu_ctx, msg, privkey, sig64)) == UFSECP_OK, "SW-setup", "ecdsa_sign");
 
     /* --- run tests ----------------------------------------------------- */
     test_sw3_valid_sig(cpu_ctx, privkey, pubkey33, msg, sig64);   std::printf("\n");

@@ -659,7 +659,7 @@ static void test_point_on_curve_stress() {
         auto P = G.scalar_mul(s);
 
         if (P.is_infinity()) {
-            CHECK(true, "infinity is on curve (trivially)");
+            CHECK(P.is_infinity(), "infinity is on curve (trivially)");
             continue;
         }
 

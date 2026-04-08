@@ -928,6 +928,13 @@ target_compile_definitions(test_exploit_frost_byzantine_standalone PRIVATE STAND
 add_test(NAME exploit_frost_byzantine COMMAND test_exploit_frost_byzantine_standalone)
 set_tests_properties(exploit_frost_byzantine PROPERTIES TIMEOUT 60 LABELS "audit;exploit;frost;byzantine")
 
+# -- MuSig2/FROST Byzantine 3-of-5 multi-party adversarial tests -------------
+add_executable(test_exploit_musig2_byzantine_multiparty_standalone test_exploit_musig2_byzantine_multiparty.cpp)
+audit_target_defaults(test_exploit_musig2_byzantine_multiparty_standalone)
+target_compile_definitions(test_exploit_musig2_byzantine_multiparty_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_musig2_byzantine_multiparty COMMAND test_exploit_musig2_byzantine_multiparty_standalone)
+set_tests_properties(exploit_musig2_byzantine_multiparty PROPERTIES TIMEOUT 120 LABELS "audit;exploit;musig2;frost;byzantine;multiparty")
+
 # -- Scalar group law systematic (inverses, identities, overflow, roundtrip) --
 add_executable(test_exploit_scalar_systematic_standalone test_exploit_scalar_systematic.cpp)
 audit_target_defaults(test_exploit_scalar_systematic_standalone)
@@ -1381,6 +1388,69 @@ target_compile_definitions(test_exploit_ecdsa_nonce_reuse_standalone PRIVATE STA
 add_test(NAME exploit_ecdsa_nonce_reuse COMMAND test_exploit_ecdsa_nonce_reuse_standalone)
 set_tests_properties(exploit_ecdsa_nonce_reuse PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;nonce")
 
+# -- PoC: Affine nonce relation key recovery (ANR-1..ANR-12) [ePrint 2025/705] --
+add_executable(test_exploit_ecdsa_affine_nonce_relation_standalone
+    test_exploit_ecdsa_affine_nonce_relation.cpp)
+audit_target_defaults(test_exploit_ecdsa_affine_nonce_relation_standalone)
+target_link_libraries(test_exploit_ecdsa_affine_nonce_relation_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_ecdsa_affine_nonce_relation_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdsa_affine_nonce_relation COMMAND test_exploit_ecdsa_affine_nonce_relation_standalone)
+set_tests_properties(exploit_ecdsa_affine_nonce_relation PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
+
+# -- PoC: Half-half nonce key recovery (HH-1..HH-10) [ePrint 2023/841] --
+add_executable(test_exploit_ecdsa_half_half_nonce_standalone
+    test_exploit_ecdsa_half_half_nonce.cpp)
+audit_target_defaults(test_exploit_ecdsa_half_half_nonce_standalone)
+target_link_libraries(test_exploit_ecdsa_half_half_nonce_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_ecdsa_half_half_nonce_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdsa_half_half_nonce COMMAND test_exploit_ecdsa_half_half_nonce_standalone)
+set_tests_properties(exploit_ecdsa_half_half_nonce PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
+
+# -- PoC: Nonce modular reduction bias (NMB-1..NMB-8) [CVE-2024-31497] --
+add_executable(test_exploit_ecdsa_nonce_modular_bias_standalone
+    test_exploit_ecdsa_nonce_modular_bias.cpp)
+audit_target_defaults(test_exploit_ecdsa_nonce_modular_bias_standalone)
+target_link_libraries(test_exploit_ecdsa_nonce_modular_bias_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_ecdsa_nonce_modular_bias_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdsa_nonce_modular_bias COMMAND test_exploit_ecdsa_nonce_modular_bias_standalone)
+set_tests_properties(exploit_ecdsa_nonce_modular_bias PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
+
+# -- PoC: Differential fault on RFC 6979 (DF-1..DF-8) [ePrint 2017/975] --
+add_executable(test_exploit_ecdsa_differential_fault_standalone
+    test_exploit_ecdsa_differential_fault.cpp)
+audit_target_defaults(test_exploit_ecdsa_differential_fault_standalone)
+target_link_libraries(test_exploit_ecdsa_differential_fault_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_ecdsa_differential_fault_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdsa_differential_fault COMMAND test_exploit_ecdsa_differential_fault_standalone)
+set_tests_properties(exploit_ecdsa_differential_fault PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
+
+# -- PoC: EUCLEAK non-CT modular inversion timing (EUC-1..EUC-12) [ePrint 2024/1380] --
+add_executable(test_exploit_eucleak_inversion_timing_standalone
+    test_exploit_eucleak_inversion_timing.cpp)
+audit_target_defaults(test_exploit_eucleak_inversion_timing_standalone)
+target_link_libraries(test_exploit_eucleak_inversion_timing_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_eucleak_inversion_timing_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_eucleak_inversion_timing COMMAND test_exploit_eucleak_inversion_timing_standalone)
+set_tests_properties(exploit_eucleak_inversion_timing PROPERTIES TIMEOUT 120 LABELS "audit;exploit;sidechannel;inversion")
+
+# -- PoC: Cross-key nonce reuse cascading compromise (CKN-1..CKN-10) [ePrint 2025/654] --
+add_executable(test_exploit_ecdsa_cross_key_nonce_reuse_standalone
+    test_exploit_ecdsa_cross_key_nonce_reuse.cpp)
+audit_target_defaults(test_exploit_ecdsa_cross_key_nonce_reuse_standalone)
+target_link_libraries(test_exploit_ecdsa_cross_key_nonce_reuse_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_ecdsa_cross_key_nonce_reuse_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ecdsa_cross_key_nonce_reuse COMMAND test_exploit_ecdsa_cross_key_nonce_reuse_standalone)
+set_tests_properties(exploit_ecdsa_cross_key_nonce_reuse PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
+
+# -- PoC: Fiat-Shamir hash order in BIP-340 (SHO-1..SHO-10) [ePrint 2025/1846] --
+add_executable(test_exploit_schnorr_hash_order_standalone
+    test_exploit_schnorr_hash_order.cpp)
+audit_target_defaults(test_exploit_schnorr_hash_order_standalone)
+target_link_libraries(test_exploit_schnorr_hash_order_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_schnorr_hash_order_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_schnorr_hash_order COMMAND test_exploit_schnorr_hash_order_standalone)
+set_tests_properties(exploit_schnorr_hash_order PROPERTIES TIMEOUT 120 LABELS "audit;exploit;schnorr;hash")
+
 # -- PoC: Cross-scheme pubkey consistency (CSP-1..CSP-8) -------------------
 add_executable(test_exploit_cross_scheme_pubkey_standalone
     test_exploit_cross_scheme_pubkey.cpp
@@ -1462,6 +1532,17 @@ target_compile_definitions(test_exploit_bip352_parity_confusion_standalone PRIVA
 add_test(NAME exploit_bip352_parity_confusion COMMAND test_exploit_bip352_parity_confusion_standalone)
 set_tests_properties(exploit_bip352_parity_confusion PROPERTIES TIMEOUT 60 LABELS "audit;exploit;bip352;parity")
 
+# -- BIP-352 Known-Answer Tests (create_output byte-exact + full round-trip)
+add_executable(test_bip352_kat_standalone
+    test_bip352_kat.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_bip352_kat_standalone)
+target_include_directories(test_bip352_kat_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_bip352_kat_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME bip352_kat COMMAND test_bip352_kat_standalone)
+set_tests_properties(bip352_kat PROPERTIES TIMEOUT 60 LABELS "audit;kat;bip352;silent-payment;regression")
+
 # -- PoC: RFC 6979 nonce truncation bias (C5 gap)
 add_executable(test_exploit_rfc6979_truncation_bias_standalone
     test_exploit_rfc6979_truncation_bias.cpp
@@ -1538,6 +1619,17 @@ target_include_directories(test_exploit_frost_adaptive_corruption_standalone PRI
 target_compile_definitions(test_exploit_frost_adaptive_corruption_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
 add_test(NAME exploit_frost_adaptive_corruption COMMAND test_exploit_frost_adaptive_corruption_standalone)
 set_tests_properties(exploit_frost_adaptive_corruption PROPERTIES TIMEOUT 60 LABELS "audit;exploit;frost;adaptive")
+
+# -- PoC: Point::scalar_mul edge-case and correctness attack surface --------
+add_executable(test_exploit_scalar_mul_standalone
+    test_exploit_scalar_mul.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_scalar_mul_standalone)
+target_include_directories(test_exploit_scalar_mul_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_scalar_mul_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_scalar_mul COMMAND test_exploit_scalar_mul_standalone)
+set_tests_properties(exploit_scalar_mul PROPERTIES TIMEOUT 60 LABELS "audit;exploit;scalar_mul;glv")
 
 # -- PoC: Deterministic ECDSA fault-injection regression --------------------
 add_executable(test_exploit_ecdsa_fault_injection_standalone
@@ -1682,6 +1774,25 @@ target_compile_definitions(test_exploit_ecdsa_r_overflow_standalone PRIVATE STAN
 add_test(NAME exploit_ecdsa_r_overflow COMMAND test_exploit_ecdsa_r_overflow_standalone)
 set_tests_properties(exploit_ecdsa_r_overflow PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;wycheproof")
 
+# -- ECDSA sign sentinel paths: r=0 / s=0 / sk=0 guards (X-1, X-2, X-4) ---
+add_executable(test_exploit_ecdsa_sign_sentinels_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_exploit_ecdsa_sign_sentinels.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_ecdsa_sign_sentinels_standalone)
+target_include_directories(test_exploit_ecdsa_sign_sentinels_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
+target_compile_definitions(test_exploit_ecdsa_sign_sentinels_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_ecdsa_sign_sentinels COMMAND test_exploit_ecdsa_sign_sentinels_standalone)
+set_tests_properties(exploit_ecdsa_sign_sentinels PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;sentinel")
+
+# -- Boundary sentinel edge cases (inverse(0), empty batch, half-order, MuSig2 dup) ---
+add_executable(test_exploit_boundary_sentinels_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_exploit_boundary_sentinels.cpp)
+audit_target_defaults(test_exploit_boundary_sentinels_standalone)
+target_compile_definitions(test_exploit_boundary_sentinels_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_boundary_sentinels COMMAND test_exploit_boundary_sentinels_standalone)
+set_tests_properties(exploit_boundary_sentinels PROPERTIES TIMEOUT 60 LABELS "audit;exploit;boundary;sentinel")
+
 # -- Wycheproof ECDSA Bitcoin variant vectors (BIP-62 low-S + PR #206) ------
 add_executable(test_wycheproof_ecdsa_bitcoin_standalone
     ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_bitcoin.cpp)
@@ -1697,6 +1808,18 @@ audit_target_defaults(test_wycheproof_ecdsa_sha256_standalone)
 target_compile_definitions(test_wycheproof_ecdsa_sha256_standalone PRIVATE STANDALONE_TEST)
 add_test(NAME wycheproof_ecdsa_sha256 COMMAND test_wycheproof_ecdsa_sha256_standalone)
 set_tests_properties(wycheproof_ecdsa_sha256 PROPERTIES TIMEOUT 60 LABELS "audit;kat;wycheproof;ecdsa;der")
+
+# -- Wycheproof ECDSA secp256k1 SHA-256 extended coverage -------------------
+# Covers flag categories absent from the base sha256 test:
+#   RangeCheck, InvalidTypesInSignature, EdgeCaseShamirMultiplication,
+#   SmallRandS (CVE-2020-13895), PointDuplication, EdgeCasePublicKey
+add_executable(test_wycheproof_ecdsa_extended_standalone
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_wycheproof_ecdsa_extended.cpp)
+audit_target_defaults(test_wycheproof_ecdsa_extended_standalone)
+target_compile_definitions(test_wycheproof_ecdsa_extended_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME wycheproof_ecdsa_extended COMMAND test_wycheproof_ecdsa_extended_standalone)
+set_tests_properties(wycheproof_ecdsa_extended PROPERTIES TIMEOUT 60
+    LABELS "audit;kat;wycheproof;ecdsa;der;edge-case")
 
 # -- Wycheproof ECDSA secp256k1 SHA-256 P1363 vectors -----------------------
 add_executable(test_wycheproof_ecdsa_sha256_p1363_standalone
@@ -1777,6 +1900,42 @@ audit_target_defaults(test_exploit_hash_algo_sig_isolation_standalone)
 target_compile_definitions(test_exploit_hash_algo_sig_isolation_standalone PRIVATE STANDALONE_TEST)
 add_test(NAME exploit_hash_algo_sig_isolation COMMAND test_exploit_hash_algo_sig_isolation_standalone)
 set_tests_properties(exploit_hash_algo_sig_isolation PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ecdsa;hash_confusion")
+
+# -- PoC: Mutation residue detection (wNAF OOB + divsteps mask) ------------
+add_executable(test_exploit_mutation_residue_standalone test_exploit_mutation_residue.cpp)
+audit_target_defaults(test_exploit_mutation_residue_standalone)
+target_compile_definitions(test_exploit_mutation_residue_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_mutation_residue COMMAND test_exploit_mutation_residue_standalone)
+set_tests_properties(exploit_mutation_residue PROPERTIES TIMEOUT 60 LABELS "audit;exploit;mutation;scalar;point")
+
+# -- PoC: Metal field_reduce_512 acc[8] truncation (issue #226) -----------
+add_executable(test_exploit_metal_field_reduce_standalone test_exploit_metal_field_reduce.cpp)
+audit_target_defaults(test_exploit_metal_field_reduce_standalone)
+target_compile_definitions(test_exploit_metal_field_reduce_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_metal_field_reduce COMMAND test_exploit_metal_field_reduce_standalone)
+set_tests_properties(exploit_metal_field_reduce PROPERTIES TIMEOUT 60 LABELS "audit;exploit;metal;field")
+
+# -- PoC: Network selector validation bypass (all address/WIF ABI) ----------
+add_executable(test_exploit_network_validation_bypass_standalone
+    test_exploit_network_validation_bypass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+audit_target_defaults(test_exploit_network_validation_bypass_standalone)
+target_include_directories(test_exploit_network_validation_bypass_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_compile_definitions(test_exploit_network_validation_bypass_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
+add_test(NAME exploit_network_validation_bypass COMMAND test_exploit_network_validation_bypass_standalone)
+set_tests_properties(exploit_network_validation_bypass PROPERTIES TIMEOUT 60 LABELS "audit;exploit;address;abi;network")
+
+# -- Source integrity scanner: known mutation artifact patterns -------------
+add_executable(test_mutation_artifact_scan_standalone test_mutation_artifact_scan.cpp)
+audit_target_defaults(test_mutation_artifact_scan_standalone)
+target_compile_definitions(test_mutation_artifact_scan_standalone PRIVATE
+    STANDALONE_TEST
+    UFSECP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
+add_test(NAME mutation_artifact_scan COMMAND test_mutation_artifact_scan_standalone)
+set_tests_properties(mutation_artifact_scan PROPERTIES TIMEOUT 30 LABELS "audit;mutation;integrity")
 
 # -- Diagnostic: ct::scalar_mul step-by-step comparison --------------------
 add_executable(diag_scalar_mul ${CPU_TESTS_DIR}/diag_scalar_mul.cpp)
@@ -2169,12 +2328,14 @@ add_executable(unified_audit_runner
     test_exploit_wif_security.cpp
     test_exploit_binding_invalid_curve.cpp
     test_exploit_musig2_parallel_session_cross.cpp
+    test_exploit_musig2_byzantine_multiparty.cpp
     # -- Security gap closure tests (A2, B2, A6, A7, C2, C5, D6, LOW) --
     test_exploit_buffer_type_confusion.cpp
     test_exploit_differential_libsecp.cpp
     test_exploit_bip352_scan_dos.cpp
     test_exploit_taproot_commitment_adversarial.cpp
     test_exploit_bip352_parity_confusion.cpp
+    test_bip352_kat.cpp
     test_exploit_rfc6979_truncation_bias.cpp
     test_exploit_binding_adversarial_api.cpp
     test_exploit_quantum_exposure.cpp
@@ -2182,6 +2343,7 @@ add_executable(unified_audit_runner
     test_exploit_address_prefix_collision.cpp
     test_exploit_ecdh_zvp_glv_static.cpp
     test_exploit_frost_adaptive_corruption.cpp
+    test_exploit_scalar_mul.cpp
     test_exploit_ecdsa_fault_injection.cpp
     test_exploit_cache_sidechannel_amplification.cpp
     test_exploit_ladderleak_subbit_nonce.cpp
@@ -2194,6 +2356,35 @@ add_executable(unified_audit_runner
     test_exploit_minerva_cve_2024_23342.cpp
     test_exploit_rfc6979_minerva_amplified.cpp
     test_exploit_ellswift_bad_scalar_ecdh.cpp
+    # -- Mutation residue detection + source artifact scanner --
+    test_exploit_mutation_residue.cpp
+    test_mutation_artifact_scan.cpp
+    # -- Metal field_reduce_512 regression (issue #226) --
+    test_exploit_metal_field_reduce.cpp
+    # -- Network selector validation bypass --
+    test_exploit_network_validation_bypass.cpp
+    # -- Previously standalone-only exploit tests (unified audit gap closure) --
+    test_exploit_bip32_child_key_attack.cpp
+    test_exploit_boundary_sentinels.cpp
+    test_exploit_ecdsa_r_overflow.cpp
+    test_exploit_ecdsa_sign_sentinels.cpp
+    test_exploit_frost_identifiable_abort.cpp
+    test_exploit_hash_algo_sig_isolation.cpp
+    test_exploit_schnorr_nonce_reuse.cpp
+    # -- Affine nonce relation key recovery (ePrint 2025/705) --
+    test_exploit_ecdsa_affine_nonce_relation.cpp
+    # -- Half-half nonce key recovery (ePrint 2023/841) --
+    test_exploit_ecdsa_half_half_nonce.cpp
+    # -- Nonce modular reduction bias (CVE-2024-31497) --
+    test_exploit_ecdsa_nonce_modular_bias.cpp
+    # -- Differential fault on RFC 6979 (ePrint 2017/975) --
+    test_exploit_ecdsa_differential_fault.cpp
+    # -- EUCLEAK non-CT modular inversion (ePrint 2024/1380) --
+    test_exploit_eucleak_inversion_timing.cpp
+    # -- Cross-key nonce reuse cascade (ePrint 2025/654) --
+    test_exploit_ecdsa_cross_key_nonce_reuse.cpp
+    # -- Fiat-Shamir hash order in BIP-340 (ePrint 2025/1846) --
+    test_exploit_schnorr_hash_order.cpp
 )
 # Conditionally add 5x52 field test (requires __uint128_t; skip on MSVC)
 if(NOT (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
@@ -2226,12 +2417,13 @@ target_compile_definitions(unified_audit_runner PRIVATE
     DUDECT_SMOKE
     UFSECP_BUILDING
     GIT_HASH="${_git_hash}"
+    UFSECP_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
 if(MSVC OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND WIN32))
     target_link_options(unified_audit_runner PRIVATE "LINKER:/STACK:8388608")
 endif()
 add_test(NAME unified_audit COMMAND unified_audit_runner)
-set_tests_properties(unified_audit PROPERTIES TIMEOUT 1200)
+set_tests_properties(unified_audit PROPERTIES TIMEOUT 1800)
 
 # ===========================================================================
 target_link_libraries(unified_audit_runner PRIVATE Threads::Threads)
@@ -2310,12 +2502,14 @@ set_tests_properties(
     exploit_ct_fast_equivalence exploit_pedersen_switch_misuse
     exploit_frost_participant_set_malleability exploit_frost_ct_nonce
     exploit_binding_invalid_curve exploit_musig2_parallel_session_cross
+    exploit_musig2_byzantine_multiparty
     exploit_buffer_type_confusion exploit_differential_libsecp
     exploit_bip352_scan_dos exploit_taproot_commitment_adversarial
-    exploit_bip352_parity_confusion exploit_rfc6979_truncation_bias
+    exploit_bip352_parity_confusion bip352_kat exploit_rfc6979_truncation_bias
     exploit_binding_adversarial_api exploit_quantum_exposure
     exploit_ecies_ephemeral_reuse exploit_address_prefix_collision
     exploit_ecdh_zvp_glv_static exploit_frost_adaptive_corruption
+    exploit_scalar_mul
     exploit_ecdsa_fault_injection exploit_cache_sidechannel_amplification
     exploit_ladderleak_subbit_nonce exploit_minerva_noisy_hnp
     exploit_hertzbleed_dvfs_timing exploit_biased_nonce_chain_scan
@@ -2454,6 +2648,29 @@ if(Python3_FOUND)
 else()
     message(STATUS "  Python3 not found — skipping Python audit scripts")
 endif()
+
+# ===========================================================================
+# AI Findings Label Convention
+# ===========================================================================
+# Tests that were suggested by AI tools and have NOT yet been manually
+# validated by a human auditor must carry the "ai_finding" label.  They
+# remain in the audit suite and are executed by CI, but
+# scripts/audit_ai_findings.py filters them out of the official confirmed
+# audit score so that unverified AI suggestions do not inflate coverage
+# claims.
+#
+# How to mark an AI-suggested test:
+#
+#   set_tests_properties(<test_name> PROPERTIES
+#       LABELS "audit;ai_finding;unconfirmed;<other-labels>")
+#
+# Once a human auditor has reviewed and validated the test, remove the
+# "ai_finding" and "unconfirmed" labels, leaving only the substantive
+# category labels (e.g. "audit;exploit;schnorr").
+#
+# Query unconfirmed tests at any time:
+#   ctest -N -L ai_finding
+# ===========================================================================
 
 # ===========================================================================
 # LibFuzzer harnesses (parser boundary + AEAD + BIP-32 path fuzzing)

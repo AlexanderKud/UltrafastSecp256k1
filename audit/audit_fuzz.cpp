@@ -229,9 +229,7 @@ static void test_boundary_field_elements() {
     auto big = FieldElement::from_bytes(all_ff);
     // Should reduce into [0, p)
     auto bytes_out = big.to_bytes();
-    (void)bytes_out;
-    // Verify it stores something (not crash)
-    CHECK(true, "from_bytes(0xFF*32) succeeds");
+    CHECK(bytes_out != all_ff, "from_bytes(0xFF*32) reduces non-canonical input");
 
     // Very small: 0, 1, 2
     auto fe0 = FieldElement::from_uint64(0);

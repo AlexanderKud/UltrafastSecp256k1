@@ -80,45 +80,45 @@ jobs:
             # Check for variable-time instructions operating on data
             # that could be secret-dependent
             python3 -c "
-import re, sys
+          import re, sys
 
-with open('/tmp/ct_disasm.txt') as f:
-    lines = f.readlines()
+          with open('/tmp/ct_disasm.txt') as f:
+              lines = f.readlines()
 
-issues = []
-for i, line in enumerate(lines):
-    line_stripped = line.strip()
+          issues = []
+          for i, line in enumerate(lines):
+              line_stripped = line.strip()
 
-    # 1. div/idiv instructions (variable latency based on operand)
-    if re.search(r'\b(div|idiv)\b', line_stripped):
-        issues.append(f'  L{i}: variable-time division: {line_stripped[:80]}')
+              # 1. div/idiv instructions (variable latency based on operand)
+              if re.search(r'\b(div|idiv)\b', line_stripped):
+                  issues.append(f'  L{i}: variable-time division: {line_stripped[:80]}')
 
-    # 2. Conditional jumps in CT functions (should be branchless)
-    #    Allow 'jmp' but flag 'je/jne/jg/jl/ja/jb/jae/jbe/js/jns'
-    if re.search(r'\bj(e|ne|g|ge|l|le|a|ae|b|be|s|ns|o|no|p|np|z|nz)\b', line_stripped):
-        # Check if this is inside a CT function
-        # Look backwards for function label
-        for j in range(max(0, i-20), i):
-            if 'ct_' in lines[j].lower() and ':' in lines[j]:
-                issues.append(f'  L{i}: conditional branch in CT code: {line_stripped[:80]}')
-                break
+              # 2. Conditional jumps in CT functions (should be branchless)
+              #    Allow 'jmp' but flag 'je/jne/jg/jl/ja/jb/jae/jbe/js/jns'
+              if re.search(r'\bj(e|ne|g|ge|l|le|a|ae|b|be|s|ns|o|no|p|np|z|nz)\b', line_stripped):
+                  # Check if this is inside a CT function
+                  # Look backwards for function label
+                  for j in range(max(0, i-20), i):
+                      if 'ct_' in lines[j].lower() and ':' in lines[j]:
+                          issues.append(f'  L{i}: conditional branch in CT code: {line_stripped[:80]}')
+                          break
 
-    # 3. Memory-dependent addressing (could leak via cache)
-    if re.search(r'\(%.*,%.*,\d+\)', line_stripped):
-        # Indexed addressing could be table lookup
-        for j in range(max(0, i-20), i):
-            if 'ct_' in lines[j].lower() and ':' in lines[j]:
-                issues.append(f'  L{i}: indexed memory access in CT: {line_stripped[:80]}')
-                break
+              # 3. Memory-dependent addressing (could leak via cache)
+              if re.search(r'\(%.*,%.*,\d+\)', line_stripped):
+                  # Indexed addressing could be table lookup
+                  for j in range(max(0, i-20), i):
+                      if 'ct_' in lines[j].lower() and ':' in lines[j]:
+                          issues.append(f'  L{i}: indexed memory access in CT: {line_stripped[:80]}')
+                          break
 
-if issues:
-    print(f'Potential CT violations in $obj:')
-    for issue in issues[:20]:
-        print(issue)
-    sys.exit(1)
-else:
-    print(f'  PASS: no binary-level CT violations detected')
-" || VIOLATIONS=$((VIOLATIONS + 1))
+          if issues:
+              print(f'Potential CT violations in $obj:')
+              for issue in issues[:20]:
+                  print(issue)
+              sys.exit(1)
+          else:
+              print(f'  PASS: no binary-level CT violations detected')
+          " || VIOLATIONS=$((VIOLATIONS + 1))
           done
 
           echo "=== Cycle-Level CT Summary (-${{ matrix.opt }}) ==="

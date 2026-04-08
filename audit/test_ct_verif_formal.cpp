@@ -138,17 +138,24 @@ static void test_ct_field_ops() {
         SECP256K1_DECLASSIFY(&diff, sizeof(diff));
         SECP256K1_DECLASSIFY(&prod, sizeof(prod));
         SECP256K1_DECLASSIFY(&sq,   sizeof(sq));
+          SECP256K1_DECLASSIFY(&a,    sizeof(a));
+          SECP256K1_DECLASSIFY(&b,    sizeof(b));
 
-        CHECK(true, "field add/sub/mul/sqr CT-safe");
+          CHECK((sum - b) == a && (diff + b) == a && prod == (a * b) && sq == a.square(),
+              "field add/sub/mul/sqr preserve field identities after declassify");
     }
 
     // Field inverse with secret input
     {
         FieldElement a = make_random_fe();
+        while (a == FieldElement::zero()) {
+            a = make_random_fe();
+        }
         SECP256K1_CLASSIFY(&a, sizeof(a));
         FieldElement inv = a.inverse();
         SECP256K1_DECLASSIFY(&inv, sizeof(inv));
-        CHECK(true, "field inverse CT-safe");
+        SECP256K1_DECLASSIFY(&a, sizeof(a));
+        CHECK((a * inv) == FieldElement::one(), "field inverse preserves multiplicative identity");
     }
 }
 
@@ -173,8 +180,11 @@ static void test_ct_scalar_ops() {
         SECP256K1_DECLASSIFY(&sum,  sizeof(sum));
         SECP256K1_DECLASSIFY(&prod, sizeof(prod));
         SECP256K1_DECLASSIFY(&neg,  sizeof(neg));
+          SECP256K1_DECLASSIFY(&a,    sizeof(a));
+          SECP256K1_DECLASSIFY(&b,    sizeof(b));
 
-        CHECK(true, "scalar add/mul/negate CT-safe");
+          CHECK((sum - b) == a && prod == (a * b) && (neg + a).is_zero(),
+              "scalar add/mul/negate preserve scalar identities after declassify");
     }
 
     // Scalar inverse with secret input
@@ -183,7 +193,8 @@ static void test_ct_scalar_ops() {
         SECP256K1_CLASSIFY(&a, sizeof(a));
         Scalar inv = a.inverse();
         SECP256K1_DECLASSIFY(&inv, sizeof(inv));
-        CHECK(true, "scalar inverse CT-safe");
+        SECP256K1_DECLASSIFY(&a, sizeof(a));
+        CHECK((a * inv) == Scalar::from_uint64(1), "scalar inverse preserves multiplicative identity");
     }
 }
 
@@ -200,11 +211,15 @@ static void test_ct_primitives() {
 
         uint64_t mask = secp256k1::ct::is_zero_mask(secret);
         SECP256K1_DECLASSIFY(&mask, sizeof(mask));
-        CHECK(true, "is_zero_mask CT-safe");
+          SECP256K1_DECLASSIFY(&secret, sizeof(secret));
+          CHECK((secret == 0 && mask == ~static_cast<uint64_t>(0)) ||
+              (secret != 0 && mask == 0),
+              "is_zero_mask matches zero/non-zero semantics");
     }
 
     // cmov256
     {
+        uint64_t original_dst[4] = {1, 2, 3, 4};
         uint64_t dst[4] = {1, 2, 3, 4};
         uint64_t src[4] = {5, 6, 7, 8};
         uint64_t flag = g_rng() & 1;
@@ -212,20 +227,34 @@ static void test_ct_primitives() {
         uint64_t mask_val = secp256k1::ct::bool_to_mask(flag != 0);
         secp256k1::ct::cmov256(dst, src, mask_val);
         SECP256K1_DECLASSIFY(dst, sizeof(dst));
-        CHECK(true, "cmov256 CT-safe");
+        SECP256K1_DECLASSIFY(&flag, sizeof(flag));
+        uint64_t expected[4];
+        for (int j = 0; j < 4; ++j) {
+            expected[j] = flag ? src[j] : original_dst[j];
+        }
+        CHECK(std::memcmp(dst, expected, sizeof(dst)) == 0, "cmov256 selects expected source words");
     }
 
     // cswap256
     {
         uint64_t a[4] = {10, 20, 30, 40};
         uint64_t b[4] = {50, 60, 70, 80};
+        uint64_t orig_a[4] = {10, 20, 30, 40};
+        uint64_t orig_b[4] = {50, 60, 70, 80};
         uint64_t flag = g_rng() & 1;
         SECP256K1_CLASSIFY(&flag, sizeof(flag));
         uint64_t mask_val = secp256k1::ct::bool_to_mask(flag != 0);
         secp256k1::ct::cswap256(a, b, mask_val);
         SECP256K1_DECLASSIFY(a, sizeof(a));
         SECP256K1_DECLASSIFY(b, sizeof(b));
-        CHECK(true, "cswap256 CT-safe");
+        SECP256K1_DECLASSIFY(&flag, sizeof(flag));
+        if (flag) {
+            CHECK(std::memcmp(a, orig_b, sizeof(a)) == 0 && std::memcmp(b, orig_a, sizeof(b)) == 0,
+                  "cswap256 swaps both vectors when flag is set");
+        } else {
+            CHECK(std::memcmp(a, orig_a, sizeof(a)) == 0 && std::memcmp(b, orig_b, sizeof(b)) == 0,
+                  "cswap256 leaves both vectors unchanged when flag is clear");
+        }
     }
 
     // ct_select
@@ -237,7 +266,8 @@ static void test_ct_primitives() {
         uint64_t mask_val = secp256k1::ct::bool_to_mask(flag != 0);
         uint64_t result = secp256k1::ct::ct_select(a_val, b_val, mask_val);
         SECP256K1_DECLASSIFY(&result, sizeof(result));
-        CHECK(true, "ct_select CT-safe");
+        SECP256K1_DECLASSIFY(&flag, sizeof(flag));
+        CHECK(result == (flag ? a_val : b_val), "ct_select returns the expected branch value");
     }
 
     // ct_lookup (table scan must be constant-time)
@@ -254,7 +284,9 @@ static void test_ct_primitives() {
         secp256k1::ct::ct_lookup_256(table, 8,
                                      static_cast<size_t>(secret_idx), out);
         SECP256K1_DECLASSIFY(out, sizeof(out));
-        CHECK(true, "ct_lookup_256 CT-safe");
+        SECP256K1_DECLASSIFY(&secret_idx, sizeof(secret_idx));
+        CHECK(std::memcmp(out, table[secret_idx], sizeof(out)) == 0,
+              "ct_lookup_256 returns the selected table row");
     }
 }
 
@@ -273,6 +305,32 @@ static void test_ct_generator_mul() {
 
         SECP256K1_DECLASSIFY(&R, sizeof(R));
         CHECK(!R.is_infinity(), "ct::generator_mul produces valid point");
+    }
+}
+
+// ============================================================================
+// Test 4b: CT Arbitrary Point Scalar Multiplication (generic point hot path)
+// ============================================================================
+static void test_ct_point_scalar_mul() {
+    g_section = "ct_verif_point";
+    (void)printf("[4b] CT arbitrary-point scalar multiplication (ct::scalar_mul)\n");
+
+    Point base = Point::generator().scalar_mul(Scalar::from_uint64(17));
+    CHECK(!base.is_infinity(), "public base point initialized");
+
+    for (int i = 0; i < 5; ++i) {
+        Scalar k = make_random_scalar();
+        SECP256K1_CLASSIFY(&k, sizeof(k));
+
+        Point R = secp256k1::ct::scalar_mul(base, k);
+        std::uint64_t on_curve_mask = secp256k1::ct::point_is_on_curve(R);
+
+        SECP256K1_DECLASSIFY(&R, sizeof(R));
+        SECP256K1_DECLASSIFY(&on_curve_mask, sizeof(on_curve_mask));
+
+        CHECK(!R.is_infinity(), "ct::scalar_mul produces valid point");
+        CHECK(on_curve_mask == ~static_cast<std::uint64_t>(0),
+              "ct::point_is_on_curve accepts ct::scalar_mul output");
     }
 }
 
@@ -389,7 +447,10 @@ static void test_ct_field_edge_cases() {
 
         SECP256K1_DECLASSIFY(&prod, sizeof(prod));
         SECP256K1_DECLASSIFY(&sq,   sizeof(sq));
-        CHECK(true, "field edge-case mul/sqr CT-safe");
+        SECP256K1_DECLASSIFY(&val,   sizeof(val));
+        SECP256K1_DECLASSIFY(&other, sizeof(other));
+        CHECK(prod == (val * other) && sq == val.square(),
+              "field edge-case mul/sqr preserve expected outputs");
     }
 }
 
@@ -419,7 +480,10 @@ static void test_ct_scalar_edge_cases() {
 
         SECP256K1_DECLASSIFY(&prod, sizeof(prod));
         SECP256K1_DECLASSIFY(&sum,  sizeof(sum));
-        CHECK(true, "scalar edge-case mul/add CT-safe");
+        SECP256K1_DECLASSIFY(&s,     sizeof(s));
+        SECP256K1_DECLASSIFY(&other, sizeof(other));
+        CHECK(prod == (s * other) && sum == (s + other),
+              "scalar edge-case mul/add preserve expected outputs");
     }
 }
 
@@ -458,6 +522,7 @@ int test_ct_verif_formal_run() {
     test_ct_scalar_ops();
     test_ct_primitives();
     test_ct_generator_mul();
+    test_ct_point_scalar_mul();
     test_ct_ecdsa_sign();
     test_ct_schnorr_sign();
     test_ct_ecdsa_sign_hedged();
