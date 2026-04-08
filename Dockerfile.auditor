@@ -45,18 +45,17 @@ RUN apt-get update -qq && \
     rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
-# Python: cross-validation libraries
+# Python: cross-validation libraries (hash-pinned)
 # ---------------------------------------------------------------------------
-RUN pip3 install --no-cache-dir \
-        coincurve==21.0.0 \
-        ecdsa==0.19.1 \
-        fastecdsa==2.3.2 \
-        pysha3==1.0.2
+COPY .github/requirements/auditor-docker.txt /tmp/auditor-docker.txt
+RUN pip3 install --no-cache-dir --require-hashes --break-system-packages \
+        -r /tmp/auditor-docker.txt
 
 # ---------------------------------------------------------------------------
-# Node.js: @noble/secp256k1 for differential comparison
+# Node.js: @noble/secp256k1 for differential comparison (integrity-pinned)
 # ---------------------------------------------------------------------------
-RUN npm install -g @noble/secp256k1@2.2.3 2>/dev/null || true
+RUN npm install -g @noble/secp256k1@2.2.3 \
+        --ignore-scripts 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Build the library inside the container
