@@ -19,7 +19,7 @@
 #   docker run --rm -it ufsecp-auditor bash
 # ===========================================================================
 
-FROM ubuntu:24.04
+FROM ubuntu:24.04@sha256:84e77dee7d1bc93fb029a45e3c6cb9d8aa4831ccfcc7103d36e876938d28895b
 
 LABEL org.opencontainers.image.title="UltrafastSecp256k1 Auditor Kit"
 LABEL org.opencontainers.image.description="Security audit environment for UltrafastSecp256k1"
@@ -48,15 +48,15 @@ RUN apt-get update -qq && \
 # Python: cross-validation libraries
 # ---------------------------------------------------------------------------
 RUN pip3 install --no-cache-dir \
-        coincurve \
-        ecdsa \
-        fastecdsa \
-        pysha3
+        coincurve==21.0.0 \
+        ecdsa==0.19.1 \
+        fastecdsa==2.3.2 \
+        pysha3==1.0.2
 
 # ---------------------------------------------------------------------------
 # Node.js: @noble/secp256k1 for differential comparison
 # ---------------------------------------------------------------------------
-RUN npm install -g @noble/secp256k1 2>/dev/null || true
+RUN npm install -g @noble/secp256k1@2.2.3 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Build the library inside the container

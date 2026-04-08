@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
 
@@ -51,7 +51,7 @@ jobs:
           . /tmp/ct-prover-venv/bin/activate
           # CT-Prover is an LLVM-based tool; we compile to LLVM IR
           # and analyze with the IFDS pass
-          pip install lit filecheck
+          pip install --require-hashes -r .github/requirements/ct-prover.txt
 
       - name: Compile CT layer to LLVM IR
         run: |
@@ -138,7 +138,7 @@ jobs:
 
       - name: Upload IR artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ct-prover-ir
           path: libs/UltrafastSecp256k1/ct-prover-ir/

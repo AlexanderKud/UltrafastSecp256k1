@@ -1,0 +1,6 @@
+# Python audit script dependencies (coincurve, ecdsa, hypothesis)
+# Used by: ci.yml, release.yml, sonarcloud.yml
+# Regenerate hashes: pip-compile --generate-hashes
+coincurve==21.0.0 --hash=sha256:8b37ce4265a82bebf0e796e21a769e56fdbf8420411ccbe3fafee4ed75b6a6e5
+ecdsa==0.19.1 --hash=sha256:478cba7b62555866fcb3bb3fe985e06decbdb68ef55713c4e5ab98c57d508e61
+hypothesis==6.131.2 --hash=sha256:9856a7d33b5f35a7f3962393042d54378d7ffcfc387154201664a01cda757f98
