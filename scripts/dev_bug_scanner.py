@@ -499,15 +499,29 @@ _UFSECP_CALL = re.compile(
 _ASSIGNED    = re.compile(r'^\s*\w[\w\s*<>:,]+\s*=\s*(?:ufsecp_|secp256k1_|mbedtls_|RAND_bytes|EVP_|SHA256_|HMAC)')
 _VOID_FUNC   = re.compile(r'^\s*void\b')
 _IF_CHECK    = re.compile(r'if\s*\(')
+_VOID_COMPAT_FN = {'secp256k1_sha256', 'secp256k1_sha512', 'secp256k1_hash160',
+                   'secp256k1_tagged_hash', 'secp256k1_ripemd160'}
 
 def check_retval(path: str, lines: List[str]) -> List[Finding]:
     """Return value of ufsecp_* / security critical function silently discarded."""
     findings: List[Finding] = []
+    # Collect macros defined in this file to skip their invocations
+    defined_macros: set[str] = set()
+    for ln in lines:
+        dm = re.match(r'\s*#\s*define\s+(\w+)\s*\(', ln)
+        if dm:
+            defined_macros.add(dm.group(1))
     for i, raw in enumerate(lines):
         line = _strip_comments(raw)
         # Skip if inside an if-condition, an assignment, or a return statement
         stripped = line.strip()
         if not _UFSECP_CALL.match(stripped):
+            continue
+        # Skip continuation lines of multi-line expressions
+        if not stripped.endswith(';'):
+            continue
+        # Skip wrapped args (more closing parens than opening — part of outer call)
+        if stripped.count(')') > stripped.count('('):
             continue
         # It's a bare call — not used in an expression
         if any(line.lstrip().startswith(prefix) for prefix in ('if (', 'if(', 'return ', 'bool ', 'int ', 'auto ', 'const ')):
@@ -518,6 +532,15 @@ def check_retval(path: str, lines: List[str]) -> List[Finding]:
         # Extract function name
         fn_m = re.match(r'\s*(\w+)\s*\(', stripped)
         fn_name = fn_m.group(1) if fn_m else stripped[:30]
+
+        # Skip macros defined in the same file (e.g. do{...}while(0) wrappers)
+        if fn_name in defined_macros:
+            continue
+        # Skip known void-returning cleanup and compat hash functions
+        if re.search(r'_(destroy|free|cleanup|release|close)\b', fn_name):
+            continue
+        if fn_name in _VOID_COMPAT_FN:
+            continue
 
         findings.append(Finding(
             file=path, line=i + 1, severity="HIGH",
@@ -586,6 +609,18 @@ def check_zeroize(path: str, lines: List[str]) -> List[Finding]:
             name = m.group(1)
             size = int(m.group(2))
             if name in buf_sizes and size < buf_sizes[name]:
+                # Check if remaining bytes are written by subsequent code
+                remaining_written = False
+                for j in range(i + 1, min(i + 10, len(lines))):
+                    nl = _strip_comments(lines[j])
+                    if re.search(r'\b' + re.escape(name) + r'\s*\[', nl):
+                        remaining_written = True
+                        break
+                    if re.search(r'mem(?:set|cpy|move)\s*\(\s*' + re.escape(name) + r'\s*\+', nl):
+                        remaining_written = True
+                        break
+                if remaining_written:
+                    continue
                 findings.append(Finding(
                     file=path, line=i + 1, severity="HIGH",
                     category="ZEROIZE",
@@ -744,7 +779,7 @@ def check_unreachable(path: str, lines: List[str]) -> List[Finding]:
 
 # ── SECRET_UNERASED: Scalar on stack in signing/key path without secure_erase ─
 _SCALAR_DECL   = re.compile(r'\bScalar\s+(\w+)\s*[=;({]')
-_SECURE_ERASE  = re.compile(r'secure_erase\s*\(\s*(?:&|const_cast<[^>]+>\s*\(\s*)?(\w+)')
+_SECURE_ERASE  = re.compile(r'secure_erase\s*\(\s*(?:const_cast<[^>]+>\s*\(\s*)?(?:&\s*)?(\w+)')
 _SECRET_PATH_KW = {'sign', 'nonce', 'key', 'adapt', 'bip32', 'derive', 'secret', 'blind'}
 _TRIVIAL_SCALAR = {'zero', 'one', 'result', 'order', 'half_order', 'n', 'GROUP_ORDER'}
 
@@ -753,26 +788,65 @@ def check_secret_unerased(path: str, lines: List[str]) -> List[Finding]:
     path_lower = path.lower()
     if not any(kw in path_lower for kw in _SECRET_PATH_KW):
         return []
+    # GPU private memory is ephemeral — skip OpenCL kernel files
+    if path_lower.endswith('.cl'):
+        return []
     findings: List[Finding] = []
+    full_text = '\n'.join(lines)
+    has_dtor_erase = bool(re.search(
+        r'~\w+\s*\([^)]*\)\s*\{[^}]*secure_erase', full_text, re.DOTALL))
     scalars: dict[str, int] = {}   # name -> line number
     erased: set[str] = set()
+    returned: set[str] = set()
     for i, raw in enumerate(lines):
         line = _strip_comments(raw)
         for m in _SCALAR_DECL.finditer(line):
             name = m.group(1)
-            if name not in _TRIVIAL_SCALAR:
-                scalars[name] = i + 1
+            if name in _TRIVIAL_SCALAR:
+                continue
+            # Skip function definitions/declarations: Scalar func_name(params)
+            end_pos = m.end()
+            if end_pos > 0 and end_pos <= len(line) and line[end_pos - 1] == '(':
+                rest = line[end_pos:]
+                if rest.lstrip().startswith(')') or re.search(
+                        r'\b(const|Scalar|Point|uint\w+_t|int|size_t|Span|auto|void|std::)\b', rest):
+                    continue
+            # In header files, skip struct/class member and function declarations
+            if path_lower.endswith(('.hpp', '.h')):
+                stripped = line.strip()
+                if re.match(r'^(?:\w+::)*Scalar\s+\w+\s*[;{]', stripped):
+                    continue
+                if re.match(r'^(?:\w+::)*Scalar\s+\w+\s*\(', stripped):
+                    continue
+            # Skip variables inside public-data functions (ecrecover, verify, ...)
+            is_public_func = False
+            context_above = '\n'.join(lines[max(0, i - 30):i + 1])
+            if re.search(
+                    r'\b(ecrecover|recover|verify|parse|deserialize|decode)\s*\(',
+                    context_above):
+                is_public_func = True
+            if is_public_func:
+                continue
+            scalars[name] = i + 1
         for m2 in _SECURE_ERASE.finditer(line):
             erased.add(m2.group(1))
+        ret_m = re.search(r'\breturn\s+(\w+)\s*;', line)
+        if ret_m:
+            returned.add(ret_m.group(1))
     for name, lineno in scalars.items():
-        if name not in erased:
-            findings.append(Finding(
-                file=path, line=lineno, severity="HIGH",
-                category="SECRET_UNERASED",
-                message=f"Scalar `{name}` in secret path — no secure_erase found before function exit",
-                snippet=lines[lineno - 1].strip(),
-                fix_hint=f"Add secure_erase(&{name}, sizeof({name})) on all exit paths",
-            ))
+        if name in erased:
+            continue
+        if name in returned:
+            continue
+        if has_dtor_erase and name.endswith('_'):
+            continue
+        findings.append(Finding(
+            file=path, line=lineno, severity="HIGH",
+            category="SECRET_UNERASED",
+            message=f"Scalar `{name}` in secret path — no secure_erase found before function exit",
+            snippet=lines[lineno - 1].strip(),
+            fix_hint=f"Add secure_erase(&{name}, sizeof({name})) on all exit paths",
+        ))
     return findings
 
 
