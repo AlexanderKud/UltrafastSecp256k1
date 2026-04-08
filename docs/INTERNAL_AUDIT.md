@@ -101,7 +101,7 @@ team and automated CI infrastructure.
 
 | Component | Reason |
 |-----------|--------|
-| GPU kernels (CUDA/OpenCL/Metal/ROCm) | Public-data only, variable-time by design |
+| GPU kernels (CUDA/OpenCL/Metal/ROCm) | Variable-time; accepts secrets in trusted environments for ECDH/BIP-352/BIP-324 |
 | Language bindings (Python/Rust/Go/C#/Node/etc.) | Thin FFI wrappers over C ABI |
 | Build system, CI scripts | Infrastructure, not cryptographic code |
 | Example / benchmark code | Non-production |
@@ -709,16 +709,16 @@ Full invariant catalog: [docs/INVARIANTS.md](INVARIANTS.md)
 | GPU vs CPU differential | Limited equivalence coverage | PARTIAL (GPU ABI gate tests J.1-J.2 added) |
 | CPU vs WASM equivalence | WASM arithmetic may diverge | Not yet tested |
 | CPU vs Embedded KAT | ESP32/STM32 runtime tests | Requires physical devices |
-| FROST nonce CT | Nonce handling not constant-time audited | Experimental status |
+| FROST nonce CT | Nonce handling not constant-time audited | CT audit pending |
 | Compiler CT trust | Compiler may introduce secret-dependent branches at -O2 | Inherent limitation |
 
 ### What We Do NOT Claim
 
 1. **Limited formal verification** -- ct-verif covers core paths; many CT guarantees remain empirical (dudect) and review-based
 2. **No hardware side-channel** -- No power analysis, EM emanation, or fault injection testing
-3. **No GPU CT** -- All GPU backends are explicitly variable-time
+3. **No GPU CT** -- All GPU backends are variable-time; secret-bearing GPU ops require trusted single-tenant environment
 4. **No external audit** -- This is an internal audit only
-5. **MuSig2/FROST are experimental** -- Protocol APIs may change
+5. **MuSig2/FROST C++ API evolving** -- C++ API signatures may change before v4.0; C ABI is stable
 
 ---
 

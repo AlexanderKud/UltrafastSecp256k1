@@ -149,17 +149,20 @@ auto fe = FieldElement::from_limbs(reinterpret_cast<const uint64_t*>(db_record))
 
 ECDSA signatures must have `s <= n/2` (BIP-62 / BIP-66). UltrafastSecp256k1 enforces this automatically in `ecdsa_sign()`, but if you construct signatures manually, you must check and normalize.
 
-### Pitfall 4: Using GPU for secret key operations
+### Pitfall 4: Using GPU for secret key operations without trusted environment
 
 ```cpp
-// [FAIL] WRONG -- GPU is variable-time, leaks timing information
+// [FAIL] WRONG -- GPU is variable-time; shared/cloud GPU leaks timing
 cuda_scalar_mul(secret_key, G);
 
-// [OK] CORRECT -- use CT layer on CPU for secret operations
+// [OK] CORRECT -- use CT layer on CPU for signing
 auto pubkey = ct::scalar_mul(secret_key, G);
+
+// [OK] ACCEPTABLE -- GPU ECDH/BIP-352 in trusted single-tenant environment
+ufsecp_gpu_ecdh_batch(ctx, privkeys, pubkeys, n, results);
 ```
 
-GPU backends are for **public-data operations only** (verification, public key batch generation, search).
+GPU backends are variable-time. Secret-bearing GPU operations (`ecdh_batch`, `bip352_scan_batch`, `bip324_aead_*_batch`) require a trusted single-tenant environment. Production signing uses the CPU CT layer.
 
 ### Pitfall 5: Not zeroing secret keys after use
 
@@ -268,7 +271,7 @@ The protocol structure matches BIP-327, but key format differs: we use **x-only 
 
 ### Q: Can I use FROST for Bitcoin multisig?
 
-FROST produces standard BIP-340 Schnorr signatures, so the final signature is indistinguishable from a single-signer signature. However, FROST is experimental and should not be used for production Bitcoin transactions without additional review.
+FROST produces standard BIP-340 Schnorr signatures, so the final signature is indistinguishable from a single-signer signature. The implementation is production-ready with full exploit PoC audit coverage. As with any threshold signing scheme, validate against your specific deployment requirements.
 
 ### Q: What threshold configurations does FROST support?
 

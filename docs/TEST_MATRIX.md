@@ -384,7 +384,7 @@ Machine-checked proofs (Fiat-Crypto/Vale/Jasmin) are not yet applied.
 | `ct::point_add_complete` | [OK] | [OK] | [OK] | [OK] | -- |
 | `ct::point_dbl` | [OK] | [OK] | -- | [OK] | -- |
 
-### Protocols (Experimental)
+### Protocols
 
 | Function | Test File | Coverage | Notes |
 |----------|-----------|----------|-------|

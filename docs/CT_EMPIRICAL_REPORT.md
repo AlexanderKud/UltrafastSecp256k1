@@ -319,7 +319,9 @@ timeout 1800 ./build/cpu/test_ct_sidechannel_standalone
    mitigation; complete erasure cannot be guaranteed across all compilers and
    optimizations.
 
-7. **GPU**: No CT guarantees on any GPU backend. GPU is for public data only.
+7. **GPU**: No CT guarantees on any GPU backend. GPU kernels are variable-time.
+   Several GPU operations accept private keys (`ecdh_batch`, `bip352_scan_batch`,
+   `bip324_aead_*_batch`); callers must ensure a trusted single-tenant environment.
 
 ---
 

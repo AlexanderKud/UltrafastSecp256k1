@@ -13,9 +13,9 @@ The constant-time (CT) layer provides side-channel resistant operations for secr
 - **OpenCL GPU**: CT kernels in `opencl/kernels/` (`secp256k1_ct_sign.cl`, `secp256k1_ct_zk.cl`)
 - **Metal GPU**: CT shaders in `metal/shaders/` (`secp256k1_ct_sign.metal`, `secp256k1_ct_zk.metal`)
 
-The FAST layer (`secp256k1::fast::` on CPU, `secp256k1::cuda::` on GPU) is explicitly variable-time for maximum throughput on public data.
+The FAST layer (`secp256k1::fast::` on CPU, `secp256k1::cuda::` on GPU) is explicitly variable-time for maximum throughput.
 
-**Principle**: Any operation that touches secret data (private keys, nonces, intermediate scalars) MUST use `ct::` functions. The default `fast::` namespace is allowed only when all inputs are public.
+**Principle**: Any operation that touches secret data (private keys, nonces, intermediate scalars) MUST use `ct::` functions on CPU. GPU operations that accept secret keys (`ecdh_batch`, `bip352_scan_batch`, `bip324_aead_*_batch`) require a trusted single-tenant environment. The default `fast::` namespace is allowed only when all inputs are public.
 
 The repository preflight also consumes graph-linked coverage metadata from
 `scripts/build_project_graph.py`. That metadata records both standalone CTest

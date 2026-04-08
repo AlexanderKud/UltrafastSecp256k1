@@ -268,7 +268,7 @@ and all language bindings (Python, Rust, Go, C#, Node.js, etc.).
 | "Provably secure" | **No.** No formal verification. |
 | "Constant-time guaranteed" | **Empirically tested** (dudect), not formally verified. |
 | "Side-channel free" | **No.** No power analysis, EM, or fault injection testing. |
-| "GPU backends are safe for secrets" | **No.** GPU is explicitly variable-time. |
+| "GPU backends are safe for secrets" | **Conditionally.** GPU is variable-time. Secret-bearing GPU ops (ECDH, BIP-352, BIP-324 AEAD) require trusted single-tenant environment. |
 
 ### What We Do Claim
 
@@ -290,7 +290,7 @@ and all language bindings (Python, Rust, Go, C#, Node.js, etc.).
 | Single uarch timing test | Other CPUs may behave differently | Planned multi-uarch campaign |
 | GPU<->CPU limited differential | GPU correctness partially verified | Planned full equivalence |
 | FROST no IETF ciphersuite | No external reference vectors for secp256k1 | Self-generated KATs |
-| MuSig2/FROST experimental | API may change | Documented, version-gated |
+| MuSig2/FROST C++ API evolving | C++ API may change before v4.0 | Documented, version-gated; C ABI stable |
 
 ---
 

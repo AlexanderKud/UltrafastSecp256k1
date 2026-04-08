@@ -104,7 +104,7 @@ An independent security audit is requested to verify correctness, identify vulne
 
 | Component | Reason |
 |-----------|--------|
-| GPU kernels (CUDA/OpenCL/Metal/ROCm) | Public-data only, no secret handling; separate audit recommended |
+| GPU kernels (CUDA/OpenCL/Metal/ROCm) | Variable-time; accepts secrets only in trusted single-tenant environments; separate audit recommended |
 | Language bindings (Python/Rust/Go/C#/etc.) | Thin FFI wrappers over C ABI; lower risk |
 | Build scripts, CI configuration | Infrastructure -- separate DevSecOps review |
 | `apps/` directory (GPU search tools) | Application-layer, not library |
@@ -117,8 +117,8 @@ An independent security audit is requested to verify correctness, identify vulne
 
 1. **No formal verification**: CT layer relies on code review and dudect testing, not ct-verif/Vale
 2. **Compiler trust**: CT guarantees assume compiler does not introduce secret-dependent branches at `-O2`
-3. **MuSig2/FROST experimental**: API may change; protocol correctness should be validated against IETF RFC 9591 (FROST) and BIP-327 (MuSig2) where applicable
-4. **GPU non-CT**: All GPU backends are explicitly variable-time; documented in THREAT_MODEL.md
+3. **MuSig2/FROST C++ API evolving**: C++ API may change before v4.0; C ABI is stable. Protocol correctness validated against IETF RFC 9591 (FROST) and BIP-327 (MuSig2) with exploit PoC coverage
+4. **GPU variable-time**: All GPU backends are variable-time; secret-bearing ops (ECDH, BIP-352, BIP-324 AEAD) require trusted single-tenant environment. Documented in THREAT_MODEL.md
 5. **No hardware side-channel protection**: Library does not defend against power analysis, EM emanation, or fault injection
 
 ---

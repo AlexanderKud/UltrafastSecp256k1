@@ -55,21 +55,24 @@ A kernel being present internally does not imply a public API exists for it.
 | `ufsecp_gpu_zk_ecdsa_snark_witness_batch` | Y | - | Y | Y | Y |
 | `ufsecp_gpu_bip352_scan_batch` | Y | - | Y | Y | Y |
 
-¹ `ufsecp_gpu_ecdh_batch` is the only GPU public API function that accepts private
-keys. This is an intentional exception for BIP-352 silent payment scanning workloads
-where the ECDH step cannot be split from the GPU pipeline without losing throughput.
-Callers must accept the implied security posture of sending private keys to the GPU
-driver. See *Secret-Use Policy* below.
+¹ Several GPU public API functions accept private or secret key material:
+`ufsecp_gpu_ecdh_batch`, `ufsecp_gpu_bip352_scan_batch`,
+`ufsecp_gpu_bip324_aead_encrypt_batch`, and `ufsecp_gpu_bip324_aead_decrypt_batch`.
+These are intentional for high-throughput workloads (BIP-352 scanning, BIP-324
+transport encryption) where the secret-bearing step cannot be split from the GPU
+pipeline without losing throughput. Callers must accept the implied security posture
+of sending keys to the GPU driver and must ensure a trusted single-tenant
+environment. See *Secret-Use Policy* below.
 
 ### CPU-only operations (no GPU public API)
 
 | Feature | CPU (fast) | CPU (CT) | GPU note |
 |---|---|---|---|
-| ECDSA sign | Y | Y (CT) | GPU kernel exists for CT smoke testing only; never in production signing path |
+| ECDSA sign | Y | Y (CT) | GPU kernel exists for CT smoke testing; production signing uses CPU CT layer |
 | Schnorr sign (BIP-340) | Y | Y (CT) | Same as above |
 | BIP-32 HD derivation | Y | Y | Internal GPU kernel (`bip32.cuh`, `secp256k1_bip32.h`) — no public GPU API |
-| ECDSA sign batch | - | Y | CPU CT only; private keys never sent to GPU by design |
-| Schnorr sign batch | - | Y | CPU CT only; private keys never sent to GPU by design |
+| ECDSA sign batch | - | Y | CPU CT only; no GPU public API for batch signing |
+| Schnorr sign batch | - | Y | CPU CT only; no GPU public API for batch signing |
 
 ### Internal GPU kernel support (not in public ABI)
 
@@ -95,7 +98,7 @@ through `ufsecp_gpu.h`.
 
 | Operation | Backend | Reason |
 |---|---|---|
-| `ecdsa_sign_batch` / `schnorr_sign_batch` | CUDA / OpenCL / Metal | Private keys never sent to GPU. Signing is CPU CT-only by design. |
+| `ecdsa_sign_batch` / `schnorr_sign_batch` | CUDA / OpenCL / Metal | No GPU public API. Production signing uses CPU CT layer. |
 | BIP-32 derivation batch | CUDA / OpenCL / Metal | No public GPU API. Internal kernel exists for app use only. |
 
 ---
@@ -162,16 +165,17 @@ evidence for ROCm/HIP promotion.
 |---|---|---|
 | CPU (fast) | No | Variable-time only — public data, batch verify, search |
 | CPU (CT) | Yes | Constant-time mandatory for all secret-bearing operations |
-| CUDA | ECDH only (exception ¹) | Search/batch verify workloads; no signing on GPU |
-| OpenCL | ECDH only (exception ¹) | Search/batch verify workloads; no signing on GPU |
-| Metal | ECDH only (exception ¹) | Search/batch verify workloads; no signing on GPU |
+| CUDA | Yes (ECDH, BIP-352, BIP-324 AEAD) ¹ | Trusted single-tenant only; batch verify/search; no signing |
+| OpenCL | Yes (ECDH, BIP-352, BIP-324 AEAD) ¹ | Trusted single-tenant only; batch verify/search; no signing |
+| Metal | Yes (ECDH, BIP-352, BIP-324 AEAD) ¹ | Trusted single-tenant only; batch verify/search; no signing |
 
 GPU CT kernels exist to verify device paths match the constant-time CPU reference
 (CT smoke tests). They are not a recommendation to move private-key signing to GPU.
 
 > **GPU is variable-time**: GPU kernels are NOT constant-time with respect to secret inputs.
-> `ufsecp_gpu_ecdh_batch` accepts private keys for BIP-352 scanning workloads where the GPU
-> operates in a trusted single-tenant environment. Sending secret keys to GPU in a shared/cloud
+> Several GPU API functions accept private keys for high-throughput workloads
+> (`ecdh_batch`, `bip352_scan_batch`, `bip324_aead_*_batch`). These require a
+> trusted single-tenant environment. Sending secret keys to GPU in a shared/cloud
 > GPU environment is a critical vulnerability. Production signing MUST use the CPU CT layer.
 
 ---

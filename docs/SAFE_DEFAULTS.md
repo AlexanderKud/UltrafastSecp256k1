@@ -134,9 +134,10 @@ auto sig = secp256k1::ct::ecdsa_sign(private_key, message_hash);
 | threads_per_batch | `131072` | Adjust to GPU SM count |
 | Constant-time | **NOT CT** | Never for secrets |
 
-**Security warning**: GPU operations are variable-time by design. Never process
-private keys on GPU. GPU is for public-key batch operations only (key search,
-batch verification, etc.).
+**Security warning**: GPU operations are variable-time by design. GPU accepts
+private keys for specific high-throughput workloads (ECDH, BIP-352, BIP-324 AEAD)
+but only in trusted single-tenant environments. Production signing MUST use CPU CT.
+Never send secret keys to a shared/cloud GPU.
 
 ---
 

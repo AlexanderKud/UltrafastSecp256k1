@@ -4473,7 +4473,7 @@ ufsecp_error_t ufsecp_bip324_decrypt(
     }
 
     if (*plaintext_len < dec.size()) return UFSECP_ERR_BUF_TOO_SMALL;
-    std::memcpy(plaintext_out, dec.data(), dec.size());
+    if (dec.size() > 0) std::memcpy(plaintext_out, dec.data(), dec.size());
     *plaintext_len = dec.size();
     return UFSECP_OK;
     } catch (...) { return UFSECP_ERR_INTERNAL; }
@@ -4493,7 +4493,8 @@ ufsecp_error_t ufsecp_aead_chacha20_poly1305_encrypt(
     const uint8_t* aad, size_t aad_len,
     const uint8_t* plaintext, size_t plaintext_len,
     uint8_t* out, uint8_t tag[16]) {
-    if (!key || !nonce || !out || !tag) return UFSECP_ERR_NULL_ARG;
+    if (!key || !nonce || !tag) return UFSECP_ERR_NULL_ARG;
+    if (!out && plaintext_len > 0) return UFSECP_ERR_NULL_ARG;
     if (!plaintext && plaintext_len > 0) return UFSECP_ERR_NULL_ARG;
     if (!aad && aad_len > 0) return UFSECP_ERR_NULL_ARG;
 
@@ -4507,7 +4508,8 @@ ufsecp_error_t ufsecp_aead_chacha20_poly1305_decrypt(
     const uint8_t* aad, size_t aad_len,
     const uint8_t* ciphertext, size_t ciphertext_len,
     const uint8_t tag[16], uint8_t* out) {
-    if (!key || !nonce || !tag || !out) return UFSECP_ERR_NULL_ARG;
+    if (!key || !nonce || !tag) return UFSECP_ERR_NULL_ARG;
+    if (!out && ciphertext_len > 0) return UFSECP_ERR_NULL_ARG;
     if (!ciphertext && ciphertext_len > 0) return UFSECP_ERR_NULL_ARG;
     if (!aad && aad_len > 0) return UFSECP_ERR_NULL_ARG;
 

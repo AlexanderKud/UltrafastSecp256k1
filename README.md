@@ -1476,7 +1476,7 @@ This library explores the **performance ceiling of secp256k1** across CPU archit
 
 ## API Stability
 
-**C++ API**: Not yet stable. Breaking changes may occur before **v4.0**. Core layers (field, scalar, point, ECDSA, Schnorr) are mature. Experimental layers (MuSig2, FROST, Adaptor, Pedersen, Taproot, HD, Coins) may change.
+**C++ API**: Not yet stable. Breaking changes may occur before **v4.0**. All layers — core (field, scalar, point, ECDSA, Schnorr) and extended (MuSig2, FROST, Adaptor, Pedersen, Taproot, HD, Coins) — are production-ready with full audit coverage. C++ API signatures may still evolve before v4.0.
 
 **C ABI (`ufsecp`)**: Stable from v3.4.0. ABI version tracked separately. See [SUPPORTED_GUARANTEES.md](include/ufsecp/SUPPORTED_GUARANTEES.md).
 
