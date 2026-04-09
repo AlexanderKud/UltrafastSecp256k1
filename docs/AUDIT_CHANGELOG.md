@@ -7,6 +7,34 @@ evidence upgrades, and changes to what the repository can honestly claim.
 
 ---
 
+## 2026-04-09 (Critical CT fix + OpenCL field reduction correctness)
+
+- **Fixed** `cpu/src/ct_sign.cpp` `ct::ecdsa_sign_recoverable()` — **CT violation**:
+  Recovery-ID low-S flip used branchy `is_low_s()` + `if (was_high) recid ^= 1`
+  on secret-derived data. Replaced with branchless `ct::scalar_is_high()` (value-
+  barrier protected) + mask-based XOR. This eliminates a timing side-channel that
+  leaked whether the nonce-derived `s` exceeded `n/2`. Severity: **Critical**.
+  Verified by `test_exploit_ct_recov` phases A/B/C (5/5 pass, |t|=0.21 < 10.0).
+
+- **Fixed** `opencl/kernels/secp256k1_field.cl` `field_reduce()` — missing rare
+  carry handler in second reduction fold. CUDA had step 4 (`if (c) add K_MOD`),
+  Metal used a `while` loop, but OpenCL silently dropped the overflow bit.
+  Probability ≈ 2^{-190} per reduction but correctness must hold for all inputs.
+  Severity: **Low** (not practically exploitable, but a correctness bug).
+
+- **Audited** (no issues found):
+  - `Scalar::from_bytes()` / `parse_bytes_strict_nonzero()` — no nonce bias
+  - BIP-32 `derive_child` — proper validation + zeroization
+  - ECDSA verify R.x normalization — correct in both FE52 and 4x64 paths
+  - Schnorr `lift_x` — strict x < p validation
+  - ABI signing dispatch — always uses CT path (ct::scalar_inverse, ct::generator_mul)
+  - GPU scalar overflow in `z + r·d mod n` — correct on CUDA and OpenCL
+  - MuSig2 nonce binding — BIP-327 compliant, Wagner/ROS defense via binding factor
+  - FROST Feldman VSS — verified, signing nonce properly bound
+  - BIP-324 AEAD — correct key schedule, nonce reuse prevented
+
+---
+
 ## 2026-04-16 (Documentation gap closure: 14 exploit PoCs added to audit trail)
 
 - **Added** `audit/test_exploit_bip324_aead_forgery.cpp` — BIP-324 / RFC 8439 /
