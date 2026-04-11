@@ -124,6 +124,12 @@ EXEMPT_KEYWORDS: Tuple[str, ...] = (
     "init_gen", "init_table", "init_ctx",  # explicit init patterns
     "ufsecp_",  # C ABI wrappers — allocation is marshalling, not inner loop
     "segwit_",  # Address encoding helpers — not hot-path crypto
+    "base58",   # Base58 encode/decode — 1x per address, not inner loop
+    "bech32",   # Bech32 encode/decode — 1x per address, not inner loop
+    "cashaddr",  # CashAddr helpers — not inner-loop crypto
+    "wif_",     # WIF encode/decode — not inner-loop crypto
+    "address_",  # Address generation — format/serialize, not tight crypto
+    "convert_bits",  # Bech32 bit conversion helper
 )
 
 

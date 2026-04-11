@@ -4285,12 +4285,13 @@ def scan_dead_methods(conn):
     for _label, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
             continue
-        for f in base_dir.rglob("*.cpp"):
-            try:
-                with open(f, "r", encoding="utf-8", errors="ignore") as fh:
-                    all_cpp_content[_rel_name(f, base_dir)] = fh.read()
-            except Exception:
-                pass
+        for ext in ("*.cpp", "*.cc", "*.cxx", "*.mm", "*.m"):
+            for f in base_dir.rglob(ext):
+                try:
+                    with open(f, "r", encoding="utf-8", errors="ignore") as fh:
+                        all_cpp_content[_rel_name(f, base_dir)] = fh.read()
+                except Exception:
+                    pass
     combined_cpp = "\n".join(all_cpp_content.values())
 
     # Check each method from the methods table
@@ -4301,6 +4302,11 @@ def scan_dead_methods(conn):
     for row in rows:
         class_name, method_name, header, line_hint = row
         if method_name in skip_methods or len(method_name) < 4:
+            continue
+        # Only C/C++ headers produce meaningful dead-method signals.
+        # Python (.py), Rust (.rs), PHP (.php), etc. don't follow the
+        # header-declaration → impl-definition split.
+        if not header.endswith(('.h', '.hpp', '.hxx', '.hh')):
             continue
         # Check if method_name appears anywhere in .cpp files
         ref_count = combined_cpp.count(method_name)
@@ -5026,6 +5032,16 @@ def scan_review_queue(conn):
         "           FROM test_function_map GROUP BY target_file) tf ON a.file = tf.target_file"
     ).fetchall()
 
+    # File categories that are not actionable for testing/hardening queues:
+    # tests, benchmarks, docs, build artifacts, scripts, examples.
+    _non_actionable_re = re.compile(
+        r'(?:^test_|^tests?/|/tests?/|^bench[/_]|/bench[/_]|benchmark|\.md$|\.json$|\.yml$|\.yaml$|'
+        r'\.build/|/examples?/|^scripts?/|_test\.cpp$|_test\.c$|selftest|\.txt$|\.cmake$|'
+        r'unified_audit|audit_gate|audit_gap|export_assurance|preflight|\.py$|'
+        r'esp32_test/build|source_graph_kit/|^audit_)',
+        re.IGNORECASE,
+    )
+
     for row in rows:
         file_name = row["file"]
         coverage_score = row["coverage_score"]
@@ -5038,7 +5054,10 @@ def scan_review_queue(conn):
         bus_factor_risk = row["bus_factor_risk"]
         tested_functions = row["tested_functions"]
 
-        if semantic_gain >= 7 and semantic_risk <= 3 and coverage_score >= 45:
+        # Skip non-actionable files for gain/testing queues
+        _is_non_actionable = bool(_non_actionable_re.search(file_name))
+
+        if not _is_non_actionable and semantic_gain >= 7 and semantic_risk <= 3 and coverage_score >= 45:
             priority = semantic_gain * 5 + coverage_score - semantic_risk * 3
             conn.execute(
                 "INSERT INTO review_queue (file, queue_type, priority_score, rationale) VALUES (?,?,?,?)",
@@ -5078,7 +5097,7 @@ def scan_review_queue(conn):
                  f"bus_factor={bus_factor_risk} gain={semantic_gain} coverage={coverage_score} share={row['primary_author_share']}")
             )
 
-        if semantic_gain >= 7 and tested_functions == 0:
+        if not _is_non_actionable and semantic_gain >= 7 and tested_functions == 0:
             priority = semantic_gain * 6 + semantic_risk * 3 + max(0, 45 - coverage_score)
             conn.execute(
                 "INSERT INTO review_queue (file, queue_type, priority_score, rationale) VALUES (?,?,?,?)",
@@ -6445,7 +6464,7 @@ _BACKEND_DIRS = {
     "cpu":    ["cpu/src", "cpu/include"],
     "cuda":   ["gpu/src", "gpu/include", "gpu/kernels"],
     "opencl": ["opencl", "opencl/kernels", "opencl/src"],
-    "metal":  ["metal", "metal/src", "metal/kernels"],
+    "metal":  ["metal", "metal/src", "metal/kernels", "shaders"],
 }
 
 # Normalize function names for cross-backend matching:
@@ -6512,6 +6531,12 @@ def scan_backend_map(conn):
             parity = "full"
         elif cpu and not cuda and not opencl and not metal:
             parity = "cpu-only"
+        elif present == 1 and not cpu:
+            # GPU-only function (kernel, audit kernel, intrinsic, or internal
+            # helper). These are platform-specific by design and do not need
+            # cross-backend parity.  Distinguish from true single-backend ops
+            # that should be ported.
+            parity = "gpu-internal"
         elif present == 1:
             parity = "single-backend"
         elif not metal and (cuda or opencl):
