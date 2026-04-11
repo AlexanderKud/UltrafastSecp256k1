@@ -381,11 +381,14 @@ This is not a risk. It is the design.
 
 The library's architecture is built around an explicit, permanent separation:
 
-- **CPU layer** — all secret-bearing operations (ECDSA sign, Schnorr sign, ECDH,
+- **CPU layer** — all secret-bearing signing operations (ECDSA sign, Schnorr sign,
   key derivation). Constant-time, verified by ct-verif + Valgrind + dudect on
-  every commit across x86-64 and arm64. Secrets never leave this layer.
-- **GPU layer** — public-data pipelines only (batch verify, BIP-352 scan,
-  address generation, point compression). No secret ever enters GPU memory.
+  every commit across x86-64 and arm64.
+- **GPU layer** — primarily public-data pipelines (batch verify, address generation,
+  point compression). A small number of GPU operations accept secret material for
+  high-throughput workloads: `ecdh_batch`, `bip352_scan_batch`, and
+  `bip324_aead_*_batch`. These secret-bearing GPU operations require a trusted
+  single-tenant environment and are documented as such in the C ABI.
 
 The GPU layer does have branchless CT primitive implementations (6 OpenCL kernel files,
 6 CUDA headers, 6 Metal shaders) covering field, scalar, point, and signing operations.
@@ -397,9 +400,9 @@ has (ct-verif LLVM analysis, Valgrind taint, dudect timing) is not applicable to
 
 The canonical engineering response is exactly what this library does: the GPU CT layer
 is smoke-tested for correctness, but production private-key signing is kept on the CPU
-CT layer where formal guarantees hold. ECDH, BIP-352, and BIP-324 delegate to GPU only
-under trusted single-tenant environments. This layered approach is not a gap. It is the
-correct architecture.
+CT layer where formal guarantees hold. Secret-bearing GPU operations (ECDH, BIP-352,
+BIP-324) are restricted to trusted single-tenant environments. This layered approach is
+not a gap. It is the correct architecture.
 
 ### "Cannot be used as a primary signer core"
 

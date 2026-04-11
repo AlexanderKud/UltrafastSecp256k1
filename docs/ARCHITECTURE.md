@@ -252,7 +252,7 @@ cuda/
 - No dynamic allocation in device hot loops
 - No per-iteration host/device sync
 - Launch parameters derived from config.json
-- NOT constant-time -- for public-data workloads only
+- NOT constant-time -- primarily for public-data workloads; secret-bearing GPU ops (ECDH, BIP-352, BIP-324) require trusted single-tenant environment
 
 ### OpenCL
 
