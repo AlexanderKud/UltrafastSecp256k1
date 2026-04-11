@@ -332,10 +332,9 @@ In addition to the 55-module `unified_audit_runner`, UltrafastSecp256k1 ships **
 | [docs/BACKEND_ASSURANCE_MATRIX.md](docs/BACKEND_ASSURANCE_MATRIX.md) | Per-backend assurance matrix |
 | [docs/AUDIT_TRACEABILITY.md](docs/AUDIT_TRACEABILITY.md) | Requirement-to-test traceability map |
 
-> **Note:** UltrafastSecp256k1 has not yet undergone a paid third-party cryptographic audit.
-> The primary assurance model here is open self-audit: reproducible tests, traceability, CI enforcement, and public review artifacts that anyone can rerun.
-> We are open to external audit and actively preparing the codebase and evidence for outside review, but we do not wait for a formal engagement before strengthening the library ourselves.
-> Our philosophy is to keep hardening the system continuously through internal audit on every build and every commit.
+> **Note:** UltrafastSecp256k1 has not undergone a third-party cryptographic audit.
+> The assurance model is open self-audit: reproducible tests, traceability, CI enforcement, and public review artifacts that anyone can rerun.
+> The project hardens continuously through internal audit on every build and every commit.
 
 ---
 
@@ -1498,7 +1497,7 @@ This library explores the **performance ceiling of secp256k1** across CPU archit
 
 ## API Stability
 
-**C++ API**: Not yet stable. Breaking changes may occur before **v4.0**. Core layers (field, scalar, point, ECDSA, Schnorr) are production-ready with full audit coverage. Extended layers (MuSig2, FROST, Adaptor, Pedersen, ZK, Taproot, HD, Coins) are **Experimental** — implemented and covered by PoC exploit tests and CT verification, but not yet externally audited; APIs may change. C++ API signatures may still evolve before v4.0.
+**C++ API**: Not yet stable. Breaking changes may occur before **v4.0**. Core layers (field, scalar, point, ECDSA, Schnorr) are production-ready with full audit coverage. Extended layers (MuSig2, FROST, Adaptor, Pedersen, ZK, Taproot, HD, Coins) are **Experimental** — implemented and covered by PoC exploit tests and CT verification; APIs may change. C++ API signatures may still evolve before v4.0.
 
 **C ABI (`ufsecp`)**: Stable from v3.4.0. ABI version tracked separately. See [SUPPORTED_GUARANTEES.md](include/ufsecp/SUPPORTED_GUARANTEES.md).
 
@@ -1579,7 +1578,7 @@ cosign verify-blob SHA256SUMS \
 > All functions in `ct::` namespace are constant-time: field arithmetic, scalar arithmetic, point multiplication, complete addition, signing, and ECDH. The C ABI uses CT internally for all secret-key operations. See [CT Evidence](#ct-evidence--methodology) above.
 
 **Which parts are production-safe today?**
-> This library has **not undergone a paid external audit**. Tier 1 features (core ECC, ECDSA, Schnorr, ECDH, stable C ABI) are extensively tested, fuzzed, regression-gated, and run through sanitizer-backed CI. Teams can evaluate it today with a strong self-audit trail and reproducible audit evidence, then make their own deployment decision based on their risk model and review standards.
+> This library has not undergone a third-party audit. Tier 1 features (core ECC, ECDSA, Schnorr, ECDH, stable C ABI) are extensively tested, fuzzed, regression-gated, and run through sanitizer-backed CI with a strong self-audit trail and reproducible evidence.
 
 **How do I reproduce the benchmarks?**
 > See [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) for exact commands, pinned compiler/driver versions, and raw logs. The [live dashboard](https://shrec.github.io/UltrafastSecp256k1/dev/bench/) tracks performance across commits.
