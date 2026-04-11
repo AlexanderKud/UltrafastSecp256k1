@@ -1,6 +1,12 @@
 # ============================================================================
-# ESP32 Unified Audit -- CMakeLists.txt
-# Compiles all 40/48 audit modules for ESP32-S3 (Xtensa LX7)
+# ESP32-P4 Unified Audit -- CMakeLists.txt
+# Target: ESP32-P4 (dual-core RISC-V HP @ 400 MHz, rv32imafc)
+# Compiles all audit modules for cross-platform verification on RISC-V.
+#
+# Key differences from esp32_audit (Xtensa S3):
+#   - SECP256K1_NO_ASM=1 (no inline asm on RISC-V in this port)
+#   - NO field_asm.cpp (ARM/x86 asm file, not needed on RISC-V)
+#   - Otherwise identical source list and audit coverage
 # ============================================================================
 
 set(CPU_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../../cpu/src")
@@ -8,14 +14,15 @@ set(CPU_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../cpu/tests")
 set(AUDIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../audit")
 
 idf_component_register(
-    SRCS "audit_main.cpp"
+    SRCS "audit_main_p4.cpp"
          # ===============================================================
-         # Library source files (32-bit safe, ESP32-compatible)
+         # Library source files (32-bit safe, ESP32-P4 RISC-V compatible)
+         # field_asm.cpp is intentionally omitted: RISC-V build uses only
+         # portable C paths via SECP256K1_NO_ASM=1.
          # ===============================================================
          "${CPU_SRC}/field.cpp"
          "${CPU_SRC}/field_26.cpp"
          "${CPU_SRC}/field_52.cpp"
-         "${CPU_SRC}/field_asm.cpp"
 
          "${CPU_SRC}/scalar.cpp"
          "${CPU_SRC}/point.cpp"
@@ -93,7 +100,7 @@ idf_component_register(
          "${AUDIT_DIR}/test_musig2_frost_advanced.cpp"
          "${AUDIT_DIR}/test_frost_kat.cpp"
          "${AUDIT_DIR}/test_musig2_bip327_vectors.cpp"
-         # Field / scalar / point arithmetic edge-case audit (2025-04-11)
+         # Field / scalar / point arithmetic edge-case audit (added 2025-04-11)
          "${AUDIT_DIR}/test_field_scalar_edge.cpp"
          "${AUDIT_DIR}/test_point_group_law.cpp"
     INCLUDE_DIRS "."
@@ -110,13 +117,14 @@ target_include_directories(${COMPONENT_LIB} PUBLIC
 # C++20 for the component
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
 
-# ESP32 is 32-bit Xtensa: no __int128, no 64-bit ASM, no x86 SIMD
-# UNIFIED_AUDIT_RUNNER suppresses standalone main() in test files
-# DUDECT_SMOKE uses shorter iteration counts for side-channel test
-# SECP256K1_PLATFORM_ESP32 enables ESP32-specific code paths in library
+# ESP32-P4 is RISC-V 32-bit: no __int128, no inline ASM, 26-bit field path.
+# UNIFIED_AUDIT_RUNNER suppresses standalone main() in test files.
+# DUDECT_SMOKE uses shorter iteration counts for side-channel tests.
+# SECP256K1_PLATFORM_ESP32 triggers reduced counts in sanitizer_scale.hpp.
 target_compile_definitions(${COMPONENT_LIB} PUBLIC
     SECP256K1_FIELD_26BIT=1
     SECP256K1_NO_INT128=1
+    SECP256K1_NO_ASM=1
     SECP256K1_PLATFORM_ESP32=1
     UNIFIED_AUDIT_RUNNER=1
     DUDECT_SMOKE=1
@@ -124,4 +132,3 @@ target_compile_definitions(${COMPONENT_LIB} PUBLIC
 
 # Enable exceptions (needed by some audit modules, e.g. audit_security)
 target_compile_options(${COMPONENT_LIB} PRIVATE -fexceptions)
-
