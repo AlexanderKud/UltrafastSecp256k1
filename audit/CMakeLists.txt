@@ -87,6 +87,20 @@ target_compile_definitions(test_secret_lifecycle PRIVATE STANDALONE_TEST)
 add_test(NAME secret_lifecycle COMMAND test_secret_lifecycle)
 set_tests_properties(secret_lifecycle PROPERTIES TIMEOUT 1200)
 
+# -- Field / scalar arithmetic edge cases ---------------------------------
+add_executable(test_field_scalar_edge test_field_scalar_edge.cpp)
+audit_target_defaults(test_field_scalar_edge)
+target_compile_definitions(test_field_scalar_edge PRIVATE STANDALONE_TEST)
+add_test(NAME field_scalar_edge COMMAND test_field_scalar_edge)
+set_tests_properties(field_scalar_edge PROPERTIES TIMEOUT 1200)
+
+# -- Point group law correctness -------------------------------------------
+add_executable(test_point_group_law test_point_group_law.cpp)
+audit_target_defaults(test_point_group_law)
+target_compile_definitions(test_point_group_law PRIVATE STANDALONE_TEST)
+add_test(NAME point_group_law COMMAND test_point_group_law)
+set_tests_properties(point_group_law PROPERTIES TIMEOUT 1200)
+
 # -- Debug invariant assertions --------------------------------------------
 add_executable(test_debug_invariants test_debug_invariants.cpp)
 audit_target_defaults(test_debug_invariants)
@@ -2438,6 +2452,9 @@ add_executable(unified_audit_runner
     test_zeroization.cpp
     test_fault_zk_adaptor.cpp
     test_secret_lifecycle.cpp
+    # -- Field / scalar / point arithmetic edge cases --
+    test_field_scalar_edge.cpp
+    test_point_group_law.cpp
     # -- Security audit modules --
     audit_secure_erase.cpp
     audit_ct_namespace.cpp
