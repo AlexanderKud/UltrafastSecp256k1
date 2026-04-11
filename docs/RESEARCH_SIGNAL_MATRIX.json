@@ -238,7 +238,7 @@
       ],
       "repo_evidence": [
         "audit/test_exploit_ecdsa_affine_nonce_relation.cpp",
-        "cpu/src/rfc6979.cpp"
+        "cpu/src/ecdsa.cpp"
       ],
       "reason": "ePrint 2025/705 shows algebraic key recovery when two nonces have an affine relation. RFC 6979 deterministic nonces are immune. PoC validates both the attack and the library's immunity."
     },
@@ -256,7 +256,7 @@
       ],
       "repo_evidence": [
         "audit/test_exploit_ecdsa_half_half_nonce.cpp",
-        "cpu/src/rfc6979.cpp"
+        "cpu/src/ecdsa.cpp"
       ],
       "reason": "ePrint 2023/841 documents real-world Bitcoin key recovery when nonces are composed from hash and key halves. RFC 6979 is immune by design. PoC validates the attack vector and immunity."
     },
@@ -276,7 +276,7 @@
       ],
       "repo_evidence": [
         "audit/test_exploit_ecdsa_nonce_modular_bias.cpp",
-        "cpu/src/rfc6979.cpp"
+        "cpu/src/ecdsa.cpp"
       ],
       "reason": "CVE-2024-31497 (PuTTY) and CVE-2024-1544 (wolfSSL) show key recovery from nonce bias caused by oversized random mod n. RFC 6979 HMAC-DRBG is immune. PoC validates the bias mechanism and immunity."
     },
@@ -294,7 +294,7 @@
       ],
       "repo_evidence": [
         "audit/test_exploit_ecdsa_differential_fault.cpp",
-        "cpu/src/rfc6979.cpp"
+        "cpu/src/ecdsa.cpp"
       ],
       "reason": "ePrint 2017/975 shows key recovery when faults are injected during deterministic nonce generation. PoC validates the attack mechanism and confirms the library's deterministic nonce path consistency."
     },
@@ -333,7 +333,7 @@
       ],
       "repo_evidence": [
         "audit/test_exploit_ecdsa_cross_key_nonce_reuse.cpp",
-        "cpu/src/rfc6979.cpp"
+        "cpu/src/ecdsa.cpp"
       ],
       "reason": "ePrint 2025/654 shows cascading key compromise when multiple keys share the same nonce via weak PRNG. One compromised key reveals all others. RFC 6979 derives nonces from (key, msg) making cross-key sharing impossible. PoC validates the attack and RFC 6979 immunity."
     },

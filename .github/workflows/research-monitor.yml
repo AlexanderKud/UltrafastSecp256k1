@@ -82,7 +82,7 @@ jobs:
           cat build/research_monitor/research_report.md >> "$GITHUB_STEP_SUMMARY" || echo 'Report not generated.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Send actionable report by email
-        if: always() && steps.monitor.outputs.actionable_count != '0' && secrets.RESEARCH_SMTP_HOST != '' && secrets.RESEARCH_SMTP_USERNAME != '' && secrets.RESEARCH_SMTP_PASSWORD != '' && secrets.RESEARCH_REPORT_FROM != '' && secrets.RESEARCH_REPORT_TO != ''
+        if: always() && steps.monitor.outputs.actionable_count != '0' && env.RESEARCH_SMTP_HOST != '' && env.RESEARCH_SMTP_USERNAME != '' && env.RESEARCH_SMTP_PASSWORD != '' && env.RESEARCH_REPORT_FROM != '' && env.RESEARCH_REPORT_TO != ''
         env:
           RESEARCH_SMTP_HOST: ${{ secrets.RESEARCH_SMTP_HOST }}
           RESEARCH_SMTP_PORT: ${{ secrets.RESEARCH_SMTP_PORT }}

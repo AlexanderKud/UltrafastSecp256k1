@@ -7,6 +7,45 @@ evidence upgrades, and changes to what the repository can honestly claim.
 
 ---
 
+## 2026-04-11 (Audit infrastructure overhaul + workflow fix)
+
+- **Added** Unified report schema v1.0.0 (`scripts/report_schema.py`):
+  `NullableField` replaces `"unknown"` strings with `{value, status, reason}`.
+  `SkipReason` provides structured skip records. `Severity` enum classifies
+  findings as blocking (critical/high) or advisory (medium/low/info).
+  `ReportBuilder` enforces schema compliance for all audit reports.
+
+- **Added** Build provenance (`scripts/report_provenance.py`) integrated into
+  `audit_gate.py` and `export_assurance.py`. Every report now carries git SHA,
+  dirty flag, toolchain versions, build flags hash, and platform info.
+
+- **Added** Artifact analyzer MVP (`scripts/artifact_analyzer.py`):
+  multi-report ingestion, regression diff (before/after), platform divergence
+  detection, flake detection, with SARIF 2.1.0 / Markdown / timeline exports.
+
+- **Added** Bug capsule format (`schemas/bug_capsule.schema.json`) + generator
+  (`scripts/bug_capsule_gen.py`) — JSON-defined bugs automatically produce
+  regression tests, exploit PoC C++, and CMake fragments.
+
+- **Added** CI gating policy (`docs/CI_GATING_POLICY.md`) + impact-based gate
+  detector (`scripts/ci_gate_detect.py`) — Tier0/Tier1/Tier2 architecture.
+  Crypto/CT/ABI changes trigger hard gate; docs/bindings trigger light gate.
+
+- **Added** Auditor quickstart guide (`docs/AUDITOR_QUICKSTART.md`) —
+  "3 commands, 3 artifacts" onboarding for external auditors.
+
+- **Added** Layer routing matrix (`docs/LAYER_ROUTING_MATRIX.md`) — complete
+  CT/FAST routing table for all ~103 ABI functions with rationale.
+
+- **Fixed** `research-monitor.yml` — `secrets.*` in `if:` expression caused
+  GitHub Actions parse error ("`Unrecognized named-value: 'secrets'`").
+  All scheduled runs were silently blocked. Replaced with `env.*` references.
+
+- **Fixed** Dead code in `cpu/src/scalar.cpp` — unused `carry_hi` declaration
+  in 32-bit fallback schoolbook multiply.
+
+---
+
 ## 2026-04-09 (Critical CT fix + OpenCL field reduction correctness)
 
 - **Fixed** `cpu/src/ct_sign.cpp` `ct::ecdsa_sign_recoverable()` — **CT violation**:
