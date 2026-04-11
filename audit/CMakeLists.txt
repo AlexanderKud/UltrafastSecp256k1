@@ -66,6 +66,27 @@ target_compile_definitions(test_fault_injection PRIVATE STANDALONE_TEST)
 add_test(NAME fault_injection COMMAND test_fault_injection)
 set_tests_properties(fault_injection PROPERTIES TIMEOUT 900)
 
+# -- Zeroization audit ----------------------------------------------------
+add_executable(test_zeroization test_zeroization.cpp)
+audit_target_defaults(test_zeroization)
+target_compile_definitions(test_zeroization PRIVATE STANDALONE_TEST)
+add_test(NAME zeroization COMMAND test_zeroization)
+set_tests_properties(zeroization PROPERTIES TIMEOUT 900)
+
+# -- ZK/Pedersen/Adaptor fault injection -----------------------------------
+add_executable(test_fault_zk_adaptor test_fault_zk_adaptor.cpp)
+audit_target_defaults(test_fault_zk_adaptor)
+target_compile_definitions(test_fault_zk_adaptor PRIVATE STANDALONE_TEST)
+add_test(NAME fault_zk_adaptor COMMAND test_fault_zk_adaptor)
+set_tests_properties(fault_zk_adaptor PROPERTIES TIMEOUT 1200)
+
+# -- Secret lifecycle audit ------------------------------------------------
+add_executable(test_secret_lifecycle test_secret_lifecycle.cpp)
+audit_target_defaults(test_secret_lifecycle)
+target_compile_definitions(test_secret_lifecycle PRIVATE STANDALONE_TEST)
+add_test(NAME secret_lifecycle COMMAND test_secret_lifecycle)
+set_tests_properties(secret_lifecycle PROPERTIES TIMEOUT 1200)
+
 # -- Debug invariant assertions --------------------------------------------
 add_executable(test_debug_invariants test_debug_invariants.cpp)
 audit_target_defaults(test_debug_invariants)
@@ -2413,6 +2434,10 @@ add_executable(unified_audit_runner
     # -- C ABI negative contract tests --
     test_c_abi_negative.cpp
     test_c_abi_thread_stress.cpp
+    # -- Zeroization / ZK fault injection / secret lifecycle --
+    test_zeroization.cpp
+    test_fault_zk_adaptor.cpp
+    test_secret_lifecycle.cpp
     # -- Security audit modules --
     audit_secure_erase.cpp
     audit_ct_namespace.cpp
