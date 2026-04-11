@@ -117,8 +117,8 @@ All measurements: RTX 5060 Ti (SM 12.0, CUDA 12), batch=16 384, kernel-only thro
 
 > TL;DR is above. This section covers what differentiates this library in depth.
 
-- **Continuous adversarial audit system** -- every exploit attempt becomes a permanent regression test; 1,000,000+ assertions per build, 171 exploit-PoC modules across 200+ attack vectors, 36 CI workflows, 3 formal CT verification pipelines (ct-verif + Valgrind CT + dudect), 1.3M+ nightly differential checks — security hardens on every commit, not just on release day ([→ how it works](#engineering-quality--self-audit-culture))
-- **Differentiated GPU secp256k1 surface** -- CUDA, OpenCL, and Metal all implement the stable 13-op GPU C ABI, while CUDA also carries the highest-throughput signing and verification kernels plus **GPU FROST partial verification** ([reproducible benchmark suite and raw logs](docs/BENCHMARKS.md))
+- **Continuous adversarial audit system** -- every exploit attempt becomes a permanent regression test; 1,000,000+ assertions per build, 187 exploit-PoC test files (171 registered runner modules) across 200+ attack vectors, 36 CI workflows, 3 formal CT verification pipelines (ct-verif + Valgrind CT + dudect), 1.3M+ nightly differential checks — security hardens on every commit, not just on release day ([→ how it works](#engineering-quality--self-audit-culture))
+- **Differentiated GPU secp256k1 surface** -- CUDA, OpenCL, and Metal all implement the stable 19-op GPU C ABI, while CUDA also carries the highest-throughput signing and verification kernels plus **GPU FROST partial verification** ([reproducible benchmark suite and raw logs](docs/BENCHMARKS.md))
 - **High-performance CPU secp256k1 engine** -- optimized generator multiply, scalar multiply, hashing, and serialization pipelines across x86-64, ARM64, RISC-V, and embedded targets ([see bench_unified ratio table](docs/BENCHMARKS.md))
 - **BIP-352 Silent Payments at 11.00 M/s** -- the full 7-stage GPU pipeline (k×P → hash → k×G → add → match) runs at 91.0 ns/op on CUDA, **267× faster** than single-threaded CPU ([GPU bench](docs/BENCHMARKS.md), [standalone CPU benchmark by @craigraw](https://github.com/craigraw/bench_bip352))
 - **Built for modern secp256k1 workloads** -- signing, verification, wallet derivation, threshold protocols, adaptor signatures, ZK primitives, address generation, and large-scale public-key pipelines in one engine
@@ -210,7 +210,7 @@ Full adopter list: [ADOPTERS.md](ADOPTERS.md)
 
 - **BIP-352 GPU pipeline at 11.00 M/s** -- full silent payment scanning pipeline on CUDA (91.0 ns/op), 267× faster than CPU
 - **GPU-accelerated secp256k1** -- high-throughput CUDA signing/verification kernels plus cross-backend GPU batch operations on CUDA, OpenCL, and Metal; production secret-bearing signing still routes through the CPU CT layer
-- **GPU C ABI (`ufsecp_gpu`)** -- stable 13-op FFI for GPU batch ops across CUDA, OpenCL, and Metal, with full backend parity on the public surface
+- **GPU C ABI (`ufsecp_gpu`)** -- stable 19-op FFI for GPU batch ops across CUDA, OpenCL, and Metal, with full backend parity on the public surface
 - **Zero-Knowledge cryptographic layer** -- Pedersen commitments, DLEQ proofs, Bulletproof range proofs, Ethereum-compatible Keccak-256
 - **17–67× faster batch operations** -- all-affine Pippenger with touched-bucket optimization
 - **Multi-language bindings** -- Python (`pip install ufsecp`), Node.js (`npm i ufsecp`), Rust, Go, C#/.NET, Java, Swift, PHP, Ruby, Dart, React Native — all via the stable C ABI

@@ -958,9 +958,11 @@ class RustAdapter(LanguageAdapter):
         return ['unwrap', 'expect', 'unwrap_or']
 
     def leak_patterns(self):
+        # Rust ownership prevents leaks; only explicit escape-hatch patterns
+        # (raw pointer extraction, deliberate forget) are real memory-management risks.
         return {
-            'alloc': re.compile(r'\bBox::new\b|\bunsafe\b'),
-            'dealloc': re.compile(r'\bdrop\s*\('),
+            'alloc': re.compile(r'\bBox::into_raw\b|\bmem::forget\b|\bManuallyDrop::new\b'),
+            'dealloc': re.compile(r'\bdrop\s*\(|\bfrom_raw\b'),
             'smart_unique': re.compile(r'\bBox<|Arc<|Rc<'),
             'smart_shared': re.compile(r'\bRc::new\b|\bArc::new\b'),
         }
@@ -3816,10 +3818,17 @@ _LEAK_SCAN_EXTS = {
     "typescript": {".ts", ".tsx", ".js", ".jsx"},
 }
 
+# Projects where leak tracking is not meaningful:
+# - scripts/tools: Python tooling runs under GC
+# - audit: exploit PoC tests use intentional raw allocations in controlled scopes
+_LEAK_SKIP_PROJECTS = {"scripts", "tools", "audit"}
+
 def scan_leak_risks(conn):
     """Analyze resource alloc/dealloc balance per file to find potential leaks."""
     for project, base_dir, _exts in SOURCE_DIRS:
         if not base_dir.exists():
+            continue
+        if project in _LEAK_SKIP_PROJECTS:
             continue
         adapter = _project_adapter(project)
         patterns = adapter.leak_patterns()
@@ -5068,12 +5077,23 @@ def scan_review_queue(conn):
     ).fetchall()
 
     # File categories that are not actionable for testing/hardening queues:
-    # tests, benchmarks, docs, build artifacts, scripts, examples.
+    # tests, benchmarks, docs, build artifacts, scripts, fuzz targets, binding language dirs.
     _non_actionable_re = re.compile(
         r'(?:^test_|^tests?/|/tests?/|^bench[/_]|/bench[/_]|benchmark|\.md$|\.json$|\.yml$|\.yaml$|'
         r'\.build/|/examples?/|^scripts?/|_test\.cpp$|_test\.c$|selftest|\.txt$|\.cmake$|'
         r'unified_audit|audit_gate|audit_gap|export_assurance|preflight|\.py$|'
-        r'esp32_test/build|source_graph_kit/|^audit_)',
+        r'esp32_test/build|source_graph_kit/|^audit_|'
+        r'^fuzz|/fuzz[/_]|stm32_test/|^dart/|^go/|^kotlin/|^swift/|^java/|'
+        r'^nodejs/|^php/|^ruby/|^react.native/|^python/|^ufsecp/|^ultrafast|'
+        r'app/metal_test|_audit_runner|gpu_bench_)',
+        re.IGNORECASE,
+    )
+    # Narrower filter for audit_gap: exclude only non-library tool/artifact files
+    # (scripts, CI workflows, build outputs) — NOT security-critical binding dirs.
+    _tool_artifact_re = re.compile(
+        r'(?:\.py$|\.yml$|\.yaml$|\.build/|source_graph_kit/|^audit_|'
+        r'unified_audit|audit_gate|audit_gap|export_assurance|preflight|'
+        r'esp32_test/build|stm32_test/|^fuzz|/fuzz[/_]|\.derived/)',
         re.IGNORECASE,
     )
 
@@ -5091,6 +5111,8 @@ def scan_review_queue(conn):
 
         # Skip non-actionable files for gain/testing queues
         _is_non_actionable = bool(_non_actionable_re.search(file_name))
+        # Narrower check: skip only tool/artifact/CI files from audit_gap
+        _is_tool_artifact = bool(_tool_artifact_re.search(file_name))
 
         if not _is_non_actionable and semantic_gain >= 7 and semantic_risk <= 3 and coverage_score >= 45:
             priority = semantic_gain * 5 + coverage_score - semantic_risk * 3
@@ -5100,7 +5122,7 @@ def scan_review_queue(conn):
                  f"gain={semantic_gain} risk={semantic_risk} coverage={coverage_score}")
             )
 
-        if semantic_risk >= 5 and coverage_score < 45:
+        if not _is_tool_artifact and semantic_risk >= 5 and coverage_score < 45:
             priority = semantic_risk * 8 + max(0, 50 - coverage_score) + crash_risk_count * 3 + null_risk_count // 2
             conn.execute(
                 "INSERT INTO review_queue (file, queue_type, priority_score, rationale) VALUES (?,?,?,?)",
@@ -6556,16 +6578,35 @@ _BACKEND_NORM_RE = re.compile(
     re.IGNORECASE
 )
 
-# Synonym map for cross-backend naming differences
-# (OpenCL uses "point_*" while CUDA/Metal use "jacobian_*")
+# Synonym map for cross-backend naming differences.
+# Keys are normalized names (after _BACKEND_NORM_RE; already lower-cased).
+# Values are the canonical operation name used for parity matching.
 _OP_SYNONYMS = {
+    # jacobian ↔ point naming (OpenCL uses "point_*", CUDA/Metal use "jacobian_*")
     "jacobian_double": "double",
     "jacobian_add": "add",
     "jacobian_add_mixed": "add_mixed",
     "jacobian_add_mixed_h": "add_mixed_h",
     "jacobian_to_affine": "to_affine",
+    "dbl_inplace": "double",
     "double": "double",
     "add_mixed": "add_mixed",
+    # _batch suffix ↔ batch_ prefix (Metal: ecdsa_verify_batch; CPU: ecdsa_batch_verify)
+    "ecdsa_verify_batch": "ecdsa_batch_verify",
+    "schnorr_verify_batch": "schnorr_batch_verify",
+    "ecdsa_sign_batch": "ecdsa_batch_sign",
+    "schnorr_sign_batch": "schnorr_batch_sign",
+    # Metal batch kernels that drop the middle batch_ prefix
+    "ecdsa_snark_witness_batch": "ecdsa_snark_witness",
+    "frost_verify_partial_batch": "frost_verify_partial",
+    # Metal BIP324 kernel naming (kernel_bip324_ prefix + _batch suffix)
+    "kernel_bip324_chacha20_block_batch": "chacha20_block",
+    "kernel_bip324_aead_encrypt": "bip324_encrypt",
+    "kernel_bip324_aead_decrypt": "bip324_decrypt",
+    # Metal batch_inverse vs CPU fe_batch_inverse
+    "batch_inverse": "fe_batch_inverse",
+    # Metal uses scalar_mul_batch for generator multiplication
+    "scalar_mul_batch": "scalar_mul_generator",
 }
 
 def _normalize_op(name):
@@ -6647,6 +6688,36 @@ def scan_backend_map(conn):
     for bd in backend_funcs.values():
         all_ops.update(bd.keys())
 
+    # Host-utility and CT-primitive inline operations — these exist as device inlines
+    # inside GPU kernels, not as top-level dispatch targets.  Do not report parity
+    # gaps for them; they are not independently dispatchable on GPU.
+    _NON_GPU_OPS = frozenset({
+        "add64", "mul64", "rotl32", "rotr32", "store32_le", "load32_le",
+        "field_to_hex", "write_json", "print_row", "print_usage",
+        "has_flag", "fe_eq", "selftest",
+        "normalize", "make_key", "make_scalar", "random_scalar",
+        "scalar_bitlen", "scalar_eq", "scalar_is_high", "scalar_is_zero",
+        "x_bytes_and_parity", "x_only_bytes", "x_coord",
+        "from_mont", "lookup_256", "from_hex", "to_hex",
+        "next", "next_inplace", "finish",
+        # CT primitive inlines (device inlines in all GPU kernels, not top-level)
+        "select", "cmov256", "cmov64", "cswap256", "add256", "sub256",
+        # BIP/encoding / short-predicate helpers
+        "rfc6979_nonce_hedged", "schnorr_xonly_pubkey_parse",
+        "has_even_y", "is_valid", "points_equal",
+        "from_compressed", "to_uncompressed",
+        "x_bytes", "negate", "zero", "infinity",
+        # Hash/crypto primitives that exist as device inlines, not top-level kernels
+        "sha256", "sha512", "inverse",
+        # Field/point host-side helpers (CPU+CUDA+Metal, not separately in OpenCL)
+        "from_bytes", "to_bytes", "is_zero", "generator", "from_uint64",
+        "hex_to_bytes32", "fe_batch_inverse",
+        # Signing ops that must stay CPU-only (private key must not be on GPU)
+        "ecdsa_sign_hedged", "ecdsa_sign_hedged_verified",
+        # Misc bench/test utility
+        "range",
+    })
+
     inserted = 0
     for op in sorted(all_ops):
         cpu    = backend_funcs["cpu"].get(op)
@@ -6678,6 +6749,12 @@ def scan_backend_map(conn):
             parity = "missing-cuda"
         else:
             parity = "partial"
+
+        # Do not report host-utility inlines as cross-backend parity gaps.
+        if op in _NON_GPU_OPS and parity in (
+            "missing-metal", "missing-opencl", "missing-cuda", "partial", "single-backend"
+        ):
+            continue
 
         try:
             conn.execute(
