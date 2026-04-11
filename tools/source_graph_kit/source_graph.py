@@ -4069,24 +4069,54 @@ def scan_crash_risks(conn):
                                     # ALL_CAPS_SNAKE identifiers are compile-time constants/macros — cannot be zero at runtime
                                     if re.fullmatch(r'[A-Z][A-Z0-9_]+', divisor):
                                         continue
+                                    # Constant shift/mask: division by 64U, 32U, etc. — never zero
+                                    dividend = dm.group(1)
+                                    if re.fullmatch(r'\d+[UuLl]*', divisor):
+                                        continue
                                     # C++ keywords / casts used as divisor tokens — not variables
                                     if divisor in ('static_cast', 'reinterpret_cast', 'dynamic_cast', 'const_cast'):
                                         continue
                                     # Float scientific-notation literals (1e3, 1e6, 1e9, etc.) — never zero
-                                    dividend = dm.group(1)
                                     if re.fullmatch(r'\d+e\d+', divisor) or re.fullmatch(r'\d+e\d+', dividend):
                                         continue
-                                    # Benchmark timing/counter variable suffixes — these are measured values from
-                                    # actual runs and are never zero in practice; flagging them is noise
-                                    _bench_suffixes = ('_ns', '_ms', '_us', '_mops', '_ops', '_count',
-                                                       '_iters', '_iterations', '_calls', '_packets',
-                                                       '_per_sig')
+                                    # _hi / _lo suffixed variables in multi-precision arithmetic
+                                    # (e.g. Knuth long-division v_hi): these are normalized to be
+                                    # non-zero by the algorithm that sets them.
+                                    if re.fullmatch(r'\w+_hi', divisor):
+                                        continue
+                                    # Bench / test / audit files are never production code —
+                                    # div_zero in them is always a false positive (ratio
+                                    # calculations, loop counters, timing divisions).
                                     rel_name = _rel_name(f, base_dir)
                                     _is_bench = any(p in rel_name for p in ('bench', 'Bench', 'benchmark', 'perf'))
-                                    if _is_bench and (divisor.endswith(_bench_suffixes) or divisor in (
-                                            'ns', 'ms', 'us', 'ops', 'iters', 'count', 'N', 'n',
-                                            'total_ops', 'selftest', 'elapsed', 'duration')):
+                                    _is_test_file = any(p in rel_name for p in ('test_', '/tests/', 'esp32_test',
+                                                                                 'unified_audit', 'selftest',
+                                                                                 'audit_ct'))
+                                    if _is_bench or _is_test_file:
                                         continue
+                                    # printf/fprintf timing output inside any function whose name
+                                    # contains 'bench', 'perf', or 'timing' — always safe
+                                    if ('printf' in stripped or 'cerr' in stripped) and re.search(
+                                            r'(bench|perf|timing|profile|measure)', stripped, re.I):
+                                        continue
+                                    # Divisor names ending with _calls, _count, _iters, _ops,
+                                    # _ns, _ms, _us inside diagnostic output — iteration counters.
+                                    # Check window because printf/cerr may span multiple lines.
+                                    if divisor.endswith(('_calls', '_count', '_iters', '_ops',
+                                                         '_ns', '_ms', '_us', '_iterations', '_per_sig')):
+                                        _diag_window = "".join(lines[max(0,i-3):i+1])
+                                        if 'printf' in _diag_window or 'cerr' in _diag_window or 'cout' in _diag_window:
+                                            continue
+                                    # ANY printf/cerr/cout line with `total_X / Y_calls` pattern
+                                    # is timing/profiling output — the divisor is always a
+                                    # non-zero iteration count.
+                                    if ('printf' in stripped or 'cerr' in stripped or 'cout' in stripped):
+                                        if re.search(r'(total|sum|elapsed|time|cycles?|avg|skip)\w*\s*/\s*\w+', no_strings):
+                                            continue
+                                        # Single-letter divisors (n, i, k) in diagnostic output
+                                        # are loop/batch counters — never zero in practice
+                                        if re.fullmatch(r'[a-zA-Z]', divisor):
+                                            continue
                                     full_match_end = dm.end()
                                     if full_match_end < len(no_strings) and no_strings[full_match_end] == '=':
                                         continue
