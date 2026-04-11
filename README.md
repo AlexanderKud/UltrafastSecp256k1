@@ -66,10 +66,16 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build -
 | ⚔️ Try to break the system | [docs/ATTACK_GUIDE.md](docs/ATTACK_GUIDE.md) |
 | 📊 Understand the guarantees | [docs/AUDIT_TRACEABILITY.md](docs/AUDIT_TRACEABILITY.md) |
 | 🧠 Audit philosophy & design rationale | [docs/AUDIT_PHILOSOPHY.md](docs/AUDIT_PHILOSOPHY.md) |
-| � Audit methodology specification (CAAS) | [docs/AUDIT_STANDARD.md](docs/AUDIT_STANDARD.md) |
-| �📄 See latest audit results | [AUDIT_REPORT.md](AUDIT_REPORT.md) |
+| 📐 Audit methodology specification (CAAS) | [docs/AUDIT_STANDARD.md](docs/AUDIT_STANDARD.md) |
+| 🚀 External auditor quick start | [docs/AUDITOR_QUICKSTART.md](docs/AUDITOR_QUICKSTART.md) |
+| 📄 See latest audit results | [AUDIT_REPORT.md](AUDIT_REPORT.md) |
+| 🛡️ Exploit PoC test catalog | [docs/EXPLOIT_TEST_CATALOG.md](docs/EXPLOIT_TEST_CATALOG.md) |
+| 🔀 Backend assurance matrix | [docs/BACKEND_ASSURANCE_MATRIX.md](docs/BACKEND_ASSURANCE_MATRIX.md) |
+| 🚦 CI gating policy | [docs/CI_GATING_POLICY.md](docs/CI_GATING_POLICY.md) |
+| 🗺️ ABI layer routing matrix | [docs/LAYER_ROUTING_MATRIX.md](docs/LAYER_ROUTING_MATRIX.md) |
 | 🏗️ Build guide | [docs/BUILDING.md](docs/BUILDING.md) |
 | 🔗 C ABI / FFI reference | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) |
+| 📈 Community benchmarks | [docs/COMMUNITY_BENCHMARKS.md](docs/COMMUNITY_BENCHMARKS.md) |
 | 📦 Install packages | [Installation](#installation) |
 | 🤔 Why this library? | [WHY_ULTRAFASTSECP256K1.md](WHY_ULTRAFASTSECP256K1.md) |
 | 🌐 Sponsor | [github.com/sponsors/shrec](https://github.com/sponsors/shrec) |
