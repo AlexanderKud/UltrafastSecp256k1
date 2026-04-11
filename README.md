@@ -210,7 +210,7 @@ Full adopter list: [ADOPTERS.md](ADOPTERS.md)
 ## Highlights
 
 - **BIP-352 GPU pipeline at 11.00 M/s** -- full silent payment scanning pipeline on CUDA (91.0 ns/op), 267× faster than CPU
-- **GPU-accelerated secp256k1** -- high-throughput CUDA signing/verification kernels plus cross-backend GPU batch operations on CUDA, OpenCL, and Metal; production secret-bearing signing still routes through the CPU CT layer
+- **GPU-accelerated secp256k1** -- high-throughput CUDA verification kernels, batch ECDH, BIP-352 scanning, and BIP-324 encryption on CUDA/OpenCL/Metal; CT-sensitive signing always routes through the CPU CT layer; GPU operations that handle secret material (ECDH, BIP-352, BIP-324) require a trusted single-tenant environment (see [GPU Security Model](docs/BACKEND_ASSURANCE_MATRIX.md))
 - **GPU C ABI (`ufsecp_gpu`)** -- stable 19-op FFI for GPU batch ops across CUDA, OpenCL, and Metal, with full backend parity on the public surface
 - **Zero-Knowledge cryptographic layer** -- Pedersen commitments, DLEQ proofs, Bulletproof range proofs, Ethereum-compatible Keccak-256
 - **17–67× faster batch operations** -- all-affine Pippenger with touched-bucket optimization
@@ -302,6 +302,7 @@ In addition to the 55-module `unified_audit_runner`, UltrafastSecp256k1 ships **
 | Document | Contents |
 |----------|---------|
 | [WHY_ULTRAFASTSECP256K1.md](WHY_ULTRAFASTSECP256K1.md) | Full audit infrastructure, CI pipeline index, formal verification evidence |
+| [docs/AUDIT_PHILOSOPHY.md](docs/AUDIT_PHILOSOPHY.md) | Audit philosophy, continuous evidence model, design rationale, common objections answered |
 | [AUDIT_REPORT.md](AUDIT_REPORT.md) | Historical baseline audit (641,194 core checks). Current: 247 modules, 0 failures |
 | [AUDIT_COVERAGE.md](AUDIT_COVERAGE.md) | Per-module coverage matrix |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Layer-by-layer risk analysis |
@@ -829,7 +830,7 @@ UltrafastSecp256k1 provides ZK proof primitives over the secp256k1 curve:
 
 **Security model:**
 - All proving operations use the **CT layer** (constant-time, side-channel resistant)
-- All verification uses the **FAST layer** (variable-time, public data only)
+- All verification uses the **FAST layer** (variable-time; public inputs only — no secret material)
 - Non-interactive via **Fiat-Shamir** (tagged SHA-256)
 - Nothing-up-my-sleeve generators for Bulletproofs (no trusted setup)
 
