@@ -169,9 +169,9 @@
     },
     {
       "id": "safegcd_formal_verification",
-      "status": "partial",
+      "status": "covered",
       "priority": "high",
-      "action": "formalize",
+      "action": "monitor",
       "keywords": [
         "safegcd",
         "bernstein-yang",
@@ -181,12 +181,12 @@
         "coq"
       ],
       "repo_evidence": [
-        "cpu/src/field.cpp",
+        "cpu/src/ct_field.cpp",
         "audit/test_exploit_safegcd_divsteps.cpp",
-        "docs/OWNER_GRADE_AUDIT_TODO.md",
-        "docs/SELF_AUDIT_FAILURE_MATRIX.md"
+        "audit/formal/safegcd_z3_proof.py",
+        ".github/workflows/formal-verification.yml"
       ],
-      "reason": "PoC regression test (SGD-1..11) added: divstep count verification, a*inv(a)==1 for 500 inputs, double-inverse identity, inv(0) safety, cross-check vs Fermat chain on 100 inputs. No Coq/Lean/Verifiable-C formal proof artifact yet — full formal verification remains open."
+      "reason": "Z3 SMT formal verification: 7 theorems, 17 proofs — GCD preservation, det invariant, zeta bound, g-convergence, CT mask correctness, 590-step sufficiency (Bernstein-Yang ePrint 2019/266 Thm 11.2), CT ≡ branching equivalence. Runtime PoC SGD-1..11 also present. CI gate via formal-verification.yml runs on every push."
     },
     {
       "id": "m_ary_precompute_optimization",
@@ -363,7 +363,15 @@
       "status": "covered",
       "priority": "high",
       "action": "monitor",
-      "keywords": ["ZVP", "DCP", "GLV", "multiscalar", "ePrint 2025/076", "ACNS 2025", "endomorphism"],
+      "keywords": [
+        "ZVP",
+        "DCP",
+        "GLV",
+        "multiscalar",
+        "ePrint 2025/076",
+        "ACNS 2025",
+        "endomorphism"
+      ],
       "repo_evidence": [
         "audit/test_exploit_zvp_glv_dcp_multiscalar.cpp",
         "audit/test_exploit_ecdh_zvp_glv_static.cpp"
@@ -375,7 +383,15 @@
       "status": "covered",
       "priority": "high",
       "action": "monitor",
-      "keywords": ["lattice", "sieve", "HNP", "sub-bit", "ePrint 2024/296", "ASIACRYPT 2024", "nonce leakage"],
+      "keywords": [
+        "lattice",
+        "sieve",
+        "HNP",
+        "sub-bit",
+        "ePrint 2024/296",
+        "ASIACRYPT 2024",
+        "nonce leakage"
+      ],
       "repo_evidence": [
         "audit/test_exploit_lattice_sieve_hnp.cpp",
         "audit/test_exploit_ladderleak_subbit_nonce.cpp"
@@ -387,7 +403,13 @@
       "status": "covered",
       "priority": "high",
       "action": "monitor",
-      "keywords": ["DFA", "deterministic", "RFC 6979", "ePrint 2017/975", "fault injection"],
+      "keywords": [
+        "DFA",
+        "deterministic",
+        "RFC 6979",
+        "ePrint 2017/975",
+        "fault injection"
+      ],
       "repo_evidence": [
         "audit/test_exploit_deterministic_sig_dfa.cpp",
         "audit/test_exploit_ecdsa_differential_fault.cpp"
@@ -399,7 +421,14 @@
       "status": "covered",
       "priority": "high",
       "action": "monitor",
-      "keywords": ["CVE-2024-49364", "CVE-2024-49365", "CVE-2022-41340", "k-reuse", "type confusion", "tiny-secp256k1"],
+      "keywords": [
+        "CVE-2024-49364",
+        "CVE-2024-49365",
+        "CVE-2022-41340",
+        "k-reuse",
+        "type confusion",
+        "tiny-secp256k1"
+      ],
       "repo_evidence": [
         "audit/test_exploit_sign_type_confusion_kreuse.cpp",
         "audit/test_exploit_ecdsa_nonce_reuse.cpp"
@@ -411,7 +440,14 @@
       "status": "covered",
       "priority": "high",
       "action": "monitor",
-      "keywords": ["ROS", "concurrent", "blind Schnorr", "ePrint 2020/945", "Eurocrypt 2021", "Wagner"],
+      "keywords": [
+        "ROS",
+        "concurrent",
+        "blind Schnorr",
+        "ePrint 2020/945",
+        "Eurocrypt 2021",
+        "Wagner"
+      ],
       "repo_evidence": [
         "audit/test_exploit_ros_concurrent_schnorr.cpp"
       ],
@@ -422,7 +458,15 @@
       "status": "covered",
       "priority": "medium",
       "action": "monitor",
-      "keywords": ["FROST", "FROST2", "binding factor", "ePrint 2026/075", "ePrint 2025/1001", "adaptive corruption", "threshold Schnorr"],
+      "keywords": [
+        "FROST",
+        "FROST2",
+        "binding factor",
+        "ePrint 2026/075",
+        "ePrint 2025/1001",
+        "adaptive corruption",
+        "threshold Schnorr"
+      ],
       "repo_evidence": [
         "audit/test_exploit_frost_weak_binding.cpp",
         "audit/test_exploit_frost_adaptive_corruption.cpp"
@@ -434,7 +478,16 @@
       "status": "covered",
       "priority": "high",
       "action": "monitor",
-      "keywords": ["SPA", "cmov", "cswap", "power analysis", "ePrint 2024/589", "ePrint 2025/935", "CHES", "constant-time"],
+      "keywords": [
+        "SPA",
+        "cmov",
+        "cswap",
+        "power analysis",
+        "ePrint 2024/589",
+        "ePrint 2025/935",
+        "CHES",
+        "constant-time"
+      ],
       "repo_evidence": [
         "audit/test_exploit_blind_spa_cmov_leak.cpp"
       ],
@@ -445,7 +498,16 @@
       "status": "covered",
       "priority": "high",
       "action": "monitor",
-      "keywords": ["ECTester", "point validation", "infinity", "off-curve", "twist", "ePrint 2025/1293", "ECC", "invalid pubkey"],
+      "keywords": [
+        "ECTester",
+        "point validation",
+        "infinity",
+        "off-curve",
+        "twist",
+        "ePrint 2025/1293",
+        "ECC",
+        "invalid pubkey"
+      ],
       "repo_evidence": [
         "audit/test_exploit_ectester_point_validation.cpp"
       ],
@@ -456,7 +518,15 @@
       "status": "covered",
       "priority": "medium",
       "action": "monitor",
-      "keywords": ["eROS", "dimensional", "blind signature", "BZ", "ePrint 2025/306", "ePrint 2025/1353", "concurrent sessions"],
+      "keywords": [
+        "eROS",
+        "dimensional",
+        "blind signature",
+        "BZ",
+        "ePrint 2025/306",
+        "ePrint 2025/1353",
+        "concurrent sessions"
+      ],
       "repo_evidence": [
         "audit/test_exploit_ros_dimensional_erosion.cpp"
       ],
@@ -467,7 +537,14 @@
       "status": "covered",
       "priority": "medium",
       "action": "monitor",
-      "keywords": ["batch verification", "modified ECDSA", "randomization", "ePrint 2026/663", "identify_invalid", "batch_verify"],
+      "keywords": [
+        "batch verification",
+        "modified ECDSA",
+        "randomization",
+        "ePrint 2026/663",
+        "identify_invalid",
+        "batch_verify"
+      ],
       "repo_evidence": [
         "audit/test_exploit_ecdsa_batch_verify_rand.cpp"
       ],
