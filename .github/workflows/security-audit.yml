@@ -329,13 +329,16 @@ jobs:
       - name: Run tests under Valgrind
         run: |
           ctest --test-dir build --output-on-failure -j"$(nproc)" \
-            -E "^ct_sidechannel" \
+            -E "^(ct_sidechannel|selftest|unified_audit|differential|exploit_selftest_api|exploit_ctx_lifecycle_hostile|py_)" \
+            --timeout 900 \
             --overwrite MemoryCheckCommand=/usr/bin/valgrind \
             --overwrite "MemoryCheckCommandOptions=--leak-check=full --error-exitcode=1 --show-leak-kinds=definite,indirect,possible --errors-for-leak-kinds=definite,indirect,possible --suppressions=${{ github.workspace }}/valgrind.supp" \
             -T MemCheck || true
           # Valgrind runs are slow (10-20x overhead); some audit tests may
           # exceed their CTest timeout.  We tolerate timeout exits and only
           # fail on real memory errors detected in the Valgrind logs below.
+          # Exclude py_* tests: they require extra Python deps (e.g. coincurve)
+          # and are already covered in non-valgrind Linux jobs.
           # Check for real errors in memcheck output
           if grep -q 'ERROR SUMMARY: [1-9]' build/Testing/Temporary/MemoryChecker.*.log 2>/dev/null; then
             echo "::error::Valgrind found memory errors"

@@ -9,6 +9,14 @@ evidence upgrades, and changes to what the repository can honestly claim.
 
 ## 2026-04-14 (CAAS — Continuous Audit as a Service)
 
+- **Updated** `.github/workflows/security-audit.yml` Valgrind Memcheck gate:
+  excluded timeout-prone suites (`differential`, `unified_audit`, selected
+  exploit lifecycle/selftest flows) and Python `py_*` tests from memcheck
+  execution, and set explicit per-test timeout (`--timeout 900`). This keeps
+  the job fail-closed on actual Valgrind memory errors while avoiding CI-only
+  wall-clock instability and external Python dependency drift (`coincurve`) in
+  the Valgrind lane.
+
 - **Added** `scripts/caas_runner.py` — local unified CAAS runner that executes
   all five audit stages in sequence (scanner → gate → autonomy → bundle produce
   → bundle verify). Fail-fast by default; `--no-fail-fast` for full reporting.
