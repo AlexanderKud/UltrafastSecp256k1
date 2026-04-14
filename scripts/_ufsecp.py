@@ -93,8 +93,26 @@ def find_lib(hint: Optional[str] = None) -> str:
         root / "build-packaging-repro" / "include" / "ufsecp" / "libufsecp.so.3",
         root / "bindings" / "c_api" / "build" / "libultrafast_secp256k1.so",
     ]
+
+    # CI/build layouts can place versioned libs in target-specific subdirs.
+    # Probe common build trees for libufsecp.so* and C-API shims.
+    search_roots = [
+        root / "build-audit",
+        root / "build",
+        root / "build_opencl",
+        root / "build-packaging-repro",
+        suite / "build_opencl",
+        suite / "build_rel",
+        suite / "build-cuda",
+    ]
+    for sr in search_roots:
+        if not sr.exists():
+            continue
+        candidates.extend(sorted(sr.rglob("libufsecp.so*")))
+        candidates.extend(sorted(sr.rglob("libultrafast_secp256k1.so*")))
+
     for c in candidates:
-        if Path(c).exists():
+        if Path(c).is_file():
             return str(c)
     raise FileNotFoundError(
         "Cannot locate libufsecp.so / libultrafast_secp256k1.so.\n"
