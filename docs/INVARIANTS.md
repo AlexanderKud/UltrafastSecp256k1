@@ -4,6 +4,8 @@
 
 This document lists every mathematical, structural, and behavioral invariant that the library must maintain. Each invariant is either verified by existing tests or marked for future coverage.
 
+Machine-readable companion: [`docs/FORMAL_INVARIANTS_SPEC.json`](FORMAL_INVARIANTS_SPEC.json) — validated by `scripts/check_formal_invariants.py`.
+
 ---
 
 ## 1. Field Arithmetic Invariants (mod p)

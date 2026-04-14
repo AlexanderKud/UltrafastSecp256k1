@@ -28,6 +28,11 @@ Current verified state:
 3. `docs/SELF_AUDIT_FAILURE_MATRIX.md` has no `Partial` owner-grade blocker rows.
 4. Remaining items in this file are future hardening work, not blockers for
 	closing the current owner-grade audit track.
+5. The Security Autonomy Program (commit 0624390c, 2026-04-14) extends beyond
+   the original P0-P2 scope with 10 new audit-tooling scripts covering formal
+   invariants, audit SLA, supply-chain gating, misuse resistance, evidence
+   governance, fuzz campaign management, incident drills, and a master
+   orchestrator. See `docs/SECURITY_AUTONOMY_PLAN.md`.
 
 ---
 

@@ -100,6 +100,9 @@ python3 scripts/artifact_analyzer.py divergence linux_report.json arm_report.jso
 
 # Bug capsule → regression test
 python3 scripts/bug_capsule_gen.py --list schemas/bug_capsules/
+
+# Security autonomy gate orchestrator
+python3 scripts/security_autonomy_check.py --json
 ```
 
 ## Further reading
@@ -110,3 +113,4 @@ python3 scripts/bug_capsule_gen.py --list schemas/bug_capsules/
 - [TEST_MATRIX.md](TEST_MATRIX.md) — Complete test inventory
 - [FEATURE_ASSURANCE_LEDGER.md](FEATURE_ASSURANCE_LEDGER.md) — ABI function coverage
 - [LAYER_ROUTING_MATRIX.md](LAYER_ROUTING_MATRIX.md) — CT/FAST layer routing rationale
+- [SECURITY_AUTONOMY_PLAN.md](SECURITY_AUTONOMY_PLAN.md) — Security autonomy framework & gates

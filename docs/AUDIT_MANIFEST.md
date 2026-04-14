@@ -240,6 +240,87 @@ Checks:
 - File-like evidence references resolve inside the repository
 - Strict mode exposes the current owner-grade residual set
 
+### P12 — Formal Invariant Completeness
+
+> Critical cryptographic operations must have machine-readable formal invariant
+> specs with linked tests. Operations without specs or linked tests are blocking.
+
+**Automated gate:** `check_formal_invariants.py --json`
+
+Checks:
+- Every operation in `FORMAL_INVARIANTS_SPEC.json` has preconditions, postconditions, and linked tests
+- CT-flagged operations have CT-specific test links
+- Missing specs or unlinked tests are FAIL
+
+### P13 — Risk-Surface Coverage
+
+> Seven risk classes (ct_paths, parser_boundary, abi_boundary, gpu_parity,
+> secret_lifecycle, determinism, fuzz_corpus) must meet minimum coverage thresholds.
+
+**Automated gate:** `risk_surface_coverage.py --json`
+
+Checks:
+- Each risk class meets its configured minimum coverage threshold
+- Below-threshold classes are FAIL findings
+
+### P14 — Audit SLA Compliance
+
+> Evidence freshness and audit SLA/SLO targets must be met.
+
+**Automated gate:** `audit_sla_check.py --json`
+
+Checks:
+- Evidence staleness within configured limits
+- Critical evidence freshness within SLA targets
+- Golden reference files exist and are current
+
+### P15 — Supply-Chain Fail-Closed
+
+> Build reproducibility, dependency pinning, provenance, artifact hashing,
+> and hardening checks must all pass.
+
+**Automated gate:** `supply_chain_gate.py --json`
+
+Checks:
+- Dependency pinning is present
+- Build reproducibility script exists and is functional
+- SLSA provenance verification passes
+- Artifact hash policy is enforced
+- Build hardening checks pass
+
+### P16 — Evidence Governance
+
+> An HMAC-verified tamper-resistant evidence chain must validate cleanly.
+
+**Automated gate:** `evidence_governance.py validate --json`
+
+Checks:
+- Evidence chain integrity (HMAC verification)
+- No tampered or missing records
+
+### P17 — Misuse Resistance
+
+> Every exported ABI function must have ≥3 negative/hostile-caller tests.
+
+**Automated gate:** `check_misuse_resistance.py --json`
+
+Checks:
+- Per-ABI-function negative test count meets threshold
+- Below-threshold functions are FAIL findings
+
+### P18 — Performance-Security Co-Gating
+
+> Performance changes must not regress security posture. CT evidence, formal
+> invariants, secret lifecycle, and GPU parity stubs are checked.
+
+**Automated gate:** `perf_security_cogate.py --json`
+
+Checks:
+- CT evidence exists and is current
+- Formal invariant spec is complete
+- Secret lifecycle doc is present
+- No undocumented GPU parity stubs
+
 ---
 
 ## 3. Severity Levels
@@ -348,6 +429,10 @@ To add a new audit principle:
 | `SECURITY_CLAIMS.md` | Security guarantees and non-guarantees |
 | `FFI_HOSTILE_CALLER.md` | Hostile-caller resilience analysis |
 | `BACKEND_ASSURANCE_MATRIX.md` | GPU backend parity tracking |
+| `SECURITY_AUTONOMY_PLAN.md` | 30-day security autonomy framework and phase plan |
+| `FORMAL_INVARIANTS_SPEC.json` | Machine-readable formal invariant specifications |
+| `AUDIT_SLA.json` | Measurable audit SLA/SLO definitions |
+| `SECURITY_AUTONOMY_KPI.json` | Auto-generated autonomy score and gate results |
 
 ---
 
@@ -362,3 +447,4 @@ To add a new audit principle:
 | 2026-03-23 | Fixed graph builder missing `ufsecp_gpu.h` | 18 GPU ABI functions were invisible |
 | 2026-03-23 | Fixed preflight missing `ufsecp_gpu.h` scan | ABI drift detection was incomplete |
 | 2026-03-25 | Added `test_gpu_bip352_scan.cpp` (SW-BIP352-1..13) | BIP-352 Silent Payment GPU scan audit coverage |
+| 2026-04-14 | Security Autonomy Program: 10 scripts, 3 spec docs, preflight steps 18-20 | P12-P18 principles added; formal invariants, SLA, supply chain, misuse resistance, evidence governance, incident drills, fuzz campaigns, perf-security co-gating; master orchestrator `security_autonomy_check.py` |

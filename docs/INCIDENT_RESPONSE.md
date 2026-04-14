@@ -89,6 +89,29 @@ and critical bugs reported against UltrafastSecp256k1.
 
 ---
 
+## 6. Periodic Drills
+
+Automated incident response drills run as preflight step [20/20] and validate
+triage readiness, fix-time targets, and disclosure process completeness.
+
+```bash
+python3 scripts/incident_drills.py --json
+```
+
+Three drill scenarios are exercised:
+
+| Drill | What it validates |
+|-------|------------------|
+| `key_compromise` | Triage latency, key-revocation path via `_ufsecp.py` |
+| `ci_poisoning` | CI workflow hardening, pinned action verification |
+| `dependency_compromise` | Lock-file presence, dependency-review gate |
+
+Drill results feed into the Security Autonomy orchestrator
+(`scripts/security_autonomy_check.py`) and are tracked in
+`docs/SECURITY_AUTONOMY_KPI.json`.
+
+---
+
 ## Contacts
 
 | Role              | Handle/Email                    |
@@ -102,3 +125,4 @@ and critical bugs reported against UltrafastSecp256k1.
 | Date       | Change                          |
 |------------|---------------------------------|
 | 2025-01-XX | Initial runbook created         |
+| 2026-04-14 | Added Section 6: Periodic Drills (`scripts/incident_drills.py`) |

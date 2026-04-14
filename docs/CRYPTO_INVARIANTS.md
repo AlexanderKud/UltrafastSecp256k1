@@ -189,3 +189,11 @@ rebuilds automatically.
 2. **Runtime:** Valgrind taint tracking (`-DVALGRIND_CT_CHECK=1`)
 3. **Statistical:** dudect (Welch t-test, |t| > 4.5 = leak)
 4. **CI enforcement:** All three run on every PR to `main`
+
+## Automated Misuse Validation
+
+Misuse patterns documented above are validated by `scripts/check_misuse_resistance.py`.
+Run: `python3 scripts/check_misuse_resistance.py --json`.
+
+This gate checks that every exported ABI function has ≥3 negative/hostile-caller tests,
+covering NULL rejection, zero-edge handling, and invalid-content rejection.

@@ -13,7 +13,7 @@
 **Purpose:** Catch obvious mistakes before commit.
 
 ```bash
-python3 scripts/preflight.py --security --abi --drift
+python3 scripts/preflight.py --security --abi --drift --autonomy
 ```
 
 **What runs:**
@@ -21,6 +21,7 @@ python3 scripts/preflight.py --security --abi --drift
 - ABI surface diff (new/removed `ufsecp_*` functions)
 - Narrative drift detection
 - Python audit script syntax validation
+- Security autonomy gates (formal invariants, SLA, supply chain, misuse resistance, incident drills) — Phase 1: informational only
 
 **What does NOT run:**
 - Full compilation
