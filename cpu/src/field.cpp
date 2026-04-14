@@ -3486,7 +3486,8 @@ void fe_batch_inverse(FieldElement* elements, size_t count) {
         return;
     }
 
-    std::vector<FieldElement> scratch(count);
+    static thread_local std::vector<FieldElement> scratch;
+    scratch.resize(count);
     fe_batch_inverse_with_scratch(elements, count, scratch.data());
 }
 

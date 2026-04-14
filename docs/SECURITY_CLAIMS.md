@@ -231,6 +231,9 @@ cryptographic implementations, including libsecp256k1.
 - **DKG scalar operations**: use `ct::` namespace
 - **Signing round scalar mul**: CT-protected
 - **Protocol-level timing**: added to dudect in v3.16.0 (sample counts lower)
+- **Secret scratch reduction**: 2026-04-14 refactor removed temporary signer-ID and
+  binding-factor heap vectors from signing/verification/aggregation paths; this lowers
+  transient secret-adjacent allocation pressure without changing the public API.
 - **Status**: Early implementation. secp256k1 ciphersuite not in RFC 9591.
 
 > **Explicit claim**: Neither MuSig2 nor FROST have been subjected to a

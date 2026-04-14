@@ -139,9 +139,10 @@ bool schnorr_adaptor_verify(const SchnorrAdaptorSig& pre_sig,
 
     // Reconstruct R = R^ + T_adj (should have even y)
     Point const R = pre_sig.R_hat.add(T_adj);
+    auto [R_x, R_y_odd] = R.x_bytes_and_parity();
+    if (R_y_odd) return false;
 
     // Challenge: e = H("BIP0340/challenge", R.x || P.x || m)
-    auto R_x = R.x().to_bytes();
     std::uint8_t challenge_data[96];
     std::memcpy(challenge_data, R_x.data(), 32);
     std::memcpy(challenge_data + 32, pubkey_x.data(), 32);

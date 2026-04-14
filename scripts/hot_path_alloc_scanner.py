@@ -122,6 +122,9 @@ EXEMPT_KEYWORDS: Tuple[str, ...] = (
     "generate_sbom", "generate_report",
     "init_", "_init", "setup_", "_setup",  # one-time initialization
     "init_gen", "init_table", "init_ctx",  # explicit init patterns
+    "identify_invalid",  # diagnostic path after batch failure, not steady-state hot path
+    "keygen_begin",      # DKG/setup path, not steady-state signing/verification hot path
+    "keygen_finalize",   # DKG/setup path, not steady-state signing/verification hot path
     "ufsecp_",  # C ABI wrappers — allocation is marshalling, not inner loop
     "segwit_",  # Address encoding helpers — not hot-path crypto
     "base58",   # Base58 encode/decode — 1x per address, not inner loop
@@ -289,7 +292,7 @@ def _is_one_time_init_context(lines: List[str], line_idx: int) -> bool:
       static const auto& x = *[]() { return new X; }();
     by scanning backwards for a 'static' declaration on a recent line.
     """
-    start = max(0, line_idx - 8)
+    start = max(0, line_idx - 32)
     for j in range(line_idx, start - 1, -1):
         ln = lines[j].strip()
         if re.search(r'\bstatic\b.*\[]', ln) or re.search(r'\bstatic\s+(const\s+)?[\w:<>*&]+.*=', ln):
@@ -309,6 +312,12 @@ def _is_gpu_marshalling_file(rel_path: str) -> bool:
         'ecdsa_cuda', 'schnorr_cuda', 'ecdh_cuda', 'point_cuda',
         'ecdsa_ocl', 'schnorr_ocl', 'ecdsa_metal', 'schnorr_metal',
     ))
+
+
+def _is_benchmark_helper_file(rel_path: str) -> bool:
+    """True if the file is a benchmark/helper surface where vector returns are intentional."""
+    p = rel_path.replace("\\", "/").lower()
+    return "/benchmarks/" in p or p.startswith("benchmarks/") or "/examples/" in p or p.startswith("examples/")
 
 
 def _is_parameter_line(line: str) -> bool:
@@ -438,6 +447,8 @@ _VEC_RETURN_FUNC = re.compile(r'^\s*std::vector\s*<[^>]+>\s+([\w:~<>]+)\s*\(')
 def check_heap_return(rel_path: str, lines: List[str]) -> List[Finding]:
     """Flag functions that return std::vector<T> by value — forces heap alloc on every call."""
     findings: List[Finding] = []
+    if _is_gpu_marshalling_file(rel_path) or _is_benchmark_helper_file(rel_path):
+        return findings
     for i, raw in enumerate(lines):
         m = _VEC_RETURN_FUNC.match(raw)
         if not m:

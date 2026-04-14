@@ -186,6 +186,7 @@ def run(json_mode: bool, out_file: str | None) -> int:
 
     report = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "overall_pass": release_ready,
         "release_ready": release_ready,
         "blocking_violations": len(blocking),
         "warning_violations": len(warnings),

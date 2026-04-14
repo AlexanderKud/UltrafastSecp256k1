@@ -1,12 +1,11 @@
 {
-  "generated_at": "2026-03-26T16:29:35.659337+00:00",
-  "header_count": 155,
+  "generated_at": "2026-04-14T05:55:24.397821+00:00",
+  "header_count": 180,
   "blocking_function_count": 0,
   "coverage_counts": {
-    "null_rejection": 155,
-    "zero_edge": 136,
-    "invalid_content": 150,
-    "success_smoke": 155
+    "total": 180,
+    "covered": 180,
+    "blocking": 0
   },
   "functions": [
     {
@@ -6556,6 +6555,720 @@
         ]
       },
       "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_abi_version",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp_version.h",
+      "signature": "unsigned int ufsecp_abi_version(void)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg22_abi_version:NEG-22.1"
+        ],
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg22_abi_version:NEG-22.4"
+        ],
+        "zero_edge": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg22_abi_version:NEG-22.2"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg22_abi_version:NEG-22.3"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_addr_p2sh",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_addr_p2sh(const uint8_t* redeem_script, size_t redeem_script_len, int network, char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg13:NEG-13.1",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg13:NEG-13.2",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg13:NEG-13.3"
+        ],
+        "zero_edge": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg13:NEG-13.4"
+        ],
+        "success_smoke": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_addr_p2sh_p2wpkh",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_addr_p2sh_p2wpkh(ufsecp_ctx* ctx, const uint8_t pubkey33[33], int network, char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg13:NEG-13.5",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg13:NEG-13.6",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg13:NEG-13.7"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg13:NEG-13.8"
+        ],
+        "success_smoke": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_bip85_entropy",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip85_entropy(ufsecp_ctx* ctx, const ufsecp_bip32_key* master_xprv, const char* path, uint8_t* entropy_out, size_t entropy_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg14:NEG-14.1",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg14:NEG-14.2",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg14:NEG-14.3",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg14:NEG-14.4"
+        ],
+        "success_smoke": [],
+        "zero_edge": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_bip85_bip39",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip85_bip39(ufsecp_ctx* ctx, const ufsecp_bip32_key* master_xprv, uint32_t words, uint32_t language_index, uint32_t index, char* mnemonic_out, size_t* mnemonic_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg14:NEG-14.5",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg14:NEG-14.6",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg14:NEG-14.7"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg14:NEG-14.8"
+        ],
+        "success_smoke": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_schnorr_sign_msg",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_sign_msg(ufsecp_ctx* ctx, const uint8_t privkey[32], const uint8_t* msg, size_t msg_len, const uint8_t* aux_rand32, uint8_t sig64_out[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg15:NEG-15.1",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg15:NEG-15.2",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg15:NEG-15.4"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg15:NEG-15.3"
+        ],
+        "success_smoke": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_schnorr_verify_msg",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_schnorr_verify_msg(ufsecp_ctx* ctx, const uint8_t pubkey_x[32], const uint8_t* msg, size_t msg_len, const uint8_t sig64[64])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg15:NEG-15.5",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg15:NEG-15.6"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg15:NEG-15.7"
+        ],
+        "success_smoke": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_bip322_sign",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip322_sign(ufsecp_ctx* ctx, const uint8_t privkey[32], ufsecp_bip322_addr_type addr_type, const uint8_t* msg, size_t msg_len, uint8_t* sig_out, size_t* sig_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg16:NEG-16.1",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg16:NEG-16.2",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg16:NEG-16.4"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg16:NEG-16.3"
+        ],
+        "success_smoke": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_bip322_verify",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_bip322_verify(ufsecp_ctx* ctx, const uint8_t* pubkey, size_t pubkey_len, ufsecp_bip322_addr_type addr_type, const uint8_t* msg, size_t msg_len, const uint8_t* sig, size_t sig_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg16:NEG-16.5",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg16:NEG-16.6"
+        ],
+        "zero_edge": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg16:NEG-16.7"
+        ],
+        "success_smoke": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gcs_build",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_gcs_build(const uint8_t key[16], const uint8_t** data, const size_t* data_sizes, size_t count, uint8_t* filter_out, size_t* filter_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg17:NEG-17.1",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg17:NEG-17.2",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg17:NEG-17.3"
+        ],
+        "success_smoke": [],
+        "zero_edge": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gcs_match",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_gcs_match(const uint8_t key[16], const uint8_t* filter, size_t filter_len, size_t n_items, const uint8_t* item, size_t item_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg17:NEG-17.4",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg17:NEG-17.5",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg17:NEG-17.6"
+        ],
+        "success_smoke": [],
+        "zero_edge": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gcs_match_any",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_gcs_match_any(const uint8_t key[16], const uint8_t* filter, size_t filter_len, size_t n_items, const uint8_t** query, const size_t* query_sizes, size_t query_count)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg17:NEG-17.7",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg17:NEG-17.8",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg17:NEG-17.9"
+        ],
+        "success_smoke": [],
+        "zero_edge": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_psbt_sign_legacy",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_psbt_sign_legacy(ufsecp_ctx* ctx, const uint8_t sighash32[32], const uint8_t privkey[32], uint8_t sighash_type, uint8_t* sig_out, size_t* sig_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.1",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.2",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.3"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.4"
+        ],
+        "success_smoke": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_psbt_sign_segwit",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_psbt_sign_segwit(ufsecp_ctx* ctx, const uint8_t sighash32[32], const uint8_t privkey[32], uint8_t sighash_type, uint8_t* sig_out, size_t* sig_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.5",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.6",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.7"
+        ],
+        "success_smoke": [],
+        "zero_edge": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_psbt_sign_taproot",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_psbt_sign_taproot(ufsecp_ctx* ctx, const uint8_t sighash32[32], const uint8_t privkey[32], uint8_t sighash_type, const uint8_t* aux_rand32, uint8_t* sig_out, size_t* sig_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.8",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.9",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.10"
+        ],
+        "success_smoke": [],
+        "zero_edge": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_psbt_derive_key",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_psbt_derive_key(ufsecp_ctx* ctx, const ufsecp_bip32_key* master_xprv, const char* key_path, uint8_t privkey_out[32])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.11",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.12",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.13",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg18:NEG-18.14"
+        ],
+        "success_smoke": [],
+        "zero_edge": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_descriptor_parse",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_descriptor_parse(ufsecp_ctx* ctx, const char* descriptor, uint32_t index, ufsecp_desc_key* key_out, char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg19:NEG-19.1",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg19:NEG-19.2",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg19:NEG-19.3"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg19:NEG-19.4"
+        ],
+        "success_smoke": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_descriptor_address",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_descriptor_address(ufsecp_ctx* ctx, const char* descriptor, uint32_t index, char* addr_out, size_t* addr_len)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg19:NEG-19.5",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg19:NEG-19.6",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg19:NEG-19.7"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg19:NEG-19.8"
+        ],
+        "success_smoke": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_zk_ecdsa_snark_witness",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_zk_ecdsa_snark_witness(ufsecp_ctx* ctx, const uint8_t msg_hash32[32], const uint8_t pubkey33[33], const uint8_t sig64[64], ufsecp_ecdsa_snark_witness_t* out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.1",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.2",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.3",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.4",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.5"
+        ],
+        "success_smoke": [],
+        "zero_edge": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_zk_schnorr_snark_witness",
+      "category": "cpu",
+      "header": "include/ufsecp/ufsecp.h",
+      "signature": "ufsecp_error_t ufsecp_zk_schnorr_snark_witness(ufsecp_ctx* ctx, const uint8_t msg32[32], const uint8_t pubkey_x32[32], const uint8_t sig64[64], ufsecp_schnorr_snark_witness_t* out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.6",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.7",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.8",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.9",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg20:NEG-20.10"
+        ],
+        "success_smoke": [],
+        "zero_edge": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gpu_context_create",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_ctx_create(ufsecp_gpu_ctx** ctx_out, uint32_t backend_id, uint32_t device_index)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.1"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.2"
+        ],
+        "zero_edge": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.3"
+        ],
+        "success_smoke": []
+      },
+      "missing_checks": [
+        "success_smoke"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_bip352_prepare_scan_plan",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_bip352_prepare_scan_plan(const uint8_t scan_privkey32[32], uint8_t plan264_out[264])",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.4",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.6"
+        ],
+        "zero_edge": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.5"
+        ],
+        "success_smoke": [],
+        "invalid_content": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gpu_bip352_scan_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_bip352_scan_batch(ufsecp_gpu_ctx* ctx, const uint8_t scan_privkey32[32], const uint8_t spend_pubkey33[33], const uint8_t* tweak_pubkeys33, size_t n_tweaks, uint64_t* prefix64_out)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.7",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.7b",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.7c"
+        ],
+        "success_smoke": [],
+        "invalid_content": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gpu_zk_ecdsa_snark_witness_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_zk_ecdsa_snark_witness_batch(ufsecp_gpu_ctx* ctx, const uint8_t* msg_hashes32, const uint8_t* pubkeys33, const uint8_t* sigs64, size_t count, uint8_t* out_witnesses)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.8",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.8b",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.8c"
+        ],
+        "success_smoke": [],
+        "invalid_content": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gpu_zk_schnorr_snark_witness_batch",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_zk_schnorr_snark_witness_batch(ufsecp_gpu_ctx* ctx, const uint8_t* msgs32, const uint8_t* pubkeys_x32, const uint8_t* sigs64, size_t count, uint8_t* out_witnesses)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "null_rejection": [
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.9",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.9b",
+          "test-call:audit/test_c_abi_negative.cpp:run_neg21:NEG-21.9c"
+        ],
+        "success_smoke": [],
+        "invalid_content": [],
+        "zero_edge": []
+      },
+      "missing_checks": [
+        "success_smoke",
+        "zero_edge",
+        "invalid_content"
+      ],
       "blocking": false
     }
   ]

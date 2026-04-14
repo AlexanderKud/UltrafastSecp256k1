@@ -18,6 +18,12 @@ and `docs/SECURITY_CLAIMS.md` whenever those surfaces change.
 4. **Coverage upload** now fails CI on error (`fail_ci_if_error: true`).
 5. **CT scalar_inverse(0) zero guard.** Both the SafeGCD and Fermat fallback constant-time scalar inverse paths in `cpu/src/ct_scalar.cpp` now return `Scalar::zero()` for zero input. Previously, only the FAST-path `Scalar::inverse()` had this guard. This is a defense-in-depth fix: `ct::scalar_inverse(0)` was undefined behavior, theoretically reachable if a caller passed a zero scalar to a CT signing path. Verified by `test_exploit_boundary_sentinels` BS-1 and BS-10.
 
+## 2026-04-14 FROST Secret-Path Notes
+
+1. `cpu/src/frost.cpp` signing, partial verification, and aggregation no longer materialize temporary signer-ID or binding-factor heap vectors. Group commitment and Lagrange derivation now traverse `FrostNonceCommitment` entries directly.
+2. This change reduces transient secret-adjacent heap residency during FROST signing without expanding the secret surface. The same secret values remain in scope: `signing_share`, `hiding_nonce`, `binding_nonce`, and the signer-local derived scalars used for the final partial signature.
+3. Cleanup guarantees are unchanged: C ABI wrappers still erase parsed secret-bearing state on return, and `frost_sign()` still zeroizes the local copies of hiding nonce, binding nonce, and signing share before exit.
+
 ---
 
 ## 2026-04-06 Change-Control Notes
@@ -89,6 +95,10 @@ Erases: `V`, `K` (HMAC-DRBG state), `x_bytes`, `buf97`/`buf129` (RFC 6979 interm
 
 `frost_sign`: Erases `d` (hiding nonce), `ei` (binding nonce), `s_i` (signing share) before return.
 
+2026-04-14 note: signer-set validation and binding-factor derivation no longer allocate
+temporary signer-ID / binding-factor vectors, reducing transient heap copies on
+secret-bearing signing flows.
+
 ### ECIES (`cpu/src/ecies.cpp`) -- 13 calls
 
 Erases: `shared_x` (ECDH raw), `kdf` (64B enc+mac keys), `eph_privkey`, `eph_bytes`, AES key schedule `W[240]`, AES CTR `keystream[16]`, HMAC pads (`k_pad`, `ipad`, `opad`).
@@ -115,6 +125,7 @@ Erases: compressed point representation, `x_bytes` after shared secret derivatio
 | FROST polynomial coeffs | Function-local | `frost.cpp` | CT gen_mul |
 | FROST nonces (d, ei) | Function-local | `frost.cpp` | Cleared on return |
 | FROST signing share | Key pkg member | C ABI wrapper | Cleared on return |
+| FROST signer-set scratch | Derived/public transcript data | `frost.cpp` | Reduced in 2026-04-14 refactor |
 | ECDH shared secret | Function-local | `ecdh.cpp` + C ABI | CT mul |
 | ECIES derived keys | Function-local | `ecies.cpp` | AES-CBC key schedule |
 | BIP-32 chain code | Derived state | C ABI wrapper | HMAC-SHA512 |

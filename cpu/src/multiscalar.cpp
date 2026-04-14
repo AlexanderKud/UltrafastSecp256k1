@@ -90,13 +90,16 @@ Point multi_scalar_mul(const Scalar* scalars,
     struct GLVInfo {
         bool neg1, neg2;
     };
-    std::vector<GLVInfo> glv_info(n);
+    static thread_local std::vector<GLVInfo> glv_info;
+    glv_info.resize(n);
 
     // wNAF for k1 streams at [0..n-1], k2 streams at [n..2n-1].
     // Keep one flat arena to avoid 2n nested allocations per call.
     constexpr std::size_t wnaf_capacity = 260;
-    std::vector<int32_t> wnaf_storage(2 * n * wnaf_capacity, 0);
-    std::vector<std::size_t> wnaf_lens(2 * n, 0);
+    static thread_local std::vector<int32_t> wnaf_storage;
+    static thread_local std::vector<std::size_t> wnaf_lens;
+    wnaf_storage.assign(2 * n * wnaf_capacity, 0);
+    wnaf_lens.assign(2 * n, 0);
     std::size_t max_len = 0;
 
     for (std::size_t i = 0; i < n; ++i) {
@@ -128,12 +131,19 @@ Point multi_scalar_mul(const Scalar* scalars,
     // After batch inversion, tables are stored as affine FE52 (x, y).
 
     std::size_t const total_entries = n * table_size;
-    std::vector<FE52> tbl_P_x(total_entries), tbl_P_y(total_entries);
-    std::vector<FE52> tbl_phiP_x(total_entries), tbl_phiP_y(total_entries);
+    static thread_local std::vector<FE52> tbl_P_x;
+    static thread_local std::vector<FE52> tbl_P_y;
+    static thread_local std::vector<FE52> tbl_phiP_x;
+    static thread_local std::vector<FE52> tbl_phiP_y;
+    tbl_P_x.resize(total_entries);
+    tbl_P_y.resize(total_entries);
+    tbl_phiP_x.resize(total_entries);
+    tbl_phiP_y.resize(total_entries);
 
     {
         // Build odd-multiple tables: [1Q, 3Q, 5Q, ..., (2T-1)Q]
-        std::vector<Point> tables(total_entries);
+        static thread_local std::vector<Point> tables;
+        tables.resize(total_entries);
         for (std::size_t i = 0; i < n; ++i) {
             Point const base = glv_info[i].neg1 ? points[i].negate() : points[i];
             Point* const table = tables.data() + (i * table_size);
@@ -146,16 +156,12 @@ Point multi_scalar_mul(const Scalar* scalars,
             }
         }
 
-        // Batch-invert all Z values via Montgomery's trick
-        std::vector<FE52> z_vals(total_entries);
-        for (std::size_t k = 0; k < total_entries; ++k) {
-            z_vals[k] = tables[k].Z52();
-        }
-
-        std::vector<FE52> prefix(total_entries);
-        prefix[0] = z_vals[0];
+        // Batch-invert all Z values via Montgomery's trick.
+        static thread_local std::vector<FE52> prefix;
+        prefix.resize(total_entries);
+        prefix[0] = tables[0].Z52();
         for (std::size_t k = 1; k < total_entries; ++k) {
-            prefix[k] = prefix[k - 1] * z_vals[k];
+            prefix[k] = prefix[k - 1] * tables[k].Z52();
         }
 
         // Guard: degenerate case
@@ -170,7 +176,7 @@ Point multi_scalar_mul(const Scalar* scalars,
         FE52 inv = prefix[total_entries - 1].inverse();
         for (std::size_t k = total_entries; k-- > 0; ) {
             FE52 const z_inv = (k > 0) ? prefix[k - 1] * inv : inv;
-            if (k > 0) inv *= z_vals[k];
+            if (k > 0) inv *= tables[k].Z52();
 
             FE52 const z2 = z_inv.square();
             FE52 const z3 = z2 * z_inv;

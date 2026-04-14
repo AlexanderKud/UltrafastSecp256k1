@@ -2157,6 +2157,7 @@ Size constants: `UFSECP_SCHNORR_ADAPTOR_SIG_LEN` (97), `UFSECP_ECDSA_ADAPTOR_SIG
 Current adaptor invariants:
 
 - Schnorr adaptor signatures remain bound to the supplied adaptor point through the challenge computed over `R^ + T`
+- Schnorr adaptor verification rejects pre-signatures whose reconstructed `R = R^ + T_adj` has odd Y parity, matching the BIP-340 even-Y requirement for the final adapted signature
 - ECDSA adaptor signatures use a multiplicative adapt/extract flow: `adapt` divides out the adaptor secret and `extract` recovers the same secret from `(pre_sig, sig)`
 - ECDSA adaptor verification is adaptor-point bound; verifying the same pre-signature against the wrong adaptor point fails
 

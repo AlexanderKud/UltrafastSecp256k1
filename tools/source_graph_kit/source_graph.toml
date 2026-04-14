@@ -101,6 +101,12 @@ extensions = ["*.py", "*.sh", "*.bash", "*.ps1", "*.cmake", "*.toml", "*.json", 
 language = "python"
 
 [[source_dirs]]
+label = "cmake"
+path = "../cmake"
+optional = true
+extensions = ["*.cmake", "CMakeLists.txt", "*.txt"]
+
+[[source_dirs]]
 label = "bindings"
 path = "../bindings"
 optional = true
@@ -123,7 +129,7 @@ extensions = ["*.yml", "*.yaml", "*.md", "*.json"]
 label = "repo_root_meta"
 path = ".."
 optional = true
-extensions = ["README.md", "SECURITY.md", "THREAT_MODEL.md", "ROADMAP.md", "AUDIT_COVERAGE.md", "AUDIT_GUIDE.md", "AUDIT_REPORT.md", "WHY_ULTRAFASTSECP256K1.md", "CMakeLists.txt", "CMakePresets.json"]
+extensions = ["README.md", "SECURITY.md", "THREAT_MODEL.md", "ROADMAP.md", "AUDIT_COVERAGE.md", "AUDIT_GUIDE.md", "AUDIT_REPORT.md", "WHY_ULTRAFASTSECP256K1.md", "AGENTS.md", "CLAUDE.md", "BUILD_GUIDE.md", "WORK_DOCUMENT.md", "CMakeLists.txt", "CMakePresets.json", "CMakeUserPresets.json"]
 recursive = false
 
 [[category_rules]]
@@ -155,6 +161,12 @@ source_dir = "tools"
 match = "contains"
 pattern = "source_graph"
 category = "graph_tooling"
+
+[[category_rules]]
+source_dir = "cmake"
+match = "suffix"
+pattern = ".cmake"
+category = "build_config"
 
 [[category_rules]]
 source_dir = "bindings"

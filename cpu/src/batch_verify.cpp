@@ -170,15 +170,17 @@ bool schnorr_batch_verify_impl(const Entry* entries, std::size_t n,
 }
 
 template <typename Entry, typename VerifyOneFn>
-std::vector<std::size_t> schnorr_batch_identify_invalid_impl(
-    const Entry* entries, std::size_t n, VerifyOneFn&& verify_one) {
-    std::vector<std::size_t> invalid;
+void schnorr_batch_identify_invalid_impl(
+    const Entry* entries, std::size_t n,
+    std::vector<std::size_t>& invalid,
+    VerifyOneFn&& verify_one) {
+    invalid.clear();
+    invalid.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
         if (!verify_one(entries[i])) {
             invalid.push_back(i);
         }
     }
-    return invalid;
 }
 
 } // anonymous namespace
@@ -189,7 +191,8 @@ std::vector<std::size_t> schnorr_batch_identify_invalid_impl(
 // We verify: (sum(a_i * s_i)) * G + sum(-a_i * e_i * P_i) + sum(-a_i * R_i) = infinity
 
 bool schnorr_batch_verify(const SchnorrBatchEntry* entries, std::size_t n) {
-    std::vector<SchnorrXonlyPubkey> pubkey_cache;
+    static thread_local std::vector<SchnorrXonlyPubkey> pubkey_cache;
+    pubkey_cache.clear();
     pubkey_cache.reserve(n);
 
     auto verify_one = [](const SchnorrBatchEntry& entry) {
@@ -286,24 +289,20 @@ bool ecdsa_batch_verify(const ECDSABatchEntry* entries, std::size_t n) {
 
     // Pre-compute all s_inverse values
     // Batch inversion: compute all s^{-1} with Montgomery's trick
-    std::vector<Scalar> s_inv(n);
-    {
-        // Montgomery batch inversion: 
-        // prefixes[i] = s_0 * s_1 * ... * s_i
-        std::vector<Scalar> prefixes(n);
-        prefixes[0] = entries[0].signature.s;
-        for (std::size_t i = 1; i < n; ++i) {
-            prefixes[i] = prefixes[i - 1] * entries[i].signature.s;
-        }
-        // One inversion
-        Scalar inv = prefixes[n - 1].inverse();
-        // Back-propagate
-        for (std::size_t i = n - 1; i > 0; --i) {
-            s_inv[i] = prefixes[i - 1] * inv;
-            inv = inv * entries[i].signature.s;
-        }
-        s_inv[0] = inv;
+    static thread_local std::vector<Scalar> s_inv;
+    s_inv.resize(n);
+    // Montgomery batch inversion using s_inv as the prefix-product arena.
+    s_inv[0] = entries[0].signature.s;
+    for (std::size_t i = 1; i < n; ++i) {
+        s_inv[i] = s_inv[i - 1] * entries[i].signature.s;
     }
+    Scalar inv = s_inv[n - 1].inverse();
+    for (std::size_t i = n - 1; i > 0; --i) {
+        Scalar const prefix = s_inv[i - 1];
+        s_inv[i] = prefix * inv;
+        inv = inv * entries[i].signature.s;
+    }
+    s_inv[0] = inv;
 
     // ECDSA batch: dual_scalar_mul_gen_point + Montgomery batch inversion.
     //
@@ -390,34 +389,58 @@ bool ecdsa_batch_verify(const std::vector<ECDSABatchEntry>& entries) {
 
 // -- Identify Invalid Signatures ----------------------------------------------
 
-std::vector<std::size_t> schnorr_batch_identify_invalid(
-    const SchnorrBatchEntry* entries, std::size_t n) {
-    return schnorr_batch_identify_invalid_impl(
-        entries, n, [](const SchnorrBatchEntry& entry) {
+void schnorr_batch_identify_invalid(
+    const SchnorrBatchEntry* entries, std::size_t n,
+    std::vector<std::size_t>& invalid_out) {
+    schnorr_batch_identify_invalid_impl(
+        entries, n, invalid_out, [](const SchnorrBatchEntry& entry) {
             return schnorr_verify(entry.pubkey_x, entry.message,
                                   entry.signature);
         });
 }
 
 std::vector<std::size_t> schnorr_batch_identify_invalid(
-    const SchnorrBatchCachedEntry* entries, std::size_t n) {
-    return schnorr_batch_identify_invalid_impl(
-        entries, n, [](const SchnorrBatchCachedEntry& entry) {
+    const SchnorrBatchEntry* entries, std::size_t n) {
+    std::vector<std::size_t> invalid;
+    schnorr_batch_identify_invalid(entries, n, invalid);
+    return invalid;
+}
+
+void schnorr_batch_identify_invalid(
+    const SchnorrBatchCachedEntry* entries, std::size_t n,
+    std::vector<std::size_t>& invalid_out) {
+    schnorr_batch_identify_invalid_impl(
+        entries, n, invalid_out, [](const SchnorrBatchCachedEntry& entry) {
             return entry.pubkey != nullptr &&
                    schnorr_verify(*entry.pubkey, entry.message,
                                   entry.signature);
         });
 }
 
-std::vector<std::size_t> ecdsa_batch_identify_invalid(
-    const ECDSABatchEntry* entries, std::size_t n) {
+std::vector<std::size_t> schnorr_batch_identify_invalid(
+    const SchnorrBatchCachedEntry* entries, std::size_t n) {
     std::vector<std::size_t> invalid;
+    schnorr_batch_identify_invalid(entries, n, invalid);
+    return invalid;
+}
+
+void ecdsa_batch_identify_invalid(
+    const ECDSABatchEntry* entries, std::size_t n,
+    std::vector<std::size_t>& invalid_out) {
+    invalid_out.clear();
+    invalid_out.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
         if (!ecdsa_verify(entries[i].msg_hash, entries[i].public_key,
                           entries[i].signature)) {
-            invalid.push_back(i);
+            invalid_out.push_back(i);
         }
     }
+}
+
+std::vector<std::size_t> ecdsa_batch_identify_invalid(
+    const ECDSABatchEntry* entries, std::size_t n) {
+    std::vector<std::size_t> invalid;
+    ecdsa_batch_identify_invalid(entries, n, invalid);
     return invalid;
 }
 

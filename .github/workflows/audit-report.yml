@@ -367,61 +367,10 @@ jobs:
           WINDOWS_MSVC_RESULT: ${{ needs.windows-msvc.result }}
         run: |
           set -u
-          echo "## Cross-Platform Audit Verdict" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Platform | Verdict |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|---------|" >> $GITHUB_STEP_SUMMARY
-
-          ALL_PASS=true
-          MISSING=0
-          EXPECTED_ARTIFACTS=(
-            "audit-report-linux-gcc13"
-            "audit-report-linux-clang17"
-            "audit-report-windows-msvc"
-          )
-          EXPECTED_RESULTS=(
-            "$LINUX_GCC_RESULT"
-            "$LINUX_CLANG_RESULT"
-            "$WINDOWS_MSVC_RESULT"
-          )
-
-          mapfile -t DOWNLOADED_DIRS < <(find audit-artifacts -mindepth 1 -maxdepth 1 -type d -name 'audit-report-*' -printf '%f\n' | sort)
-          if [ ${#DOWNLOADED_DIRS[@]} -eq 0 ]; then
-            echo "::error::No audit report artifacts were downloaded"
-          fi
-
-          for idx in "${!EXPECTED_ARTIFACTS[@]}"; do
-            artifact="${EXPECTED_ARTIFACTS[$idx]}"
-            job_result="${EXPECTED_RESULTS[$idx]}"
-            platform=$(printf '%s' "$artifact" | sed 's/audit-report-//')
-            dir="audit-artifacts/$artifact"
-            json="$dir/audit_report.json"
-            if [ -f "$json" ]; then
-              verdict=$(grep -o '"audit_verdict": *"[^"]*"' "$json" | head -1 | cut -d'"' -f4)
-              echo "| $platform | $verdict |" >> $GITHUB_STEP_SUMMARY
-              if [ "$verdict" != "PASS" ] && [ "$verdict" != "pass" ] && [ "$verdict" != "AUDIT-READY" ]; then
-                ALL_PASS=false
-                echo "::error::Audit verdict FAILED on platform: $platform (verdict: $verdict)"
-              fi
-            else
-              echo "| $platform | NO REPORT (${job_result}) |" >> $GITHUB_STEP_SUMMARY
-              ALL_PASS=false
-              MISSING=$((MISSING + 1))
-              echo "::error::No audit report generated for platform: $platform (job result: ${job_result})"
-            fi
-          done
-
-          if [ ${#DOWNLOADED_DIRS[@]} -gt 0 ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Downloaded artifacts: ${DOWNLOADED_DIRS[*]}" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "$ALL_PASS" = "true" ]; then
-            echo "**Overall: PASS**" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "**Overall: FAIL**" >> $GITHUB_STEP_SUMMARY
-            echo "::error::Audit verdict check failed -- one or more platforms did not PASS"
-            exit 1
-          fi
+          python3 scripts/audit_verdict.py \
+            --artifact-root audit-artifacts \
+            --summary-file "$GITHUB_STEP_SUMMARY" \
+            --platform "audit-report-linux-gcc13=$LINUX_GCC_RESULT" \
+            --platform "audit-report-linux-clang17=$LINUX_CLANG_RESULT" \
+            --platform "audit-report-windows-msvc=$WINDOWS_MSVC_RESULT"
 

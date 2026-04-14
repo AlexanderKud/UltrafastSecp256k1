@@ -1139,8 +1139,8 @@ std::uint8_t Scalar::bit(std::size_t index) const {
 // This reduces the number of non-zero digits by ~33%
 // Algorithm: scan from LSB, if odd -> take +/-1, adjust remaining
 std::vector<int8_t> Scalar::to_naf() const {
-    std::vector<int8_t> naf;
-    naf.reserve(257);  // Maximum NAF length is n+1 for n-bit number
+    std::array<int8_t, 257> naf{};
+    std::size_t naf_len = 0;
     
     // Work with a mutable copy
     Scalar k = *this;
@@ -1160,10 +1160,10 @@ std::vector<int8_t> Scalar::to_naf() const {
                 digit = -1;
                 k += Scalar::one();
             }
-            naf.push_back(digit);
+            naf[naf_len++] = digit;
         } else {
             // k is even -> digit is 0
-            naf.push_back(0);
+            naf[naf_len++] = 0;
         }
         
         // Divide k by 2 (right shift)
@@ -1177,7 +1177,7 @@ std::vector<int8_t> Scalar::to_naf() const {
     
     // NAF can be one bit longer than the original number
     // but we're done when k becomes zero
-    return naf;
+    return std::vector<int8_t>(naf.begin(), naf.begin() + static_cast<std::ptrdiff_t>(naf_len));
 }
 
 // Phase 5.7: wNAF (width-w Non-Adjacent Form)
@@ -1194,8 +1194,8 @@ std::vector<int8_t> Scalar::to_wnaf(unsigned width) const {
         #endif
     }
     
-    std::vector<int8_t> wnaf;
-    wnaf.reserve(257);  // Maximum length
+    std::array<int8_t, 257> wnaf{};
+    std::size_t wnaf_len = 0;
     
     Scalar k = *this;
     const unsigned window_size = 1U << width;          // 2^w
@@ -1215,10 +1215,10 @@ std::vector<int8_t> Scalar::to_wnaf(unsigned width) const {
                 k -= Scalar::from_uint64(static_cast<std::uint64_t>(digit));
             }
             
-            wnaf.push_back(static_cast<int8_t>(digit));
+            wnaf[wnaf_len++] = static_cast<int8_t>(digit);
         } else {
             // k is even -> digit is 0
-            wnaf.push_back(0);
+            wnaf[wnaf_len++] = 0;
         }
         
         // Divide k by 2 (right shift)
@@ -1230,7 +1230,7 @@ std::vector<int8_t> Scalar::to_wnaf(unsigned width) const {
         }
     }
     
-    return wnaf;
+    return std::vector<int8_t>(wnaf.begin(), wnaf.begin() + static_cast<std::ptrdiff_t>(wnaf_len));
 }
 
 } // namespace secp256k1::fast
