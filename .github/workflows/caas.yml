@@ -327,10 +327,10 @@ jobs:
           import json
           with open('docs/EXTERNAL_AUDIT_BUNDLE.json') as f:
               b = json.load(f)
-          print(f\"  commit:  {b.get('metadata',{}).get('git_commit','?')}\")
-          print(f\"  dirty:   {b.get('metadata',{}).get('git_dirty','?')}\")
-          print(f\"  files:   {len(b.get('evidence_hashes',{}))}\")
-          print(f\"  gates:   {list(b.get('gate_results',{}).keys())}\")
+          print(f\"  commit:  {b.get('git',{}).get('commit','?')}\")
+          print(f\"  dirty:   {b.get('git',{}).get('dirty','?')}\")
+          print(f\"  files:   {len(b.get('evidence',[]))}\")
+          print(f\"  gates:   {[g.get('name','?') for g in b.get('gate_results',[])]}\")
           "
 
       - name: Verify audit bundle (Stage 5)
