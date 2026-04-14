@@ -198,8 +198,8 @@ bool schnorr_batch_verify(const SchnorrBatchEntry* entries, std::size_t n) {
     auto verify_one = [](const SchnorrBatchEntry& entry) {
         return schnorr_verify(entry.pubkey_x, entry.message, entry.signature);
     };
-    auto resolve_pubkey = [&pubkey_cache](const SchnorrBatchEntry& entry,
-                                          Point& out_point) {
+    auto resolve_pubkey = [](const SchnorrBatchEntry& entry,
+                             Point& out_point) {
         for (const auto& cached : pubkey_cache) {
             if (cached.x_bytes == entry.pubkey_x) {
                 out_point = cached.point;

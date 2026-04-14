@@ -734,7 +734,7 @@ def run_all(args):
 
     # Security
     if mode in ('--all', '--security'):
-        print(f"{BOLD}[1/17] Security Invariants{RESET}")
+        print(f"{BOLD}[1/20] Security Invariants{RESET}")
         issues = check_security_invariants()
         if issues:
             for i in issues:
@@ -749,7 +749,7 @@ def run_all(args):
 
     # CUDA / MSVC portability
     if mode in ('--all', '--cuda-msvc'):
-        print(f"{BOLD}[2/17] CUDA / MSVC Portability{RESET}")
+        print(f"{BOLD}[2/20] CUDA / MSVC Portability{RESET}")
         cuda_msvc_issues = check_cuda_msvc_portability()
         if cuda_msvc_issues:
             for issue in cuda_msvc_issues:
@@ -762,7 +762,7 @@ def run_all(args):
 
     # Narrative drift
     if mode in ('--all', '--drift'):
-        print(f"{BOLD}[3/17] Narrative Drift Detection{RESET}")
+        print(f"{BOLD}[3/20] Narrative Drift Detection{RESET}")
         drift_issues = check_narrative_drift()
         if drift_issues:
             for i in drift_issues:
@@ -774,7 +774,7 @@ def run_all(args):
 
     # Coverage
     if mode in ('--all', '--coverage'):
-        print(f"{BOLD}[4/17] Test Coverage Gaps{RESET}")
+        print(f"{BOLD}[4/20] Test Coverage Gaps{RESET}")
         gaps = check_coverage_gaps()
         if gaps:
             for path, lines in sorted(gaps, key=lambda x: -x[1])[:20]:
@@ -786,7 +786,7 @@ def run_all(args):
 
     # Freshness
     if mode in ('--all', '--freshness'):
-        print(f"{BOLD}[5/17] Graph Freshness{RESET}")
+        print(f"{BOLD}[5/20] Graph Freshness{RESET}")
         stale, built = check_freshness()
         if stale:
             for kind, path, lines in stale[:15]:
@@ -800,7 +800,7 @@ def run_all(args):
 
     # Changed files
     if mode in ('--all', '--claims'):
-        print(f"{BOLD}[6/17] Assurance Claim Surfaces{RESET}")
+        print(f"{BOLD}[6/20] Assurance Claim Surfaces{RESET}")
         claim_issues = check_claim_surfaces()
         if claim_issues:
             for issue in claim_issues:
@@ -812,7 +812,7 @@ def run_all(args):
             print(f"  {GREEN}[OK] Claim surfaces resolve and are graph-indexed{RESET}\n")
 
     if mode in ('--all', '--ai-review'):
-        print(f"{BOLD}[7/17] AI Review Event Log{RESET}")
+        print(f"{BOLD}[7/20] AI Review Event Log{RESET}")
         ai_review_issues = check_ai_review_log()
         if ai_review_issues:
             for issue in ai_review_issues:
@@ -824,7 +824,7 @@ def run_all(args):
             print(f"  {GREEN}[OK] AI review-event log is schema-valid{RESET}\n")
 
     if mode in ('--all', '--gpu-evidence'):
-        print(f"{BOLD}[8/17] GPU Backend Evidence{RESET}")
+        print(f"{BOLD}[8/20] GPU Backend Evidence{RESET}")
         gpu_issues = check_gpu_backend_evidence()
         if gpu_issues:
             for issue in gpu_issues:
@@ -837,7 +837,7 @@ def run_all(args):
 
     # Changed files
     if mode in ('--all', '--changed'):
-        print(f"{BOLD}[9/17] Changed Files Impact{RESET}")
+        print(f"{BOLD}[9/20] Changed Files Impact{RESET}")
         changed = get_changed_files()
         if changed:
             print(f"  {len(changed)} files changed vs HEAD:")
@@ -867,7 +867,7 @@ def run_all(args):
             print(f"  {GREEN}[OK] No uncommitted changes{RESET}\n")
 
     if mode in ('--all', '--secret-paths'):
-        print(f"{BOLD}[10/17] Secret-Path Change Gate{RESET}")
+        print(f"{BOLD}[10/20] Secret-Path Change Gate{RESET}")
         secret_report, secret_fail = check_secret_path_changes(changed)
         if secret_report['triggered_rules']:
             for rule in secret_report['triggered_rules']:
@@ -890,7 +890,7 @@ def run_all(args):
 
     # ABI
     if mode in ('--all', '--api-contracts'):
-        print(f"{BOLD}[11/17] API Security Contracts{RESET}")
+        print(f"{BOLD}[11/20] API Security Contracts{RESET}")
         api_contract_issues, api_contract_fail = check_api_contracts()
         if api_contract_issues:
             for issue in api_contract_issues:
@@ -903,7 +903,7 @@ def run_all(args):
             print(f"  {GREEN}[OK] API security contracts are valid and up-to-date{RESET}\n")
 
     if mode in ('--all', '--determinism'):
-        print(f"{BOLD}[12/17] Determinism Gate{RESET}")
+        print(f"{BOLD}[12/20] Determinism Gate{RESET}")
         determinism_issues, determinism_fail = check_determinism_gate()
         if determinism_issues:
             for issue in determinism_issues:
@@ -916,7 +916,7 @@ def run_all(args):
             print(f"  {GREEN}[OK] Core API behavior is deterministic for locked vectors{RESET}\n")
 
     if mode in ('--all', '--abi'):
-        print(f"{BOLD}[13/17] ABI Surface{RESET}")
+        print(f"{BOLD}[13/20] ABI Surface{RESET}")
         added, removed = check_abi_surface()
         if added:
             print(f"  {CYAN}NEW functions (not in graph):{RESET}")
@@ -934,7 +934,7 @@ def run_all(args):
 
     # Doc Consistency
     if mode in ('--all', '--doc-sync'):
-        print(f"{BOLD}[14/17] Documentation Consistency{RESET}")
+        print(f"{BOLD}[14/20] Documentation Consistency{RESET}")
         try:
             import importlib.util
             spec = importlib.util.spec_from_file_location(
@@ -974,7 +974,7 @@ def run_all(args):
             print(f"  {YELLOW}WARNING: doc-sync check failed: {exc}{RESET}\n")
 
     if mode in ('--all', '--ctest-registry'):
-        print(f"{BOLD}[15/17] CTest Registry Health{RESET}")
+        print(f"{BOLD}[15/20] CTest Registry Health{RESET}")
         ctest_registry_issues = check_ctest_registry_health()
         blocking = [i for i in ctest_registry_issues if 'STALE-CTEST' in i]
         for issue in ctest_registry_issues:
@@ -988,7 +988,7 @@ def run_all(args):
 
     # Unified Code Quality Gate (dev_bug_scanner + hot_path_alloc + audit_test_quality)
     if mode in ('--all', '--bug-scan'):
-        print(f"{BOLD}[16/17] Code Quality Gate (all scanners){RESET}")
+        print(f"{BOLD}[16/20] Code Quality Gate (all scanners){RESET}")
         try:
             runner_path = SCRIPT_DIR / "run_code_quality.py"
             result = subprocess.run(
@@ -1036,7 +1036,7 @@ def run_all(args):
 
     # Python audit infrastructure self-test
     if mode in ('--all', '--py-audit'):
-        print(f"{BOLD}[17/17] Python Audit Self-Test{RESET}")
+        print(f"{BOLD}[17/20] Python Audit Self-Test{RESET}")
         try:
             selftest_path = SCRIPT_DIR / "test_audit_scripts.py"
             result = subprocess.run(
