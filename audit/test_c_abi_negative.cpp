@@ -42,6 +42,7 @@
 #define UFSECP_BUILDING
 #endif
 #include "ufsecp/ufsecp.h"
+#include "ufsecp/ufsecp_gpu.h"
 
 static int g_pass = 0, g_fail = 0;
 
@@ -1023,6 +1024,354 @@ static void run_neg12_pubkey_arith(ufsecp_ctx* ctx, const uint8_t* pubkey33) {
 }
 
 // ---------------------------------------------------------------------------
+// NEG-13: P2SH / P2SH-P2WPKH address functions
+// ---------------------------------------------------------------------------
+
+static void run_neg13_p2sh_addr(ufsecp_ctx* ctx, const uint8_t* pubkey33) {
+    char addr[96]; size_t alen = sizeof(addr);
+    uint8_t script[] = { 0x00, 0x14 };  // minimal mock
+
+    // ufsecp_addr_p2sh
+    CHECK_ERR(ufsecp_addr_p2sh(nullptr, 2, 0, addr, &alen),
+              "NEG-13.1: addr_p2sh(null_script) -> error");
+    // zero-length redeem script may be accepted (valid hash160 of empty script)
+    // instead test: null output buffer
+    CHECK_ERR(ufsecp_addr_p2sh(script, 2, 0, nullptr, &alen),
+              "NEG-13.2: addr_p2sh(null_out) -> error");
+    CHECK_ERR(ufsecp_addr_p2sh(script, 2, 0, addr, nullptr),
+              "NEG-13.3: addr_p2sh(null_len_ptr) -> error");
+    alen = 0;
+    CHECK_ERR(ufsecp_addr_p2sh(script, 2, 0, addr, &alen),
+              "NEG-13.4: addr_p2sh(buf_too_small) -> error");
+
+    // ufsecp_addr_p2sh_p2wpkh
+    alen = sizeof(addr);
+    CHECK_ERR(ufsecp_addr_p2sh_p2wpkh(nullptr, pubkey33, 0, addr, &alen),
+              "NEG-13.5: addr_p2sh_p2wpkh(null_ctx) -> error");
+    CHECK_ERR(ufsecp_addr_p2sh_p2wpkh(ctx, nullptr, 0, addr, &alen),
+              "NEG-13.6: addr_p2sh_p2wpkh(null_pubkey) -> error");
+    CHECK_ERR(ufsecp_addr_p2sh_p2wpkh(ctx, pubkey33, 0, nullptr, &alen),
+              "NEG-13.7: addr_p2sh_p2wpkh(null_out) -> error");
+    CHECK_ERR(ufsecp_addr_p2sh_p2wpkh(ctx, ZERO_PUBKEY33, 0, addr, &alen),
+              "NEG-13.8: addr_p2sh_p2wpkh(zero_pubkey) -> error");
+}
+
+// ---------------------------------------------------------------------------
+// NEG-14: BIP-85 entropy & mnemonic
+// ---------------------------------------------------------------------------
+
+static void run_neg14_bip85(ufsecp_ctx* ctx, const ufsecp_bip32_key* mk) {
+    uint8_t entropy[32];
+    char mnemonic[512]; size_t mlen = sizeof(mnemonic);
+
+    // ufsecp_bip85_entropy
+    CHECK_ERR(ufsecp_bip85_entropy(nullptr, mk, "m/83696968'/2'/0'", entropy, 32),
+              "NEG-14.1: bip85_entropy(null_ctx) -> error");
+    CHECK_ERR(ufsecp_bip85_entropy(ctx, nullptr, "m/83696968'/2'/0'", entropy, 32),
+              "NEG-14.2: bip85_entropy(null_xprv) -> error");
+    CHECK_ERR(ufsecp_bip85_entropy(ctx, mk, nullptr, entropy, 32),
+              "NEG-14.3: bip85_entropy(null_path) -> error");
+    CHECK_ERR(ufsecp_bip85_entropy(ctx, mk, "m/83696968'/2'/0'", nullptr, 32),
+              "NEG-14.4: bip85_entropy(null_out) -> error");
+
+    // ufsecp_bip85_bip39
+    CHECK_ERR(ufsecp_bip85_bip39(nullptr, mk, 12, 0, 0, mnemonic, &mlen),
+              "NEG-14.5: bip85_bip39(null_ctx) -> error");
+    CHECK_ERR(ufsecp_bip85_bip39(ctx, nullptr, 12, 0, 0, mnemonic, &mlen),
+              "NEG-14.6: bip85_bip39(null_xprv) -> error");
+    CHECK_ERR(ufsecp_bip85_bip39(ctx, mk, 12, 0, 0, nullptr, &mlen),
+              "NEG-14.7: bip85_bip39(null_out) -> error");
+    CHECK_ERR(ufsecp_bip85_bip39(ctx, mk, 7, 0, 0, mnemonic, &mlen),
+              "NEG-14.8: bip85_bip39(bad_word_count=7) -> error");
+}
+
+// ---------------------------------------------------------------------------
+// NEG-15: Schnorr variable-length message sign/verify
+// ---------------------------------------------------------------------------
+
+static void run_neg15_schnorr_msg(ufsecp_ctx* ctx, const uint8_t* xonly32) {
+    uint8_t sig[64] = {}; uint8_t aux[32] = {};
+    const uint8_t msg[] = "test message";
+
+    // ufsecp_schnorr_sign_msg
+    CHECK_ERR(ufsecp_schnorr_sign_msg(nullptr, VALID_KEY1, msg, sizeof(msg), aux, sig),
+              "NEG-15.1: schnorr_sign_msg(null_ctx) -> error");
+    CHECK_ERR(ufsecp_schnorr_sign_msg(ctx, nullptr, msg, sizeof(msg), aux, sig),
+              "NEG-15.2: schnorr_sign_msg(null_key) -> error");
+    CHECK_ERR(ufsecp_schnorr_sign_msg(ctx, ZERO_KEY, msg, sizeof(msg), aux, sig),
+              "NEG-15.3: schnorr_sign_msg(zero_key) -> error");
+    CHECK_ERR(ufsecp_schnorr_sign_msg(ctx, VALID_KEY1, msg, sizeof(msg), aux, nullptr),
+              "NEG-15.4: schnorr_sign_msg(null_sig_out) -> error");
+
+    // ufsecp_schnorr_verify_msg
+    CHECK_ERR(ufsecp_schnorr_verify_msg(nullptr, xonly32, msg, sizeof(msg), sig),
+              "NEG-15.5: schnorr_verify_msg(null_ctx) -> error");
+    CHECK_ERR(ufsecp_schnorr_verify_msg(ctx, nullptr, msg, sizeof(msg), sig),
+              "NEG-15.6: schnorr_verify_msg(null_pubkey) -> error");
+    CHECK_ERR(ufsecp_schnorr_verify_msg(ctx, ZERO_XONLY, msg, sizeof(msg), sig),
+              "NEG-15.7: schnorr_verify_msg(zero_pubkey) -> error");
+}
+
+// ---------------------------------------------------------------------------
+// NEG-16: BIP-322 message signing
+// ---------------------------------------------------------------------------
+
+static void run_neg16_bip322(ufsecp_ctx* ctx) {
+    uint8_t sig[128]; size_t slen = sizeof(sig);
+    const uint8_t msg[] = "bip322 test";
+
+    // ufsecp_bip322_sign
+    CHECK_ERR(ufsecp_bip322_sign(nullptr, VALID_KEY1, UFSECP_BIP322_ADDR_P2WPKH,
+              msg, sizeof(msg), sig, &slen),
+              "NEG-16.1: bip322_sign(null_ctx) -> error");
+    CHECK_ERR(ufsecp_bip322_sign(ctx, nullptr, UFSECP_BIP322_ADDR_P2WPKH,
+              msg, sizeof(msg), sig, &slen),
+              "NEG-16.2: bip322_sign(null_key) -> error");
+    CHECK_ERR(ufsecp_bip322_sign(ctx, ZERO_KEY, UFSECP_BIP322_ADDR_P2WPKH,
+              msg, sizeof(msg), sig, &slen),
+              "NEG-16.3: bip322_sign(zero_key) -> error");
+    CHECK_ERR(ufsecp_bip322_sign(ctx, VALID_KEY1, UFSECP_BIP322_ADDR_P2WPKH,
+              msg, sizeof(msg), nullptr, &slen),
+              "NEG-16.4: bip322_sign(null_sig_out) -> error");
+
+    // ufsecp_bip322_verify
+    uint8_t fake_pubkey[33] = {};
+    fake_pubkey[0] = 0x02;
+    CHECK_ERR(ufsecp_bip322_verify(nullptr, fake_pubkey, 33, UFSECP_BIP322_ADDR_P2WPKH,
+              msg, sizeof(msg), sig, slen),
+              "NEG-16.5: bip322_verify(null_ctx) -> error");
+    CHECK_ERR(ufsecp_bip322_verify(ctx, nullptr, 33, UFSECP_BIP322_ADDR_P2WPKH,
+              msg, sizeof(msg), sig, slen),
+              "NEG-16.6: bip322_verify(null_pubkey) -> error");
+    CHECK_ERR(ufsecp_bip322_verify(ctx, fake_pubkey, 0, UFSECP_BIP322_ADDR_P2WPKH,
+              msg, sizeof(msg), sig, slen),
+              "NEG-16.7: bip322_verify(zero_pubkey_len) -> error");
+}
+
+// ---------------------------------------------------------------------------
+// NEG-17: GCS (Golomb-Coded Set) filters
+// ---------------------------------------------------------------------------
+
+static void run_neg17_gcs(void) {
+    uint8_t key[16] = {};
+    uint8_t item1[] = { 0x01, 0x02 };
+    const uint8_t* items[] = { item1 };
+    size_t sizes[] = { sizeof(item1) };
+    uint8_t filter[256]; size_t flen = sizeof(filter);
+
+    // ufsecp_gcs_build
+    CHECK_ERR(ufsecp_gcs_build(nullptr, items, sizes, 1, filter, &flen),
+              "NEG-17.1: gcs_build(null_key) -> error");
+    CHECK_ERR(ufsecp_gcs_build(key, nullptr, sizes, 1, filter, &flen),
+              "NEG-17.2: gcs_build(null_data) -> error");
+    CHECK_ERR(ufsecp_gcs_build(key, items, sizes, 1, nullptr, &flen),
+              "NEG-17.3: gcs_build(null_out) -> error");
+
+    // Build a valid filter first for match tests
+    flen = sizeof(filter);
+    ufsecp_error_t rc = ufsecp_gcs_build(key, items, sizes, 1, filter, &flen);
+
+    // ufsecp_gcs_match
+    CHECK_ERR(ufsecp_gcs_match(nullptr, filter, flen, 1, item1, sizeof(item1)),
+              "NEG-17.4: gcs_match(null_key) -> error");
+    CHECK_ERR(ufsecp_gcs_match(key, nullptr, flen, 1, item1, sizeof(item1)),
+              "NEG-17.5: gcs_match(null_filter) -> error");
+    CHECK_ERR(ufsecp_gcs_match(key, filter, flen, 1, nullptr, sizeof(item1)),
+              "NEG-17.6: gcs_match(null_item) -> error");
+
+    // ufsecp_gcs_match_any
+    CHECK_ERR(ufsecp_gcs_match_any(nullptr, filter, flen, 1, items, sizes, 1),
+              "NEG-17.7: gcs_match_any(null_key) -> error");
+    CHECK_ERR(ufsecp_gcs_match_any(key, nullptr, flen, 1, items, sizes, 1),
+              "NEG-17.8: gcs_match_any(null_filter) -> error");
+    CHECK_ERR(ufsecp_gcs_match_any(key, filter, flen, 1, nullptr, sizes, 1),
+              "NEG-17.9: gcs_match_any(null_query) -> error");
+    (void)rc;
+}
+
+// ---------------------------------------------------------------------------
+// NEG-18: PSBT signing helpers
+// ---------------------------------------------------------------------------
+
+static void run_neg18_psbt(ufsecp_ctx* ctx, const ufsecp_bip32_key* mk) {
+    uint8_t sig[73]; size_t slen = sizeof(sig);
+    uint8_t aux[32] = {};
+    uint8_t privkey_out[32];
+
+    // ufsecp_psbt_sign_legacy
+    CHECK_ERR(ufsecp_psbt_sign_legacy(nullptr, MSG32, VALID_KEY1, UFSECP_SIGHASH_ALL, sig, &slen),
+              "NEG-18.1: psbt_sign_legacy(null_ctx) -> error");
+    CHECK_ERR(ufsecp_psbt_sign_legacy(ctx, nullptr, VALID_KEY1, UFSECP_SIGHASH_ALL, sig, &slen),
+              "NEG-18.2: psbt_sign_legacy(null_sighash) -> error");
+    CHECK_ERR(ufsecp_psbt_sign_legacy(ctx, MSG32, nullptr, UFSECP_SIGHASH_ALL, sig, &slen),
+              "NEG-18.3: psbt_sign_legacy(null_key) -> error");
+    CHECK_ERR(ufsecp_psbt_sign_legacy(ctx, MSG32, ZERO_KEY, UFSECP_SIGHASH_ALL, sig, &slen),
+              "NEG-18.4: psbt_sign_legacy(zero_key) -> error");
+
+    // ufsecp_psbt_sign_segwit
+    slen = sizeof(sig);
+    CHECK_ERR(ufsecp_psbt_sign_segwit(nullptr, MSG32, VALID_KEY1, UFSECP_SIGHASH_ALL, sig, &slen),
+              "NEG-18.5: psbt_sign_segwit(null_ctx) -> error");
+    CHECK_ERR(ufsecp_psbt_sign_segwit(ctx, nullptr, VALID_KEY1, UFSECP_SIGHASH_ALL, sig, &slen),
+              "NEG-18.6: psbt_sign_segwit(null_sighash) -> error");
+    CHECK_ERR(ufsecp_psbt_sign_segwit(ctx, MSG32, nullptr, UFSECP_SIGHASH_ALL, sig, &slen),
+              "NEG-18.7: psbt_sign_segwit(null_key) -> error");
+
+    // ufsecp_psbt_sign_taproot
+    slen = sizeof(sig);
+    CHECK_ERR(ufsecp_psbt_sign_taproot(nullptr, MSG32, VALID_KEY1, UFSECP_SIGHASH_DEFAULT, aux, sig, &slen),
+              "NEG-18.8: psbt_sign_taproot(null_ctx) -> error");
+    CHECK_ERR(ufsecp_psbt_sign_taproot(ctx, nullptr, VALID_KEY1, UFSECP_SIGHASH_DEFAULT, aux, sig, &slen),
+              "NEG-18.9: psbt_sign_taproot(null_sighash) -> error");
+    CHECK_ERR(ufsecp_psbt_sign_taproot(ctx, MSG32, nullptr, UFSECP_SIGHASH_DEFAULT, aux, sig, &slen),
+              "NEG-18.10: psbt_sign_taproot(null_key) -> error");
+
+    // ufsecp_psbt_derive_key
+    CHECK_ERR(ufsecp_psbt_derive_key(nullptr, mk, "m/84'/0'/0'/0/0", privkey_out),
+              "NEG-18.11: psbt_derive_key(null_ctx) -> error");
+    CHECK_ERR(ufsecp_psbt_derive_key(ctx, nullptr, "m/84'/0'/0'/0/0", privkey_out),
+              "NEG-18.12: psbt_derive_key(null_xprv) -> error");
+    CHECK_ERR(ufsecp_psbt_derive_key(ctx, mk, nullptr, privkey_out),
+              "NEG-18.13: psbt_derive_key(null_path) -> error");
+    CHECK_ERR(ufsecp_psbt_derive_key(ctx, mk, "m/84'/0'/0'/0/0", nullptr),
+              "NEG-18.14: psbt_derive_key(null_out) -> error");
+}
+
+// ---------------------------------------------------------------------------
+// NEG-19: Output descriptors
+// ---------------------------------------------------------------------------
+
+static void run_neg19_descriptors(ufsecp_ctx* ctx) {
+    ufsecp_desc_key key_out;
+    char addr[128]; size_t alen = sizeof(addr);
+
+    // ufsecp_descriptor_parse
+    CHECK_ERR(ufsecp_descriptor_parse(nullptr, "wpkh(xpub...)", 0, &key_out, addr, &alen),
+              "NEG-19.1: descriptor_parse(null_ctx) -> error");
+    CHECK_ERR(ufsecp_descriptor_parse(ctx, nullptr, 0, &key_out, addr, &alen),
+              "NEG-19.2: descriptor_parse(null_descriptor) -> error");
+    CHECK_ERR(ufsecp_descriptor_parse(ctx, "wpkh(xpub...)", 0, nullptr, addr, &alen),
+              "NEG-19.3: descriptor_parse(null_key_out) -> error");
+    CHECK_ERR(ufsecp_descriptor_parse(ctx, "", 0, &key_out, addr, &alen),
+              "NEG-19.4: descriptor_parse(empty_descriptor) -> error");
+
+    // ufsecp_descriptor_address
+    alen = sizeof(addr);
+    CHECK_ERR(ufsecp_descriptor_address(nullptr, "wpkh(xpub...)", 0, addr, &alen),
+              "NEG-19.5: descriptor_address(null_ctx) -> error");
+    CHECK_ERR(ufsecp_descriptor_address(ctx, nullptr, 0, addr, &alen),
+              "NEG-19.6: descriptor_address(null_descriptor) -> error");
+    CHECK_ERR(ufsecp_descriptor_address(ctx, "wpkh(xpub...)", 0, nullptr, &alen),
+              "NEG-19.7: descriptor_address(null_addr_out) -> error");
+    CHECK_ERR(ufsecp_descriptor_address(ctx, "", 0, addr, &alen),
+              "NEG-19.8: descriptor_address(empty_descriptor) -> error");
+}
+
+// ---------------------------------------------------------------------------
+// NEG-20: ZK SNARK witnesses (ECDSA + Schnorr)
+// ---------------------------------------------------------------------------
+
+static void run_neg20_zk_snark(ufsecp_ctx* ctx, const uint8_t* pubkey33,
+                               const uint8_t* xonly32) {
+    ufsecp_ecdsa_snark_witness_t ecdsa_w;
+    ufsecp_schnorr_snark_witness_t schnorr_w;
+    memset(&ecdsa_w, 0, sizeof(ecdsa_w));
+    memset(&schnorr_w, 0, sizeof(schnorr_w));
+
+    // ufsecp_zk_ecdsa_snark_witness
+    CHECK_ERR(ufsecp_zk_ecdsa_snark_witness(nullptr, MSG32, pubkey33, ZERO_SIG64, &ecdsa_w),
+              "NEG-20.1: zk_ecdsa_snark_witness(null_ctx) -> error");
+    CHECK_ERR(ufsecp_zk_ecdsa_snark_witness(ctx, nullptr, pubkey33, ZERO_SIG64, &ecdsa_w),
+              "NEG-20.2: zk_ecdsa_snark_witness(null_msg) -> error");
+    CHECK_ERR(ufsecp_zk_ecdsa_snark_witness(ctx, MSG32, nullptr, ZERO_SIG64, &ecdsa_w),
+              "NEG-20.3: zk_ecdsa_snark_witness(null_pubkey) -> error");
+    CHECK_ERR(ufsecp_zk_ecdsa_snark_witness(ctx, MSG32, pubkey33, nullptr, &ecdsa_w),
+              "NEG-20.4: zk_ecdsa_snark_witness(null_sig) -> error");
+    CHECK_ERR(ufsecp_zk_ecdsa_snark_witness(ctx, MSG32, pubkey33, ZERO_SIG64, nullptr),
+              "NEG-20.5: zk_ecdsa_snark_witness(null_out) -> error");
+
+    // ufsecp_zk_schnorr_snark_witness
+    CHECK_ERR(ufsecp_zk_schnorr_snark_witness(nullptr, MSG32, xonly32, ZERO_SIG64, &schnorr_w),
+              "NEG-20.6: zk_schnorr_snark_witness(null_ctx) -> error");
+    CHECK_ERR(ufsecp_zk_schnorr_snark_witness(ctx, nullptr, xonly32, ZERO_SIG64, &schnorr_w),
+              "NEG-20.7: zk_schnorr_snark_witness(null_msg) -> error");
+    CHECK_ERR(ufsecp_zk_schnorr_snark_witness(ctx, MSG32, nullptr, ZERO_SIG64, &schnorr_w),
+              "NEG-20.8: zk_schnorr_snark_witness(null_pubkey) -> error");
+    CHECK_ERR(ufsecp_zk_schnorr_snark_witness(ctx, MSG32, xonly32, nullptr, &schnorr_w),
+              "NEG-20.9: zk_schnorr_snark_witness(null_sig) -> error");
+    CHECK_ERR(ufsecp_zk_schnorr_snark_witness(ctx, MSG32, xonly32, ZERO_SIG64, nullptr),
+              "NEG-20.10: zk_schnorr_snark_witness(null_out) -> error");
+}
+
+// ---------------------------------------------------------------------------
+// NEG-21: GPU functions (context create + BIP-352 + ZK batch)
+// ---------------------------------------------------------------------------
+
+static void run_neg21_gpu(void) {
+    // ufsecp_gpu_ctx_create (listed as ufsecp_gpu_context_create in manifest)
+    CHECK_ERR(ufsecp_gpu_ctx_create(nullptr, UFSECP_GPU_BACKEND_CUDA, 0),
+              "NEG-21.1: gpu_ctx_create(null_ctx_out) -> error");
+    CHECK_ERR(ufsecp_gpu_ctx_create(nullptr, 0xFF, 0),
+              "NEG-21.2: gpu_ctx_create(invalid_backend) -> error");
+    CHECK_ERR(ufsecp_gpu_ctx_create(nullptr, UFSECP_GPU_BACKEND_NONE, 0),
+              "NEG-21.3: gpu_ctx_create(backend_none) -> error");
+
+    // ufsecp_bip352_prepare_scan_plan
+    uint8_t plan[264];
+    CHECK_ERR(ufsecp_bip352_prepare_scan_plan(nullptr, plan),
+              "NEG-21.4: bip352_prepare_scan_plan(null_key) -> error");
+    CHECK_ERR(ufsecp_bip352_prepare_scan_plan(ZERO_KEY, plan),
+              "NEG-21.5: bip352_prepare_scan_plan(zero_key) -> error");
+    CHECK_ERR(ufsecp_bip352_prepare_scan_plan(VALID_KEY1, nullptr),
+              "NEG-21.6: bip352_prepare_scan_plan(null_out) -> error");
+
+    // ufsecp_gpu_bip352_scan_batch (needs ctx, will fail on null)
+    uint64_t prefix;
+    uint8_t tweak[33] = {};
+    CHECK_ERR(ufsecp_gpu_bip352_scan_batch(nullptr, VALID_KEY1, tweak, tweak, 1, &prefix),
+              "NEG-21.7: gpu_bip352_scan_batch(null_ctx) -> error");
+    CHECK_ERR(ufsecp_gpu_bip352_scan_batch(nullptr, nullptr, tweak, tweak, 1, &prefix),
+              "NEG-21.7b: gpu_bip352_scan_batch(null_ctx+key) -> error");
+    CHECK_ERR(ufsecp_gpu_bip352_scan_batch(nullptr, VALID_KEY1, nullptr, tweak, 1, &prefix),
+              "NEG-21.7c: gpu_bip352_scan_batch(null_ctx+spend) -> error");
+
+    // ufsecp_gpu_zk_ecdsa_snark_witness_batch
+    uint8_t witness[760];
+    CHECK_ERR(ufsecp_gpu_zk_ecdsa_snark_witness_batch(nullptr, MSG32, tweak, ZERO_SIG64, 1, witness),
+              "NEG-21.8: gpu_zk_ecdsa_snark_witness_batch(null_ctx) -> error");
+    CHECK_ERR(ufsecp_gpu_zk_ecdsa_snark_witness_batch(nullptr, nullptr, tweak, ZERO_SIG64, 1, witness),
+              "NEG-21.8b: gpu_zk_ecdsa_snark_witness_batch(null_ctx+msg) -> error");
+    CHECK_ERR(ufsecp_gpu_zk_ecdsa_snark_witness_batch(nullptr, MSG32, nullptr, ZERO_SIG64, 1, witness),
+              "NEG-21.8c: gpu_zk_ecdsa_snark_witness_batch(null_ctx+pubkey) -> error");
+
+    // ufsecp_gpu_zk_schnorr_snark_witness_batch
+    uint8_t schnorr_witness[472];
+    CHECK_ERR(ufsecp_gpu_zk_schnorr_snark_witness_batch(nullptr, MSG32, ZERO32, ZERO_SIG64, 1, schnorr_witness),
+              "NEG-21.9: gpu_zk_schnorr_snark_witness_batch(null_ctx) -> error");
+    CHECK_ERR(ufsecp_gpu_zk_schnorr_snark_witness_batch(nullptr, nullptr, ZERO32, ZERO_SIG64, 1, schnorr_witness),
+              "NEG-21.9b: gpu_zk_schnorr_snark_witness_batch(null_ctx+msg) -> error");
+    CHECK_ERR(ufsecp_gpu_zk_schnorr_snark_witness_batch(nullptr, MSG32, nullptr, ZERO_SIG64, 1, schnorr_witness),
+              "NEG-21.9c: gpu_zk_schnorr_snark_witness_batch(null_ctx+pubkey) -> error");
+}
+
+// ---------------------------------------------------------------------------
+// NEG-22: ABI version query
+// ---------------------------------------------------------------------------
+
+static void run_neg22_abi_version(void) {
+    // ufsecp_abi_version: no NULL risk — just verify it returns non-zero
+    unsigned int abi = ufsecp_abi_version();
+    CHECK(abi > 0, "NEG-22.1: abi_version() returns non-zero");
+    CHECK(abi == UFSECP_ABI_VERSION, "NEG-22.2: abi_version() matches compile-time constant");
+
+    unsigned int ver = ufsecp_version();
+    CHECK(ver > 0 || ver == 0, "NEG-22.3: version() callable without crash");
+
+    const char* vs = ufsecp_version_string();
+    CHECK(vs != nullptr, "NEG-22.4: version_string() non-null");
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -1052,6 +1401,16 @@ int test_c_abi_negative_run() {
     run_neg10_bip32(f.ctx, &f.master_key);
     run_neg11_taproot(f.ctx, f.xonly32);
     run_neg12_pubkey_arith(f.ctx, f.pubkey33);
+    run_neg13_p2sh_addr(f.ctx, f.pubkey33);
+    run_neg14_bip85(f.ctx, &f.master_key);
+    run_neg15_schnorr_msg(f.ctx, f.xonly32);
+    run_neg16_bip322(f.ctx);
+    run_neg17_gcs();
+    run_neg18_psbt(f.ctx, &f.master_key);
+    run_neg19_descriptors(f.ctx);
+    run_neg20_zk_snark(f.ctx, f.pubkey33, f.xonly32);
+    run_neg21_gpu();
+    run_neg22_abi_version();
 
     printf("[test_c_abi_negative] %d/%d checks passed\n",
            g_pass, g_pass + g_fail);

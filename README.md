@@ -76,6 +76,15 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build -
 | 🏗️ Build guide | [docs/BUILDING.md](docs/BUILDING.md) |
 | 🔗 C ABI / FFI reference | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) |
 | 📈 Community benchmarks | [docs/COMMUNITY_BENCHMARKS.md](docs/COMMUNITY_BENCHMARKS.md) |
+| 🏛️ Architecture overview | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 🔐 Security claims & contracts | [docs/SECURITY_CLAIMS.md](docs/SECURITY_CLAIMS.md) |
+| 🔑 Secret lifecycle (zeroization, CT) | [docs/SECRET_LIFECYCLE.md](docs/SECRET_LIFECYCLE.md) |
+| 🧮 Cryptographic invariants | [docs/CRYPTO_INVARIANTS.md](docs/CRYPTO_INVARIANTS.md) |
+| 🧵 Thread-safety guarantees | [docs/THREAD_SAFETY.md](docs/THREAD_SAFETY.md) |
+| 🛡️ Safe defaults | [docs/SAFE_DEFAULTS.md](docs/SAFE_DEFAULTS.md) |
+| 🔬 Differential testing | [docs/DIFFERENTIAL_TESTING.md](docs/DIFFERENTIAL_TESTING.md) |
+| 📋 Reproducible builds | [docs/REPRODUCIBLE_BUILDS.md](docs/REPRODUCIBLE_BUILDS.md) |
+| 🚨 Incident response | [docs/INCIDENT_RESPONSE.md](docs/INCIDENT_RESPONSE.md) |
 | 📦 Install packages | [Installation](#installation) |
 | 🤔 Why this library? | [WHY_ULTRAFASTSECP256K1.md](WHY_ULTRAFASTSECP256K1.md) |
 | 🌐 Sponsor | [github.com/sponsors/shrec](https://github.com/sponsors/shrec) |
@@ -138,7 +147,7 @@ All measurements: RTX 5060 Ti (SM 12.0, CUDA 12), batch=16 384, kernel-only thro
 
 > TL;DR is above. This section covers what differentiates this library in depth.
 
-- **Continuous adversarial audit system** -- every exploit attempt becomes a permanent regression test; 1,000,000+ assertions per build, 187 exploit-PoC test files (171 registered runner modules) across 200+ attack vectors, 36 CI workflows, 3 formal CT verification pipelines (ct-verif + Valgrind CT + dudect), 1.3M+ nightly differential checks — security hardens on every commit, not just on release day ([→ how it works](#engineering-quality--self-audit-culture))
+- **Continuous adversarial audit system** -- every exploit attempt becomes a permanent regression test; 1,000,000+ assertions per build, 187 exploit-PoC test files (171 registered runner modules) across 200+ attack vectors, 37 CI workflows, 3 formal CT verification pipelines (ct-verif + Valgrind CT + dudect), 1.3M+ nightly differential checks — security hardens on every commit, not just on release day ([→ how it works](#engineering-quality--self-audit-culture))
 - **Differentiated GPU secp256k1 surface** -- CUDA, OpenCL, and Metal all implement the stable 19-op GPU C ABI, while CUDA also carries the highest-throughput signing and verification kernels plus **GPU FROST partial verification** ([reproducible benchmark suite and raw logs](docs/BENCHMARKS.md))
 - **High-performance CPU secp256k1 engine** -- optimized generator multiply, scalar multiply, hashing, and serialization pipelines across x86-64, ARM64, RISC-V, and embedded targets ([see bench_unified ratio table](docs/BENCHMARKS.md))
 - **BIP-352 Silent Payments at 11.00 M/s** -- the full 7-stage GPU pipeline (k×P → hash → k×G → add → match) runs at 91.0 ns/op on CUDA, **267× faster** than single-threaded CPU ([GPU bench](docs/BENCHMARKS.md), [standalone CPU benchmark by @craigraw](https://github.com/craigraw/bench_bip352))
@@ -258,7 +267,7 @@ This top-level narrative maps directly to the assurance ledger: CT secret-key ro
 | Internal audit assertions per build | **~1,000,000+** |
 | Audit modules (`unified_audit_runner`) | **55 modules, 8 sections, 0 failures** |
 | Exploit PoC test files | **86 tests, 14 coverage areas, 0 failures** |
-| CI/CD workflows | **36 GitHub Actions workflows** |
+| CI/CD workflows | **37 GitHub Actions workflows** |
 | Build matrix (arch × config × OS) | **7 × 17 × 5 = 595 combinations** |
 | Nightly differential tests | **~1,300,000+ random checks / night** |
 | Constant-time verification pipelines | **3 independent (ct-arm64, ct-verif, Valgrind CT)** |
@@ -409,7 +418,7 @@ In addition to the 55-module `unified_audit_runner`, UltrafastSecp256k1 ships **
 **Report vulnerabilities** via [GitHub Security Advisories](https://github.com/shrec/UltrafastSecp256k1/security/advisories/new) or email [payysoon@gmail.com](mailto:payysoon@gmail.com).
 For production cryptographic systems, perform your own risk review, review the current guarantees in [SUPPORTED_GUARANTEES.md](include/ufsecp/SUPPORTED_GUARANTEES.md), and apply the assurance level appropriate to your deployment.
 
-For the full audit infrastructure breakdown (1M+ assertions, 36 CI workflows, formal CT verification pipelines, self-audit document index), see the [Engineering Quality & Self-Audit Culture](#engineering-quality--self-audit-culture) section above and [WHY_ULTRAFASTSECP256K1.md](WHY_ULTRAFASTSECP256K1.md).
+For the full audit infrastructure breakdown (1M+ assertions, 37 CI workflows, formal CT verification pipelines, self-audit document index), see the [Engineering Quality & Self-Audit Culture](#engineering-quality--self-audit-culture) section above and [WHY_ULTRAFASTSECP256K1.md](WHY_ULTRAFASTSECP256K1.md).
 
 ---
 

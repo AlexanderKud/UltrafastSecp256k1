@@ -1,0 +1,305 @@
+{
+  "version": "1.0.0",
+  "entries": [
+    {
+      "api": "ufsecp_schnorr_sign",
+      "criticality": "critical",
+      "ct_class": "ct-required",
+      "secrets_touched": [
+        "seckey",
+        "nonce"
+      ],
+      "preconditions": [
+        "seckey is scalar-valid and non-zero",
+        "message buffer length matches API contract"
+      ],
+      "postconditions": [
+        "signature verifies under corresponding pubkey",
+        "secret-dependent control flow remains constant-time"
+      ],
+      "failure_modes": [
+        "invalid secret key",
+        "invalid output buffer"
+      ],
+      "evidence_tests": [
+        "bip340_vectors",
+        "exploit_schnorr_bip340_kat",
+        "exploit_schnorr_nonce_reuse"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/SECURITY_CLAIMS.md",
+        "docs/CT_VERIFICATION.md"
+      ]
+    },
+    {
+      "api": "ufsecp_ecdsa_sign",
+      "criticality": "critical",
+      "ct_class": "ct-required",
+      "secrets_touched": [
+        "seckey",
+        "nonce"
+      ],
+      "preconditions": [
+        "private key is valid scalar",
+        "digest input is exactly 32 bytes"
+      ],
+      "postconditions": [
+        "output signature is DER/P1363 conformant per API",
+        "nonce path does not branch on secret data"
+      ],
+      "failure_modes": [
+        "invalid private key",
+        "invalid output pointer"
+      ],
+      "evidence_tests": [
+        "wycheproof_ecdsa",
+        "exploit_ecdsa_rfc6979_kat",
+        "exploit_ecdsa_nonce_reuse"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/SECURITY_CLAIMS.md",
+        "docs/CT_VERIFICATION.md"
+      ]
+    },
+    {
+      "api": "ufsecp_ecdsa_verify",
+      "criticality": "high",
+      "ct_class": "public-only",
+      "secrets_touched": [
+        "none"
+      ],
+      "preconditions": [
+        "public key is parseable and curve-valid",
+        "signature encoding matches selected API mode"
+      ],
+      "postconditions": [
+        "accepts only mathematically valid signatures",
+        "rejects malformed or non-canonical encodings"
+      ],
+      "failure_modes": [
+        "invalid public key",
+        "invalid signature encoding"
+      ],
+      "evidence_tests": [
+        "wycheproof_ecdsa",
+        "exploit_ecdsa_der_confusion",
+        "exploit_ecdsa_edge_cases"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/SECURITY_CLAIMS.md"
+      ]
+    },
+    {
+      "api": "ufsecp_schnorr_verify",
+      "criticality": "high",
+      "ct_class": "public-only",
+      "secrets_touched": [
+        "none"
+      ],
+      "preconditions": [
+        "x-only pubkey must be valid and canonical",
+        "signature length must match BIP340 requirements"
+      ],
+      "postconditions": [
+        "accepts only valid BIP340 signatures",
+        "rejects malformed x-only parity/confusion cases"
+      ],
+      "failure_modes": [
+        "invalid x-only pubkey",
+        "invalid signature length"
+      ],
+      "evidence_tests": [
+        "bip340_strict",
+        "exploit_schnorr_xonly_parity_confusion",
+        "exploit_schnorr_edge_cases"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/SECURITY_CLAIMS.md"
+      ]
+    },
+    {
+      "api": "ufsecp_ecdh",
+      "criticality": "critical",
+      "ct_class": "ct-required",
+      "secrets_touched": [
+        "seckey"
+      ],
+      "preconditions": [
+        "peer public key is strict-validated on curve",
+        "private key scalar is valid and non-zero"
+      ],
+      "postconditions": [
+        "shared secret is deterministic for input pair",
+        "invalid-curve and twist inputs are rejected"
+      ],
+      "failure_modes": [
+        "invalid peer public key",
+        "invalid private key"
+      ],
+      "evidence_tests": [
+        "wycheproof_ecdh",
+        "exploit_invalid_curve_twist",
+        "exploit_ecdh_variants"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/SECURITY_CLAIMS.md",
+        "docs/SECRET_LIFECYCLE.md"
+      ]
+    },
+    {
+      "api": "ufsecp_bip32_derive_path",
+      "criticality": "high",
+      "ct_class": "ct-adjacent",
+      "secrets_touched": [
+        "chain_code",
+        "extended_private_key"
+      ],
+      "preconditions": [
+        "path grammar is valid",
+        "depth and index constraints are within policy"
+      ],
+      "postconditions": [
+        "derived key path respects hardened/non-hardened rules",
+        "out-of-range path elements are rejected"
+      ],
+      "failure_modes": [
+        "invalid derivation path",
+        "overflowed depth/index"
+      ],
+      "evidence_tests": [
+        "bip32_vectors",
+        "exploit_bip32_derivation",
+        "exploit_bip32_path_overflow"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/SECURITY_CLAIMS.md",
+        "docs/SECRET_LIFECYCLE.md"
+      ]
+    },
+    {
+      "api": "ufsecp_musig2_key_agg",
+      "criticality": "high",
+      "ct_class": "public-only",
+      "secrets_touched": [
+        "none"
+      ],
+      "preconditions": [
+        "all participant keys are valid points",
+        "key list canonicalization rules are enforced"
+      ],
+      "postconditions": [
+        "aggregate key is deterministic for signer set",
+        "ordering manipulation does not alter valid result"
+      ],
+      "failure_modes": [
+        "invalid participant key",
+        "duplicate or malformed participant set"
+      ],
+      "evidence_tests": [
+        "exploit_musig2_key_agg",
+        "exploit_musig2_ordering",
+        "exploit_musig2_parallel_session_cross"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/SECURITY_CLAIMS.md"
+      ]
+    },
+    {
+      "api": "ufsecp_frost_sign",
+      "criticality": "critical",
+      "ct_class": "ct-required",
+      "secrets_touched": [
+        "secret_share",
+        "nonce"
+      ],
+      "preconditions": [
+        "participant index is valid and unique in session",
+        "binding factors are computed from canonical transcript"
+      ],
+      "postconditions": [
+        "partial signatures bind to transcript and signer set",
+        "secret share and nonce handling stays CT-safe"
+      ],
+      "failure_modes": [
+        "duplicate participant index",
+        "invalid commitment set"
+      ],
+      "evidence_tests": [
+        "exploit_frost_signing",
+        "exploit_frost_binding_factor_mismatch",
+        "exploit_frost_ct_nonce"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/SECURITY_CLAIMS.md",
+        "docs/SECRET_LIFECYCLE.md"
+      ]
+    },
+    {
+      "api": "ufsecp_schnorr_batch_verify",
+      "criticality": "high",
+      "ct_class": "public-only",
+      "secrets_touched": [
+        "none"
+      ],
+      "preconditions": [
+        "batch entries reference valid pubkeys/messages/signatures",
+        "batch size is within implementation bounds"
+      ],
+      "postconditions": [
+        "accept/reject result matches single-verify semantics",
+        "identify-invalid path isolates bad entries"
+      ],
+      "failure_modes": [
+        "invalid batch entry encoding",
+        "mismatched batch buffers"
+      ],
+      "evidence_tests": [
+        "exploit_batch_verify_correctness",
+        "exploit_batch_schnorr",
+        "exploit_batch_verify_poison"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/SECURITY_CLAIMS.md"
+      ]
+    },
+    {
+      "api": "ufsecp_gpu_ecdsa_verify_batch",
+      "criticality": "high",
+      "ct_class": "public-only",
+      "secrets_touched": [
+        "none"
+      ],
+      "preconditions": [
+        "backend context is initialized",
+        "host/device buffers satisfy shape contracts"
+      ],
+      "postconditions": [
+        "GPU verification semantics match CPU reference",
+        "backend mismatch or unsupported mode returns explicit error"
+      ],
+      "failure_modes": [
+        "invalid backend context",
+        "invalid batch buffer shape"
+      ],
+      "evidence_tests": [
+        "gpu_ops_equivalence",
+        "exploit_gpu_cpu_divergence",
+        "gpu_backend_matrix"
+      ],
+      "evidence_docs": [
+        "docs/API_REFERENCE.md",
+        "docs/BACKEND_ASSURANCE_MATRIX.md",
+        "docs/SECURITY_CLAIMS.md"
+      ]
+    }
+  ]
+}

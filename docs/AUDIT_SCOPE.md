@@ -139,6 +139,7 @@ An independent security audit is requested to verify correctness, identify vulne
 | `test_fuzz_parsers` | 580K | DER/Schnorr/Pubkey parser fuzz |
 | `test_fuzz_address_bip32_ffi` | 73,959 | Address/BIP32/FFI boundary fuzz |
 | libFuzzer harnesses | ∞ | Continuous fuzz for field/scalar/point |
+| `security_autonomy_check.py` | 10 gates | Security autonomy orchestrator: formal invariants, SLA, supply chain, misuse resistance, evidence governance, incident drills, perf-security co-gate, risk-surface coverage, fuzz campaigns |
 | `test_adversarial_protocol` (§H) | 100+ | New ABI surface edge cases: AEAD, ECIES, EllSwift, ETH, Pedersen switch, Schnorr adaptor, batch sign, BIP-143/144, SegWit, Taproot sighash |
 | `test_adversarial_protocol` (§I) | 77 | Remaining ABI surface: `ctx_clone`, `last_error_msg`, `pubkey_parse`, `pubkey_create_uncompressed`, `ecdsa_sign_recoverable`, `ecdsa_recover`, `ecdsa_sign_verified`, `schnorr_sign_verified`, deep batch verify |
 | `test_gpu_host_api_negative` | 38 | GPU C ABI: NULL ctx, NULL ctx_out, NULL info_out, count=0, count>0 + NULL buffers, invalid backend (0/99/255), invalid device index, error strings for all 7 GPU error codes, backend names |
@@ -193,6 +194,9 @@ ctest --test-dir build_audit -R exploit -V
 
 # Machine-readable assurance artifact
 python3 scripts/export_assurance.py -o assurance_report.json
+
+# Security autonomy gate orchestrator
+python3 scripts/security_autonomy_check.py --json
 ```
 
 ---

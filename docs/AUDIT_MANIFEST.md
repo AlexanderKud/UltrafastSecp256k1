@@ -3,7 +3,7 @@
 > **This document defines the mandatory audit principles, invariants, and
 > automated gates that every change to UltrafastSecp256k1 must satisfy.**
 >
-> Version: 1.1 — 2026-04-06
+> Version: 2.2 — 2026-04-14
 
 ---
 
@@ -240,6 +240,119 @@ Checks:
 - File-like evidence references resolve inside the repository
 - Strict mode exposes the current owner-grade residual set
 
+### P12 — Formal Invariant Completeness
+
+> Critical cryptographic operations must have machine-readable formal invariant
+> specs with linked tests. Operations without specs or linked tests are blocking.
+
+**Automated gate:** `check_formal_invariants.py --json`
+
+Checks:
+- Every operation in `FORMAL_INVARIANTS_SPEC.json` has preconditions, postconditions, and linked tests
+- CT-flagged operations have CT-specific test links
+- Missing specs or unlinked tests are FAIL
+
+### P13 — Risk-Surface Coverage
+
+> Seven risk classes (ct_paths, parser_boundary, abi_boundary, gpu_parity,
+> secret_lifecycle, determinism, fuzz_corpus) must meet minimum coverage thresholds.
+
+**Automated gate:** `risk_surface_coverage.py --json`
+
+Checks:
+- Each risk class meets its configured minimum coverage threshold
+- Below-threshold classes are FAIL findings
+
+### P14 — Audit SLA Compliance
+
+> Evidence freshness and audit SLA/SLO targets must be met.
+
+**Automated gate:** `audit_sla_check.py --json`
+
+Checks:
+- Evidence staleness within configured limits
+- Critical evidence freshness within SLA targets
+- Golden reference files exist and are current
+
+### P15 — Supply-Chain Fail-Closed
+
+> Build reproducibility, dependency pinning, provenance, artifact hashing,
+> and hardening checks must all pass.
+
+**Automated gate:** `supply_chain_gate.py --json`
+
+Checks:
+- Dependency pinning is present
+- Build reproducibility script exists and is functional
+- SLSA provenance verification passes
+- Artifact hash policy is enforced
+- Build hardening checks pass
+
+### P16 — Evidence Governance
+
+> An HMAC-verified tamper-resistant evidence chain must validate cleanly.
+
+**Automated gate:** `evidence_governance.py validate --json`
+
+Checks:
+- Evidence chain integrity (HMAC verification)
+- No tampered or missing records
+
+### P17 — Misuse Resistance
+
+> Every exported ABI function must have ≥3 negative/hostile-caller tests.
+
+**Automated gate:** `check_misuse_resistance.py --json`
+
+Checks:
+- Per-ABI-function negative test count meets threshold
+- Below-threshold functions are FAIL findings
+
+### P18 — Performance-Security Co-Gating
+
+> Performance changes must not regress security posture. CT evidence, formal
+> invariants, secret lifecycle, and GPU parity stubs are checked.
+
+**Automated gate:** `perf_security_cogate.py --json`
+
+Checks:
+- CT evidence exists and is current
+- Formal invariant spec is complete
+- Secret lifecycle doc is present
+- No undocumented GPU parity stubs
+
+### P19 — External Auditor Reproducibility Bundle
+
+> External auditors must be able to verify repository claims from immutable,
+> hash-pinned evidence rather than maintainer narrative.
+
+**Automated gate:** `external_audit_bundle.py` + `verify_external_audit_bundle.py`
+
+Checks:
+- Critical gate outputs are captured with command-output hashes
+- Required evidence files are present and SHA-256 pinned in bundle
+- Detached bundle digest matches bundle JSON
+- Independent verifier can validate the bundle (and optionally replay commands)
+
+### P20 — Continuous Audit as a Service (CAAS)
+
+> Audit gates must run automatically on every push and pull request.
+> Any regression must be caught before it reaches the repository, not after.
+> Manual audit runs are a supplement — not a substitute — for continuous automation.
+
+**Automated gate:** `caas_runner.py` (local) + `.github/workflows/caas.yml` (CI)
+
+Checks:
+- Stage 1: `audit_test_quality_scanner` — 0 findings required (any finding is an immediate CI failure)
+- Stage 2: `audit_gate.py` — all P0–P18 principles must pass
+- Stage 3: `security_autonomy_check.py` — 100/100 autonomy score required
+- Stage 4: `external_audit_bundle.py` — evidence bundle regenerated and pinned
+- Stage 5: `verify_external_audit_bundle.py` — integrity check on freshly produced bundle
+
+All five stages are **blocking** — a PR cannot be merged if any stage fails.
+
+Local enforcement: install with `python3 scripts/install_caas_hooks.py` (pre-push hook)
+
 ---
 
 ## 3. Severity Levels
@@ -252,11 +365,15 @@ Checks:
 
 ### What blocks a merge:
 
-- Any FAIL from P0, P0a–P0d, P1–P9, and P11
+- Any FAIL from P0, P0a–P0d, P1–P9, P11, P12–P18
 - Security pattern loss (P3)
 - ABI surface mismatch (P1)
 - CT routing violation (P4)
 - Critical/high audit-test-quality findings (P2a)
+- Formal invariant gaps (P12)
+- Risk-surface coverage below threshold (P13)
+- Supply-chain integrity failure (P15)
+- Misuse-resistance below threshold (P17)
 
 ### What doesn't block but must be tracked:
 
@@ -265,6 +382,10 @@ Checks:
 - Graph freshness warnings (P6) — rebuild resolves
 - GPU parity stubs with proper TODO comments (P7)
 - Mutation kill-rate failures block only when the heavy lane is explicitly selected (P2b)
+- Audit SLA warnings (P14) — tracked until evidence refreshed
+- Evidence governance warnings (P16) — tracked until chain repaired
+- Perf-security co-gating warnings (P18) — informational unless regression detected
+- External-audit bundle verification failures (P19) — blocking for external audit sign-off
 
 ---
 
@@ -292,8 +413,25 @@ python3 scripts/audit_gate.py --test-docs
 python3 scripts/audit_gate.py --routing
 python3 scripts/audit_gate.py --doc-pairing
 python3 scripts/audit_gate.py --mutation-kill
+python3 scripts/audit_gate.py --mutation-freshness
+python3 scripts/audit_gate.py --crash-risks
 python3 scripts/audit_gap_report.py
 python3 scripts/audit_gap_report.py --strict
+
+# Security Autonomy gates (P12–P18, standalone scripts)
+python3 scripts/check_formal_invariants.py --json
+python3 scripts/risk_surface_coverage.py --json
+python3 scripts/audit_sla_check.py --json
+python3 scripts/supply_chain_gate.py --json
+python3 scripts/evidence_governance.py validate --json
+python3 scripts/check_misuse_resistance.py --json
+python3 scripts/perf_security_cogate.py --json
+python3 scripts/external_audit_bundle.py
+python3 scripts/verify_external_audit_bundle.py --json
+python3 scripts/verify_external_audit_bundle.py --replay-commands --json
+
+# Master orchestrator (runs all P12–P18 gates)
+python3 scripts/security_autonomy_check.py
 
 # JSON output for CI
 python3 scripts/audit_gate.py --json
@@ -308,7 +446,8 @@ python3 scripts/audit_gate.py --json -o audit_gate_report.json
 
 | Trigger | Required checks |
 |---------|----------------|
-| Before every commit | `audit_gate.py` (full) |
+| Before every commit | `caas_runner.py --skip-bundle` (or pre-push hook) |
+| Every push / PR (automated) | Full CAAS pipeline via `.github/workflows/caas.yml` |
 | During owner-grade assurance review | `audit_gap_report.py` + `audit_gap_report.py --strict` |
 | After parser / ABI hostile-input changes | `--abi-negative-tests --invalid-inputs --audit-test-quality` |
 | After protocol / lifecycle changes | `--stateful-sequences --audit-test-quality` |
@@ -317,7 +456,14 @@ python3 scripts/audit_gate.py --json -o audit_gate_report.json
 | After GPU backend changes | `--gpu-parity` |
 | After adding tests | `--test-coverage --test-docs` |
 | After high-risk arithmetic or audit-harness changes | `--mutation-kill` |
-| Before release | Full gate + `export_assurance.py` + `validate_assurance.py` |
+| After changing formal invariants or CT specs | `check_formal_invariants.py --json` |
+| After changing risk surfaces or fuzz corpus | `risk_surface_coverage.py --json` |
+| After supply-chain or dependency changes | `supply_chain_gate.py --json` |
+| After evidence chain changes | `evidence_governance.py validate --json` |
+| After adding/removing ABI functions (misuse) | `check_misuse_resistance.py --json` |
+| Before handing repository to external auditors | `external_audit_bundle.py` + `verify_external_audit_bundle.py --replay-commands --json` |
+| Periodic security autonomy check | `security_autonomy_check.py` |
+| Before release | Full gate + `export_assurance.py` + `validate_assurance.py` + `security_autonomy_check.py` |
 
 ---
 
@@ -348,6 +494,12 @@ To add a new audit principle:
 | `SECURITY_CLAIMS.md` | Security guarantees and non-guarantees |
 | `FFI_HOSTILE_CALLER.md` | Hostile-caller resilience analysis |
 | `BACKEND_ASSURANCE_MATRIX.md` | GPU backend parity tracking |
+| `SECURITY_AUTONOMY_PLAN.md` | 30-day security autonomy framework and phase plan |
+| `FORMAL_INVARIANTS_SPEC.json` | Machine-readable formal invariant specifications |
+| `AUDIT_SLA.json` | Measurable audit SLA/SLO definitions |
+| `SECURITY_AUTONOMY_KPI.json` | Auto-generated autonomy score and gate results |
+| `EXTERNAL_AUDIT_BUNDLE_SPEC.md` | Hash-pinned external auditor evidence format and verification rules |
+| `.github/workflows/caas.yml` | Continuous Audit as a Service — five-stage blocking CI pipeline |
 
 ---
 
@@ -362,3 +514,6 @@ To add a new audit principle:
 | 2026-03-23 | Fixed graph builder missing `ufsecp_gpu.h` | 18 GPU ABI functions were invisible |
 | 2026-03-23 | Fixed preflight missing `ufsecp_gpu.h` scan | ABI drift detection was incomplete |
 | 2026-03-25 | Added `test_gpu_bip352_scan.cpp` (SW-BIP352-1..13) | BIP-352 Silent Payment GPU scan audit coverage |
+| 2026-04-14 | Security Autonomy Program: 10 scripts, 3 spec docs, preflight steps 18-20 | P12-P18 principles added; formal invariants, SLA, supply chain, misuse resistance, evidence governance, incident drills, fuzz campaigns, perf-security co-gating; master orchestrator `security_autonomy_check.py` |
+| 2026-04-14 | Added external-audit bundle producer/validator (`external_audit_bundle.py`, `verify_external_audit_bundle.py`) and spec doc | P19 external-auditor reproducibility principle added; external sign-off can be independently hash-verified and replay-validated |
+| 2026-04-14 | Added CAAS infrastructure: `caas_runner.py`, `install_caas_hooks.py`, `.github/workflows/caas.yml`; added CAAS stages to `preflight.yml` | P20 added — all five audit stages now run automatically on every push and PR; pre-push hook available for local enforcement |

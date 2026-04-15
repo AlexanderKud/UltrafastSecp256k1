@@ -144,6 +144,10 @@ The following assurance-system hardening work is now tracked in-repo:
 | `docs/AI_REVIEW_EVENTS.json` | Machine-readable record of accepted/rejected AI review findings |
 | `docs/GPU_BACKEND_EVIDENCE.json` | Machine-readable GPU backend status, publishability, and artifact requirements |
 | `docs/FORTRESS_ROADMAP.md` | Tracks the remaining fortress-grade assurance gap |
+| `docs/SECURITY_AUTONOMY_PLAN.md` | Security autonomy framework and 30-day phase plan |
+| `docs/FORMAL_INVARIANTS_SPEC.json` | Machine-readable formal invariant specifications |
+| `docs/AUDIT_SLA.json` | Audit SLA/SLO enforcement definitions |
+| `docs/SECURITY_AUTONOMY_KPI.json` | Auto-generated autonomy score and gate results |
 
 All other tests are deterministic and must always pass.
 
@@ -158,6 +162,11 @@ and schema-validated through:
 GPU backend publishability is enforced locally through:
 
 - `python3 scripts/preflight.py --gpu-evidence`
+
+Security autonomy gates are enforced locally through:
+
+- `python3 scripts/preflight.py --autonomy`
+- `python3 scripts/security_autonomy_check.py --json`
 
 and schema/policy-validated through:
 

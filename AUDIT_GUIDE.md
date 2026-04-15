@@ -316,7 +316,7 @@ UltrafastSecp256k1/
 
 ## 5. Automated CI Workflows
 
-36 GitHub Actions workflows provide continuous assurance across every push and PR:
+37 GitHub Actions workflows provide continuous assurance across every push and PR:
 
 | Workflow | File | Trigger | What It Does |
 |----------|------|---------|--------------|

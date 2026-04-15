@@ -76,11 +76,23 @@ bool ecdsa_batch_verify(const std::vector<ECDSABatchEntry>& entries);
 
 // After a batch fails, identify which signature(s) are invalid.
 // Returns indices of invalid entries.
+void schnorr_batch_identify_invalid(
+    const SchnorrBatchEntry* entries, std::size_t n,
+    std::vector<std::size_t>& invalid_out);
+
 std::vector<std::size_t> schnorr_batch_identify_invalid(
     const SchnorrBatchEntry* entries, std::size_t n);
 
+void schnorr_batch_identify_invalid(
+    const SchnorrBatchCachedEntry* entries, std::size_t n,
+    std::vector<std::size_t>& invalid_out);
+
 std::vector<std::size_t> schnorr_batch_identify_invalid(
     const SchnorrBatchCachedEntry* entries, std::size_t n);
+
+void ecdsa_batch_identify_invalid(
+    const ECDSABatchEntry* entries, std::size_t n,
+    std::vector<std::size_t>& invalid_out);
 
 std::vector<std::size_t> ecdsa_batch_identify_invalid(
     const ECDSABatchEntry* entries, std::size_t n);

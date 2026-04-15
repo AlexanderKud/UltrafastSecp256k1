@@ -264,11 +264,14 @@ set_tests_properties(audit_invariants PROPERTIES TIMEOUT 300)
 # -- C ABI negative contract tests ----------------------------------------
 add_executable(test_c_abi_negative_standalone
     test_c_abi_negative.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_impl.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp/ufsecp_gpu_impl.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../gpu/src/gpu_registry.cpp)
 audit_target_defaults(test_c_abi_negative_standalone)
 target_include_directories(test_c_abi_negative_standalone PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../gpu/include
 )
 target_compile_definitions(test_c_abi_negative_standalone PRIVATE UFSECP_BUILDING)
 add_test(NAME c_abi_negative COMMAND test_c_abi_negative_standalone)

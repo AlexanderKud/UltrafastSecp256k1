@@ -70,10 +70,26 @@ static Scalar derive_scalar_pair(const std::uint8_t* seed, std::size_t seed_len,
 
 static bool valid_unique_participant_ids(const std::vector<ParticipantId>& ids) {
     if (ids.empty()) return false;
-    std::vector<ParticipantId> sorted = ids;
-    std::sort(sorted.begin(), sorted.end());
-    if (sorted.front() == 0) return false;
-    return std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end();
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+        if (ids[i] == 0) return false;
+        for (std::size_t j = i + 1; j < ids.size(); ++j) {
+            if (ids[i] == ids[j]) return false;
+        }
+    }
+    return true;
+}
+
+static bool valid_unique_nonce_commitment_ids(
+    const std::vector<FrostNonceCommitment>& nonce_commitments) {
+    if (nonce_commitments.empty()) return false;
+    for (std::size_t i = 0; i < nonce_commitments.size(); ++i) {
+        ParticipantId const id_i = nonce_commitments[i].id;
+        if (id_i == 0) return false;
+        for (std::size_t j = i + 1; j < nonce_commitments.size(); ++j) {
+            if (id_i == nonce_commitments[j].id) return false;
+        }
+    }
+    return true;
 }
 
 // Evaluate polynomial f(x) = a_0 + a_1*x + a_2*x^2 + ... at x
@@ -124,17 +140,30 @@ static Scalar compute_binding_factor(const Point& group_key,
     return Scalar::from_bytes(digest);
 }
 
-// Compute group commitment R = Sum(D_i + rho_i * E_i)
-static Point compute_group_commitment(
+// Compute group commitment directly from commitments without materializing
+// all binding factors on the heap.
+static Point compute_group_commitment_inline_binding(
+    const Point& group_key,
     const std::vector<FrostNonceCommitment>& nonce_commitments,
-    const std::vector<Scalar>& binding_factors) {
+    const std::array<std::uint8_t, 32>& msg,
+    ParticipantId tracked_id,
+    Scalar* tracked_binding) {
 
     Point R = Point::infinity();
-    for (std::size_t i = 0; i < nonce_commitments.size(); ++i) {
-        Point const rho_E = nonce_commitments[i].binding_point.scalar_mul(binding_factors[i]);
-        Point const contribution = nonce_commitments[i].hiding_point.add(rho_E);
+    if (tracked_binding != nullptr) {
+        *tracked_binding = Scalar::zero();
+    }
+
+    for (const auto& nc : nonce_commitments) {
+        Scalar const rho = compute_binding_factor(group_key, nc.id, nonce_commitments, msg);
+        if (tracked_binding != nullptr && nc.id == tracked_id) {
+            *tracked_binding = rho;
+        }
+        Point const rho_E = nc.binding_point.scalar_mul(rho);
+        Point const contribution = nc.hiding_point.add(rho_E);
         R = R.add(contribution);
     }
+
     return R;
 }
 
@@ -173,6 +202,35 @@ Scalar frost_lagrange_coefficient(ParticipantId i,
         den = den * (x_j - x_i);          // den *= (j - i)
     }
 
+    return num * den.inverse();
+}
+
+static Scalar frost_lagrange_coefficient_from_commitments(
+    ParticipantId i,
+    const std::vector<FrostNonceCommitment>& nonce_commitments) {
+    if (i == 0) {
+        return Scalar::zero();
+    }
+
+    Scalar num = Scalar::one();
+    Scalar den = Scalar::one();
+    Scalar const x_i = Scalar::from_uint64(i);
+    bool found_i = false;
+
+    for (const auto& nc : nonce_commitments) {
+        ParticipantId const j = nc.id;
+        if (j == i) {
+            found_i = true;
+            continue;
+        }
+        Scalar const x_j = Scalar::from_uint64(j);
+        num = num * x_j;
+        den = den * (x_j - x_i);
+    }
+
+    if (!found_i) {
+        return Scalar::zero();
+    }
     return num * den.inverse();
 }
 
@@ -238,28 +296,28 @@ frost_keygen_finalize(ParticipantId participant_id,
         return {pkg, false};
     }
 
-    std::vector<ParticipantId> seen_commit_ids;
-    seen_commit_ids.reserve(commitments.size());
-    for (const auto& commitment : commitments) {
+    for (std::size_t idx = 0; idx < commitments.size(); ++idx) {
+        const auto& commitment = commitments[idx];
         if (commitment.from == 0 || commitment.coeffs.size() != threshold) {
             return {pkg, false};
         }
-        seen_commit_ids.push_back(commitment.from);
-    }
-    if (!valid_unique_participant_ids(seen_commit_ids)) {
-        return {pkg, false};
+        for (std::size_t prev = 0; prev < idx; ++prev) {
+            if (commitments[prev].from == commitment.from) {
+                return {pkg, false};
+            }
+        }
     }
 
-    std::vector<ParticipantId> seen_share_ids;
-    seen_share_ids.reserve(received_shares.size());
-    for (const auto& share : received_shares) {
+    for (std::size_t idx = 0; idx < received_shares.size(); ++idx) {
+        const auto& share = received_shares[idx];
         if (share.from == 0 || share.id != participant_id) {
             return {pkg, false};
         }
-        seen_share_ids.push_back(share.from);
-    }
-    if (!valid_unique_participant_ids(seen_share_ids)) {
-        return {pkg, false};
+        for (std::size_t prev = 0; prev < idx; ++prev) {
+            if (received_shares[prev].from == share.from) {
+                return {pkg, false};
+            }
+        }
     }
 
     // Verify each received share against its sender's commitment
@@ -333,38 +391,20 @@ frost_sign(const FrostKeyPackage& key_pkg,
            FrostNonce& nonce,
            const std::array<std::uint8_t, 32>& msg,
            const std::vector<FrostNonceCommitment>& nonce_commitments) {
-    // Collect signer IDs
-    std::vector<ParticipantId> signer_ids;
-    signer_ids.reserve(nonce_commitments.size());
-    for (const auto& nc : nonce_commitments) {
-        signer_ids.push_back(nc.id);
-    }
-    if (!valid_unique_participant_ids(signer_ids)) {
+    if (!valid_unique_nonce_commitment_ids(nonce_commitments)) {
         secure_erase(&nonce.hiding_nonce, sizeof(nonce.hiding_nonce));
         secure_erase(&nonce.binding_nonce, sizeof(nonce.binding_nonce));
         return FrostPartialSig{key_pkg.id, Scalar::zero()};
     }
 
-    // Compute binding factors for all signers
-    std::vector<Scalar> binding_factors;
-    binding_factors.reserve(nonce_commitments.size());
-    for (const auto& nc : nonce_commitments) {
-        binding_factors.push_back(
-            compute_binding_factor(key_pkg.group_public_key, nc.id,
-                                   nonce_commitments, msg));
-    }
-
-    // My binding factor
+    // My binding factor while computing group commitment in one pass.
     Scalar my_binding = Scalar::zero();
-    for (std::size_t i = 0; i < nonce_commitments.size(); ++i) {
-        if (nonce_commitments[i].id == key_pkg.id) {
-            my_binding = binding_factors[i];
-            break;
-        }
-    }
-
-    // Group commitment R
-    Point const R = compute_group_commitment(nonce_commitments, binding_factors);
+    Point const R = compute_group_commitment_inline_binding(
+        key_pkg.group_public_key,
+        nonce_commitments,
+        msg,
+        key_pkg.id,
+        &my_binding);
 
     // BIP-340 compatibility: negate nonces if R has odd y
     // NOTE: R and group_public_key are public values; VT field inverse is safe here.
@@ -382,7 +422,8 @@ frost_sign(const FrostKeyPackage& key_pkg,
         msg);
 
     // Lagrange coefficient
-    Scalar const lambda_i = frost_lagrange_coefficient(key_pkg.id, signer_ids);
+    Scalar const lambda_i = frost_lagrange_coefficient_from_commitments(
+        key_pkg.id, nonce_commitments);
 
     // Partial signature: z_i = d_i + rho_i * e_i + lambda_i * s_i * e
     Scalar d = nonce.hiding_nonce;
@@ -416,36 +457,21 @@ bool frost_verify_partial(const FrostPartialSig& partial_sig,
                           const std::array<std::uint8_t, 32>& msg,
                           const std::vector<FrostNonceCommitment>& nonce_commitments,
                           const Point& group_public_key) {
-    // Collect signer IDs
-    std::vector<ParticipantId> signer_ids;
-    signer_ids.reserve(nonce_commitments.size());
-    for (const auto& nc : nonce_commitments) {
-        signer_ids.push_back(nc.id);
-    }
-    if (!valid_unique_participant_ids(signer_ids) || partial_sig.id == 0) {
+    if (!valid_unique_nonce_commitment_ids(nonce_commitments) || partial_sig.id == 0) {
         return false;
     }
 
-    // Compute binding factors
-    std::vector<Scalar> binding_factors;
-    binding_factors.reserve(nonce_commitments.size());
-    for (const auto& nc : nonce_commitments) {
-        binding_factors.push_back(
-            compute_binding_factor(group_public_key, nc.id, nonce_commitments, msg));
-    }
-
-    // Find this signer's binding factor
+    // Find this signer's binding factor while computing group commitment.
     Scalar rho = Scalar::zero();
-    for (std::size_t i = 0; i < nonce_commitments.size(); ++i) {
-        if (nonce_commitments[i].id == partial_sig.id) {
-            rho = binding_factors[i];
-            break;
-        }
-    }
+    Point const R = compute_group_commitment_inline_binding(
+        group_public_key,
+        nonce_commitments,
+        msg,
+        partial_sig.id,
+        &rho);
 
     // Group commitment
     // NOTE: R and group_public_key are public values; VT field inverse is safe here.
-    Point const R = compute_group_commitment(nonce_commitments, binding_factors);
     auto R_y = R.y().to_bytes();
     bool const negate_R = (R_y[31] & 1) != 0;
 
@@ -457,7 +483,8 @@ bool frost_verify_partial(const FrostPartialSig& partial_sig,
         negate_key ? group_public_key.negate() : group_public_key,
         msg);
 
-    Scalar const lambda_i = frost_lagrange_coefficient(partial_sig.id, signer_ids);
+    Scalar const lambda_i = frost_lagrange_coefficient_from_commitments(
+        partial_sig.id, nonce_commitments);
 
     // Verify: z_i * G == R_i + lambda_i * e * Y_i
     // where R_i = D_i + rho_i * E_i
@@ -480,25 +507,17 @@ frost_aggregate(const std::vector<FrostPartialSig>& partial_sigs,
                 const std::vector<FrostNonceCommitment>& nonce_commitments,
                 const Point& group_public_key,
                 const std::array<std::uint8_t, 32>& msg) {
-    std::vector<ParticipantId> signer_ids;
-    signer_ids.reserve(nonce_commitments.size());
-    for (const auto& nc : nonce_commitments) {
-        signer_ids.push_back(nc.id);
-    }
-    if (!valid_unique_participant_ids(signer_ids)) {
+    if (!valid_unique_nonce_commitment_ids(nonce_commitments)) {
         return SchnorrSignature{{}, Scalar::zero()};
     }
 
-    // Compute binding factors
-    std::vector<Scalar> binding_factors;
-    binding_factors.reserve(nonce_commitments.size());
-    for (const auto& nc : nonce_commitments) {
-        binding_factors.push_back(
-            compute_binding_factor(group_public_key, nc.id, nonce_commitments, msg));
-    }
-
-    // Group commitment R
-    Point R = compute_group_commitment(nonce_commitments, binding_factors);
+    // Group commitment R (compute binding factors inline to avoid heap scratch).
+    Point R = compute_group_commitment_inline_binding(
+        group_public_key,
+        nonce_commitments,
+        msg,
+        0,
+        nullptr);
 
     // BIP-340: ensure even y
     // NOTE: R is a public group commitment; VT field inverse is safe here.

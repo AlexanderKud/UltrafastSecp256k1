@@ -54,6 +54,7 @@ Copy this checklist into the release PR description. All items must be checked b
 - [ ] UBSan build + test: no undefined behavior
 - [ ] TSan build + test: no data races
 - [ ] Valgrind memcheck: no leaks or invalid reads/writes
+- [ ] Security autonomy gates pass: `python3 scripts/security_autonomy_check.py --json`
 
 ### 5. ABI Compatibility (if applicable)
 
@@ -69,6 +70,7 @@ Copy this checklist into the release PR description. All items must be checked b
 - [ ] `docs/USER_GUIDE.md` updated for new features
 - [ ] `CHANGELOG.md` entry includes: what changed, why, migration steps
 - [ ] Breaking changes explicitly documented
+- [ ] `docs/SECURITY_AUTONOMY_PLAN.md` and `docs/AUDIT_SLA.json` current
 
 ### 7. Release Artifacts
 

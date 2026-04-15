@@ -24,6 +24,7 @@ That command can:
 4. Export machine-readable assurance status
 5. Generate traceability artifacts
 6. Optionally generate a full audit evidence package
+7. Run security autonomy gates (formal invariants, SLA, supply chain, misuse resistance)
 
 ---
 
@@ -124,7 +125,8 @@ For a reviewer arriving cold, the recommended order is:
 3. `docs/AUDIT_TRACEABILITY.md`
 4. `docs/AI_AUDIT_PROTOCOL.md`
 5. `docs/FORTRESS_ROADMAP.md`
-6. `external-audit-prep-<timestamp>/`
+6. `docs/SECURITY_AUTONOMY_PLAN.md`
+7. `external-audit-prep-<timestamp>/`
 
 ---
 
@@ -136,3 +138,7 @@ The next useful extensions are:
 2. Preflight checks that detect public-claim drift automatically
 3. Logged AI-review events tied to resulting tests/docs/gates
 4. Stronger GPU-specific auditor bundles and promotion criteria
+
+Note: Items 1–3 are partially addressed by the Security Autonomy Program
+(commit 0624390c) — formal invariant specs, evidence governance chain, and
+audit SLA enforcement. See `docs/SECURITY_AUTONOMY_PLAN.md`.

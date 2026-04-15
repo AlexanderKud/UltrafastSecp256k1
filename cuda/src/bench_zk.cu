@@ -7,6 +7,7 @@
 #include "msm.cuh"
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 using namespace secp256k1::cuda;
 
@@ -562,18 +563,16 @@ int main() {
 
     // Generate test values and blindings for Pedersen commit
     {
-        Scalar* h_vals = new Scalar[BATCH];
-        Scalar* h_blinds = new Scalar[BATCH];
+        std::vector<Scalar> h_vals(BATCH);
+        std::vector<Scalar> h_blinds(BATCH);
         for (int i = 0; i < BATCH; ++i) {
             h_vals[i].limbs[0] = (uint64_t)(i + 1);
             h_vals[i].limbs[1] = 0; h_vals[i].limbs[2] = 0; h_vals[i].limbs[3] = 0;
             h_blinds[i].limbs[0] = (uint64_t)(i + 100);
             h_blinds[i].limbs[1] = 0; h_blinds[i].limbs[2] = 0; h_blinds[i].limbs[3] = 0;
         }
-        cudaMemcpy(d_ped_vals, h_vals, BATCH * sizeof(Scalar), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_ped_blinds, h_blinds, BATCH * sizeof(Scalar), cudaMemcpyHostToDevice);
-        delete[] h_vals;
-        delete[] h_blinds;
+        cudaMemcpy(d_ped_vals, h_vals.data(), BATCH * sizeof(Scalar), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_ped_blinds, h_blinds.data(), BATCH * sizeof(Scalar), cudaMemcpyHostToDevice);
     }
 
     double ped_ns = bench_kernel([&]() {
@@ -627,14 +626,13 @@ int main() {
 
     // Check prove results
     {
-        bool* h_results = new bool[BP_BATCH];
-        cudaMemcpy(h_results, d_bp_results, BP_BATCH * sizeof(bool), cudaMemcpyDeviceToHost);
+        std::vector<unsigned char> h_results(BP_BATCH);
+        cudaMemcpy(h_results.data(), d_bp_results, BP_BATCH * sizeof(bool), cudaMemcpyDeviceToHost);
         int prove_fails = 0;
         for (int i = 0; i < BP_BATCH; ++i) if (!h_results[i]) ++prove_fails;
         if (prove_fails > 0) {
             printf("  FAIL: %d/%d range_prove failures\n", prove_fails, BP_BATCH);
         }
-        delete[] h_results;
     }
 
     // Verify correctness
@@ -714,14 +712,13 @@ int main() {
 
     // Check warp prove results
     {
-        bool* h_results = new bool[BP_BATCH];
-        cudaMemcpy(h_results, d_bp_warp_results, BP_BATCH * sizeof(bool), cudaMemcpyDeviceToHost);
+        std::vector<unsigned char> h_results(BP_BATCH);
+        cudaMemcpy(h_results.data(), d_bp_warp_results, BP_BATCH * sizeof(bool), cudaMemcpyDeviceToHost);
         int prove_fails = 0;
         for (int i = 0; i < BP_BATCH; ++i) if (!h_results[i]) ++prove_fails;
         if (prove_fails > 0) {
             printf("  FAIL: %d/%d warp_prove failures\n", prove_fails, BP_BATCH);
         }
-        delete[] h_results;
     }
 
     // Verify warp proofs with original verifier (cross-check)
@@ -758,14 +755,13 @@ int main() {
 
     // Check prove results
     {
-        bool* h_results = new bool[BP_BATCH];
-        cudaMemcpy(h_results, d_bp_warp_results, BP_BATCH * sizeof(bool), cudaMemcpyDeviceToHost);
+        std::vector<unsigned char> h_results(BP_BATCH);
+        cudaMemcpy(h_results.data(), d_bp_warp_results, BP_BATCH * sizeof(bool), cudaMemcpyDeviceToHost);
         int prove_fails = 0;
         for (int i = 0; i < BP_BATCH; ++i) if (!h_results[i]) ++prove_fails;
         if (prove_fails > 0) {
             printf("  FAIL: %d/%d prove_lut4 failures\n", prove_fails, BP_BATCH);
         }
-        delete[] h_results;
     }
 
     // Verify LUT4 proofs with original verifier (cross-check)

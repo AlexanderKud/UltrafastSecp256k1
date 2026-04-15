@@ -43,6 +43,7 @@ Each row in this matrix links:
 4. **Validation Method** -- how it is verified (deterministic, statistical, differential)
 5. **Test Location** -- exact file and function/line where evidence is produced
 6. **Status** -- [OK] Verified | [!] Partial | [FAIL] Gap
+7. **Formal invariant spec** -- machine-readable invariant definitions for critical operations in `docs/FORMAL_INVARIANTS_SPEC.json`, validated by `scripts/check_formal_invariants.py`
 
 ---
 

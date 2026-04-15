@@ -198,6 +198,15 @@ This is optional, but useful for reviewers and downstream integrators.
 ## Done Criteria
 - Audit package includes or links all current CT evidence layers.
 - No active docs claim CT/audit capabilities are merely planned when implemented.
+
+---
+
+## Post-Completion Note
+
+The Security Autonomy Program (commit 0624390c, 2026-04-14) extends beyond the
+scope of this TODO with formal invariant validation, audit SLA enforcement,
+supply-chain gating, evidence governance, misuse resistance gates, incident
+drills, and fuzz campaign management. See `docs/SECURITY_AUTONOMY_PLAN.md`.
 - Historical reports are clearly labeled or updated.
 - Preflight detects future narrative drift in critical audit docs.
 - Reviewers can understand the current assurance stack without reading source code.

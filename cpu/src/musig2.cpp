@@ -87,7 +87,8 @@ MuSig2KeyAggCtx musig2_key_agg(const std::vector<std::array<uint8_t, 32>>& pubke
     // computing sqrt twice per pubkey (once for validation, once for Q aggr).
     // If any key is invalid (x >= p or not on curve), reject the entire set.
     // Silently skipping invalid keys would allow rogue key attacks.
-    std::vector<Point> points(n);
+    static thread_local std::vector<Point> points;
+    points.resize(n);
     for (std::size_t i = 0; i < n; ++i) {
         FieldElement px;
         if (!FieldElement::parse_bytes_strict(pubkeys[i], px)) return ctx;
@@ -105,7 +106,8 @@ MuSig2KeyAggCtx musig2_key_agg(const std::vector<std::array<uint8_t, 32>>& pubke
     // Sort a canonical copy of the pubkeys so that L is identical regardless
     // of the order in which callers pass the same set of keys.  Without this,
     // signers that disagree on ordering derive different aggregate keys.
-    std::vector<std::array<uint8_t, 32>> sorted_keys(pubkeys.begin(), pubkeys.end());
+    static thread_local std::vector<std::array<uint8_t, 32>> sorted_keys;
+    sorted_keys.assign(pubkeys.begin(), pubkeys.end());
     std::sort(sorted_keys.begin(), sorted_keys.end());
 
     // L = tagged_hash("KeyAgg list", sorted_pk_1 || sorted_pk_2 || ... || sorted_pk_n)
