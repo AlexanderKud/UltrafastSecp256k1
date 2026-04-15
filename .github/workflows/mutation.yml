@@ -1,26 +1,12 @@
 name: Mutation Testing
 
 on:
-  push:
-    branches: [main, dev]
-    paths:
-      - 'cpu/src/**'
-      - 'cpu/include/**'
-      - 'include/**'
-      - 'CMakeLists.txt'
-      - '.github/workflows/mutation.yml'
-  pull_request:
-    branches: [main, dev]
-    paths:
-      - 'cpu/src/**'
-      - 'cpu/include/**'
-      - 'include/**'
-      - 'CMakeLists.txt'
-      - '.github/workflows/mutation.yml'
+  # Local-first policy: heavy mutation testing is not part of push/PR CI.
+  # Use local pre-release execution as the strict default.
   workflow_dispatch:
     inputs:
       targets:
-        description: 'Comma-separated source files to mutate (default: core crypto)'
+        description: 'Manual fallback only. Prefer local mutation runs before release.'
         required: false
         default: ''
 

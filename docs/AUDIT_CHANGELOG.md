@@ -7,6 +7,21 @@ evidence upgrades, and changes to what the repository can honestly claim.
 
 ---
 
+## 2026-04-15 (Mutation policy: local pre-release, not push/PR CI)
+
+- **Updated** `.github/workflows/mutation.yml` trigger policy to remove automatic
+  push/PR execution of the heavy mutation lane on GitHub-hosted runners.
+  Mutation workflow is now manual-only (`workflow_dispatch`) for exceptional
+  remote runs.
+
+- **Updated** `docs/AUDIT_MANIFEST.md` (P2b) and
+  `docs/PRE_RELEASE_CHECKLIST.md` with a strict requirement that heavy mutation
+  kill-rate runs execute **locally before release** using
+  `scripts/mutation_kill_rate.py`.
+
+- **Rationale:** prevent recurring hosted-CI runtime spend and timeout churn
+  while preserving mutation assurance as an explicit pre-release gate.
+
 ## 2026-04-15 (Mutation CI runtime hardening)
 
 - **Updated** `.github/workflows/mutation.yml` to keep mutation CI within
