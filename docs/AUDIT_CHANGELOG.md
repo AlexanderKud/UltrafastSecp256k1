@@ -7,6 +7,22 @@ evidence upgrades, and changes to what the repository can honestly claim.
 
 ---
 
+## 2026-04-15 (Mutation CI runtime hardening)
+
+- **Updated** `.github/workflows/mutation.yml` to keep mutation CI within
+  GitHub-hosted runtime limits after repeated 6-hour timeout cancellations.
+  The workflow now disables non-essential build surfaces in mutation lanes
+  (`SECP256K1_BUILD_CABI=OFF`, `SECP256K1_BUILD_JAVA=OFF`,
+  `SECP256K1_BUILD_ETHEREUM=OFF`, `UFSECP_REFRESH_SOURCE_GRAPH=OFF`,
+  `SECP256K1_USE_LTO=OFF`) and builds only core mutation-check targets
+  (`run_selftest`, `test_bip340_vectors_standalone`) instead of full ALL
+  target builds.
+
+- **Updated** manual fallback mutation loop to run targeted core checks
+  (smoke selftest + BIP-340 vectors) and cap fallback source sweep with
+  `MUTATION_MAX_FILES` (default 4). This preserves kill/survive signal while
+  preventing timeout-driven cancellations from masking real regressions.
+
 ## 2026-04-15 (CI stability: nonce-bias statistical gate)
 
 - **Updated** `scripts/nonce_bias_detector.py` KS decision logic to reduce
