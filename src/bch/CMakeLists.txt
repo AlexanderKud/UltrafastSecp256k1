@@ -20,3 +20,14 @@ target_link_libraries(bench_bch PRIVATE fastsecp256k1 Threads::Threads)
     target_compile_options(bench_bch PRIVATE -O3 -march=native)
     message(STATUS "  BCH benchmark: bench_bch")
 endif()
+# RPA example project
+if(SECP256K1_BUILD_EXAMPLES)
+    find_package(Threads REQUIRED)
+    add_executable(rpa_wallet_example
+        ${CMAKE_CURRENT_SOURCE_DIR}/examples/rpa_wallet.cpp)
+    target_link_libraries(rpa_wallet_example PRIVATE fastsecp256k1 Threads::Threads)
+    target_include_directories(rpa_wallet_example PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../cpu/include)
+    target_compile_options(rpa_wallet_example PRIVATE -O2)
+    message(STATUS "  BCH example: rpa_wallet_example")
+endif()
