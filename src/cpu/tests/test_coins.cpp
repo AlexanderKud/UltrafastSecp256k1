@@ -637,9 +637,9 @@ static void test_bip44_best_purpose() {
     ASSERT_EQ(static_cast<int>(secp256k1::coins::best_purpose(secp256k1::coins::Bitcoin)),
               static_cast<int>(secp256k1::coins::DerivationPurpose::BIP86), "Bitcoin -> BIP86");
     
-    // Litecoin -> BIP84 (SegWit but no Taproot)
+    // Litecoin -> BIP86 (Taproot activated May 2023 with MWEB)
     ASSERT_EQ(static_cast<int>(secp256k1::coins::best_purpose(secp256k1::coins::Litecoin)),
-              static_cast<int>(secp256k1::coins::DerivationPurpose::BIP84), "Litecoin -> BIP84");
+              static_cast<int>(secp256k1::coins::DerivationPurpose::BIP86), "Litecoin -> BIP86");
     
     // Dogecoin -> BIP44 (no SegWit)
     ASSERT_EQ(static_cast<int>(secp256k1::coins::best_purpose(secp256k1::coins::Dogecoin)),
