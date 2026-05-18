@@ -21,28 +21,46 @@ static SHA256::digest_type sha256_double(const uint8_t* data, size_t len) noexce
     return SHA256::hash256(data, len);
 }
 
-// ── Shared secret helpers ─────────────────────────────────────────────────────
+// ── Shared secret derivation — ported from BIP-352 with RPA hash domain ────────
+//
+// BIP-352: t_k = SHA256_tagged("BIP0352/SharedSecret", ser(S) || ser32(k))
+// RPA:     c   = SHA256(SHA256(ser_compressed(S)) || outpoint_bytes)
+//
+// Key optimisation from BIP-352 scanner (address.cpp):
+//   Pre-compute SHA256 midstate over SHA256(S_compressed) once per tx.
+//   Loop over outputs/indices only re-feeds outpoint (cheap).
 
-// H(H(point_compressed) || outpoint_bytes)
+// Build the SHA256 base state: inner = SHA256(compressed_S)
+// Returns the SHA256 context already fed with inner — caller adds outpoint.
+static SHA256 rpa_shared_secret_base(const fast::Point& ecdh_point) noexcept {
+    auto compressed = ecdh_point.to_compressed();
+    auto inner = SHA256::hash(compressed.data(), compressed.size()); // SHA256(S_comp)
+    SHA256 h;
+    h.update(inner.data(), 32); // seed with inner hash
+    return h;
+}
+
+// Complete the shared secret: SHA256(inner || outpoint)
+static RpaSharedSecret rpa_shared_secret_finish(
+    SHA256 h_base,  // copy of base state (caller holds original)
+    const uint8_t* outpoint_bytes,
+    size_t outpoint_len) noexcept {
+
+    if (outpoint_len > 0)
+        h_base.update(outpoint_bytes, outpoint_len);
+    RpaSharedSecret result{};
+    result.value = h_base.finalize();
+    return result;
+}
+
+// Full derivation (single call convenience)
 static RpaSharedSecret derive_shared_secret(
     const fast::Point& ecdh_point,
     const uint8_t* outpoint_bytes,
     size_t outpoint_len) noexcept {
 
-    // Inner: SHA256(compressed_point)
-    auto compressed = ecdh_point.to_compressed();
-    auto inner = sha256_bytes(compressed.data(), compressed.size());
-
-    // Outer: SHA256(inner || outpoint)
-    std::vector<uint8_t> outer_input(32 + outpoint_len);
-    std::memcpy(outer_input.data(), inner.data(), 32);
-    if (outpoint_len > 0)
-        std::memcpy(outer_input.data() + 32, outpoint_bytes, outpoint_len);
-
-    RpaSharedSecret result{};
-    auto outer = sha256_bytes(outer_input.data(), outer_input.size());
-    result.value = outer;
-    return result;
+    auto h = rpa_shared_secret_base(ecdh_point);
+    return rpa_shared_secret_finish(h, outpoint_bytes, outpoint_len);
 }
 
 // Parse compressed 33-byte pubkey → Point. Returns infinity on failure.
