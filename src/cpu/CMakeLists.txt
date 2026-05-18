@@ -10,53 +10,147 @@ endif()
 
 set(SECP256K1_LIB_NAME fastsecp256k1)
 
-# Core sources (always available - Tier 1: Portable C++)
+# =============================================================================
+# Core sources — always compiled (field arithmetic, CT layer, crypto primitives)
+# =============================================================================
 set(SECP256K1_SOURCES
+    # Field arithmetic (Tier 1: portable C++)
     src/field.cpp
-    src/field_52.cpp   # 5x52 lazy-reduction field (hybrid scheme)
-    src/field_26.cpp   # 10x26 lazy-reduction field (32-bit platforms)
+    src/field_52.cpp       # 5x52 lazy-reduction field (hybrid scheme)
+    src/field_26.cpp       # 10x26 lazy-reduction field (32-bit platforms)
     src/scalar.cpp
     src/point.cpp
     src/precompute.cpp
-    src/field_asm.cpp  # Tier 2: BMI2 intrinsics (runtime detection)
-    src/glv.cpp        # GLV endomorphism optimization
-    src/selftest.cpp   # Self-test with known arithmetic vectors
-    # Constant-Time (CT) layer -- always compiled, no flags
-    src/ct_field.cpp   # CT field arithmetic (side-channel resistant)
-    src/ct_scalar.cpp  # CT scalar arithmetic
-    src/ct_point.cpp   # CT point ops (complete addition, CT scalar_mul)
-    src/ct_sign.cpp    # CT signing (ECDSA + Schnorr) using ct::generator_mul
-    src/ecdsa.cpp      # ECDSA sign/verify + RFC 6979
-    src/schnorr.cpp    # Schnorr BIP-340 sign/verify
-    src/multiscalar.cpp  # Multi-scalar multiplication (Strauss/Shamir)
-    src/batch_verify.cpp # Batch ECDSA/Schnorr verification
-    src/bip32.cpp        # BIP-32 HD key derivation
-    src/bip39.cpp        # BIP-39 mnemonic seed phrases
-    src/unicode_nfkd.cpp # UTF-8 NFKD normalization (BIP-39 spec compliance)
-    src/musig2.cpp       # MuSig2 multi-signatures (BIP-327)
-    src/ecdh.cpp         # ECDH key exchange
-    src/ecies.cpp        # ECIES encryption (AES-256-CTR + HMAC-SHA256)
-    src/recovery.cpp     # ECDSA public key recovery
-    src/taproot.cpp      # Taproot (BIP-341/342) key tweaking + tapscript sighash
-    src/bip143.cpp       # BIP-143 SegWit v0 sighash
-    src/bip144.cpp       # BIP-144 witness transaction serialization
-    src/segwit.cpp       # BIP-141 segregated witness program ops
-    src/batch_add_affine.cpp  # Affine batch addition for sequential ECC search
-    src/hash_accel.cpp    # Accelerated SHA-256 (SHA-NI) + RIPEMD-160 + Hash160
-    src/pedersen.cpp      # Pedersen commitments (homomorphic)
-    src/zk.cpp            # ZK proofs (knowledge, DLEQ, Bulletproofs)
-    src/frost.cpp         # FROST threshold signatures (t-of-n)
-    src/adaptor.cpp       # Adaptor signatures (Schnorr + ECDSA)
-    src/address.cpp       # Address generation + BIP-352 Silent Payments
-    # Coins layer -- core infrastructure (always built)
-    src/coin_address.cpp    # Unified per-coin address generation
-    src/coin_hd.cpp         # BIP-44 coin-type HD derivation
-    src/message_signing.cpp # Bitcoin message signing (BIP-137)
-    src/wallet.cpp          # Unified multi-chain wallet API facade
-    # Advanced algorithms -- Pippenger MSM + Comb generator multiplication
-    src/pippenger.cpp        # Pippenger bucket method MSM (n > 128)
-    src/ecmult_gen_comb.cpp  # Lim-Lee comb method for fast k*G
+    src/field_asm.cpp      # Tier 2: BMI2 intrinsics (runtime detection)
+    src/glv.cpp            # GLV endomorphism optimization
+    src/selftest.cpp       # Self-test with known arithmetic vectors
+    # Constant-Time (CT) layer — always compiled, no flags
+    src/ct_field.cpp       # CT field arithmetic (side-channel resistant)
+    src/ct_scalar.cpp      # CT scalar arithmetic
+    src/ct_point.cpp       # CT point ops (complete addition, CT scalar_mul)
+    src/ct_sign.cpp        # CT signing (ECDSA + Schnorr) using ct::generator_mul
+    # Core crypto protocols
+    src/ecdsa.cpp          # ECDSA sign/verify + RFC 6979
+    src/schnorr.cpp        # Schnorr BIP-340 sign/verify
+    src/multiscalar.cpp    # Multi-scalar multiplication (Strauss/Shamir)
+    src/batch_verify.cpp   # Batch ECDSA/Schnorr verification
+    src/ecdh.cpp           # ECDH key exchange
+    src/recovery.cpp       # ECDSA public key recovery
+    # Bitcoin consensus layer (always needed for any Bitcoin-family backend)
+    src/taproot.cpp        # Taproot (BIP-341/342) key tweaking + tapscript sighash
+    src/bip143.cpp         # BIP-143 SegWit v0 sighash
+    src/bip144.cpp         # BIP-144 witness transaction serialization
+    src/segwit.cpp         # BIP-141 segregated witness program ops
+    src/hash_accel.cpp     # SHA-256 (SHA-NI) + RIPEMD-160 + Hash160
 )
+
+# =============================================================================
+# Optional feature modules
+# =============================================================================
+# Each flag controls a feature group. All default ON to preserve existing
+# behaviour for full builds. Use named presets (CMakePresets.json) to select
+# coin-specific profiles that strip unused modules and reduce I-cache pressure.
+#
+# I-cache impact without LTO (x86-64, measured):
+#   Full build: ~1.3 MB .text  →  bitcoin-core profile: ~400 KB .text
+#   Stripping FROST+ZK+ECIES+BIP352+Adaptor+Wallet+Pippenger recovers the
+#   ~3% ConnectBlock verify regression seen in no-LTO deployments.
+
+# MuSig2 (BIP-327) — needed for Bitcoin/LTC/DOGE taproot key aggregation
+option(SECP256K1_BUILD_MUSIG2
+    "MuSig2 multi-signatures (BIP-327)" ON)
+if(SECP256K1_BUILD_MUSIG2)
+    list(APPEND SECP256K1_SOURCES src/musig2.cpp)
+    message(STATUS "Secp256k1: MuSig2 module: ON")
+else()
+    message(STATUS "Secp256k1: MuSig2 module: OFF")
+endif()
+
+# FROST threshold signatures (t-of-n multisig, not needed for core backends)
+option(SECP256K1_BUILD_FROST
+    "FROST threshold signatures (t-of-n)" ON)
+if(SECP256K1_BUILD_FROST)
+    list(APPEND SECP256K1_SOURCES src/frost.cpp)
+    message(STATUS "Secp256k1: FROST module: ON")
+else()
+    message(STATUS "Secp256k1: FROST module: OFF")
+endif()
+
+# ZK proofs — Bulletproofs, Pedersen commitments, DLEQ proofs
+option(SECP256K1_BUILD_ZK
+    "ZK proofs (Bulletproofs, Pedersen commitments, DLEQ)" ON)
+if(SECP256K1_BUILD_ZK)
+    list(APPEND SECP256K1_SOURCES
+        src/pedersen.cpp
+        src/zk.cpp
+    )
+    message(STATUS "Secp256k1: ZK module: ON (Bulletproofs, Pedersen, DLEQ)")
+else()
+    message(STATUS "Secp256k1: ZK module: OFF")
+endif()
+
+# ECIES authenticated encryption (AES-256-CTR + HMAC-SHA256)
+option(SECP256K1_BUILD_ECIES
+    "ECIES authenticated encryption (AES-256-CTR + HMAC-SHA256)" ON)
+if(SECP256K1_BUILD_ECIES)
+    list(APPEND SECP256K1_SOURCES src/ecies.cpp)
+    message(STATUS "Secp256k1: ECIES module: ON")
+else()
+    message(STATUS "Secp256k1: ECIES module: OFF")
+endif()
+
+# BIP-352 Silent Payments (scan + create output)
+option(SECP256K1_BUILD_BIP352
+    "BIP-352 Silent Payments (scan key ECDH + output derivation)" ON)
+if(SECP256K1_BUILD_BIP352)
+    list(APPEND SECP256K1_SOURCES src/address.cpp)
+    message(STATUS "Secp256k1: BIP-352 Silent Payments module: ON")
+else()
+    message(STATUS "Secp256k1: BIP-352 Silent Payments module: OFF")
+endif()
+
+# Adaptor signatures (Schnorr + ECDSA point-locked signatures)
+option(SECP256K1_BUILD_ADAPTOR
+    "Adaptor signatures (Schnorr + ECDSA)" ON)
+if(SECP256K1_BUILD_ADAPTOR)
+    list(APPEND SECP256K1_SOURCES src/adaptor.cpp)
+    message(STATUS "Secp256k1: Adaptor signatures module: ON")
+else()
+    message(STATUS "Secp256k1: Adaptor signatures module: OFF")
+endif()
+
+# HD wallet stack: BIP-32/39, coin-type HD, message signing, wallet facade
+option(SECP256K1_BUILD_WALLET
+    "HD wallet stack (BIP-32/39, coin types, Bitcoin message signing)" ON)
+if(SECP256K1_BUILD_WALLET)
+    list(APPEND SECP256K1_SOURCES
+        src/bip32.cpp          # BIP-32 HD key derivation
+        src/bip39.cpp          # BIP-39 mnemonic seed phrases
+        src/unicode_nfkd.cpp   # UTF-8 NFKD normalization (BIP-39 spec)
+        src/coin_address.cpp   # Unified per-coin address generation
+        src/coin_hd.cpp        # BIP-44 coin-type HD derivation
+        src/message_signing.cpp # Bitcoin message signing (BIP-137)
+        src/wallet.cpp         # Unified multi-chain wallet API facade
+    )
+    message(STATUS "Secp256k1: Wallet module: ON (BIP-32/39, coin types, message signing)")
+else()
+    message(STATUS "Secp256k1: Wallet module: OFF")
+endif()
+
+# Pippenger MSM + Lim-Lee comb generator mul + affine batch addition
+# Large algorithms (~300 KB .text) not needed on verify-only or core-backend paths
+option(SECP256K1_BUILD_PIPPENGER
+    "Pippenger MSM + comb generator mul + batch affine (large MSM algorithms)" ON)
+if(SECP256K1_BUILD_PIPPENGER)
+    list(APPEND SECP256K1_SOURCES
+        src/pippenger.cpp        # Pippenger bucket method MSM (n > 128)
+        src/ecmult_gen_comb.cpp  # Lim-Lee comb method for fast k*G
+        src/batch_add_affine.cpp # Affine batch addition for sequential ECC search
+    )
+    message(STATUS "Secp256k1: Pippenger/MSM module: ON")
+else()
+    message(STATUS "Secp256k1: Pippenger/MSM module: OFF")
+endif()
 
 # Optional inline assembly (Tier 3: Maximum performance, x64/RISC-V)
 option(SECP256K1_USE_ASM "Enable inline assembly optimizations (x64/RISC-V, 2-5x speedup)" ON)
@@ -343,9 +437,28 @@ if(SECP256K1_CORE_BACKEND_MODE)
     endif()
 endif()
 
+# =============================================================================
+# Generate feature availability header (secp256k1_features.h)
+# =============================================================================
+# Downstream code can #include "secp256k1/secp256k1_features.h" and use
+# #if SECP256K1_HAS_FROST / #if SECP256K1_HAS_ZK etc. to guard optional APIs.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/secp256k1/secp256k1_features.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/secp256k1/secp256k1_features.h"
+    @ONLY
+)
+
 if(NOT TARGET ${SECP256K1_LIB_NAME})
     add_library(${SECP256K1_LIB_NAME} STATIC ${SECP256K1_SOURCES})
     add_library(secp256k1::fast ALIAS ${SECP256K1_LIB_NAME})
+
+    # Expose generated features header to build-tree consumers.
+    # $<BUILD_INTERFACE:> prevents the binary-dir path from leaking into
+    # install exports (satisfies CMP0099 / CMake INTERFACE_INCLUDE_DIRECTORIES policy).
+    target_include_directories(${SECP256K1_LIB_NAME} PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    )
 
     if(SECP256K1_BUILD_SHIM AND EXISTS "${_SHIM_ROOT}/include")
         # Shim sources (compiled into fastsecp256k1) need secp256k1.h at build time.

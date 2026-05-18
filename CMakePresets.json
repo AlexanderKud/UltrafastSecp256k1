@@ -155,6 +155,121 @@
             }
         },
         {
+            "name": "base-coin",
+            "hidden": true,
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "SECP256K1_BUILD_CPU": "ON",
+                "SECP256K1_BUILD_CUDA": "OFF",
+                "SECP256K1_BUILD_OPENCL": "OFF",
+                "SECP256K1_BUILD_TESTS": "OFF",
+                "SECP256K1_BUILD_BENCH": "OFF",
+                "SECP256K1_BUILD_EXAMPLES": "OFF",
+                "SECP256K1_BUILD_MUSIG2": "ON",
+                "SECP256K1_BUILD_FROST": "OFF",
+                "SECP256K1_BUILD_ZK": "OFF",
+                "SECP256K1_BUILD_ECIES": "OFF",
+                "SECP256K1_BUILD_BIP352": "OFF",
+                "SECP256K1_BUILD_ADAPTOR": "OFF",
+                "SECP256K1_BUILD_WALLET": "OFF",
+                "SECP256K1_BUILD_PIPPENGER": "OFF",
+                "SECP256K1_BUILD_ETHEREUM": "OFF",
+                "SECP256K1_BUILD_BCH": "OFF"
+            }
+        },
+        {
+            "name": "bitcoin-core",
+            "displayName": "Bitcoin Core Backend",
+            "description": "Minimal footprint for Bitcoin Core fork integration. Strips FROST/ZK/ECIES/BIP352/Adaptor/Wallet/Pippenger — eliminates verify I-cache regression vs bundled libsecp256k1 without LTO.",
+            "inherits": "base-coin",
+            "cacheVariables": {
+                "SECP256K1_BUILD_SHIM": "ON",
+                "SECP256K1_BUILD_BIP324": "ON",
+                "SECP256K1_USE_LTO": "OFF"
+            }
+        },
+        {
+            "name": "litecoin",
+            "displayName": "Litecoin Core Backend",
+            "description": "Minimal footprint for Litecoin Core fork. Taproot enabled (activated May 2023). No BIP-324 (LTC P2P is v1 only).",
+            "inherits": "base-coin",
+            "cacheVariables": {
+                "SECP256K1_BUILD_SHIM": "ON",
+                "SECP256K1_BUILD_BIP324": "OFF",
+                "SECP256K1_USE_LTO": "OFF"
+            }
+        },
+        {
+            "name": "dogecoin",
+            "displayName": "Dogecoin Core Backend",
+            "description": "Minimal footprint for Dogecoin Core. ECDSA + Schnorr only (DOGE doesn't use Taproot or MuSig2). No BIP-324.",
+            "inherits": "base-coin",
+            "cacheVariables": {
+                "SECP256K1_BUILD_SHIM": "ON",
+                "SECP256K1_BUILD_BIP324": "OFF",
+                "SECP256K1_BUILD_MUSIG2": "OFF",
+                "SECP256K1_USE_LTO": "OFF"
+            }
+        },
+        {
+            "name": "bch-wallet",
+            "displayName": "BCH Wallet (RPA + HD)",
+            "description": "BCH with RPA scanning, HD wallet (BIP-32/39), ECIES. No FROST/ZK. Pippenger ON for batch ops.",
+            "inherits": "base-coin",
+            "cacheVariables": {
+                "SECP256K1_BUILD_BCH": "ON",
+                "SECP256K1_BUILD_WALLET": "ON",
+                "SECP256K1_BUILD_ECIES": "ON",
+                "SECP256K1_BUILD_PIPPENGER": "ON",
+                "SECP256K1_BUILD_TESTS": "ON",
+                "SECP256K1_BUILD_BENCH": "ON"
+            }
+        },
+        {
+            "name": "wallet",
+            "displayName": "Wallet Build (BIP-352 + adaptor + HD)",
+            "description": "Full wallet: BIP-32/39, BIP-352 Silent Payments, adaptor sigs, ECIES, MuSig2. No ZK/FROST.",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "SECP256K1_BUILD_CPU": "ON",
+                "SECP256K1_BUILD_CUDA": "OFF",
+                "SECP256K1_BUILD_MUSIG2": "ON",
+                "SECP256K1_BUILD_FROST": "OFF",
+                "SECP256K1_BUILD_ZK": "OFF",
+                "SECP256K1_BUILD_ECIES": "ON",
+                "SECP256K1_BUILD_BIP352": "ON",
+                "SECP256K1_BUILD_ADAPTOR": "ON",
+                "SECP256K1_BUILD_WALLET": "ON",
+                "SECP256K1_BUILD_PIPPENGER": "ON",
+                "SECP256K1_BUILD_BIP324": "OFF",
+                "SECP256K1_BUILD_ETHEREUM": "OFF",
+                "SECP256K1_BUILD_BCH": "OFF",
+                "SECP256K1_BUILD_TESTS": "ON",
+                "SECP256K1_BUILD_BENCH": "ON"
+            }
+        },
+        {
+            "name": "audit",
+            "displayName": "Full Audit Build (all modules ON)",
+            "description": "All optional modules enabled for CAAS audit — matches ci_local.sh --full profile.",
+            "inherits": "cpu-release",
+            "cacheVariables": {
+                "SECP256K1_BUILD_MUSIG2": "ON",
+                "SECP256K1_BUILD_FROST": "ON",
+                "SECP256K1_BUILD_ZK": "ON",
+                "SECP256K1_BUILD_ECIES": "ON",
+                "SECP256K1_BUILD_BIP352": "ON",
+                "SECP256K1_BUILD_ADAPTOR": "ON",
+                "SECP256K1_BUILD_WALLET": "ON",
+                "SECP256K1_BUILD_PIPPENGER": "ON",
+                "SECP256K1_BUILD_BIP324": "ON",
+                "SECP256K1_BUILD_ETHEREUM": "ON",
+                "SECP256K1_BUILD_BCH": "OFF"
+            }
+        },
+        {
             "name": "cpu-asan",
             "displayName": "CPU ASan+UBSan",
             "description": "CPU debug with AddressSanitizer + UndefinedBehaviorSanitizer",
@@ -219,6 +334,30 @@
         {
             "name": "cpu-tsan",
             "configurePreset": "cpu-tsan"
+        },
+        {
+            "name": "bitcoin-core",
+            "configurePreset": "bitcoin-core"
+        },
+        {
+            "name": "litecoin",
+            "configurePreset": "litecoin"
+        },
+        {
+            "name": "dogecoin",
+            "configurePreset": "dogecoin"
+        },
+        {
+            "name": "bch-wallet",
+            "configurePreset": "bch-wallet"
+        },
+        {
+            "name": "wallet",
+            "configurePreset": "wallet"
+        },
+        {
+            "name": "audit",
+            "configurePreset": "audit"
         },
         {
             "name": "cuda-audit",
