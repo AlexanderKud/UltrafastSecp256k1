@@ -173,7 +173,7 @@
                 "SECP256K1_BUILD_BIP352": "OFF",
                 "SECP256K1_BUILD_ADAPTOR": "OFF",
                 "SECP256K1_BUILD_WALLET": "OFF",
-                "SECP256K1_BUILD_PIPPENGER": "OFF",
+                "SECP256K1_BUILD_PIPPENGER": "ON",
                 "SECP256K1_BUILD_ETHEREUM": "OFF",
                 "SECP256K1_BUILD_BCH": "OFF"
             }
