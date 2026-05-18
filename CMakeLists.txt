@@ -123,6 +123,13 @@ set(SECP256K1_MARCH "" CACHE STRING "x86-64 -march override (empty = auto-detect
 option(SECP256K1_WERROR "Treat compiler warnings as errors (-Werror / /WX)" OFF)
 option(UFSECP_REFRESH_SOURCE_GRAPH "Refresh the repo source graph during builds (mutates source tree — OFF by default for reproducibility)" OFF)
 
+# ── BCH module (Reusable Payment Addresses, CashAddr, EC grinding) ────────────
+# Default OFF — zero impact on Bitcoin Core / standard builds.
+# Enable: cmake -DSECP256K1_BUILD_BCH=ON
+option(SECP256K1_BUILD_BCH
+    "Build BCH-specific modules: RPA (Reusable Payment Addresses), CashAddr, EC grinding pipeline"
+    OFF)
+
 # Reproducible build mode (G-7 gate).
 # Forces deterministic compiler output: strips source paths, fixes march, disables
 # non-deterministic LTO passes, and enables SOURCE_DATE_EPOCH awareness.
@@ -292,6 +299,11 @@ if(SECP256K1_BUILD_CPU)
         include(CTest)   # generates DartConfiguration.tcl for -T MemCheck
     endif()
     add_subdirectory(src/cpu)
+endif()
+
+# BCH module — added after CPU lib so fastsecp256k1 target already exists
+if(SECP256K1_BUILD_BCH)
+    add_subdirectory(src/bch)
 endif()
 
 if(SECP256K1_BUILD_CUDA)
