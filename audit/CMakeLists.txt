@@ -2880,8 +2880,7 @@ if(SECP256K1_BUILD_BIP352)
 # must produce unique Silent Payment addresses.
 add_executable(test_exploit_bip352_address_collision_standalone
     test_exploit_bip352_address_collision.cpp
-    $<$<BOOL:${SECP256K1_BUILD_LTC_SP}>:test_exploit_ltcsp_isolation.cpp>
-   ${CMAKE_CURRENT_SOURCE_DIR}/../src/cpu/src/ufsecp_impl.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/cpu/src/ufsecp_impl.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/cpu/src/ufsecp_gpu_impl.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/gpu/src/gpu_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/gpu/src/gpu_backend_fallback.cpp)
@@ -3746,6 +3745,7 @@ add_executable(unified_audit_runner
     test_exploit_gpu_memory_safety.cpp
     test_exploit_rs_zero_check.cpp
     $<$<BOOL:${SECP256K1_BUILD_BIP352}>:test_exploit_bip352_address_collision.cpp>
+    $<$<BOOL:${SECP256K1_BUILD_LTC_SP}>:test_exploit_ltcsp_isolation.cpp>
     # BUG-001..008 fixes (2026-04-28 full audit)
     test_exploit_bug001_addr_overflow.cpp
     test_exploit_bug002_recovery_ct.cpp
