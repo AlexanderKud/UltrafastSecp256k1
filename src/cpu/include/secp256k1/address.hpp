@@ -198,6 +198,17 @@ struct SilentPaymentScanner {
     scan_tx(const std::vector<fast::Point>& input_pubkeys,
             const std::vector<std::array<std::uint8_t, 32>>& output_pubkeys) const;
 
+    // Batch scanner: KPlan + batch field_inv across N txs.
+    // Thread-local scratch: no heap alloc after first call per thread.
+    struct BatchMatch {
+        std::uint32_t tx_index;
+        std::uint32_t output_index;
+        fast::Scalar  spend_privkey;
+    };
+    std::vector<BatchMatch>
+    scan_batch(const std::vector<std::vector<fast::Point>>& input_pubkeys_per_tx,
+               const std::vector<std::vector<std::array<std::uint8_t, 32>>>& outputs_per_tx) const;
+
 private:
     fast::Scalar scan_privkey_;
     fast::Scalar spend_privkey_;
