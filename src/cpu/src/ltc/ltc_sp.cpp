@@ -349,16 +349,26 @@ LtcSpScanner::scan_batch(
 
     if (t_scalars.empty()) return results;
 
-    // Pass 2b: batch t_k*G for all outputs — ONE precomputed-table scan
-    std::vector<Point> out_jac(t_scalars.size());
-    secp256k1::fast::batch_scalar_mul_generator(t_scalars.data(), out_jac.data(), t_scalars.size());
+    // Pass 2b: batch t_k*G — ONE precomputed-table scan (shared wNAF schedule)
+    const std::size_t M = t_scalars.size();
+    std::vector<Point> out_jac(M);
+    secp256k1::fast::batch_scalar_mul_generator(t_scalars.data(), out_jac.data(), M);
 
-    // Pass 2c: add spend_pubkey and compare
-    for (std::size_t i = 0; i < t_scalars.size(); ++i) {
+    // Pass 2c: spend_pubkey + t_k*G for all M candidate outputs
+    std::vector<Point> candidates(M);
+    for (std::size_t i = 0; i < M; ++i)
+        candidates[i] = spend_pubkey_.add(out_jac[i]);
+
+    // Pass 2d: batch x-only extraction — ONE field_inv for all M points
+    // (Montgomery's trick: H_i = Z_1*...*Z_i; invert H_M; recover Z_i^{-2} backwards)
+    std::vector<std::array<std::uint8_t, 32>> x_bytes(M);
+    Point::batch_x_only_bytes(candidates.data(), M, x_bytes.data());
+
+    // Pass 2e: compare x-coordinates
+    for (std::size_t i = 0; i < M; ++i) {
         std::uint32_t tx = static_cast<std::uint32_t>(out_map[i] >> 32);
         std::uint32_t k  = static_cast<std::uint32_t>(out_map[i] & 0xffffffff);
-        Point P = spend_pubkey_.add(out_jac[i]);
-        if (!P.is_infinity() && P.x().to_bytes() == outputs_per_tx[tx][k]) {
+        if (x_bytes[i] == outputs_per_tx[tx][k]) {
             results.push_back({tx, k, spend_privkey_ + t_scalars[i]});
         }
     }
