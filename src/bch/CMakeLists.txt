@@ -39,4 +39,22 @@ if(SECP256K1_BUILD_BCH AND SECP256K1_BUILD_CUDA)
     target_compile_definitions(secp256k1_cuda PUBLIC SECP256K1_BCH_CUDA=1)
 endif()
 
-# OpenCL + Metal stubs follow the same pattern (TODO: bch_grinding.cl, bch_grinding.metal)
+# OpenCL grinding kernel + host launcher
+if(SECP256K1_BUILD_BCH AND SECP256K1_BUILD_OPENCL)
+    find_package(OpenCL QUIET)
+    if(OpenCL_FOUND)
+        add_library(bch_grinding_ocl STATIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/opencl/bch_grinding_ocl.cpp)
+        target_include_directories(bch_grinding_ocl PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/../cpu/include)
+        target_link_libraries(bch_grinding_ocl
+            PUBLIC  fastsecp256k1 OpenCL::OpenCL
+            PRIVATE Threads::Threads)
+        target_compile_definitions(bch_grinding_ocl PUBLIC SECP256K1_BCH_OPENCL=1)
+        message(STATUS "  BCH GPU: OpenCL grinding kernel (secp256k1_bch_grinding.cl)")
+    else()
+        message(STATUS "  BCH GPU: OpenCL not found — skipping bch_grinding_ocl")
+    endif()
+endif()
+
+# Metal stub — Metal grinding kernel is macOS/iOS-only (TODO: bch_grinding.metal)
