@@ -57,7 +57,7 @@ lags behind the generated validation surfaces, prefer the generated counts.
 | `test_frost_kat.cpp` | -- | FROST t-of-n threshold signing known-answer tests |
 | `test_wycheproof_ecdsa.cpp` | -- | Wycheproof ECDSA: Google Project Wycheproof test vectors |
 | `test_wycheproof_ecdh.cpp` | -- | Wycheproof ECDH: Google Project Wycheproof test vectors |
-| `unified_audit_runner.cpp` | 249 modules (60 non-exploit + 262 exploit PoCs) | Unified audit: all current modules in single binary (includes GPU null-guard paths) |
+| `unified_audit_runner.cpp` | 249 modules (60 non-exploit + 263 exploit PoCs) | Unified audit: all current modules in single binary (includes GPU null-guard paths) |
 
 ### CPU Unit Tests (`src/cpu/tests/`)
 
@@ -870,3 +870,4 @@ ctest --test-dir build-audit -R "exploit" --output-on-failure
 | `exploit_xoshiro` | `audit/test_exploit_xoshiro.cpp` | xoshiro256** PRNG context randomization — upstream run_xoshiro256pp_tests; KAT seed from upstream, behavioral properties via context_randomize |
 | `exploit_bugbounty_20260505` | `audit/test_exploit_bugbounty_20260505.cpp` | 2026-05-05 bug bounty red-team round 2: BB-01 FROST n_signers<threshold, BB-02 zero signing share, BB-03 shim ctx_can_sign, BB-04 low-S≠even proof, BB-05 BIP32 depth guard, BB-06 ABI low-S invariant |
 | `exploit_redteam_round3_20260505` | `audit/test_exploit_redteam_round3_20260505.cpp` | 2026-05-05 red-team round 3: RR3-01/02 MuSig2 secnonce not zeroed on error paths (BUG-1), RR3-03/04 FROST nonce not zeroed on early exits (BUG-2), RR3-05 last_error_msg thread_local path (BUG-4), RR3-06 MuSig2 keyagg LE32 round-trip (BUG-6) |
+| `test_exploit_ltcsp_isolation.cpp` | `audit/test_exploit_ltcsp_isolation.cpp` | LTC-SP cross-chain isolation: LTCSP/ tagged hash prevents BTC↔LTC replay + create/scan roundtrip | exploit_ltcsp_isolation | 60 | audit;exploit;ltcsp;silent-payments;cross-chain |
