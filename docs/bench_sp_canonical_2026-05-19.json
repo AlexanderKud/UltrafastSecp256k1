@@ -18,19 +18,23 @@
       "threads_1": 48206,
       "threads_4": 185742,
       "threads_8": 234054,
-      "threads_16": 307363
+      "threads_16": 307363,
+      "scan_batch_threads_16": 484382
     },
     "bch_rpa": {
       "threads_1": 34603,
       "threads_4": 132575,
       "threads_8": 167968,
-      "threads_16": 228568
+      "threads_16": 228568,
+      "scan_batch_threads_16": 285002,
+      "scan_batch_note": "ecdsa_pubkey_parse per input (lift_x) not batchable + double-SHA256+outpoint"
     },
     "ltc_sp": {
       "threads_1": 48053,
       "threads_4": 189405,
       "threads_8": 233994,
-      "threads_16": 318427
+      "threads_16": 318427,
+      "scan_batch_threads_16": 484004
     }
   },
   "results_turbo_off": {
