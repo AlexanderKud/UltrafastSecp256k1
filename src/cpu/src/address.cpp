@@ -422,6 +422,54 @@ Bech32DecodeResult bech32_decode(const std::string& addr) {
     return result;
 }
 
+// bech32m_paycode_decode: like bech32_decode but accepts programs > 40 bytes.
+// For paycodes (BIP-352 sp1..., LTC-SP ltcsp1...) carrying 64-66 bytes of pubkeys.
+Bech32DecodeResult bech32m_paycode_decode(const std::string& encoded) {
+    Bech32DecodeResult result;
+    result.valid = false;
+    result.witness_version = -1;
+
+    auto sep = encoded.rfind('1');
+    if (sep == std::string::npos || sep < 1 || sep + 8 > encoded.size()) return result;
+
+    std::string hrp_str;
+    for (std::size_t i = 0; i < sep; ++i) {
+        char const c = encoded[i];
+        if (c < 33 || c > 126) return result;
+        hrp_str.push_back(static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c));
+    }
+
+    std::vector<std::uint8_t> data5;
+    for (std::size_t i = sep + 1; i < encoded.size(); ++i) {
+        char c = encoded[i];
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
+        int val = bech32_charset_value(c);
+        if (val < 0) return result;
+        data5.push_back(static_cast<std::uint8_t>(val));
+    }
+    if (data5.size() < 7) return result;
+
+    auto hrp_exp = bech32_hrp_expand(hrp_str);
+    std::vector<std::uint8_t> values(hrp_exp);
+    values.insert(values.end(), data5.begin(), data5.end());
+    std::uint32_t const polymod = bech32_polymod(values);
+    if (polymod != 0x2bc830a3u) return result;  // must be bech32m
+
+    std::uint8_t const wit_ver = data5[0];
+    if (wit_ver == 0 || wit_ver > 16) return result;  // paycodes use version ≥ 1
+
+    std::vector<std::uint8_t> prog;
+    if (!convert_bits(prog, data5.data() + 1, data5.size() - 7, 5, 8, false)) return result;
+    if (prog.empty()) return result;
+    // No upper size limit — paycode programs can be 64-66+ bytes
+
+    result.hrp = hrp_str;
+    result.witness_version = wit_ver;
+    result.witness_program = std::move(prog);
+    result.valid = true;
+    return result;
+}
+
 // ===============================================================================
 // Address Derivation
 // ===============================================================================

@@ -113,6 +113,22 @@ else()
     message(STATUS "Secp256k1: BIP-352 Silent Payments module: OFF")
 endif()
 
+# LTC-SP — Litecoin Silent Payments (chain-independent port of BIP-352)
+# Uses "LTCSP/SharedSecret" + "LTCSP/Inputs" tags (prevents BTC↔LTC replay).
+# Requires BIP-352 module for bech32_encode/bech32_decode shared infrastructure.
+option(SECP256K1_BUILD_LTC_SP
+    "Litecoin Silent Payments (LTC-SP, ltcsp1... paycodes, ltc1p... outputs)" ON)
+if(SECP256K1_BUILD_LTC_SP)
+    if(NOT SECP256K1_BUILD_BIP352)
+        message(FATAL_ERROR "SECP256K1_BUILD_LTC_SP=ON requires SECP256K1_BUILD_BIP352=ON")
+    endif()
+    list(APPEND SECP256K1_SOURCES src/ltc/ltc_sp.cpp)
+    add_compile_definitions(SECP256K1_HAS_LTC_SP=1)
+    message(STATUS "Secp256k1: LTC-SP module: ON (ltcsp1... paycodes, LTCSP/ tagged hashes)")
+else()
+    message(STATUS "Secp256k1: LTC-SP module: OFF")
+endif()
+
 # Adaptor signatures (Schnorr + ECDSA point-locked signatures)
 option(SECP256K1_BUILD_ADAPTOR
     "Adaptor signatures (Schnorr + ECDSA)" ON)

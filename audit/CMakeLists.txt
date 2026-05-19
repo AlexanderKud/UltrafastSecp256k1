@@ -2880,7 +2880,8 @@ if(SECP256K1_BUILD_BIP352)
 # must produce unique Silent Payment addresses.
 add_executable(test_exploit_bip352_address_collision_standalone
     test_exploit_bip352_address_collision.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/cpu/src/ufsecp_impl.cpp
+    $<$<BOOL:${SECP256K1_BUILD_LTC_SP}>:test_exploit_ltcsp_isolation.cpp>
+   ${CMAKE_CURRENT_SOURCE_DIR}/../src/cpu/src/ufsecp_impl.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/cpu/src/ufsecp_gpu_impl.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/gpu/src/gpu_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/gpu/src/gpu_backend_fallback.cpp)
@@ -2893,6 +2894,16 @@ target_compile_definitions(test_exploit_bip352_address_collision_standalone PRIV
 add_test(NAME exploit_bip352_address_collision COMMAND test_exploit_bip352_address_collision_standalone)
 set_tests_properties(exploit_bip352_address_collision PROPERTIES TIMEOUT 120 LABELS "audit;exploit;bip352;silent-payments;collision")
 endif() # SECP256K1_BUILD_BIP352
+
+# -- LTC-SP: cross-chain isolation + roundtrip tests ---------------------------
+if(SECP256K1_BUILD_LTC_SP)
+add_executable(test_exploit_ltcsp_isolation_standalone
+    test_exploit_ltcsp_isolation.cpp)
+audit_target_defaults(test_exploit_ltcsp_isolation_standalone)
+target_compile_definitions(test_exploit_ltcsp_isolation_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_ltcsp_isolation COMMAND test_exploit_ltcsp_isolation_standalone)
+set_tests_properties(exploit_ltcsp_isolation PROPERTIES TIMEOUT 60 LABELS "audit;exploit;ltcsp;silent-payments;cross-chain")
+endif() # SECP256K1_BUILD_LTC_SP
 
 # -- BUG-001/007: addr off-by-one overflow + p2sh null ---------------------
 add_executable(test_exploit_bug001_addr_overflow_standalone

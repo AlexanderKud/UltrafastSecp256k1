@@ -73,6 +73,11 @@ struct Bech32DecodeResult {
 };
 Bech32DecodeResult bech32_decode(const std::string& addr);
 
+// Like bech32_decode but allows witness programs > 40 bytes.
+// Use for paycodes (e.g. BIP-352 sp1..., LTCSP ltcsp1...) which carry
+// 64-66 bytes of pubkey data and are not standard witness programs.
+Bech32DecodeResult bech32m_paycode_decode(const std::string& encoded);
+
 // -- HASH160 ------------------------------------------------------------------
 
 // HASH160: RIPEMD160 applied to SHA256 digest

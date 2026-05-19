@@ -198,6 +198,7 @@ int test_exploit_hedged_return_value_run();           // N10: Hedged Sign Return
 int test_exploit_gpu_memory_safety_run();             // N11: GPU Kernel Memory Safety (GPU-1..5)
 int test_exploit_rs_zero_check_run();                 // N12: ECDSA r,s Zero Check Gap (RZERO-1..5)
 int test_exploit_bip352_address_collision_run();      // N13: BIP-352 Address Collision (SP-1..4)
+int test_exploit_ltcsp_isolation_run();               // LTC-SP cross-chain isolation + roundtrip
 int test_exploit_frost_weak_binding_run();            // ePrint 2026/075, 2025/1001 FROST weak binding
 int test_exploit_blind_spa_cmov_leak_run();           // ePrint 2024/589, 2025/935 Blind SPA + cmov leak
 int test_exploit_ectester_point_validation_run();     // ePrint 2025/1293 ECTester point validation
@@ -1091,6 +1092,9 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_rs_zero_check",               "ECDSA r,s Zero Check Gap: CVE-2022-39272-class rejection (RZERO-1..5) — Original 2026-04-28", "exploit_poc", test_exploit_rs_zero_check_run, false },
 #if SECP256K1_HAS_BIP352
     { "exploit_bip352_address_collision",    "BIP-352 Address Collision: domain separation collision resistance (SP-1..4) — Original 2026-04-28", "exploit_poc", test_exploit_bip352_address_collision_run, false },
+#if SECP256K1_HAS_LTC_SP
+    { "ltcsp_isolation",                   "LTC-SP cross-chain isolation: LTCSP/ tags prevent BTC↔LTC replay + roundtrip", "exploit_poc", test_exploit_ltcsp_isolation_run, false },
+#endif
 #endif // SECP256K1_HAS_BIP352
     // Section 13: BUG-001..008 fixes (2026-04-28 full audit)
     // ===================================================================
