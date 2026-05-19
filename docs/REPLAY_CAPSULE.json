@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-05-07T15:06:23.966888+00:00",
-  "commit_hash": "6e36360162f565f448ea8d78df39d999c8c087fb",
+  "generated_at": "2026-05-19T13:57:49.783055+00:00",
+  "commit_hash": "56aeb96c46dac1d09614f8eb3260fb4a99c04fb7",
   "dirty": false,
   "profile": "default",
   "build_flags": {
@@ -14,8 +14,8 @@
     "cmake": "cmake version 3.28.3",
     "git": "git version 2.43.0"
   },
-  "graph_hash": "6fe65ccf98de93d6afde8451c20d745396fc0123d25ed5d023c248692f59b6ef",
-  "evidence_bundle_hash": "5cc94bc38f53d351a8cde6f7317edefbc3120502485b4fea01bf2a5f22c9ba91",
+  "graph_hash": "1b1da6159902d876347db9699cc892881774b054c9131f57a36483afd913c250",
+  "evidence_bundle_hash": "41dd6bb2d499b9fab133f06bb94349a68f8e4ba80c1aeb58da600b1ffc31a2c3",
   "replay_commands": [
     "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release",
     "ninja -C build",
