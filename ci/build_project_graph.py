@@ -1674,7 +1674,11 @@ def populate_edges(cur: sqlite3.Cursor):
     test_coverage = {
         'field_52': ['src/cpu/src/field_52.cpp', 'src/cpu/src/field.cpp'],
         'field_26': ['src/cpu/src/field_26.cpp'],
-        'selftest': ['src/cpu/src/selftest.cpp', 'src/cpu/src/precompute.cpp'],
+        'selftest': [
+            'src/cpu/src/selftest.cpp', 'src/cpu/src/precompute.cpp',
+            'src/cpu/src/precompute_static_w8.cpp',   # generated table, exercised via generator_mul
+            'src/cpu/src/precompute_static_w10.cpp',  # generated table, exercised via generator_mul
+        ],
         'comprehensive': [
             'src/cpu/src/ecdsa.cpp', 'src/cpu/src/schnorr.cpp', 'src/cpu/src/point.cpp',
             'src/cpu/src/glv.cpp', 'src/cpu/src/ecmult_gen_comb.cpp', 'src/cpu/src/precompute.cpp',
@@ -1750,6 +1754,8 @@ def populate_edges(cur: sqlite3.Cursor):
         'hash_accel': ['src/cpu/src/hash_accel.cpp'],
         'message_signing': ['src/cpu/src/message_signing.cpp'],
         'exploit_bip39_nfkd': ['src/cpu/src/unicode_nfkd.cpp', 'src/cpu/src/bip39.cpp'],
+        # LTC-SP: cross-chain isolation + roundtrip (covers ltc_sp.cpp implementation)
+        'exploit_ltcsp_isolation': ['src/cpu/src/ltc/ltc_sp.cpp'],
     }
     for test, files in test_coverage.items():
         for f in files:
