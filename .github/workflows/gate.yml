@@ -594,6 +594,9 @@ jobs:
               # Reads src/metal/shaders/secp256k1_extended.h and pattern-matches
               # for the SECURITY FIX (CRITICAL-1) annotation. No Metal runtime invoked.
               "test_exploit_metal_schnorr_aux_rand",
+              # Reads src/metal/shaders/secp256k1_kernels.metal; returns 0 when file found
+              # (source-tree cwd), 77 when absent (build-dir cwd). advisory=true by design.
+              "test_exploit_metal_batch_failclosed",
           }
           advisory_false_pass = []
           for mod in modules:

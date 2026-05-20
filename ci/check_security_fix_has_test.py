@@ -313,6 +313,15 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "Covered by test_v4_features.cpp (silent payment scan pipeline includes the "
         "batch_x_only_bytes codepath).",
     ),
+    "a771d15c67": (
+        ["src/cpu/tests/test_v4_features.cpp",
+         "audit/test_adversarial_protocol.cpp"],
+        "P1-002: frost.cpp Lagrange coefficient fast::operator* → ct::scalar_mul for "
+        "defensive CT consistency. Inputs (participant IDs) are public, but CT prevents "
+        "regression if a secret is ever introduced. Covered by test_v4_features (SP/FROST "
+        "pipeline) and test_adversarial_protocol (full FROST adversarial suite). "
+        "P1-005..009 are docs/CI-only changes with no new security surface.",
+    ),
     "f13b59df57": (
         ["audit/test_exploit_shim_musig_secnonce.cpp",
          "compat/libsecp256k1_shim/tests/test_shim_null_ctx.cpp"],
