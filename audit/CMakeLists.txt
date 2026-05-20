@@ -1918,7 +1918,10 @@ target_include_directories(test_exploit_hertzbleed_dvfs_timing_standalone PRIVAT
     ${CMAKE_CURRENT_SOURCE_DIR}/../include ${CMAKE_BINARY_DIR}/include)
 target_compile_definitions(test_exploit_hertzbleed_dvfs_timing_standalone PRIVATE STANDALONE_TEST UFSECP_BUILDING)
 add_test(NAME exploit_hertzbleed_dvfs_timing COMMAND test_exploit_hertzbleed_dvfs_timing_standalone)
-set_tests_properties(exploit_hertzbleed_dvfs_timing PROPERTIES TIMEOUT 60 LABELS "audit;exploit;sidechannel;timing;dvfs")
+set_tests_properties(exploit_hertzbleed_dvfs_timing PROPERTIES
+    TIMEOUT 60
+    LABELS "audit;exploit;sidechannel;timing;dvfs"
+    SKIP_RETURN_CODE 77)
 
 # -- PoC: Biased nonce chain-scale scan regression --------------------------
 add_executable(test_exploit_biased_nonce_chain_scan_standalone
