@@ -29,7 +29,7 @@ int test_abi_gate_run() {
     g_pass = g_fail = 0;
     // Just run the checks inline:
     CHECK(UFSECP_ABI_VERSION > 0, "ABI version is positive");
-    CHECK(UFSECP_ABI_VERSION == 1, "ABI version is 1 (current)");
+    CHECK(UFSECP_ABI_VERSION == 4, "ABI version is 4 (current v4.0.0)");
     unsigned int const packed = UFSECP_VERSION_PACKED;
     unsigned int const major = UFSECP_VERSION_MAJOR;
     unsigned int const minor = UFSECP_VERSION_MINOR;
