@@ -400,7 +400,10 @@ inline void bip32_fingerprint(thread const ExtendedKeyMetal &xkey, thread uchar 
     uchar compressed[33];
     if (xkey.is_private) {
         Scalar256 sk = scalar_from_bytes(xkey.key);
-        JacobianPoint P = scalar_mul_generator_windowed(sk);
+        CTJacobianPoint P_ct = ct_generator_mul_metal(sk);
+        FieldElement px, py;
+        ct_jacobian_to_affine_metal(P_ct, px, py);
+        JacobianPoint P; P.x = px; P.y = py; P.z = field_one(); P.infinity = 0;
         point_to_compressed(P, compressed);
     } else {
         for (int i = 0; i < 33; i++) compressed[i] = xkey.key[i];
@@ -518,7 +521,10 @@ inline bool bip32_public_key(thread const ExtendedKeyMetal &xkey,
                               thread uchar compressed[33]) {
     if (xkey.is_private) {
         Scalar256 sk = scalar_from_bytes(xkey.key);
-        JacobianPoint P = scalar_mul_generator_windowed(sk);
+        CTJacobianPoint P_ct = ct_generator_mul_metal(sk);
+        FieldElement px, py;
+        ct_jacobian_to_affine_metal(P_ct, px, py);
+        JacobianPoint P; P.x = px; P.y = py; P.z = field_one(); P.infinity = 0;
         point_to_compressed(P, compressed);
         return true;
     }
@@ -570,7 +576,10 @@ inline bool bip32_to_public(thread const ExtendedKeyMetal &xpriv,
     }
 
     Scalar256 sk = scalar_from_bytes(xpriv.key);
-    JacobianPoint P = scalar_mul_generator_windowed(sk);
+    CTJacobianPoint P_ct = ct_generator_mul_metal(sk);
+    FieldElement px, py;
+    ct_jacobian_to_affine_metal(P_ct, px, py);
+    JacobianPoint P; P.x = px; P.y = py; P.z = field_one(); P.infinity = 0;
     point_to_compressed(P, xpub.key);
 
     for (int i = 0; i < 32; i++) xpub.chain_code[i] = xpriv.chain_code[i];

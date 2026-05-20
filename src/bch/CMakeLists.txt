@@ -34,9 +34,11 @@ endif()
 # GPU grinding kernels (per-backend, all off by default)
 if(SECP256K1_BUILD_BCH AND SECP256K1_BUILD_CUDA)
     message(STATUS "  BCH GPU: CUDA grinding kernel")
-    target_sources(secp256k1_cuda PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/cuda/bch_grinding.cu)
-    target_compile_definitions(secp256k1_cuda PUBLIC SECP256K1_BCH_CUDA=1)
+    if(TARGET secp256k1_cuda_lib)
+        target_sources(secp256k1_cuda_lib PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/cuda/bch_grinding.cu)
+        target_compile_definitions(secp256k1_cuda_lib PUBLIC SECP256K1_BCH_CUDA=1)
+    endif()
 endif()
 
 # OpenCL grinding kernel + host launcher

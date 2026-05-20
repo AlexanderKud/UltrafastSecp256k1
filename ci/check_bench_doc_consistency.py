@@ -233,12 +233,12 @@ BANNED: list[tuple[str, str, str | None]] = [
 REQUIRED_REFS: list[tuple[str, str, str]] = [
     (
         "docs/BITCOIN_CORE_PR_DESCRIPTION.md",
-        r"bench_unified_2026-05-11_gcc14_x86-64\.json",
+        r"bench_unified_2026-05-1[16]_gcc14_x86-64\.json",
         "PR description must cite the canonical bench_unified artifact",
     ),
     (
         "docs/BITCOIN_CORE_BACKEND_EVIDENCE.md",
-        r"bench_unified_2026-05-11_gcc14_x86-64\.json",
+        r"bench_unified_2026-05-1[16]_gcc14_x86-64\.json",
         "Evidence doc must cite the canonical bench_unified artifact",
     ),
     (

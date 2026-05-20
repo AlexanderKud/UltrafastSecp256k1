@@ -534,7 +534,9 @@ int secp256k1_musig_nonce_process(
     if (!e) return 0;
     secp256k1::MuSig2AggNonce an;
     an.R1 = decompress(aggnonce->data);
+    if (an.R1.is_infinity()) return 0;
     an.R2 = decompress(aggnonce->data + 33);
+    if (an.R2.is_infinity()) return 0;
     std::array<unsigned char, 32> msg;
     std::memcpy(msg.data(), msg32, 32);
     auto s = secp256k1::musig2_start_sign_session(an, e->ctx, msg);

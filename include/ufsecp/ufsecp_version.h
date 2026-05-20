@@ -42,7 +42,7 @@ extern "C" {
 
 /* -- ABI version (incremented ONLY on binary-incompatible changes) ---------- */
 
-#define UFSECP_ABI_VERSION     1
+#define UFSECP_ABI_VERSION     4
 
 /* -- Runtime queries -------------------------------------------------------- */
 

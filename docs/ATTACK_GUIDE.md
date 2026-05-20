@@ -53,18 +53,6 @@ bash audit/run_full_audit.sh
 cat /tmp/audit_out.json | python3 -m json.tool | grep -E "FAIL|PASS|ERROR"
 ```
 
-### Formal Cryptol Layer (requires cryptol ≥ 3.0)
-
-```bash
-cd formal/cryptol
-cryptol --batch Secp256k1Field.cry    # 15 properties
-cryptol --batch Secp256k1Point.cry   # 10 properties
-cryptol --batch Secp256k1ECDSA.cry   # 8 properties
-cryptol --batch Secp256k1Schnorr.cry # 6 properties
-```
-
-All 39 properties should pass `:check` in QuickCheck mode (≤ 10 s total on modern hardware).
-
 ---
 
 ## 2. Top 10 Attack Ideas

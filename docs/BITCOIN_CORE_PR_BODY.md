@@ -101,7 +101,8 @@ cd UltrafastSecp256k1
 git checkout 48e7c02fff02d823d2396f7eb05e425dfb3689e4
 
 # Reproduce the evidence bundle
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
 ninja -C build
 python3 ci/caas_runner.py --profile bitcoin-core-backend --json
 

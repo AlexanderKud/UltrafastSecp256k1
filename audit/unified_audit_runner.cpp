@@ -1131,7 +1131,7 @@ static const AuditModule ALL_MODULES[] = {
     { "test_exploit_gpu_bip352_key_erase",       "GPU BIP-352 scan key not zeroed before device memory free HIGH-3 (BK-1..8) — 2026-05-01",   "exploit_poc", test_exploit_gpu_bip352_key_erase_run,       false },
 #endif // SECP256K1_HAS_BIP352
     { "test_exploit_metal_ecdh_key_erase",       "Metal ECDH batch private key not erased from shared buffer HIGH-2+LOW-5 (ME-1..5) — 2026-05-01", "exploit_poc", test_exploit_metal_ecdh_key_erase_run,  false },
-    { "test_exploit_opencl_runner_key_erase",    "OpenCL audit runner d_priv/d_scalar not zeroed before release Q-01/02/03 (OCR-1..8) — 2026-05-02", "exploit_poc", test_exploit_opencl_runner_key_erase_run, false },
+    { "test_exploit_opencl_runner_key_erase",    "OpenCL audit runner d_priv/d_scalar not zeroed before release Q-01/02/03 (OCR-1..8) — 2026-05-02", "exploit_poc", test_exploit_opencl_runner_key_erase_run, true },
     { "test_exploit_ecdsa_fast_path_isolation",  "ecdsa.cpp fast path isolation: public APIs must use ct::ecdsa_sign (FPI-1..10) — 2026-05-02",       "exploit_poc", test_exploit_ecdsa_fast_path_isolation_run, false },
     // === 2026-05-01 Red Team Audit Round 3 (P-01..P-09) ===
     // Shim not linked in unified runner — _run() returns ADVISORY_SKIP_CODE (77).

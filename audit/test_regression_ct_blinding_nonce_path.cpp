@@ -43,6 +43,9 @@
 #include <array>
 #include <cstring>
 #include <random>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 #include "secp256k1/scalar.hpp"
 #include "secp256k1/point.hpp"
@@ -233,6 +236,68 @@ static void test_ecdsa_random_keys_blinded() {
     ufsecp_ctx_destroy(ctx);
 }
 
+// ── test_ct_sign_source_has_blinded ──────────────────────────────────────────
+// Source scan: ct_sign.cpp must use generator_mul_blinded for every nonce-path
+// multiplication. This is the only sub-test that can detect a revert of the fix.
+// Functional tests above only verify mathematical equivalence (blinded == unblinded)
+// and would pass even if generator_mul (unblinded) were used.
+
+static int count_occurrences(const std::string& src, const std::string& needle) {
+    int count = 0;
+    for (size_t pos = 0; (pos = src.find(needle, pos)) != std::string::npos; pos += needle.size())
+        ++count;
+    return count;
+}
+
+static void test_ct_sign_source_has_blinded() {
+    printf("[4] ct_sign.cpp source scan: nonce path must use generator_mul_blinded\n");
+
+    const char* candidates[] = {
+        "src/cpu/src/ct_sign.cpp",
+        "../cpu/src/ct_sign.cpp",
+        nullptr
+    };
+    std::string src;
+    for (int i = 0; candidates[i]; ++i) {
+        std::ifstream f(candidates[i]);
+        if (f.is_open()) {
+            src.assign(std::istreambuf_iterator<char>(f),
+                       std::istreambuf_iterator<char>());
+            break;
+        }
+    }
+
+    if (src.empty()) {
+        printf("  [SKIP] ct_sign.cpp not found — run from repo root\n");
+        // Advisory skip: cannot scan without file; add to count as advisory pass
+        return;
+    }
+
+    // Must appear ≥ 5 times: ecdsa_sign, ecdsa_sign_hedged, schnorr_sign,
+    // ecdsa_sign_recoverable, ecdsa_sign_hedged_recoverable.
+    int blinded = count_occurrences(src, "generator_mul_blinded");
+    char msg[128];
+    std::snprintf(msg, sizeof(msg),
+        "ct_sign.cpp: generator_mul_blinded appears >=5 times (found %d)", blinded);
+    CHECK(blinded >= 5, msg);
+
+    // Must NOT contain bare generator_mul( without _blinded in nonce context.
+    // Count lines containing "generator_mul(" but NOT "generator_mul_blinded".
+    int unblinded_nonce = 0;
+    std::istringstream ss(src);
+    std::string line;
+    while (std::getline(ss, line)) {
+        if (line.find("generator_mul(") != std::string::npos &&
+            line.find("generator_mul_blinded") == std::string::npos &&
+            line.find("//") == std::string::npos)
+            ++unblinded_nonce;
+    }
+    std::snprintf(msg, sizeof(msg),
+        "ct_sign.cpp: no bare generator_mul() in nonce paths (found %d suspicious lines)",
+        unblinded_nonce);
+    CHECK(unblinded_nonce == 0, msg);
+}
+
 // ── main entry ───────────────────────────────────────────────────────────────
 
 int test_regression_ct_blinding_nonce_path_run() {
@@ -248,6 +313,8 @@ int test_regression_ct_blinding_nonce_path_run() {
     test_schnorr_blinded_transparent();
     printf("\n");
     test_ecdsa_random_keys_blinded();
+    printf("\n");
+    test_ct_sign_source_has_blinded();
     printf("\n");
 
     printf("[ct_blinding_nonce_path] %d/%d checks passed\n",

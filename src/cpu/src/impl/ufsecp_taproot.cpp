@@ -27,6 +27,19 @@ ufsecp_error_t ufsecp_taproot_output_key(ufsecp_ctx* ctx,
     size_t const mr_len = merkle_root ? 32 : 0;
 
     auto [ok_x, parity] = secp256k1::taproot_output_key(ik, merkle_root, mr_len);
+
+    // Fail-closed: all-zero output means the tweak produced infinity or an
+    // invalid key. Writing zeros + UFSECP_OK would be a silent fail-open.
+    {
+        uint8_t acc = 0;
+        for (int i = 0; i < 32; ++i) acc |= ok_x[i];
+        if (acc == 0) {
+            std::memset(output_x_out, 0, 32);
+            *parity_out = 0;
+            return ctx_set_err(ctx, UFSECP_ERR_ARITH, "taproot output key derivation failed");
+        }
+    }
+
     std::memcpy(output_x_out, ok_x.data(), 32);
     *parity_out = parity;
     return UFSECP_OK;

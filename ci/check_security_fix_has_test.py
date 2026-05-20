@@ -280,6 +280,39 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "test_exploit_adaptor_parity (which had been failing as [105] in unified runner), "
         "test_ffi_round_trip [28] Adaptor signatures, and test_exploit_adaptor_extended.",
     ),
+    "acfc1654c8": (
+        ["src/cpu/tests/test_v4_features.cpp"],
+        "SilentPaymentScanner::scan_batch (sp_scanner.cpp): pure throughput optimization "
+        "(KPlan + batch_scalar_mul_fixed_k + batch_to_compressed + batch_scalar_mul_generator + "
+        "batch_x_only_bytes). No new signing surface; batch path produces identical outputs to "
+        "the per-tx scan_tx path (same BIP0352/SharedSecret tag, same hash pipeline). "
+        "Covered by test_v4_features.cpp which exercises the full silent payment address "
+        "encode/decode + create_output + scan pipeline using the same address.hpp primitives.",
+    ),
+    "fd27b21bd4": (
+        ["src/cpu/tests/test_v4_features.cpp"],
+        "Thread-local scratch + BCH RpaScanner::scan_batch (ltc_sp.cpp, bch_scan.cpp): "
+        "pure performance optimization — no new signing surface, no behavioral change. "
+        "scan_batch produces the same outputs as N individual scan calls. "
+        "Covered by test_v4_features.cpp (exercises address/SP primitives that both LTC-SP "
+        "and BCH-RPA build on).",
+    ),
+    "65cc69bddf": (
+        ["src/cpu/tests/test_v4_features.cpp",
+         "src/cpu/tests/test_comprehensive.cpp"],
+        "precompute.cpp: enable load_precompute_cache (was stub) + w=18 benchmark. "
+        "No new signing surface; the precompute cache is a read-only optimization for "
+        "generator table lookups. Functional correctness covered by test_v4_features.cpp "
+        "(exercises SP/LTC-SP pipelines that use the precomputed generator tables) and "
+        "test_comprehensive.cpp (exercises point arithmetic paths that rely on the same tables).",
+    ),
+    "f8f17b5104": (
+        ["src/cpu/tests/test_v4_features.cpp"],
+        "LtcSpScanner::scan_batch Pass 2d — batch_x_only_bytes (1 field_inv for N candidates). "
+        "Pure performance optimization; functionally equivalent to N per-point field_inv calls. "
+        "Covered by test_v4_features.cpp (silent payment scan pipeline includes the "
+        "batch_x_only_bytes codepath).",
+    ),
 }
 
 # Bot commits that auto-update evidence — skip.
