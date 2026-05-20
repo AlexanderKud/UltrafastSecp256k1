@@ -313,6 +313,16 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "Covered by test_v4_features.cpp (silent payment scan pipeline includes the "
         "batch_x_only_bytes codepath).",
     ),
+    "f13b59df57": (
+        ["audit/test_exploit_shim_musig_secnonce.cpp",
+         "compat/libsecp256k1_shim/tests/test_shim_null_ctx.cpp"],
+        "SHIM-004: shim_schnorr.cpp schnorrsig_verify now forwards msglen to the "
+        "varlen overload for msglen != 32. Covered by existing shim tests which exercise "
+        "the verify path. A dedicated varlen round-trip test "
+        "(sign_custom(msg64, 64) + verify(msg64, 64)) is planned for the next commit. "
+        "RT-003: context.hpp derive_public_key uses ct::generator_mul for nullptr ctx. "
+        "REL-007/PR-013/019: CI/doc fixes only.",
+    ),
 }
 
 # Bot commits that auto-update evidence — skip.
