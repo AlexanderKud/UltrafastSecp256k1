@@ -3997,7 +3997,13 @@ if(MSVC OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND WIN32))
     target_link_options(unified_audit_runner PRIVATE "LINKER:/STACK:8388608")
 endif()
 add_test(NAME unified_audit COMMAND unified_audit_runner)
-set_tests_properties(unified_audit PROPERTIES TIMEOUT 1800)
+set_tests_properties(unified_audit PROPERTIES
+    TIMEOUT 1800
+    # Source-scan audit modules read files relative to the repo root (e.g.
+    # src/metal/shaders/secp256k1_kernels.metal). Without WORKING_DIRECTORY
+    # they fail silently when run from the build directory (CTest default),
+    # causing advisory=false tests to return 77 → runner exits 1.
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # ===========================================================================
 target_link_libraries(unified_audit_runner PRIVATE Threads::Threads)
