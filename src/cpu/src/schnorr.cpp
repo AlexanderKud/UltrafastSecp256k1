@@ -409,12 +409,13 @@ SchnorrSignature schnorr_sign(const SchnorrKeypair& kp,
     std::memcpy(nonce_input + 32, kp.px.data(), 32);
     std::memcpy(nonce_input + 64, msg.data(), 32);
     auto rand_hash = cached_tagged_hash(g_nonce_midstate, nonce_input, 96);
-    // BIP-340 nonce: k = int(hash) mod n. from_bytes reduces mod n, which has a
-    // data-dependent branch for hash values in [n, p) (prob ~2^-128). This deviation
-    // from fully-CT arithmetic is spec-mandated; the branch leaks ≤1 bit of the nonce
-    // hash (not the private key) with negligible probability. Tracked as T-06.
-    auto k_prime = Scalar::from_bytes(rand_hash);
-    if (k_prime.is_zero_ct()) {  // CT-002: k_prime is a secret nonce
+    // CT-001 fix: parse_bytes_strict_nonzero + retry loop avoids from_bytes()'s
+    // data-dependent mod-n branch. Retry probability ~2^-128 (negligible).
+    Scalar k_prime;
+    for (std::uint8_t ctr = 0;
+         !Scalar::parse_bytes_strict_nonzero(rand_hash, k_prime);
+         rand_hash[31] ^= static_cast<std::uint8_t>(ctr ^ 0x01u), ++ctr) {}
+    if (k_prime.is_zero_ct()) {  // defensive: loop guarantees non-zero, but kept for safety
         // Zeroize all secret-derived data before early return (~2^-128 probability).
         detail::secure_erase(d_bytes.data(), d_bytes.size());
         detail::secure_erase(t_hash.data(), t_hash.size());

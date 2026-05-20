@@ -257,9 +257,87 @@ def load_canonical_numbers() -> dict | None:
 
 
 def find_bench_unified_json() -> Path | None:
-    """Find the most recent bench_unified canonical JSON."""
+    """Find canonical bench_unified JSON.
+
+    Prefers the path declared in canonical_numbers.json._canonical_bench_artifact
+    (avoids TASK-006 glob-by-date bypass: a newer but inconsistent file would
+    otherwise silently shadow the validated canonical).  Falls back to glob only
+    when the declared path is absent.
+    """
+    # Prefer path from canonical_numbers.json
+    if CANONICAL_NUMBERS.exists():
+        try:
+            with open(CANONICAL_NUMBERS) as f:
+                cn = json.load(f)
+            declared = cn.get("_canonical_bench_artifact")
+            if declared:
+                p = ROOT / declared
+                if p.exists():
+                    return p
+        except Exception:
+            pass
+    # Fallback: newest glob match
     candidates = sorted(ROOT.glob(BENCH_UNIFIED_GLOB), reverse=True)
     return candidates[0] if candidates else None
+
+
+def check_internal_bench_consistency(bench: dict, bench_name: str) -> list[str]:
+    """TASK-001 gate: verify ratio fields in bench JSON are consistent with ns values.
+
+    If a bench JSON contains ns measurements AND ratio fields, the ratios must be
+    derivable from the ns values (±5% tolerance).  Prevents hand-crafted files with
+    mismatched ratios from propagating to canonical_numbers.json.
+    """
+    violations: list[str] = []
+
+    # Check ct_vs_libsecp_ratios section (2026-05-16 schema)
+    ct_ratios = bench.get("ct_vs_libsecp_ratios", {})
+    ct_ns = bench.get("ct_signing_ns", {})
+
+    libsecp_ecdsa = ct_ratios.get("libsecp_ecdsa_sign_ns")
+    libsecp_schnorr = ct_ratios.get("libsecp_schnorr_sign_ns")
+    ultra_ecdsa_ns = ct_ns.get("ct_ecdsa_sign")
+    ultra_schnorr_ns = ct_ns.get("ct_schnorr_sign")
+
+    # Check for *_STALE fields (indicates previously detected inconsistency)
+    if any(k.endswith("_STALE") for k in ct_ratios):
+        violations.append(
+            f"  INTERNAL INCONSISTENCY [{bench_name}]\n"
+            f"    Ratio fields marked _STALE: this file is hand-crafted.\n"
+            f"    Do not use as canonical artifact. Regenerate with bench_unified --json."
+        )
+        return violations
+
+    stated_ecdsa_ratio = ct_ratios.get("ct_ecdsa_sign_ratio")
+    stated_schnorr_ratio = ct_ratios.get("ct_schnorr_sign_ratio")
+
+    if (stated_ecdsa_ratio is not None and libsecp_ecdsa is not None
+            and ultra_ecdsa_ns is not None and ultra_ecdsa_ns > 0):
+        derived = libsecp_ecdsa / ultra_ecdsa_ns
+        drift = abs(stated_ecdsa_ratio - derived)
+        if drift > 0.05:
+            violations.append(
+                f"  INTERNAL INCONSISTENCY [{bench_name}] ct_ecdsa_sign_ratio\n"
+                f"    Stated ratio  : {stated_ecdsa_ratio:.3f}×\n"
+                f"    Derived ratio : {derived:.3f}×  ({libsecp_ecdsa:.1f} / {ultra_ecdsa_ns:.1f} ns)\n"
+                f"    Drift         : {drift:.3f}× > 0.05 tolerance\n"
+                f"    File is hand-crafted or has a computation error. Regenerate."
+            )
+
+    if (stated_schnorr_ratio is not None and libsecp_schnorr is not None
+            and ultra_schnorr_ns is not None and ultra_schnorr_ns > 0):
+        derived = libsecp_schnorr / ultra_schnorr_ns
+        drift = abs(stated_schnorr_ratio - derived)
+        if drift > 0.05:
+            violations.append(
+                f"  INTERNAL INCONSISTENCY [{bench_name}] ct_schnorr_sign_ratio\n"
+                f"    Stated ratio  : {stated_schnorr_ratio:.3f}×\n"
+                f"    Derived ratio : {derived:.3f}×  ({libsecp_schnorr:.1f} / {ultra_schnorr_ns:.1f} ns)\n"
+                f"    Drift         : {drift:.3f}× > 0.05 tolerance\n"
+                f"    File is hand-crafted or has a computation error. Regenerate."
+            )
+
+    return violations
 
 
 def check_canonical_vs_bench_json(canon: dict, verbose: bool) -> list[str]:
@@ -275,6 +353,9 @@ def check_canonical_vs_bench_json(canon: dict, verbose: bool) -> list[str]:
     except Exception as e:
         violations.append(f"  ERROR: Cannot parse {bench_path.name}: {e}")
         return violations
+
+    # ── TASK-001: internal consistency check ──────────────────────────────────
+    violations.extend(check_internal_bench_consistency(bench, bench_path.name))
 
     # ── CT signing GCC ratios ──────────────────────────────────────────────────
     ct_gcc = canon.get("ct_signing_gcc", {})

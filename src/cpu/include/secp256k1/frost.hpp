@@ -98,10 +98,11 @@ frost_keygen_begin(ParticipantId participant_id,
 // received_shares: shares received from other participants (one per participant)
 // own_share: this participant's share of their own polynomial
 // Returns: {key_package, success}
+// received_shares is taken by value and securely erased before return (TASK-004).
 std::pair<FrostKeyPackage, bool>
 frost_keygen_finalize(ParticipantId participant_id,
                       const std::vector<FrostCommitment>& commitments,
-                      const std::vector<FrostShare>& received_shares,
+                      std::vector<FrostShare> received_shares,
                       std::uint32_t threshold,
                       std::uint32_t num_participants);
 

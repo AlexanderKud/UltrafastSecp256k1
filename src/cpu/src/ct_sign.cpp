@@ -220,8 +220,12 @@ SchnorrSignature schnorr_sign(const SchnorrKeypair& kp,
     std::memcpy(nonce_input + 32, kp.px.data(), 32);
     std::memcpy(nonce_input + 64, msg.data(), 32);
     auto rand_hash = cached_tagged_hash(g_nonce_midstate, nonce_input, 96);
-    auto k_prime = Scalar::from_bytes(rand_hash);
-    if (k_prime.is_zero_ct()) return SchnorrSignature{};
+    // CT-001 fix: parse_bytes_strict_nonzero + retry loop avoids the data-dependent
+    // mod-n branch in from_bytes(). Retry probability ~2^-128 (negligible).
+    Scalar k_prime;
+    for (std::uint8_t ctr = 0;
+         !Scalar::parse_bytes_strict_nonzero(rand_hash, k_prime);
+         rand_hash[31] ^= static_cast<std::uint8_t>(ctr ^ 0x01u), ++ctr) {}
 
     // Step 3: R = k' * G -- blinded CT path (DPA defense via secp256k1_context_randomize)
     auto R = ct::generator_mul_blinded(k_prime);

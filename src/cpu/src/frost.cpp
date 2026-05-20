@@ -324,22 +324,27 @@ frost_keygen_begin(ParticipantId participant_id,
 }
 
 // frost_keygen_finalize — combine received polynomial shares into the local
-// signing share. `received_shares` is CONST REF (caller-owned). The caller MUST
-// `secp256k1::detail::secure_erase` every entry in `received_shares` after this
-// function returns — they are independent partial secrets and leaking them to
-// an adversary with heap-read capability weakens the DKG. The ABI wrapper
-// `ufsecp_frost_keygen_finalize` (src/impl/ufsecp_musig2.cpp::erase_shares)
-// handles this automatically; direct C++ callers are responsible (NEW-003).
+// signing share. `received_shares` is taken BY VALUE: the function erases its
+// copy before return (TASK-004 fix). The ABI wrapper `ufsecp_frost_keygen_finalize`
+// erases the caller-side shares separately (belt-and-suspenders).
 std::pair<FrostKeyPackage, bool>
 frost_keygen_finalize(ParticipantId participant_id,
                       const std::vector<FrostCommitment>& commitments,
-                      const std::vector<FrostShare>& received_shares,
+                      std::vector<FrostShare> received_shares,
                       std::uint32_t threshold,
                       std::uint32_t num_participants) {
     FrostKeyPackage pkg{};
     pkg.id = participant_id;
     pkg.threshold = threshold;
     pkg.num_participants = num_participants;
+
+    // TASK-004: RAII guard erases all shares on every return path.
+    struct SharesEraser {
+        std::vector<FrostShare>& v;
+        ~SharesEraser() noexcept {
+            for (auto& s : v) secp256k1::detail::secure_erase(&s, sizeof(s));
+        }
+    } _shares_eraser{received_shares};
 
     if (participant_id == 0 || threshold == 0 || num_participants == 0 ||
         threshold > num_participants || commitments.size() != num_participants ||
@@ -614,13 +619,17 @@ frost_aggregate(const std::vector<FrostPartialSig>& partial_sigs,
         s = ct::scalar_add(s, ps.z_i);
     }
 
-    // Fail-closed: degenerate aggregated signature is a protocol failure
-    if (s.is_zero_ct() || R.is_infinity()) {
-        return SchnorrSignature{{}, Scalar::zero()};
-    }
-
+    // Fail-closed: degenerate aggregated signature is a protocol failure.
+    // BIP-340 Rule 14: reject if R.x is all-zeros (infinity or degenerate R).
     SchnorrSignature sig;
     sig.r = R.x().to_bytes();
+    {
+        std::uint8_t acc = 0;
+        for (auto b : sig.r) acc |= b;
+        if (acc == 0 || s.is_zero_ct() || R.is_infinity()) {
+            return SchnorrSignature{{}, Scalar::zero()};
+        }
+    }
     sig.s = s;
     return sig;
 }
