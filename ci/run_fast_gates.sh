@@ -103,8 +103,15 @@ run_sh() {
     if [ "$rc" -eq 0 ]; then
         printf " \033[0;32mOK\033[0m\n"
     elif [ "$rc" -eq 77 ]; then
-        # Advisory shell gates: rc=77 = SKIP (e.g. GPU not present)
-        printf " \033[0;33mSKIP\033[0m\n"
+        # CI-011: rc=77 on a mandatory gate is a FAIL — same logic as run().
+        # Non-mandatory shell gates: rc=77 = SKIP (e.g. GPU not present).
+        if is_mandatory "$*"; then
+            printf " \033[0;31mFAIL\033[0m (rc=77 on mandatory gate — missing artifact or broken skip logic)\n"
+            printf "%s\n" "$out" | sed 's/^/    /'
+            FAILED=$((FAILED + 1))
+        else
+            printf " \033[0;33mSKIP\033[0m\n"
+        fi
     else
         printf " \033[0;31mFAIL\033[0m\n"
         printf "%s\n" "$out" | sed 's/^/    /'

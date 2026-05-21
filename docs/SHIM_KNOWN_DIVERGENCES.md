@@ -488,16 +488,16 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ## pubkey_data_to_point (internal helper) — no curve membership check (SEC-004)
 
-- **Status:** Helper is currently `[[maybe_unused]]` and not called from any active hot path.
-- **Risk:** If this helper were ever called without a prior curve check, an off-curve
+- **Status:** RESOLVED (2026-05-21). The curve membership check `y²=x³+7 mod p` has been
+  added to `pubkey_data_to_point` via `shim_pubkey_helpers.hpp`. All callers that use
+  `pubkey_data_to_point` now get the check. Off-curve input causes the function to return
+  `Point::infinity()`, which all callers treat as failure via `is_infinity()` checks.
+- **Previous risk:** If this helper were called without a prior curve check, an off-curve
   point would be accepted silently, potentially enabling invalid-point attacks where
   a small-order subgroup point leaks private key bits modulo the subgroup order.
-- **Mitigation:** Add an explicit on-curve check (`y²=x³+7 mod p`) inside the helper
-  before use, or delete the function if it remains unused. Current callers route through
-  `ec_pubkey_parse` which does validate the curve equation.
 - **Tracking:** SEC-004
-- **Impact:** None while the function is unused. Risk activates only if new code calls
-  this helper directly without a prior curve membership check.
+- **Impact:** None for callers with valid on-curve public keys. Off-curve inputs are now
+  detected and rejected at the helper boundary rather than at individual call sites.
 
 ---
 

@@ -1001,7 +1001,12 @@ jobs:
             push_ok=false
             for i in 1 2 3; do git push origin dev && push_ok=true && break || sleep 5; done
             if [ "$push_ok" != "true" ]; then
-              echo "::warning::Evidence chain push failed after 3 retries — chain is artifact-only (docs/EVIDENCE_CHAIN.json not committed to repo)"
+              # CI-012: escalate to ::error:: so the push failure appears as a visible red
+              # annotation in the GitHub Actions UI (not a silent yellow warning).
+              # Step still exits 0 (intentional — chain is preserved as artifact; the pipeline
+              # verdict is not affected by a push conflict).
+              echo "::error::Evidence chain push failed after 3 retries — chain is artifact-only (docs/EVIDENCE_CHAIN.json not committed to repo)"
+              echo "evidence_chain_committed=false" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
             fi
           else
             echo "::notice::Evidence chain unchanged; nothing to commit."

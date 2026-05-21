@@ -122,7 +122,9 @@ jobs:
         run: cmake --build build -j"$(nproc)"
 
       - name: Test under sanitizers
-        continue-on-error: true  # CI-001: step-level only; build failures above are blocking
+        # CI-005: continue-on-error removed. All tests except test_large_scalar now run
+        # as a hard gate. Any new ASan/UBSan violation causes a red job failure.
+        id: asan_ubsan_tests
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
@@ -131,9 +133,20 @@ jobs:
         # Exclude py_*: Python ctypes loads ASan-built libufsecp.so without the
         # ASan runtime preloaded, causing __asan_option_detect_stack_use_after_return
         # undefined symbol errors. Python tests run in the normal linux jobs.
-        # Exclude large_scalar_multiplication: known divergence in non-x86-asm
-        # scalar_mul fallback under sanitizers (pending bug fix).
         run: ctest --test-dir build --output-on-failure -j"$(nproc)" -E "^(ct_sidechannel|selftest|unified_audit|py_|test_large_scalar)" --timeout 900
+
+      - name: Test large_scalar_multiplication (known non-asm divergence — advisory)
+        # CI-005: test_large_scalar is excluded from the main gate above due to a known
+        # scalar_mul divergence in the non-x86-asm fallback under sanitizers (pending fix).
+        # Run it separately as advisory (continue-on-error: true) so the known failure
+        # does not block CI but any regression beyond this single test IS caught above.
+        continue-on-error: true
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          ctest --test-dir build --output-on-failure -j"$(nproc)" -R "^test_large_scalar" --timeout 900 || \
+            echo "::warning::test_large_scalar failed under ASan+UBSan (known non-asm scalar_mul divergence — pending fix)"
 
   # ── Memory Sanitizer (uninitialized reads) ──────────────────────────────
   msan:
