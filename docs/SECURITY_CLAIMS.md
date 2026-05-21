@@ -2,6 +2,22 @@
 
 **UltrafastSecp256k1 v4.0.0** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-05-21 ecdsa.cpp / musig2.cpp / frost.cpp — P2-CT-001/002/003/007 nonce candidate scalar erase
+
+- **P2-CT-001** (`rfc6979_nonce`): Both `cand1` and `cand2` nonce candidate scalars are
+  now `secure_erase`d immediately after `ct::scalar_select` picks the selected candidate.
+  Previously both remained as stack residue until the function frame was reclaimed.
+- **P2-CT-002** (`rfc6979_nonce_hedged`): Identical fix in the hedged variant.
+- **P2-CT-003** (`musig2_nonce_gen`): `cand1`/`cand2` erased in both the k1 and k2
+  scoped blocks after their respective `ct::scalar_select` calls.
+- **P2-CT-007** (`derive_scalar_from_hash` in frost.cpp): `cand1`/`cand2` derived from
+  secret polynomial coefficient hashes are now erased after `ct::scalar_select`.
+- **Security impact**: Eliminates nonce-derived secret material from stack residue in all
+  four nonce generation paths. CT selection property is unchanged — `ct::scalar_select`
+  still performs a branchless pick. Only the post-select cleanup is improved.
+- **No signing output change**: `Scalar const result` is returned by value copy; the
+  erased candidates do not affect the returned nonce.
+
 ### 2026-05-21 shim_*.cpp — SHIM-A01..A08 NULL-arg illegal_callback parity
 
 - **SHIM-A01** (`secp256k1_ecdsa_signature_normalize`): `sigin=NULL` now fires the illegal

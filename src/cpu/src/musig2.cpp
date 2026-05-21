@@ -206,6 +206,10 @@ std::pair<MuSig2SecNonce, MuSig2PubNonce> musig2_nonce_gen(
         std::uint64_t const mask = static_cast<std::uint64_t>(
             -static_cast<std::int64_t>(static_cast<int>(ok1)));
         sec.k1 = ct::scalar_select(cand1, cand2, mask);
+        // P2-CT-003: erase both candidate scalars — both hold nonce-derived
+        // secret material and must not persist as stack residue.
+        secure_erase(&cand1, sizeof(cand1));
+        secure_erase(&cand2, sizeof(cand2));
         secure_erase(nonce_input, sizeof(nonce_input));
         secure_erase(k1_hash.data(), k1_hash.size());
         secure_erase(k1_hash2.data(), k1_hash2.size());
@@ -229,6 +233,10 @@ std::pair<MuSig2SecNonce, MuSig2PubNonce> musig2_nonce_gen(
         std::uint64_t const mask = static_cast<std::uint64_t>(
             -static_cast<std::int64_t>(static_cast<int>(ok1)));
         sec.k2 = ct::scalar_select(cand1, cand2, mask);
+        // P2-CT-003: erase both candidate scalars — both hold nonce-derived
+        // secret material and must not persist as stack residue.
+        secure_erase(&cand1, sizeof(cand1));
+        secure_erase(&cand2, sizeof(cand2));
         secure_erase(nonce_input, sizeof(nonce_input));
         secure_erase(k2_hash.data(), k2_hash.size());
         secure_erase(k2_hash2.data(), k2_hash2.size());

@@ -47,6 +47,10 @@ static Scalar derive_scalar_from_hash(std::array<std::uint8_t, 32> hash) {
     std::uint64_t const mask = static_cast<std::uint64_t>(
         -static_cast<std::int64_t>(static_cast<int>(ok1)));
     Scalar const result = ct::scalar_select(cand1, cand2, mask);
+    // P2-CT-007: erase both candidate scalars — both hold secret-polynomial-derived
+    // material and must not persist as stack residue after return.
+    secure_erase(&cand1, sizeof(cand1));
+    secure_erase(&cand2, sizeof(cand2));
     secure_erase(hash.data(), hash.size());
     secure_erase(hash2.data(), hash2.size());
     return result;

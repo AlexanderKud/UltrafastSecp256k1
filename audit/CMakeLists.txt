@@ -5022,3 +5022,17 @@ if(SECP256K1_HAS_ADAPTOR)
         LABELS "audit;regression;ct;adaptor;security;p2-ct-rt-004")
     target_sources(unified_audit_runner PRIVATE test_regression_adaptor_ct_nonce.cpp)
 endif()
+
+# P2-CT-001/002/003/007: nonce candidate scalar zeroization regression guard.
+# cand1+cand2 erased after ct::scalar_select in rfc6979_nonce, rfc6979_nonce_hedged,
+# musig2_nonce_gen (k1+k2 blocks), and derive_scalar_from_hash.
+# C++ API only — no shim/GPU dependency. advisory=false.
+add_executable(test_regression_nonce_candidate_erase_standalone
+    test_regression_nonce_candidate_erase.cpp)
+audit_target_defaults(test_regression_nonce_candidate_erase_standalone)
+target_compile_definitions(test_regression_nonce_candidate_erase_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_nonce_candidate_erase
+    COMMAND test_regression_nonce_candidate_erase_standalone)
+set_tests_properties(regression_nonce_candidate_erase PROPERTIES TIMEOUT 60
+    LABELS "audit;regression;ct;memory_safety;security;p2-ct-001;p2-ct-002;p2-ct-003;p2-ct-007")
+target_sources(unified_audit_runner PRIVATE test_regression_nonce_candidate_erase.cpp)

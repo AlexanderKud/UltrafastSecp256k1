@@ -2,6 +2,34 @@
 
 **Last updated**: 2026-05-21 | **Version**: 4.0.0
 
+### 2026-05-21 ecdsa.cpp / musig2.cpp / frost.cpp — P2-CT-001/002/003/007 nonce candidate scalar zeroization
+
+- **`src/cpu/src/ecdsa.cpp` `rfc6979_nonce` (P2-CT-001)**: `cand1` and `cand2` are
+  intermediate nonce candidate scalars derived from HMAC-SHA256 output keyed on the
+  private key. After `ct::scalar_select(cand1, cand2, mask1)` selects the valid candidate
+  into `result`, both candidates now receive `secure_erase(&cand1, sizeof(cand1))` and
+  `secure_erase(&cand2, sizeof(cand2))` before the remaining erase block and `return result`.
+  **Lifecycle**: created on stack, used once for CT select, erased immediately after.
+  No other reference to cand1/cand2 exists after the erase.
+
+- **`src/cpu/src/ecdsa.cpp` `rfc6979_nonce_hedged` (P2-CT-002)**: Identical fix applied
+  to the hedged variant's candidate scalars. Same erase pattern, same lifecycle.
+
+- **`src/cpu/src/musig2.cpp` `musig2_nonce_gen` k1 block (P2-CT-003)**: `cand1` and
+  `cand2` are scoped to the k1 `{}` block. After `sec.k1 = ct::scalar_select(cand1, cand2, mask)`,
+  both are now erased before `secure_erase(nonce_input, ...)`.
+
+- **`src/cpu/src/musig2.cpp` `musig2_nonce_gen` k2 block (P2-CT-003)**: Same fix in the
+  k2 scoped block after `sec.k2 = ct::scalar_select(cand1, cand2, mask)`.
+
+- **`src/cpu/src/frost.cpp` `derive_scalar_from_hash` (P2-CT-007)**: `cand1` and `cand2`
+  are derived from secret polynomial coefficient hashes. Both are now erased after
+  `ct::scalar_select` and before `secure_erase(hash.data(), ...)`.
+
+- **Impact**: Stack residue of unselected nonce candidates eliminated in all four
+  locations. The selected candidate is returned via value copy (`Scalar const result`);
+  cand1/cand2 themselves are zeroed and go out of scope.
+
 ### 2026-05-21 shim_*.cpp — SHIM-A01..A08 NULL-arg illegal_callback (no secret material)
 
 - **`compat/libsecp256k1_shim/src/shim_ecdsa.cpp`** (`secp256k1_ecdsa_signature_normalize`):

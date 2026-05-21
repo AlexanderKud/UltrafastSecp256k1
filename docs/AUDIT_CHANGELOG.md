@@ -1,5 +1,14 @@
 # Audit Changelog
 
+## 2026-05-21 — Fix: P2-CT-001/002/003/007 nonce candidate scalar zeroization
+
+- **src/cpu/src/ecdsa.cpp `rfc6979_nonce` (P2-CT-001):** Added `secure_erase(&cand1, sizeof(cand1))` and `secure_erase(&cand2, sizeof(cand2))` immediately after `ct::scalar_select(cand1, cand2, mask1)`. Both candidate scalars hold nonce-derived secret material and must not persist as stack residue after return.
+- **src/cpu/src/ecdsa.cpp `rfc6979_nonce_hedged` (P2-CT-002):** Same fix as P2-CT-001 applied to the hedged variant.
+- **src/cpu/src/musig2.cpp `musig2_nonce_gen` k1 block (P2-CT-003):** Added `secure_erase(&cand1)` + `secure_erase(&cand2)` after `sec.k1 = ct::scalar_select(cand1, cand2, mask)`.
+- **src/cpu/src/musig2.cpp `musig2_nonce_gen` k2 block (P2-CT-003):** Same fix in the k2 scoped block after `sec.k2 = ct::scalar_select(cand1, cand2, mask)`.
+- **src/cpu/src/frost.cpp `derive_scalar_from_hash` (P2-CT-007):** Added `secure_erase(&cand1)` + `secure_erase(&cand2)` after `ct::scalar_select(cand1, cand2, mask)`. Both hold secret polynomial coefficient-derived material.
+- **audit/test_regression_nonce_candidate_erase.cpp (NEW):** Correctness regression guard (NCER-1..5): 200 ECDSA sign+verify round-trips, RFC 6979 determinism, nonce uniqueness, 50 hedged sign+verify + distinct aux_rand, source-scan confirming presence of secure_erase(&cand1/cand2) in all four locations. advisory=false.
+
 ## 2026-05-21 — Fix: P2-SEC-002 batch verify CSPRNG seeding + P2-CT-RT-004 adaptor nonce CT fix
 
 - **src/cpu/src/batch_verify.cpp `schnorr_batch_verify_impl` (P2-SEC-002):** Added CSPRNG seeding to Schnorr batch verify weight computation. Previously `batch_weight_i = SHA256(SHA256(all_sig_data) || i)` was fully deterministic given the batch entries — any adversary who knows the inputs can pre-compute all weights, enabling a Wagner-style attack. Fix: sample 32 bytes from `csprng_fill` once per batch call, XOR them into `batch_seed` before the weight loop. Weights are now unpredictable to any party not controlling the OS CSPRNG. Matches libsecp256k1's `secp256k1_batch_randomizer_gen` design. Added `#include "secp256k1/detail/csprng.hpp"` and `#include "secp256k1/detail/secure_erase.hpp"`; CSPRNG bytes are erased after use.

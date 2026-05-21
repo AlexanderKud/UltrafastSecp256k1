@@ -410,6 +410,10 @@ Scalar rfc6979_nonce(const Scalar& private_key,
         -static_cast<std::int64_t>(static_cast<int>(ok1)));
     Scalar const result = ct::scalar_select(cand1, cand2, mask1);
 
+    // P2-CT-001: erase both candidate scalars — both hold nonce-derived secret
+    // material and must not persist as stack residue after return.
+    secure_erase(&cand1, sizeof(cand1));
+    secure_erase(&cand2, sizeof(cand2));
     secure_erase(t.data(), t.size());
     secure_erase(buf33, sizeof(buf33));
     secure_erase(V, sizeof(V));
@@ -500,6 +504,10 @@ Scalar rfc6979_nonce_hedged(const Scalar& private_key,
         -static_cast<std::int64_t>(static_cast<int>(ok1)));
     Scalar const result = ct::scalar_select(cand1, cand2, mask1);
 
+    // P2-CT-002: erase both candidate scalars — both hold nonce-derived secret
+    // material and must not persist as stack residue after return.
+    secure_erase(&cand1, sizeof(cand1));
+    secure_erase(&cand2, sizeof(cand2));
     secure_erase(t.data(), t.size());
     secure_erase(buf33, sizeof(buf33));
     secure_erase(V, sizeof(V));

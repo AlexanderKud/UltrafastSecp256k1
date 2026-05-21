@@ -651,6 +651,11 @@ int test_regression_batch_csprng_seed_run();   // P2-SEC-002: CSPRNG-seeded batc
 int test_regression_adaptor_ct_nonce_run();    // P2-CT-RT-004: adaptor_nonce fixed 2-iter CT
 
 // ============================================================================
+// Forward declarations -- 2026-05-21 P2-CT-001/002/003/007: nonce candidate erase
+// ============================================================================
+int test_regression_nonce_candidate_erase_run(); // P2-CT-001/002/003/007: cand1+cand2 erased after ct::scalar_select
+
+// ============================================================================
 // Report section IDs -- 9 audit categories
 // ============================================================================
 //   1. math_invariants   -- Mathematical Invariants (Fp, Zn, Group Laws)
@@ -1335,6 +1340,9 @@ static const AuditModule ALL_MODULES[] = {
 #if SECP256K1_HAS_ADAPTOR
     { "regression_adaptor_ct_nonce", "P2-CT-RT-004: adaptor_nonce/ecdsa_adaptor_binding fixed 2-iter CT — data-dependent retry loop removed; ct::scalar_select picks first valid candidate; correctness (ACN-1..5): sign+verify 50× Schnorr, 50× ECDSA, adapt+extract, determinism, nonce uniqueness", "ct_analysis", test_regression_adaptor_ct_nonce_run, false },
 #endif // SECP256K1_HAS_ADAPTOR
+    // === 2026-05-21 P2-CT-001/002/003/007: nonce candidate scalar zeroization ===
+    // advisory=false: C++ API only (ct::ecdsa_sign, musig2_nonce_gen), no shim/GPU dependency.
+    { "regression_nonce_candidate_erase", "P2-CT-001/002/003/007: cand1+cand2 secure_erase after ct::scalar_select in rfc6979_nonce, rfc6979_nonce_hedged, musig2_nonce_gen (k1+k2), derive_scalar_from_hash — stack residue zeroization; correctness (NCER-1..5): 200 ECDSA roundtrips, determinism, uniqueness, 50 hedged roundtrips, source scan", "ct_analysis", test_regression_nonce_candidate_erase_run, false },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);
