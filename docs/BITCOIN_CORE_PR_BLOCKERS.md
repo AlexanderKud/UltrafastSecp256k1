@@ -158,4 +158,26 @@ Two fixes were required:
 
 ---
 
-*Last updated: 2026-05-20 — Security fixes: CT-001 ellswift non-CT gen_mul, CT-003 schnorr_xonly branchless parity, RT-004 HMAC pad erase, CT-006 MuSig2 k1/k2 strict parsing, RT-011 BIP32 private_key() strict, SHIM-002 context_create callback, SHIM-012 pubkey_sort crash. Stage 0 updated 235→254. Stage 2e updated 693/693 (Clang 19) → 749/749 (GCC 14, 2026-05-20). ConnectBlock: Ultra wins ALL scenarios +0.9–+1.5% with LTO (confirmed, err% 0.2–0.5%, hard turbo lock 2026-05-12; see docs/BITCOIN_CORE_BENCH_RESULTS.json). All blockers remain closed.*
+---
+
+## 2026-05-21 Re-Audit Findings (v8 review)
+
+Several P0/P1 issues identified in multi-pass review; being fixed in current dev branch.
+Status: In progress — see workingdocs/ for details.
+
+Fixes applied in this session:
+- **P0-001:** Corrected false "turbo disabled via intel_pstate/no_turbo=1" claim in EVIDENCE.md
+  and canonical_numbers.json. The bench_unified_2026-05-21 run had turbo status unknown
+  (sysfs not available); only BITCOIN_CORE_BENCH_RESULTS.json (2026-05-12) has confirmed
+  hard turbo lock.
+- **P0-002:** Propagated correct CT ratios (1.27× ECDSA, 1.13× Schnorr) from canonical JSON
+  to EVIDENCE.md and PR_DESCRIPTION.md. Prior docs showed 1.24×/1.09× from an earlier run.
+- **P0-003:** Added clear advisory header to the 2026-05-11 no-turbo-lock benchmark table in
+  PR_DESCRIPTION.md, distinguishing it from the canonical 2026-05-12 controlled result.
+- **P0-005:** Standardized cmake flag to `-DSECP256K1_BACKEND=ultrafast` across all PR docs
+  (was incorrectly `-DSECP256K1_USE_ULTRAFAST=ON` in some files).
+- **Docs:** Fixed dead link to bench_unified_2026-05-11 (file doesn't exist) → 2026-05-21.
+
+All other blockers from prior sessions remain closed.
+
+*Last updated: 2026-05-21 — Security fixes: CT-001 ellswift non-CT gen_mul, CT-003 schnorr_xonly branchless parity, RT-004 HMAC pad erase, CT-006 MuSig2 k1/k2 strict parsing, RT-011 BIP32 private_key() strict, SHIM-002 context_create callback, SHIM-012 pubkey_sort crash. Stage 0 updated 235→254. Stage 2e updated 693/693 (Clang 19) → 749/749 (GCC 14, 2026-05-20). ConnectBlock: Ultra wins ALL scenarios +0.9–+1.5% with LTO (confirmed, err% 0.2–0.5%, hard turbo lock 2026-05-12; see docs/BITCOIN_CORE_BENCH_RESULTS.json). All blockers remain closed.*

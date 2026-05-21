@@ -62,9 +62,9 @@ Pin to a specific commit hash. Do not use `GIT_TAG main` — the library is
 under active development and `main` is not a stable reference for CI:
 
 ```cmake
-option(SECP256K1_USE_ULTRAFAST "Use UltrafastSecp256k1 instead of bundled secp256k1" OFF)
+option(SECP256K1_BACKEND "secp256k1 backend: bundled (default) or ultrafast" bundled)
 
-if(SECP256K1_USE_ULTRAFAST)
+if(SECP256K1_BACKEND STREQUAL "ultrafast")
     include(FetchContent)
     FetchContent_Declare(
         UltrafastSecp256k1
@@ -88,7 +88,7 @@ endif()
 
 Build:
 ```bash
-cmake -S . -B build -DSECP256K1_USE_ULTRAFAST=ON
+cmake -S . -B build -DSECP256K1_BACKEND=ultrafast
 cmake --build build -j$(nproc)
 ctest --test-dir build --output-on-failure
 ```
@@ -180,11 +180,11 @@ libsecp256k1.
 
 A minimal PR to [bitcoin/bitcoin](https://github.com/bitcoin/bitcoin) would:
 
-1. **Add `cmake/secp256k1_backend.cmake`** — `SECP256K1_USE_ULTRAFAST` option with
+1. **Add `cmake/secp256k1_backend.cmake`** — `SECP256K1_BACKEND` option with
    FetchContent/alias wiring.
 2. **Modify `CMakeLists.txt`** — `include(secp256k1_backend)` before existing
    `add_subdirectory(src/secp256k1)`.
-3. **Add CI job** — builds Bitcoin Core with `-DSECP256K1_USE_ULTRAFAST=ON`
+3. **Add CI job** — builds Bitcoin Core with `-DSECP256K1_BACKEND=ultrafast`
    and runs the full test suite.
 4. **No changes to any Bitcoin Core source file** — build system only.
 

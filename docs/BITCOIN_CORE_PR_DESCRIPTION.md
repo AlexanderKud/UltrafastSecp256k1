@@ -2,7 +2,7 @@
 
 ## What this PR does
 
-Adds `-DSECP256K1_USE_ULTRAFAST=ON` CMake option (default: **bundled**).
+Adds `-DSECP256K1_BACKEND=ultrafast` CMake option (default: **bundled**).
 When bundled, Bitcoin Core builds identically to today — no changes to the
 existing `src/secp256k1/` path.
 
@@ -17,6 +17,13 @@ is required for full performance. Use the provided `ultrafast-bench` CMake prese
 
 UltrafastSecp256k1 is an MIT-licensed C++20 library with a compatible shim
 that passes Bitcoin Core's full test suite: **749/749 test_bitcoin, 0 failures** (GCC 14.2.0 run, `docs/BITCOIN_CORE_BENCH_RESULTS.json`). An earlier Clang 19 run against v28.0 showed 693/693 (`docs/BITCOIN_CORE_TEST_RESULTS.json`).
+
+## Supplementary: Historical ConnectBlock Run (2026-05-11, no turbo lock — treat as parity data)
+
+> **Note:** This table was recorded without confirmed CPU turbo lock and should be treated as
+> parity data, not a performance claim. The canonical controlled result is in
+> `docs/BITCOIN_CORE_BENCH_RESULTS.json` (2026-05-12, hard turbo lock confirmed via
+> intel_pstate/no_turbo=1 + cpupower governor=performance).
 
 Performance vs libsecp256k1 on Intel Core i5-14400F, GCC 14.2.0, Release + LTO,
 taskset -c 0, governor=performance, bench_bitcoin native harness, 2026-05-11
@@ -72,7 +79,7 @@ library in production for Silent Payments (BIP-352) GPU scanning.
 
 ## What is NOT changed
 
-- Default build path is untouched (`-DSECP256K1_USE_ULTRAFAST` defaults to `OFF`)
+- Default build path is untouched (`-DSECP256K1_BACKEND` defaults to `bundled`)
 - No changes to `src/secp256k1/` or libsecp256k1 source
 - No new mandatory dependencies
 - No changes to Bitcoin Core's test suite or CI configuration
@@ -82,11 +89,11 @@ library in production for Silent Payments (BIP-352) GPU scanning.
 ### CT signing throughput (GCC 14.2.0 — CT-vs-CT, production-equivalent)
 
 All numbers from `docs/bench_unified_2026-05-21_gcc14_x86-64.json`
-(Intel i5-14400F, turbo disabled, core pinned, 500 warmup, 11 passes, IQR trimming):
+(Intel i5-14400F, turbo status: unknown (sysfs not available during bench run; taskset -c 0 nice -20 applied), core pinned, 500 warmup, 11 passes, IQR trimming):
 
 | Compiler | CT ECDSA sign | CT Schnorr sign | Notes |
 |---|---|---|---|
-| **GCC 14.2.0 + LTO** | **+24% vs libsecp (1.24×)** | **+9% vs libsecp (1.09×)** | CT-vs-CT, canonical controlled run |
+| **GCC 14.2.0 + LTO** | **+27% vs libsecp (1.27×)** | **+13% vs libsecp (1.13×)** | CT-vs-CT, canonical controlled run |
 | Clang 19 (archived, 2026-03-24) | +33% vs libsecp | ~+9% vs libsecp | Archived; not a current controlled run |
 
 Bitcoin Core Linux CI uses GCC; the GCC 14 row is the relevant metric.
@@ -128,7 +135,7 @@ The ABI layer is the production-safe surface.
 
 ### Benchmark methodology note
 
-All controlled results were collected with: turbo disabled (`echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo`, governor=performance), CPU pinned (`taskset -c 0`), `nice -20`, 500 warmup/op, 11 passes, IQR outlier removal. Compiler: GCC 14.2.0, Release + LTO. Canonical data: `docs/bench_unified_2026-05-21_gcc14_x86-64.json`. Bitcoin Core integration data: `docs/BITCOIN_CORE_BENCH_RESULTS.json`.
+CT signing results were collected with: turbo status unknown (sysfs not available during bench run; taskset -c 0 nice -20 applied), 500 warmup/op, 11 passes, IQR outlier removal. Compiler: GCC 14.2.0, Release + LTO. Canonical data: `docs/bench_unified_2026-05-21_gcc14_x86-64.json`. ConnectBlock integration data (hard turbo lock confirmed, intel_pstate/no_turbo=1, governor=performance, taskset -c 0, nice -20, 2026-05-12): `docs/BITCOIN_CORE_BENCH_RESULTS.json`.
 
 ### Scope of this PR
 

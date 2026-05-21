@@ -25,8 +25,8 @@ C API surface to UltrafastSecp256k1 internals. To enable it:
 
 ```cmake
 # In CMakeLists.txt (or as -D flag) — canonical flag name:
-option(SECP256K1_USE_ULTRAFAST "Use UltrafastSecp256k1 instead of bundled secp256k1" OFF)
-# Or equivalently: -DSECP256K1_USE_ULTRAFAST=ON
+option(SECP256K1_BACKEND "secp256k1 backend: bundled (default) or ultrafast" bundled)
+# Or equivalently: -DSECP256K1_BACKEND=ultrafast
 ```
 
 No other changes are required. All `secp256k1_*` call sites in Bitcoin Core continue
