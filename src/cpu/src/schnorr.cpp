@@ -338,9 +338,13 @@ SchnorrSignature SchnorrSignature::from_bytes(const std::array<uint8_t, 64>& dat
 // -- BIP-340 strict signature parsing (r < p, 0 < s < n) ---------------------
 
 bool SchnorrSignature::parse_strict(const uint8_t* data64, SchnorrSignature& out) noexcept {
-    // BIP-340: fail if r >= p
-    FieldElement r_fe;
-    if (!FieldElement::parse_bytes_strict(data64, r_fe)) return false;
+    // BIP-340: fail if r >= p.
+    // PERF-OPT (OVERHEAD-007): use parse_and_check_lt_p instead of constructing a
+    // full FieldElement that is immediately discarded. The FieldElement stores 4
+    // uint64_t limbs that are never read after the >= p check; the raw limb check
+    // in parse_and_check_lt_p saves 4 store instructions vs FieldElement::parse_bytes_strict.
+    std::uint64_t r_limbs[4];
+    if (!parse_and_check_lt_p(data64, r_limbs)) return false;
 
     // BIP-340: fail if s >= n; also reject s == 0
     Scalar s_val;
