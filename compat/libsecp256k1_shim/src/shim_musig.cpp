@@ -539,13 +539,28 @@ int secp256k1_musig_nonce_agg(
 {
     if (!aggnonce || !pubnonces || n_pubnonces == 0) return 0;
     // SHIM-007: use pre-cached affine coords — no decompress (no sqrt) here.
-    std::vector<std::pair<Point, Point>> pts;
-    pts.reserve(n_pubnonces);
-    for (size_t i = 0; i < n_pubnonces; ++i) {
-        if (!pubnonces[i]) return 0;
-        pts.push_back(pn_unpack_points(pubnonces[i]));
+    // P2-PERF-004: SBO — for N<=16 (common 2-of-2 case) accumulate directly on
+    // the stack, avoiding a heap allocation for the intermediate pts vector.
+    constexpr size_t kSBOLimit = 16;
+    secp256k1::MuSig2AggNonce agg{};
+    agg.R1 = Point::infinity();
+    agg.R2 = Point::infinity();
+    if (n_pubnonces <= kSBOLimit) {
+        for (size_t i = 0; i < n_pubnonces; ++i) {
+            if (!pubnonces[i]) return 0;
+            auto [r1, r2] = pn_unpack_points(pubnonces[i]);
+            agg.R1 = agg.R1.add(r1);
+            agg.R2 = agg.R2.add(r2);
+        }
+    } else {
+        std::vector<std::pair<Point, Point>> pts;
+        pts.reserve(n_pubnonces);
+        for (size_t i = 0; i < n_pubnonces; ++i) {
+            if (!pubnonces[i]) return 0;
+            pts.push_back(pn_unpack_points(pubnonces[i]));
+        }
+        agg = secp256k1::musig2_nonce_agg_points(pts);
     }
-    auto agg = secp256k1::musig2_nonce_agg_points(pts);
     std::memset(aggnonce->data, 0, sizeof(aggnonce->data));  // zero all 132 bytes (B-01)
     compress(agg.R1, aggnonce->data);
     compress(agg.R2, aggnonce->data + 33);
@@ -638,10 +653,12 @@ int secp256k1_musig_partial_sig_verify(
     auto pn = pn_unpack(pubnonce);
     auto s  = sess_unpack(session);
 
-    unsigned char buf[33]; size_t len = 33;
-    secp256k1_ec_pubkey_serialize(secp256k1_context_static, buf, &len, pubkey, SECP256K1_EC_COMPRESSED);
+    // P2-PERF-003: reconstruct compressed form directly from secp256k1_pubkey
+    // internal layout (X at data[0..31], Y parity at data[63]&1) instead of
+    // calling secp256k1_ec_pubkey_serialize() — avoids the full serialize path.
     std::array<unsigned char, 33> pk33;
-    std::memcpy(pk33.data(), buf, 33);
+    pk33[0] = (pubkey->data[63] & 1u) ? 0x03u : 0x02u;
+    std::memcpy(pk33.data() + 1, pubkey->data, 32);
 
     // Fail-closed signer lookup (Rule 13): returning 0 for "not found" is banned
     // because 0 is a valid signer index. Use explicit found flag.
@@ -653,7 +670,7 @@ int secp256k1_musig_partial_sig_verify(
     if (!found) return 0;  // unrecognized signer — fail, do not sign as signer 0
 
     std::array<unsigned char, 32> pk_x;
-    std::memcpy(pk_x.data(), buf + 1, 32);
+    std::memcpy(pk_x.data(), pk33.data() + 1, 32);
     return secp256k1::musig2_partial_verify(psig, pn, pk_x, e->ctx, s, idx) ? 1 : 0;
 }
 
@@ -666,13 +683,30 @@ int secp256k1_musig_partial_sig_agg(
 {
     SHIM_REQUIRE_CTX(ctx);
     if (!sig64 || !session || !partial_sigs || n_sigs == 0) return 0;
-    std::vector<Scalar> psigs(n_sigs);
-    for (size_t i = 0; i < n_sigs; ++i) {
-        if (!partial_sigs[i]) return 0;
-        if (!Scalar::parse_bytes_strict(partial_sigs[i]->data, psigs[i])) return 0;
-    }
+
+    // P2-PERF-005: SBO — for N<=16 (common 2-of-2 case) parse into a stack
+    // array first; construct the vector from the stack data in one shot,
+    // avoiding default-init + element-by-element assignment on the heap path.
+    constexpr size_t kSBOLimit = 16;
     auto s = sess_unpack(session);
-    auto final_sig = secp256k1::musig2_partial_sig_agg(psigs, s);
+    std::array<uint8_t, 64> final_sig{};
+    if (n_sigs <= kSBOLimit) {
+        Scalar sbo_buf[kSBOLimit];
+        for (size_t i = 0; i < n_sigs; ++i) {
+            if (!partial_sigs[i]) return 0;
+            if (!Scalar::parse_bytes_strict(partial_sigs[i]->data, sbo_buf[i])) return 0;
+        }
+        std::vector<Scalar> psigs(sbo_buf, sbo_buf + n_sigs);
+        final_sig = secp256k1::musig2_partial_sig_agg(psigs, s);
+    } else {
+        std::vector<Scalar> psigs(n_sigs);
+        for (size_t i = 0; i < n_sigs; ++i) {
+            if (!partial_sigs[i]) return 0;
+            if (!Scalar::parse_bytes_strict(partial_sigs[i]->data, psigs[i])) return 0;
+        }
+        final_sig = secp256k1::musig2_partial_sig_agg(psigs, s);
+    }
+
     // SHIM-004: fail-closed on all-zero signature — degenerate aggregation result.
     // A 64-byte all-zero Schnorr signature is always invalid; returning it as success
     // would allow a caller to serialize and broadcast a trivially invalid signature.

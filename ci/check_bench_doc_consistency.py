@@ -348,8 +348,37 @@ def check_internal_bench_consistency(bench: dict, bench_name: str) -> list[str]:
     return violations
 
 
+def _find_result(results: list, section_substr: str, name_substr: str) -> float | None:
+    """Return the ns value of the first result whose section contains *section_substr*
+    and whose name contains *name_substr* (case-insensitive).  Returns None if not found.
+    Only rows with an 'ns' key are considered (ratio-only rows are skipped).
+    """
+    sl = section_substr.lower()
+    nl = name_substr.lower()
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        if "ns" not in row:
+            continue
+        if sl in row.get("section", "").lower() and nl in row.get("name", "").lower():
+            return float(row["ns"])
+    return None
+
+
 def check_canonical_vs_bench_json(canon: dict, verbose: bool) -> list[str]:
-    """Validate canonical_numbers.json values against bench_unified JSON artifact."""
+    """Validate canonical_numbers.json ratios against the bench_unified JSON artifact.
+
+    The bench JSON uses a flat ``results`` array (schema introduced 2026-05-21).
+    Previous code looked for a ``vs_libsecp_ct_signing`` top-level key that does not
+    exist in this schema, so the ratio drift check silently skipped every time.
+    This implementation derives ratios from the ``results`` array directly.
+
+    CT ECDSA ratio  = libsecp ecdsa_sign ns  / Ultra ct::ecdsa_sign ns
+    CT Schnorr ratio = libsecp schnorr_sign ns / Ultra ct::schnorr_sign ns
+
+    Tolerance: 10% (wider than the 5% internal-consistency gate because the
+    canonical_numbers values may be rounded to 2 decimal places).
+    """
     violations: list[str] = []
     bench_path = find_bench_unified_json()
     if bench_path is None:
@@ -365,45 +394,83 @@ def check_canonical_vs_bench_json(canon: dict, verbose: bool) -> list[str]:
     # ── TASK-001: internal consistency check ──────────────────────────────────
     violations.extend(check_internal_bench_consistency(bench, bench_path.name))
 
+    # ── Extract ns values from the flat results array ─────────────────────────
+    results = bench.get("results", [])
+
+    # Ultra CT signing rows — section "CT SIGNING (Ultra CT)"
+    ultra_ct_ecdsa_ns = _find_result(results, "ct signing", "ct::ecdsa_sign")
+    ultra_ct_schnorr_ns = _find_result(results, "ct signing", "ct::schnorr_sign")
+
+    # libsecp256k1 rows — section "libsecp256k1 (bitcoin-core)"
+    libsecp_ecdsa_ns = _find_result(results, "libsecp256k1", "ecdsa_sign")
+    libsecp_schnorr_ns = _find_result(results, "libsecp256k1", "schnorr_sign")
+
     # ── CT signing GCC ratios ──────────────────────────────────────────────────
     ct_gcc = canon.get("ct_signing_gcc", {})
-    bench_ct = bench.get("vs_libsecp_ct_signing", {})
-    bench_ecdsa_ratio = bench_ct.get("ecdsa_sign_ratio")
-    bench_schnorr_ratio = bench_ct.get("schnorr_sign_ratio")
+    canon_ecdsa_ratio = ct_gcc.get("ecdsa_ratio")
+    canon_schnorr_ratio = ct_gcc.get("schnorr_ratio")
 
-    canon_max_x = ct_gcc.get("speedup_max_x")
-    canon_min_x = ct_gcc.get("speedup_min_x")
+    # Tolerance: 10% — ratios in canonical_numbers.json are rounded to 2 dp
+    TOLERANCE = 0.10
 
-    if bench_ecdsa_ratio is not None and canon_max_x is not None:
-        drift = abs(bench_ecdsa_ratio - canon_max_x)
-        if drift > 0.05:  # 5% tolerance
-            violations.append(
-                f"  CANONICAL DRIFT [ct_signing_gcc.speedup_max_x]\n"
-                f"    canonical_numbers.json : {canon_max_x:.2f}×\n"
-                f"    {bench_path.name}  : {bench_ecdsa_ratio:.2f}× (CT ECDSA)\n"
-                f"    Drift: {drift:.3f}× — update canonical_numbers.json ct_signing_gcc values\n"
-                f"    Fix : set speedup_max_x = {bench_ecdsa_ratio:.2f}"
+    if ultra_ct_ecdsa_ns and libsecp_ecdsa_ns and ultra_ct_ecdsa_ns > 0:
+        bench_ecdsa_ratio = libsecp_ecdsa_ns / ultra_ct_ecdsa_ns
+        if canon_ecdsa_ratio is not None:
+            drift = abs(bench_ecdsa_ratio - canon_ecdsa_ratio)
+            if drift > TOLERANCE:
+                violations.append(
+                    f"  CANONICAL DRIFT [ct_signing_gcc.ecdsa_ratio]\n"
+                    f"    canonical_numbers.json : {canon_ecdsa_ratio:.3f}×\n"
+                    f"    {bench_path.name} : {bench_ecdsa_ratio:.3f}×"
+                    f" ({libsecp_ecdsa_ns:.1f} / {ultra_ct_ecdsa_ns:.1f} ns)\n"
+                    f"    Drift: {drift:.3f}× > {TOLERANCE:.2f} tolerance\n"
+                    f"    Fix : set ct_signing_gcc.ecdsa_ratio = {bench_ecdsa_ratio:.2f}"
+                )
+        elif verbose:
+            print(
+                f"  [info] bench CT ECDSA ratio = {bench_ecdsa_ratio:.3f}× "
+                f"(canonical_numbers.json has no ecdsa_ratio to compare)"
             )
+    elif verbose:
+        print(
+            f"  [info] CT ECDSA ratio check skipped — could not find matching rows in {bench_path.name}.\n"
+            f"    Looking for: section~'ct signing' name~'ct::ecdsa_sign' AND "
+            f"section~'libsecp256k1' name~'ecdsa_sign'"
+        )
 
-    if bench_schnorr_ratio is not None and canon_min_x is not None:
-        drift = abs(bench_schnorr_ratio - canon_min_x)
-        if drift > 0.05:
-            violations.append(
-                f"  CANONICAL DRIFT [ct_signing_gcc.speedup_min_x]\n"
-                f"    canonical_numbers.json : {canon_min_x:.2f}×\n"
-                f"    {bench_path.name}  : {bench_schnorr_ratio:.2f}× (CT Schnorr)\n"
-                f"    Drift: {drift:.3f}× — update canonical_numbers.json ct_signing_gcc values\n"
-                f"    Fix : set speedup_min_x = {bench_schnorr_ratio:.2f}"
+    if ultra_ct_schnorr_ns and libsecp_schnorr_ns and ultra_ct_schnorr_ns > 0:
+        bench_schnorr_ratio = libsecp_schnorr_ns / ultra_ct_schnorr_ns
+        if canon_schnorr_ratio is not None:
+            drift = abs(bench_schnorr_ratio - canon_schnorr_ratio)
+            if drift > TOLERANCE:
+                violations.append(
+                    f"  CANONICAL DRIFT [ct_signing_gcc.schnorr_ratio]\n"
+                    f"    canonical_numbers.json : {canon_schnorr_ratio:.3f}×\n"
+                    f"    {bench_path.name} : {bench_schnorr_ratio:.3f}×"
+                    f" ({libsecp_schnorr_ns:.1f} / {ultra_ct_schnorr_ns:.1f} ns)\n"
+                    f"    Drift: {drift:.3f}× > {TOLERANCE:.2f} tolerance\n"
+                    f"    Fix : set ct_signing_gcc.schnorr_ratio = {bench_schnorr_ratio:.2f}"
+                )
+        elif verbose:
+            print(
+                f"  [info] bench CT Schnorr ratio = {bench_schnorr_ratio:.3f}× "
+                f"(canonical_numbers.json has no schnorr_ratio to compare)"
             )
+    elif verbose:
+        print(
+            f"  [info] CT Schnorr ratio check skipped — could not find matching rows in {bench_path.name}.\n"
+            f"    Looking for: section~'ct signing' name~'ct::schnorr_sign' AND "
+            f"section~'libsecp256k1' name~'schnorr_sign'"
+        )
 
-    # ── Compiler must match bench JSON ────────────────────────────────────────
-    bench_compiler = bench.get("_meta", {}).get("compiler", "")
+    # ── Compiler must match bench JSON metadata ───────────────────────────────
+    bench_compiler = bench.get("metadata", {}).get("compiler", "")
     canon_compiler = ct_gcc.get("compiler", "")
     if bench_compiler and canon_compiler and bench_compiler not in canon_compiler:
         violations.append(
             f"  CANONICAL DRIFT [ct_signing_gcc.compiler]\n"
             f"    canonical_numbers.json : {canon_compiler!r}\n"
-            f"    {bench_path.name}  : {bench_compiler!r}\n"
+            f"    {bench_path.name} metadata.compiler : {bench_compiler!r}\n"
             f"    Fix : set ct_signing_gcc.compiler = {bench_compiler!r}"
         )
 
