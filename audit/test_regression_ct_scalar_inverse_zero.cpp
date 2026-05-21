@@ -71,6 +71,8 @@ static void test_double_inverse() {
     }
 }
 
+int test_regression_ct_scalar_inverse_zero_run();
+
 #ifdef STANDALONE_TEST
 int main() { return test_regression_ct_scalar_inverse_zero_run(); }
 #endif
