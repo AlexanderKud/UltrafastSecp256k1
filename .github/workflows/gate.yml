@@ -597,6 +597,10 @@ jobs:
               # Reads src/metal/shaders/secp256k1_kernels.metal; returns 0 when file found
               # (source-tree cwd), 77 when absent (build-dir cwd). advisory=true by design.
               "test_exploit_metal_batch_failclosed",
+              # Reads src/opencl/src/opencl_audit_runner.cpp; source-code content scan,
+              # no OpenCL runtime invoked. Returns 0 when file found (CI checkout),
+              # 77 when absent. advisory=true because file may be absent in some builds.
+              "test_exploit_opencl_runner_key_erase",
           }
           advisory_false_pass = []
           for mod in modules:
