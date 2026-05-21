@@ -161,6 +161,11 @@ inline int ct_schnorr_sign_impl(const Scalar* priv, const uchar msg[32],
     Scalar k_prime;
     scalar_from_bytes_impl(rand_hash, &k_prime);
 
+    // P2-CT-005: reject zero nonce — k'=0 produces point at infinity and a
+    // degenerate (all-zeros) signature that would otherwise be returned as success.
+    // Matches CPU schnorr_sign k_prime.is_zero_ct() guard.
+    if (scalar_is_zero_impl(&k_prime)) return 0;
+
     // CT: R = k'*G
     CTJacobianPoint R;
     ct_generator_mul_impl(&k_prime, &R);

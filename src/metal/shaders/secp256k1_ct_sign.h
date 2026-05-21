@@ -74,14 +74,23 @@ inline bool ct_ecdsa_sign_metal(thread const uchar msg_hash[32],
     return (r_zero == 0) && (s_zero == 0);
 }
 
-// CT ECDSA sign with fault countermeasure
+// CT ECDSA sign — wrapper (no fault-countermeasure verify implemented for Metal)
+//
+// P2-CT-004: This function previously claimed to perform a "fault countermeasure:
+// verify after sign" but contained no actual verify step — just a bare return of
+// ct_ecdsa_sign_metal's result.  The misleading comment has been removed.
+//
+// TODO: fault-countermeasure verify step not yet implemented for Metal.
+// See ct_ecdsa_sign_verified_impl in src/opencl/kernels/secp256k1_ct_sign.cl
+// for the reference pattern (calls schnorr_verify_impl / ecdsa_verify_impl after
+// signing and returns 0 if the verify fails — detects fault-injection attacks).
+// Until implemented, this function provides no fault-attack protection beyond
+// the r==0 / s==0 checks already performed inside ct_ecdsa_sign_metal.
 inline bool ct_ecdsa_sign_verified_metal(thread const uchar msg_hash[32],
                                          thread const Scalar256 &priv,
                                          thread Scalar256 &r_out,
                                          thread Scalar256 &s_out) {
-    bool ok = ct_ecdsa_sign_metal(msg_hash, priv, r_out, s_out);
-    // Fault countermeasure: verify after sign (uses fast-path, ok for public data)
-    return ok;
+    return ct_ecdsa_sign_metal(msg_hash, priv, r_out, s_out);
 }
 
 // ---------------------------------------------------------------------------

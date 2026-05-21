@@ -367,6 +367,7 @@ kernel void schnorr_sign_batch(
     device const uchar *privkeys       [[buffer(1)]],   // N × 32
     device uchar *signatures           [[buffer(2)]],   // N × 64 (R.x ∥ s)
     constant uint &count               [[buffer(3)]],
+    device bool *results               [[buffer(4)]],   // N per-slot success flags (GPU-Guardrail-9)
     uint tid [[thread_position_in_grid]]
 ) {
     if (tid >= count) return;
@@ -395,6 +396,11 @@ kernel void schnorr_sign_batch(
     // GPU Guardrail 8: CT signing mandatory — variable-time schnorr_sign() banned on secret nonces.
     // SECURITY FIX (CRITICAL-2 + HIGH-1): use CT signing path; zero output on failure (fail-closed)
     bool ok = ct_schnorr_sign_metal(sec, msg_bytes, aux_rand, sig_bytes);
+
+    // GPU Guardrail 9: write per-slot success flag so host can distinguish
+    // signing failure (output zeroed) from a legitimately zero signature.
+    // Matches ecdsa_sign_batch results[[buffer(4)]] pattern.
+    results[tid] = ok;
 
     uint out_off = tid * 64;
     if (ok) {
