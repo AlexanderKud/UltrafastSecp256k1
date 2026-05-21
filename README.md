@@ -77,9 +77,12 @@ python3 ci/caas_runner.py --profile bitcoin-core-backend --json -o btc.json
 → [`docs/BITCOIN_CORE_BACKEND_EVIDENCE.md`](docs/BITCOIN_CORE_BACKEND_EVIDENCE.md) — evidence package  
 → [`docs/DER_PARITY_MATRIX.md`](docs/DER_PARITY_MATRIX.md) — DER/parser parity
 
-**CT signing (CT-vs-CT, production-equivalent, GCC 14.2.0, 2026-05-16):** **1.30× ECDSA · 1.28× Schnorr** vs libsecp256k1. Canonical data: [`docs/bench_unified_2026-05-16_gcc14_x86-64.json`](docs/bench_unified_2026-05-16_gcc14_x86-64.json). Full compiler breakdown: [docs/BITCOIN_CORE_BACKEND_EVIDENCE.md §CT Signing](docs/BITCOIN_CORE_BACKEND_EVIDENCE.md).
+**CT signing (CT-vs-CT, production-equivalent, GCC 14.2.0, 2026-05-11):** **1.24× ECDSA · 1.09× Schnorr** vs libsecp256k1. Canonical data: [`docs/bench_unified_2026-05-11_gcc14_x86-64.json`](docs/bench_unified_2026-05-11_gcc14_x86-64.json). Full compiler breakdown: [docs/BITCOIN_CORE_BACKEND_EVIDENCE.md §CT Signing](docs/BITCOIN_CORE_BACKEND_EVIDENCE.md).
 
-> **ConnectBlock (primary block-validation workload):** With Release+LTO (recommended): Ultra wins on ALL ConnectBlock scenarios — +0.9% to +1.5% faster than libsecp256k1, confirmed (err% 0.2–0.5%, hard turbo lock, 5 runs). Without LTO: ~0.5–1.0% slower due to i-cache pressure from larger code footprint; PERF-002 reduced the gap from ~1.1% but LTO is required for Ultra to win. Taproot key-path signing is 10–35% faster. Full numbers: [docs/BITCOIN_CORE_BENCH_RESULTS.json](docs/BITCOIN_CORE_BENCH_RESULTS.json).
+> **ConnectBlock (primary block-validation workload):**
+> **With Release+LTO (required for the positive result — see cmake preset `ultrafast-bench`):** Ultra outperforms libsecp256k1 on all three measured workloads (+0.9–1.5%).
+> **Without LTO:** ~0.5–1.0% slower on all three workloads (LTO is not optional for the positive result).
+> Taproot key-path signing is 10–35% faster (both with and without LTO). Full numbers: [docs/BITCOIN_CORE_BENCH_RESULTS.json](docs/BITCOIN_CORE_BENCH_RESULTS.json).
 
 ---
 
@@ -220,7 +223,7 @@ This project: `code → test → execution → evidence → continuous verificat
 We do not rely on trust. We provide reproducible evidence.
 
 - Every exploit attempt becomes a permanent regression test
-- Every commit runs 1,000,000+ assertions across 108 non-exploit audit modules and 263 exploit PoCs (367 modules total; count via `python3 ci/sync_module_count.py`)
+- Every commit runs 1,000,000+ assertions across 108 non-exploit audit modules and 263 exploit PoCs ( 372 modules total; count via `python3 ci/sync_module_count.py`; canonical data: `docs/canonical_numbers.json`)
 - Every claim maps to a test in [docs/AUDIT_TRACEABILITY.md](docs/AUDIT_TRACEABILITY.md)
 - Every performance number has pinned compiler/driver/toolkit versions and raw logs
 
@@ -263,8 +266,8 @@ Benchmark numbers and historical milestones are maintained in [`docs/BENCHMARKS.
 - **High-performance CPU secp256k1 engine** -- optimized generator multiply, scalar multiply, hashing, and serialization pipelines across x86-64, ARM64, RISC-V, and embedded targets ([see bench_unified ratio table](docs/BENCHMARKS.md))
 - **Built for modern secp256k1 workloads** -- signing, verification, wallet derivation, threshold protocols, adaptor signatures, ZK primitives, address generation, and large-scale public-key pipelines in one engine
 - **Dual-layer security** -- variable-time FAST path for throughput, constant-time CT path for secret-key operations
-- **Minimal dependencies** -- no runtime library dependencies (no Boost, no OpenSSL); build requires CMake 3.18+ and a C++17 compiler (GCC 10+, Clang 12+, MSVC 2019+, arm-none-eabi, Emscripten)
-- **12+ platforms** -- x86-64, ARM64, RISC-V, WASM, iOS, Android, ESP32, STM32, CUDA, Metal, OpenCL, plus an early-development ROCm/HIP compatibility path slated for hardware-backed validation
+- **Minimal dependencies** -- No runtime library dependencies for the CPU-only build (no Boost, no OpenSSL). GPU builds require CUDA toolkit, OpenCL runtime, or Metal SDK. Build requires CMake 3.18+ and a C++17 compiler (GCC 10+, Clang 12+, MSVC 2019+, arm-none-eabi, Emscripten)
+- **12+ platforms** -- x86-64, ARM64, RISC-V, WASM (experimental — CT evidence incomplete), iOS, Android, ESP32, STM32, CUDA, Metal, OpenCL, plus an early-development ROCm/HIP compatibility path slated for hardware-backed validation
 
 > **The following capabilities are out of scope for the Bitcoin Core CPU backend evaluation profile:**
 
@@ -287,7 +290,7 @@ Benchmark numbers and historical milestones are maintained in [`docs/BENCHMARKS.
 
 UltrafastSecp256k1 is used by [Sparrow Wallet's Frigate](https://github.com/sparrowwallet/frigate).
 
-Frigate 1.4.0 switched its DuckDB extension to `ufsecp.duckdb_extension` using UltrafastSecp256k1, and its README documents a custom DuckDB extension wrapping UltrafastSecp256k1 for `ufsecp_scan(...)`-based Silent Payments scanning with CUDA, OpenCL and Metal backend support.
+Frigate 1.4.0 switched its DuckDB extension to `ufsecp.duckdb_extension` using UltrafastSecp256k1, and its README documents a custom DuckDB extension wrapping UltrafastSecp256k1 for `ufsecp_scan(...)`-based Silent Payments scanning with CUDA, OpenCL and Metal backend support. *(as of Frigate 1.4.0, 2026-03-29 — verify against current Frigate README for latest status)*
 
 See: [Frigate 1.4.0 release](https://github.com/sparrowwallet/frigate/releases/tag/1.4.0) · [Frigate README](https://github.com/sparrowwallet/frigate/blob/master/README.md) · [Details →](docs/ADOPTION.md)
 
@@ -354,7 +357,7 @@ Full adopter list: [ADOPTERS.md](docs/ADOPTERS.md)
 - **Batch operations** -- all-affine Pippenger with touched-bucket optimization; see [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for measured throughput
 - **Multi-language bindings** -- Python (`pip install ufsecp`), Node.js (`npm i ufsecp`), Rust, Go, C#/.NET, Java, Swift, PHP, Ruby, Dart, React Native — all via the stable C ABI
 - **Embedded device support** -- ESP32-S3, ESP32-P4, ESP32-C6, STM32 Cortex-M
-- **Zero-dependency portable core** -- no Boost, no OpenSSL, compiles anywhere from server-class GPUs to bare-metal microcontrollers
+- **Zero-dependency portable core** -- no Boost, no OpenSSL for the CPU-only build; GPU builds require CUDA toolkit, OpenCL runtime, or Metal SDK; compiles anywhere from server-class GPUs to bare-metal microcontrollers
 - **Massively parallel workloads** -- batch verification, key scanning, address generation at GPU scale
 
 ---
@@ -374,7 +377,7 @@ This top-level narrative maps directly to the assurance ledger: CT secret-key ro
 | Metric | Value |
 |--------|-------|
 | Internal audit assertions per build | **~1,000,000+** |
-| Audit modules (`unified_audit_runner`) | **108 non-exploit modules + 263 exploit PoCs across 9 sections, 0 failures** |
+| Audit modules (`unified_audit_runner`) | **109 non-exploit modules + 263 exploit PoCs across 9 sections, 0 failures** |
 | Exploit PoC test files | **261 tests, 20+ coverage areas, 0 failures** |
 | CI/CD workflows | **54 GitHub Actions workflows** |
 | Build matrix (arch × config × OS) | **7 × 17 × 5 = 595 combinations** |
@@ -402,11 +405,11 @@ This top-level narrative maps directly to the assurance ledger: CT secret-key ro
 - Performance evidence is tracked through manual/release deep-assurance workflows instead of every-push benchmark fan-out
 - Audit results are logged as **structured artifacts** (JSON reports, per-platform logs), not just pass/fail signals
 - Differential tests run on every push and via manual deep-assurance workflows; no separate nightly schedule
-- All 108 non-exploit audit modules and all 263 exploit PoCs return `AUDIT-READY` status as of the last CAAS gate run. Zero failures — see pinned evidence: [`docs/EXTERNAL_AUDIT_BUNDLE.json`](docs/EXTERNAL_AUDIT_BUNDLE.json).
+- All 109 non-exploit audit modules and all 263 exploit PoCs return `AUDIT-READY (self-generated)` status as of the last CAAS gate run. Zero failures — see pinned evidence: [`docs/EXTERNAL_AUDIT_BUNDLE.json`](docs/EXTERNAL_AUDIT_BUNDLE.json).
 
 ### Exploit PoC Test Suite (263 Tests, 20+ Coverage Areas)
 
-In addition to the 367-module `unified_audit_runner`, UltrafastSecp256k1 ships **263 exploit-style PoC modules files** that actively try to break the library across its highest-risk surfaces. Each `audit/test_exploit_*.cpp` target builds and runs standalone so failures stay easy to attribute and reproduce.
+In addition to the 372-module `unified_audit_runner`, UltrafastSecp256k1 ships **263 exploit-style PoC modules files** that actively try to break the library across its highest-risk surfaces. Each `audit/test_exploit_*.cpp` target builds and runs standalone so failures stay easy to attribute and reproduce.
 
 | Coverage Area | Representative attack focus |
 |---------------|-----------------------------|
@@ -433,7 +436,7 @@ In addition to the 367-module `unified_audit_runner`, UltrafastSecp256k1 ships *
 |----------|---------|
 | [WHY_ULTRAFASTSECP256K1.md](docs/WHY_ULTRAFASTSECP256K1.md) | Full audit infrastructure, CI pipeline index, formal verification evidence |
 | [docs/AUDIT_PHILOSOPHY.md](docs/AUDIT_PHILOSOPHY.md) | Audit philosophy, continuous evidence model, design rationale, common objections answered |
-| [AUDIT_REPORT.md](docs/AUDIT_REPORT.md) | Historical baseline audit (641,194 core checks). Current: 367 modules, 0 failures |
+| [AUDIT_REPORT.md](docs/AUDIT_REPORT.md) | Historical baseline audit (641,194 core checks). Current: 372 modules, 0 failures |
 | [AUDIT_COVERAGE.md](docs/AUDIT_COVERAGE.md) | Per-module coverage matrix |
 | [THREAT_MODEL.md](docs/THREAT_MODEL.md) | Layer-by-layer risk analysis |
 | [SECURITY.md](SECURITY.md) | Vulnerability disclosure policy |

@@ -23,7 +23,7 @@ x86-64: GCC 14.2.0 · i5-14400F · 2.496 GHz · turbo off · core 0 pinned · **
 
 | Platform | Field Mul | Generator Mul | Scalar Mul (k·P) | ECDSA Verify | Verify vs lib (warm-cache) | CT Sign vs lib |
 |----------|-----------|---------------|------------|-------------|---------------|----------------|
-| x86-64 (i5-14400F) | 19.8 ns | 8,869 ns | 32,935 ns | 38,399 ns | 1.09× ECDSA · 1.08× Schnorr (pre-parsed) · 1.05× Schnorr (raw bytes, ConnectBlock-equivalent) | **1.30× ECDSA · 1.28× Schnorr** |
+| x86-64 (i5-14400F) | 19.8 ns | 8,869 ns | 32,935 ns | 38,399 ns | 1.09× ECDSA · 1.08× Schnorr (pre-parsed) · 1.05× Schnorr (raw bytes, warm-cache (64-key pool, L1/L2 resident)) | **1.24× ECDSA · 1.09× Schnorr** |
 | ARM64 (RK3588, A76) | — | — | — | — | — | — |
 | RISC-V 64 (SiFive U74) | — | — | — | — | — | — |
 | ESP32-C6 (RV32, 160 MHz) | — | — | — | — | — | — |
@@ -32,12 +32,22 @@ x86-64: GCC 14.2.0 · i5-14400F · 2.496 GHz · turbo off · core 0 pinned · **
 | CUDA (RTX) | — | — | — | — | — | — |
 | OpenCL (RTX) | — | — | — | — | — | — |
 
-> **CT Sign vs lib** = `bench_unified` CT-vs-CT section — production-equivalent comparison. Canonical data: `docs/bench_unified_2026-05-16_gcc14_x86-64.json`.
+> **CT Sign vs lib** = `bench_unified` CT-vs-CT section — production-equivalent comparison. Canonical data: `docs/bench_unified_2026-05-11_gcc14_x86-64.json`.
 > **ConnectBlock note:** +0.9–1.5% faster than libsecp256k1 **with Release+LTO**. Without LTO: ~0.5–1.0% **slower**. LTO is required for the positive result. See `docs/BITCOIN_CORE_BENCH_RESULTS.json`.
 > **Verify vs lib** = both variable-time paths on public data (fair comparison).
 > **FAST signing**: diagnostic-only variable-time vs libsecp CT comparison; **not** a production claim. Production-equivalent numbers are the **CT Sign vs lib** column above. For the diagnostic raw ratios, see `benchmarks/comparison/README.md` §BENCH-001 note.
 > **GPU rows:** kernel-only throughput at standard batch sizes — **excludes PCIe host↔device transfer overhead**. Wall-clock throughput (including transfer) is lower; measure end-to-end for production estimates.
 > For Bitcoin Core pipeline numbers (bench_bitcoin), see `docs/BITCOIN_CORE_BENCH_RESULTS.json`.
+
+**Per-column canonical artifact attribution:**
+
+| Column | Canonical artifact |
+|--------|--------------------|
+| Field Mul, Generator Mul, Scalar Mul, ECDSA Verify | `docs/bench_unified_2026-05-11_gcc14_x86-64.json` |
+| CT Sign vs lib (ECDSA 1.24×, Schnorr 1.09×) | `docs/bench_unified_2026-05-11_gcc14_x86-64.json` |
+| Verify vs lib (warm-cache) | `docs/bench_unified_2026-05-11_gcc14_x86-64.json` |
+| ConnectBlock (+0.9–1.5% with LTO) | `docs/BITCOIN_CORE_BENCH_RESULTS.json` |
+| GPU rows | No canonical JSON yet — diagnostic only; `canonical_numbers.json` marks `gpu_throughput.status` as "diagnostic" |
 
 **P1-PERF-001 (2026-05-12, release-grade):** `secp256k1_schnorrsig_verify` unique-pubkey path (ConnectBlock workload).
 Eliminates redundant lift_x sqrt per call (stored Y from `secp256k1_xonly_pubkey_parse` used directly).

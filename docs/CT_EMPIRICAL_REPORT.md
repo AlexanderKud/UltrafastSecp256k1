@@ -169,7 +169,7 @@ no out-of-order scheduler pressure.
 ARM64 Cortex-A55 shows the highest CT overhead (2.57x ECDSA) despite being in-order —
 likely cache pressure from the larger working set of precomputed tables.
 
-x86-64 CT overhead improved from 1.94x (v3.66.0) to **1.77x** (v3.16.0) following
+x86-64 CT overhead improved from 1.94x (v3.14.x era) to **1.77x** (v3.16.0+) following
 the GLV decomposition correctness fix (v3.13.1): `ct_scalar_mul_mod_n()` replaced
 the truncated 128-bit intermediate path. Absolute CT scalar_mul: 25.3µs vs 24.0µs
 fast path (1.05x overhead at the scalar_mul level alone).

@@ -46,6 +46,12 @@ Frigate's `benchmark.py` scanning mainnet to block 914,000 shows:
 
 Source: [Frigate README — Performance](https://github.com/sparrowwallet/frigate/blob/master/README.md#performance)
 
+> **Note:** Community throughput figures above reflect Frigate's full scanning pipeline
+> (BIP-352 transaction parsing, output matching, and result filtering), not raw
+> `ufsecp_gpu_bip352_scan_batch` kernel throughput. These numbers are not directly
+> comparable to the kernel-level diagnostic figures in
+> [docs/WHY_ULTRAFASTSECP256K1.md](WHY_ULTRAFASTSECP256K1.md).
+
 ---
 
 ## Ecosystem signals

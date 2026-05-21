@@ -149,7 +149,10 @@ matrix. They are not self-reported estimates.
 
 ---
 
-## Current Metrics (as of v3.64.0)
+## Historical Metrics (as of v3.64.0 — see [docs/AUDIT_COVERAGE.md](AUDIT_COVERAGE.md) for current)
+
+> **Current as of v4.0.0:** 263 exploit PoC modules, 371 total audit modules.
+> See [AUDIT_COVERAGE.md](AUDIT_COVERAGE.md) for the authoritative current counts.
 
 | Metric | Value |
 |--------|-------|

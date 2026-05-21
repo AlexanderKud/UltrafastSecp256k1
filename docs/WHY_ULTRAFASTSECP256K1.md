@@ -13,7 +13,7 @@ Traditional audits produce documents. This system produces **continuous evidence
 | Checks per run | ~1,000,000+ assertions |
 | Deep assurance checks | ~1,300,000+ random differential tests on manual/release evidence runs |
 | CI/CD model | Block-based PR/push gate + release CAAS gate + manual deep-assurance workflows |
-| CT verification | 5 independent CT verification pipelines (3 in GitHub CI: LLVM ct-verif, Valgrind taint, ct-prover; 2 manual/local: dudect statistical, ARM64 native) |
+| CT verification | 3 CI-enforced CT verification pipelines: LLVM ct-verif (`ct-verif.yml`), Valgrind taint (`valgrind-ct.yml`), dudect statistical smoke (`cycle-ct.yml`, x86-64 + ARM64) — all run on every push |
 | Philosophy | Don't trust — reproduce |
 
 Every exploit attempt becomes a permanent regression test. Security hardens on every commit, not just on release day.
@@ -80,10 +80,10 @@ These top-level differentiators are claim-keyed in the ledger: exploit-audit sur
 | ABI gate | FFI round-trip stability, C ABI regression detection | Full suite |
 | Performance regression | Micro-benchmark gate available for release/manual deep assurance | Manual / release |
 | **Deep differential** | Random round-trip differential tests against reference implementations | **~1,300,000+ per deep run** |
-| **Total (audit runner)** | **unified_audit_runner** across 108 non-exploit modules + 263 exploit PoC modules (371 total) | **~1,000,000+** |
-| **Total (exploit PoC tests)** | **263 exploit PoC modules** across 20+ coverage categories, all in `audit/test_exploit_*.cpp` | **263 modules, 0 failures** |
+| **Total (audit runner)** | **unified_audit_runner** across 109 non-exploit modules + 263 exploit-PoC modules (371 total) | **~1,000,000+** |
+| **Total (exploit PoC tests)** | **263 exploit-PoC modules** across 20+ coverage categories, all in `audit/test_exploit_*.cpp` | **263 modules, 0 failures** |
 
-All 108 non-exploit audit modules across all tested platforms return **AUDIT-READY**. Zero failures.
+All 109 non-exploit audit modules across all tested platforms return **AUDIT-READY**. Zero failures.
 All 263 exploit PoCs modules pass. Zero failures across all 20+ coverage categories.
 
 ### Self-Audit Documents

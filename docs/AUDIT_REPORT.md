@@ -10,7 +10,7 @@
 > This document is preserved as a historical baseline.
 
 <!-- BEGIN CURRENT RELEASE VERSION -->
-<!-- This line is maintained by scripts/sync_audit_report_version.py -->
+<!-- This line is maintained by ci/sync_audit_report_version.py -->
 **Current Release Version:** 4.0.0  
 <!-- END CURRENT RELEASE VERSION -->
 **Historical Audit Baseline Version:** 4.0.0  
@@ -65,11 +65,14 @@ PRNG seeds, and exact check counts are preserved for independent reproduction.
 | Metric | v3.9.0 (this report) | Current |
 |--------|---------------------|---------|
 | Total checks | 641,194 | ~1,000,000+ |
-| Audit modules | 8 suites | 58 modules |
-| Exploit PoC tests | — | 237 tests, 237 attack vectors |
+| Audit modules | 8 suites | 371 modules (see [AUDIT_COVERAGE.md](AUDIT_COVERAGE.md)) |
+| Exploit PoC tests | — | 263 exploit PoC modules (see [AUDIT_COVERAGE.md](AUDIT_COVERAGE.md)) |
 | Formal Cryptol properties | — | 39 properties (39/39 pass) |
 | Failures | 0 | 0 |
 | Verdict | ALL PASSED | AUDIT-READY |
+
+> **Note:** The "Current" column above reflects v4.0.0. For up-to-date module counts
+> see [docs/AUDIT_COVERAGE.md](AUDIT_COVERAGE.md) — it is the canonical current source.
 
 ---
 

@@ -305,21 +305,12 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ---
 
-## secp256k1_ecdh — uses Scalar::from_bytes (silent mod-n reduction) (SHIM-NEW-002)
+## secp256k1_ecdh — uses Scalar::from_bytes (silent mod-n reduction) (SHIM-NEW-002) [HISTORICAL/RESOLVED]
 
-- **Upstream behavior:** libsecp256k1 `secp256k1_ecdh` also uses silent mod-n reduction
-  on the private key (it does not call `secp256k1_ec_seckey_verify` internally).
-  A key equal to n reduces to 0, which then causes `secp256k1_ecdh` to return 0.
-- **Shim behavior:** Uses `Scalar::from_bytes` (mod-n reduction), matching upstream.
-  This is intentional: `secp256k1_ecdh` is consistent with upstream behavior.
-- **Contrast:** All other shim signing functions use `parse_bytes_strict_nonzero` (which
-  rejects keys >= n). `secp256k1_ecdh` intentionally does NOT reject keys >= n at parse
-  time, matching upstream semantics.
-- **Reason:** Consistency with libsecp256k1 contract for `secp256k1_ecdh`.
-- **Impact:** Callers passing private keys >= n to `secp256k1_ecdh` will get 0 (ECDH fails
-  on reduced-to-zero key) rather than a strict rejection error. Same behavior as upstream.
-- **Test:** `test_shim_ecdh_from_bytes_behavior` — pass key = n, verify return is 0
-  (consistent with libsecp256k1: key reduces to 0, ECDH on 0 fails).
+> **This entry is HISTORICAL and describes behavior that no longer exists.**
+> The shim was corrected to use `Scalar::parse_bytes_strict_nonzero()` (rejects zero and >= n),
+> matching upstream `secp256k1_scalar_set_b32_seckey` semantics. See SHIM-A06 below for the
+> current accurate description. Entry retained for historical reference only. Corrected 2026-05-20.
 
 ---
 
@@ -412,15 +403,18 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ## secp256k1_schnorrsig_verify -- null msg without firing illegal callback (SHIM-003)
 
-- **Upstream behavior:** `secp256k1_schnorrsig_verify` with `msg=NULL` and `msglen=32` fires
+- **Status:** FIXED 2026-05-21. The shim now matches upstream behavior for `msg=NULL` with `msglen==0`
+  (upstream allows NULL msg when msglen==0; the shim previously fired the illegal callback in all
+  NULL-msg cases). NULL msg with msglen>0 still fires the illegal callback (correct).
+- **Upstream behavior:** `secp256k1_schnorrsig_verify` allows `msg=NULL` when `msglen==0`
+  (zero-length message is a valid BIP-340 construct). For `msg=NULL` with `msglen>0`, fires
   the illegal callback (default: abort) then returns 0.
-- **Shim behavior:** The `(!msg || msglen != 32)` short-circuit guard returns 0 immediately
-  without firing the illegal callback.
-- **Reason:** Same as SHIM-001: the callback architecture is not replicated. Fail-closed
-  behavior (return 0) is preserved; callback notification is absent.
-- **Impact:** Same as SHIM-001 -- fuzzing harnesses counting illegal-callback invocations will
-  see count=0. Callers that check only return value are unaffected.
-- **Test:** Differential test -- pass null msg with msglen=32, check callback count.
+- **Shim behavior (post-fix):** Matches upstream. NULL msg is permitted when msglen==0. NULL msg
+  with msglen>0 fires the illegal callback and returns 0.
+- **Residual divergence:** None for the msglen==0 case. For msglen==32 with msg=NULL, both upstream
+  and shim fire the illegal callback.
+- **Test:** `tests/test_shim_security_edge_cases.cpp` SHIM-003 test: NULL msg + msglen=0 must NOT
+  fire callback and must return 0 (valid vacuous-verify result).
 
 ---
 
@@ -450,3 +444,28 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
   within a single process are unaffected.
 - **Test:** `audit/test_exploit_shim_musig_secnonce.cpp` — validates session lifecycle within
   a single process. Cross-process serialization is out of scope.
+
+---
+
+## pubkey_data_to_point (internal helper) — no curve membership check (SEC-004)
+
+- **Status:** Helper is currently `[[maybe_unused]]` and not called from any active hot path.
+- **Risk:** If this helper were ever called without a prior curve check, an off-curve
+  point would be accepted silently, potentially enabling invalid-point attacks where
+  a small-order subgroup point leaks private key bits modulo the subgroup order.
+- **Mitigation:** Add an explicit on-curve check (`y²=x³+7 mod p`) inside the helper
+  before use, or delete the function if it remains unused. Current callers route through
+  `ec_pubkey_parse` which does validate the curve equation.
+- **Tracking:** SEC-004
+- **Impact:** None while the function is unused. Risk activates only if new code calls
+  this helper directly without a prior curve membership check.
+
+---
+
+## secp256k1_ecdsa_sign — ndata nonce derivation differs from libsecp256k1 (SHIM-010)
+
+- **Upstream behavior:** Uses RFC6979(msg, seckey, alg="", extra_entropy=ndata) to derive nonce.
+- **Shim behavior:** Uses hedged nonce derivation (HMAC-DRBG with ndata as auxiliary input), not byte-identical RFC6979+extra_data. Produces a different but cryptographically valid signature for the same inputs when ndata != NULL.
+- **Reason:** Hedged nonce provides defense against bad RNG without requiring exact RFC6979 parity.
+- **Impact:** Signatures differ byte-for-byte from libsecp256k1 when ndata is used. R-grinding terminates correctly and produces a valid low-S/low-R signature. Bitcoin Core production path uses noncefp=NULL (unaffected).
+- **Test:** Verify R-grinding terminates within bounded iterations; confirm produced signature is valid (not necessarily identical to libsecp output).

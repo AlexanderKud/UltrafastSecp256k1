@@ -9,12 +9,12 @@
 |------|---------|
 | Audit checks per run | ~1,000,000+ |
 | Nightly random checks | ~1,300,000+ |
-| Audit modules | 371 across 9 failure classes |
+| Audit modules | 372 across 9 failure classes |
 | Exploit PoC tests | 263 exploit PoCs test files, 200+ attack vectors |
 | Platforms | X64, ARM64, RISC-V, macOS, Windows, iOS, Android, WASM, ROCm (16 configurations) |
 | Fuzz inputs | 530,000+ parser/adversarial |
 | CI workflows | 54 GitHub Actions workflows |
-| Real failures | **0** |
+| Current CI run failures | **0** (failures in the current CI run — not a lifetime claim) |
 
 This system continuously verifies correctness across math, protocol, constant-time, and implementation layers.
 
@@ -34,7 +34,7 @@ This system continuously verifies correctness across math, protocol, constant-ti
 
 **Version**: v4.0.0
 **Audit Runner**: `unified_audit_runner`
-**Verdict**: **AUDIT-READY** -- 371 modules, 9 failure classes
+**Verdict**: **CAAS Self-Audit Verdict: AUDIT-READY (self-generated continuous audit; no external third-party security audit has been completed)** -- 372 modules, 9 failure classes
 **Total Checks**: ~1,000,000+ (audit) + 1.3M+ (nightly differential)
 **CT Verification**: Three-tier -- ct-verif (LLVM IR) + Valgrind CT + dudect (all CI-enforced)
 
@@ -56,7 +56,7 @@ This system continuously verifies correctness across math, protocol, constant-ti
 | Static Analysis      | CodeQL, SonarCloud, clang-tidy, -Werror      |
 | Language Bindings    | 12 (Python, C#, Rust, Node, PHP, Go, Java, Swift, RN, Ruby, Dart, C API) |
 | Supply Chain         | OpenSSF Scorecard, harden-runner, pinned actions, Dependency Review |
-| Real failures        | 0                                           |
+| Current CI run failures | 0 (failures in the current CI run — not a lifetime claim) |
 | Platforms tested     | X64, ARM64, RISC-V, macOS, Windows, iOS, Android, WASM, ROCm |
 
 ## Coverage Interpretation
