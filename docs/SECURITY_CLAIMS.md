@@ -2,6 +2,13 @@
 
 **UltrafastSecp256k1 v4.0.0** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-05-21 musig2.cpp -- SEC-005/SEC-009 BIP-327 infinity nonce enforcement
+
+- **SEC-005:** `musig2_start_sign_session` now enforces BIP-327 §GetSessionValues step 2: aborts with an invalid session if `agg_nonce.R1` or `agg_nonce.R2` is the point at infinity. Previously, infinity inputs would cause `to_compressed()` to be called on an invalid point.
+- **SEC-009:** `musig2_nonce_agg` now guards the empty-vector case, returning an all-infinity `MuSig2AggNonce` that is subsequently rejected by SEC-005.
+- **Security impact:** Removes a class of degenerate-input attack where a cancellation nonce (R1+…+Rn = ∞) or empty aggregation could produce a session with an all-zero challenge, silently signing under a broken protocol state.
+- **No CT boundary change:** Both guard paths involve only public nonce data. The CT signing paths (`musig2_partial_sign` via `ct::scalar_mul/add`) are unchanged.
+
 ### 2026-05-14 ct_field.cpp -- dead-code cleanup (Werror + MSVC fix)
 
 - Deleted unused `static add256()` and `add_carry_u64()` helpers left

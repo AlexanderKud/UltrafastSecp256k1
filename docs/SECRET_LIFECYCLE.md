@@ -1,6 +1,15 @@
 # Secret Lifecycle Review
 
-**Last updated**: 2026-05-12 | **Version**: 4.0.0
+**Last updated**: 2026-05-21 | **Version**: 4.0.0
+
+### 2026-05-21 musig2.cpp -- SEC-005 infinity nonce guard in musig2_start_sign_session
+
+- **`src/cpu/src/musig2.cpp` (`musig2_start_sign_session`)**: Added `agg_nonce.R1.is_infinity() || agg_nonce.R2.is_infinity()` guard before computing the nonce-blinding factor. Returns a default-constructed `MuSig2Session{}` (all-zero scalars, infinity R) on failure.
+  **Secret lifecycle**: No secret material is present in `agg_nonce` — R1 and R2 are public nonce points. The early return happens before any secrets are consumed. No erase requirement on the guard path.
+
+### 2026-05-21 musig2.cpp -- SEC-009 empty-vector guard in musig2_nonce_agg
+
+- **`src/cpu/src/musig2.cpp` (`musig2_nonce_agg`)**: Added early return for empty `pub_nonces` vector, returning an all-infinity `MuSig2AggNonce`. All inputs to `musig2_nonce_agg` are public nonces (broadcast to all participants). No secret material flows through this function. Erase requirement: N/A.
 
 ### 2026-05-12 ecdsa.cpp -- SEC-004 compute_three_block bounds guard (no secret material change)
 

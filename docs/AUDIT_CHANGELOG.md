@@ -1,5 +1,15 @@
 # Audit Changelog
 
+## 2026-05-21 — Fix: P1/P2 CT boundary and security hardening (SEC-002/007/008/010, CT-004/005)
+
+- **frost.cpp (SEC-002/CT-002):** `frost_lagrange_coefficient_from_commitments` num/den accumulation loop replaced `fast::operator*` with `ct::scalar_mul` / `ct::scalar_sub` — removes VT multiplication on secret-adjacent Lagrange path.
+- **batch_verify.cpp (SEC-007):** `batch_weight()` now returns `Scalar::one()` when `Scalar::from_bytes(h)` reduces to zero (SHA-256 output = curve order n, probability ~2^-128) — prevents silent fail-open exclusion of that signature from the batch check.
+- **adaptor.cpp (SEC-008):** `ecdsa_adaptor_sign()` r.is_zero() error path now returns `{Point::infinity(), Scalar::zero(), Scalar::zero()}` instead of partial `{R_hat, Scalar::zero(), r}` — eliminates the non-zero R_hat in the degenerate sentinel.
+- **bip32.cpp (SEC-010):** `bip32_master_key()` consolidated two-step `parse_bytes_strict(IL, key)` + `is_zero()` into single `parse_bytes_strict_nonzero(IL, key)` call.
+- **musig2.cpp (CT-004):** `musig2_nonce_gen()` R1=k1\*G and R2=k2\*G changed from `ct::generator_mul` to `ct::generator_mul_blinded` — DPA defense matches ct_sign.cpp nonce multiplication level.
+- **ecdsa.cpp (CT-005):** `ecdsa_sign_verified()` now calls `ct::ecdsa_sign()` directly instead of deprecated `secp256k1::ecdsa_sign()` via pragma suppression; added `#include "secp256k1/ct/sign.hpp"`.
+- Regression test: `audit/test_regression_ct_ops_2026_05_21.cpp` (module `regression_ct_ops`, section `ct_analysis`, advisory=false).
+
 ## 2026-05-21 — Fix: CT scalar_inverse zero-branch removal — non-int128 fallback (SEC-001 partial)
 
 - **ct_scalar.cpp (SEC-001-PARTIAL):** Removed the data-dependent `if (a.is_zero()) return Scalar::zero()` early-return branch from the Fermat FLT `scalar_inverse` fallback (non-`__int128` path: ARM32, WASM32, ESP32). Replaced with an unconditional computation followed by `scalar_select(Scalar::zero(), t, scalar_is_zero(a))` at the end. Eliminates timing branch on the secret nonce input in the zero-check. The multiplication chain still uses `fast::operator*` on non-int128 platforms (`ct::scalar_mul` itself delegates to fast mul without `__int128`); full CT multiplication requires a dedicated 32-bit CT scalar mul — tracked as SEC-001-INCOMPLETE. The `__int128` path (SafeGCD Bernstein-Yang) is unaffected and remains fully constant-time.
