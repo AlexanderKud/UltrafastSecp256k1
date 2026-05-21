@@ -4,6 +4,7 @@
 #include "secp256k1_extrakeys.h"
 #include "secp256k1.h"
 #include "shim_internal.hpp"
+#include "shim_pubkey_helpers.hpp"
 
 #include <cstring>
 #include <array>
@@ -17,18 +18,8 @@
 
 using namespace secp256k1::fast;
 
-// PERF-006: local copy of the point_to_pubkey_data helper from shim_pubkey.cpp.
-// Writes X[0..31] || Y[32..63] into a 64-byte buffer using the fast affine path
-// when Z=1 (from_affine result), falling back to to_uncompressed() for Jacobian points.
-static void point_to_pubkey_data(const Point& pt, unsigned char data[64]) {
-    if (pt.is_normalized()) {
-        pt.x_raw().to_bytes_into(reinterpret_cast<uint8_t*>(data));
-        pt.y_raw().to_bytes_into(reinterpret_cast<uint8_t*>(data) + 32);
-    } else {
-        auto unc = pt.to_uncompressed();
-        std::memcpy(data, unc.data() + 1, 64);
-    }
-}
+// point_to_pubkey_data from shim_pubkey_helpers.hpp
+using secp256k1_shim_internal::point_to_pubkey_data;
 
 extern "C" {
 

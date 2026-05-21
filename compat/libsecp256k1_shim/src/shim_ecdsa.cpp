@@ -3,6 +3,7 @@
 // ============================================================================
 #include "secp256k1.h"
 #include "shim_internal.hpp"
+#include "shim_pubkey_helpers.hpp"
 
 #include <cstring>
 #include <array>
@@ -40,17 +41,8 @@ static secp256k1::ECDSASignature ecdsa_sig_from_data(const unsigned char data[64
     return { r_scalar, s_scalar };
 }
 
-// -- Internal: reconstruct Point from opaque pubkey ----------------------
-// `[[maybe_unused]]` because some shim translation units enable this helper
-// while others (e.g. the standalone test_exploit_*_shim.cpp_o objects built
-// under -Werror=unused-function) include this file but don't call it.
-[[maybe_unused]]
-static Point pubkey_data_to_point(const unsigned char data[64]) {
-    // PERF-003: bind directly — avoids two 32-byte stack copies per verify call.
-    const auto& xb = *reinterpret_cast<const std::array<uint8_t,32>*>(data);
-    const auto& yb = *reinterpret_cast<const std::array<uint8_t,32>*>(data + 32);
-    return Point::from_affine(FieldElement::from_bytes(xb), FieldElement::from_bytes(yb));
-}
+// pubkey_data_to_point and point_to_pubkey_data are in shim_pubkey_helpers.hpp
+using secp256k1_shim_internal::pubkey_data_to_point;
 
 extern "C" {
 

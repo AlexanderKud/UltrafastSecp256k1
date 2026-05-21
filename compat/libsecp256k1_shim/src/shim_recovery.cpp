@@ -8,6 +8,7 @@
 
 #include "secp256k1_recovery.h"
 #include "shim_internal.hpp"
+#include "shim_pubkey_helpers.hpp"
 
 #include <cstring>
 #include <array>
@@ -27,21 +28,8 @@ using secp256k1_shim_internal::ctx_flags;
 using secp256k1_shim_internal::ctx_can_sign;
 using secp256k1_shim_internal::ctx_can_verify;
 
-// Internal helpers that mirror shim_ecdsa.cpp conventions ----------------
-
-static void point_to_pubkey_data(const Point& P, unsigned char data[64]) {
-    // PERF-001: fast path for affine points (Z=1). ecdsa_recover always returns
-    // an affine point, so this path is taken on every call — saves ~1,300 ns/call
-    // vs the unconditional to_uncompressed() that performs a full field inversion.
-    if (P.is_normalized()) {
-        P.x_raw().to_bytes_into(reinterpret_cast<uint8_t*>(data));
-        P.y_raw().to_bytes_into(reinterpret_cast<uint8_t*>(data) + 32);
-    } else {
-        auto unc = P.to_uncompressed(); // [0x04] [x:32] [y:32]
-        std::memcpy(data,      unc.data() + 1,  32);
-        std::memcpy(data + 32, unc.data() + 33, 32);
-    }
-}
+// point_to_pubkey_data from shim_pubkey_helpers.hpp
+using secp256k1_shim_internal::point_to_pubkey_data;
 
 // Recoverable sig opaque layout: data[0] = recid, data[1..32] = r, data[33..64] = s
 

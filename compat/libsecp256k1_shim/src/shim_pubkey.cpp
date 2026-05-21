@@ -3,6 +3,7 @@
 // ============================================================================
 #include "secp256k1.h"
 #include "shim_internal.hpp"
+#include "shim_pubkey_helpers.hpp"
 
 #include <cstring>
 #include <algorithm>
@@ -18,41 +19,9 @@
 
 using namespace secp256k1::fast;
 
-// -- Internal helpers ---------------------------------------------------------
-// The opaque 64-byte pubkey stores the 65-byte uncompressed form minus prefix.
-// Layout: data[0..31] = X big-endian, data[32..63] = Y big-endian.
-
-static void point_to_pubkey_data(const Point& pt, unsigned char data[64]) {
-    if (pt.is_normalized()) {
-        // Z=1 (affine, z_one_=true): X and Y are the actual affine coordinates.
-        // Serialize directly — no field inversion needed (saves ~1,300 ns vs to_uncompressed()).
-        // from_affine() always sets z_one_=true, so parse → store paths always hit this fast path.
-        pt.x_raw().to_bytes_into(reinterpret_cast<uint8_t*>(data));
-        pt.y_raw().to_bytes_into(reinterpret_cast<uint8_t*>(data) + 32);
-    } else {
-        // Jacobian (Jacobian result from scalar_mul etc.): full inversion via to_uncompressed().
-        auto unc = pt.to_uncompressed();
-        std::memcpy(data, unc.data() + 1, 64);
-    }
-}
-
-// `[[maybe_unused]]` because some shim TUs include this file but don't use
-// this helper directly, which trips -Werror=unused-function on GCC.
-[[maybe_unused]]
-static Point pubkey_data_to_point(const unsigned char data[64]) {
-    std::array<uint8_t, 32> xb{}, yb{};
-    std::memcpy(xb.data(), data, 32);
-    std::memcpy(yb.data(), data + 32, 32);
-    auto x = FieldElement::from_bytes(xb);
-    auto y = FieldElement::from_bytes(yb);
-    // SHIM-002/SHIM-004: validate curve membership y²=x³+7 before use.
-    // A hostile caller could write arbitrary bytes into secp256k1_pubkey.data,
-    // bypassing secp256k1_ec_pubkey_parse. Return infinity on off-curve input;
-    // all callers (negate, tweak_add, tweak_mul, combine) check is_infinity().
-    auto b7 = FieldElement::from_uint64(7);
-    if (y * y != x * x * x + b7) return Point::infinity();
-    return Point::from_affine(x, y);
-}
+// point_to_pubkey_data and pubkey_data_to_point from shim_pubkey_helpers.hpp
+using secp256k1_shim_internal::point_to_pubkey_data;
+using secp256k1_shim_internal::pubkey_data_to_point;
 
 extern "C" {
 
