@@ -2,6 +2,25 @@
 
 **Last updated**: 2026-05-21 | **Version**: 4.0.0
 
+### 2026-05-21 shim_*.cpp — SHIM-A01..A08 NULL-arg illegal_callback (no secret material)
+
+- **`compat/libsecp256k1_shim/src/shim_ecdsa.cpp`** (`secp256k1_ecdsa_signature_normalize`):
+  `sigin=NULL` now fires `secp256k1_shim_call_illegal_cb` before returning 0. No secret
+  material is touched on the NULL path — the callback fires and the function exits before
+  any signature bytes are read.
+- **`compat/libsecp256k1_shim/src/shim_pubkey.cpp`** (`secp256k1_ec_pubkey_sort`,
+  `secp256k1_ec_pubkey_negate`, `secp256k1_ec_pubkey_tweak_add`,
+  `secp256k1_ec_pubkey_tweak_mul`, `secp256k1_ec_pubkey_combine`): NULL ctx or NULL
+  pubkey/tweak/ins/out now fires the illegal callback. All affected functions operate on
+  public key material only (no private key, nonce, or scalar secret is touched on these
+  error paths).
+- **`compat/libsecp256k1_shim/src/shim_tagged_hash.cpp`** (`secp256k1_tagged_sha256`):
+  `msg=NULL` with `msglen=0` is now allowed (matches libsecp256k1 zero-length message
+  semantics). `msg=NULL` with `msglen>0` fires the illegal callback. No secret material
+  involved — this is a hashing utility, not a signing path.
+- **Secret lifecycle impact**: None. All early-exit paths on these NULL-arg checks exit
+  before any private key, nonce, or signing scalar is read. Erase requirement: N/A.
+
 ### 2026-05-21 musig2.cpp -- SEC-005 infinity nonce guard in musig2_start_sign_session
 
 - **`src/cpu/src/musig2.cpp` (`musig2_start_sign_session`)**: Added `agg_nonce.R1.is_infinity() || agg_nonce.R2.is_infinity()` guard before computing the nonce-blinding factor. Returns a default-constructed `MuSig2Session{}` (all-zero scalars, infinity R) on failure.

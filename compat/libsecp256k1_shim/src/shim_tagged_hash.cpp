@@ -18,7 +18,11 @@ int secp256k1_tagged_sha256(
     const unsigned char *msg, size_t msglen)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!hash32 || !tag || !msg) return 0;
+    if (!hash32 || !tag) return 0;
+    if (!msg && msglen > 0) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_tagged_sha256: msg is NULL with non-zero msglen");
+        return 0;
+    }
 
     // BIP-340 tagged hash: SHA256(SHA256(tag) || SHA256(tag) || msg)
     // Implemented directly with the length-aware SHA256 API to:

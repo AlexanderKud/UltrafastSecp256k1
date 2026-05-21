@@ -352,6 +352,17 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "Covered by test_exploit_bitcoin_message_signing (exercises message_signing.cpp "
         "verify_message/recover_signer paths) and test_regression_ct_ops (ECDSA operations).",
     ),
+    "626a372430": (
+        ["audit/test_exploit_shim_musig_ka_cap.cpp",
+         "audit/test_exploit_shim_musig_secnonce.cpp"],
+        "P2-PERF-003/004/005: shim_musig.cpp performance-only changes — "
+        "musig_partial_sig_verify direct layout prefix reconstruction (eliminates one "
+        "serialize call), musig_nonce_agg SBO N≤16 (stack accumulation, no heap), "
+        "musig_partial_sig_agg SBO N≤16 (Scalar[16] stack array). No new signing surface, "
+        "no behavioral change. Covered by existing MuSig2 shim tests "
+        "(test_exploit_shim_musig_ka_cap and test_exploit_shim_musig_secnonce) which "
+        "exercise the full partial_sig_verify, nonce_agg, and partial_sig_agg paths.",
+    ),
 }
 
 # Bot commits that auto-update evidence — skip.

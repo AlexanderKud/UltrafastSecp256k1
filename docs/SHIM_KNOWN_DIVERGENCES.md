@@ -582,6 +582,26 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ---
 
+## secp256k1_tagged_sha256 — msg=NULL with msglen=0 now allowed (SHIM-A03 fixed 2026-05-21)
+
+- **Upstream behavior:** libsecp256k1 `secp256k1_tagged_sha256` allows `msg=NULL` when
+  `msglen=0` — a zero-length message is valid input and produces a well-defined tagged hash
+  of the empty string.
+- **Previous shim behavior (divergence, now fixed):** The shim previously rejected `msg=NULL`
+  unconditionally (`if (!hash32 || !tag || !msg) return 0`), causing false rejection of
+  zero-length messages.
+- **Current shim behavior (fixed):** `msg=NULL` with `msglen=0` is now accepted and produces
+  the correct tagged hash of the empty message. `msg=NULL` with `msglen>0` fires the illegal
+  callback and returns 0, matching libsecp256k1 behavior.
+- **Reason:** Zero-length messages are valid per the SHA256 spec and libsecp256k1 does not
+  restrict them. The previous guard was overly strict.
+- **Impact:** Callers hashing empty messages now work correctly. No behavioral change for
+  callers passing non-NULL msg or msglen=0 with non-NULL msg.
+- **Test:** Covered by shim null-arg tests. A dedicated zero-length message round-trip test
+  should be added to `compat/libsecp256k1_shim/tests/`.
+
+---
+
 ## secp256k1_musig_pubkey_ec_tweak_add / secp256k1_musig_pubkey_xonly_tweak_add — ctx silently discarded (SHIM-MUSIG-CTX-001)
 
 - **Upstream behavior:** NULL ctx fires the illegal callback (default: abort). Non-NULL ctx is

@@ -198,7 +198,10 @@ int secp256k1_ecdsa_signature_normalize(
     const secp256k1_ecdsa_signature *sigin)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!sigin) return 0;
+    if (!sigin) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ecdsa_signature_normalize: sigin is NULL");
+        return 0;
+    }
 
     auto sig = ecdsa_sig_from_data(sigin->data);
     bool was_high = !sig.is_low_s();

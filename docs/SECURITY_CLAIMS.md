@@ -2,6 +2,23 @@
 
 **UltrafastSecp256k1 v4.0.0** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-05-21 shim_*.cpp — SHIM-A01..A08 NULL-arg illegal_callback parity
+
+- **SHIM-A01** (`secp256k1_ecdsa_signature_normalize`): `sigin=NULL` now fires the illegal
+  callback matching libsecp256k1 behavior. Previously silently returned 0.
+- **SHIM-A02** (`secp256k1_ec_pubkey_sort`): `ctx=NULL` now fires the illegal callback
+  before any pubkey processing. The existing `pubkeys=NULL` and `pubkeys[i]=NULL` guards
+  already fired the callback; the ctx guard was missing.
+- **SHIM-A03** (`secp256k1_tagged_sha256`): `msg=NULL` with `msglen=0` is now valid
+  (zero-length message — matches libsecp256k1 semantics). `msg=NULL` with `msglen>0`
+  fires the illegal callback.
+- **SHIM-A07/A08** (`secp256k1_ec_pubkey_negate`, `secp256k1_ec_pubkey_tweak_add`,
+  `secp256k1_ec_pubkey_tweak_mul`, `secp256k1_ec_pubkey_combine`): NULL pubkey, tweak32,
+  out, or ins pointer now fires the illegal callback before returning 0.
+- **Security impact**: These are defensive-programming fixes at the ABI boundary. They
+  eliminate silent-return-0 on provably-wrong inputs, matching libsecp256k1's fail-loud
+  contract. No signing, CT arithmetic, or private key path is affected.
+
 ### 2026-05-21 musig2.cpp -- SEC-005/SEC-009 BIP-327 infinity nonce enforcement
 
 - **SEC-005:** `musig2_start_sign_session` now enforces BIP-327 §GetSessionValues step 2: aborts with an invalid session if `agg_nonce.R1` or `agg_nonce.R2` is the point at infinity. Previously, infinity inputs would cause `to_compressed()` to be called on an invalid point.

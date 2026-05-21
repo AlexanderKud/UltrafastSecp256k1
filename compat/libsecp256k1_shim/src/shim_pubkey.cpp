@@ -194,7 +194,10 @@ int secp256k1_ec_pubkey_negate(
     const secp256k1_context *ctx, secp256k1_pubkey *pubkey)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!pubkey) return 0;
+    if (!pubkey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_negate: pubkey is NULL");
+        return 0;
+    }
     auto P = pubkey_data_to_point(pubkey->data);
     if (P.is_infinity()) return 0;  // SHIM-002: off-curve input rejected
     auto neg = P.negate();
@@ -207,7 +210,14 @@ int secp256k1_ec_pubkey_tweak_add(
     const unsigned char *tweak32)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!pubkey || !tweak32) return 0;
+    if (!pubkey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_tweak_add: pubkey is NULL");
+        return 0;
+    }
+    if (!tweak32) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_tweak_add: tweak32 is NULL");
+        return 0;
+    }
     auto P = pubkey_data_to_point(pubkey->data);
     // tweak in [0, n-1]; 0 is valid (result == pubkey)
     Scalar t;
@@ -224,7 +234,14 @@ int secp256k1_ec_pubkey_tweak_mul(
     const unsigned char *tweak32)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!pubkey || !tweak32) return 0;
+    if (!pubkey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_tweak_mul: pubkey is NULL");
+        return 0;
+    }
+    if (!tweak32) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_tweak_mul: tweak32 is NULL");
+        return 0;
+    }
     auto P = pubkey_data_to_point(pubkey->data);
     Scalar t;
     if (!Scalar::parse_bytes_strict_nonzero(tweak32, t)) return 0;
@@ -239,8 +256,21 @@ int secp256k1_ec_pubkey_combine(
     const secp256k1_pubkey * const *ins, size_t n)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!out || !ins || n == 0) return 0;
-    for (size_t i = 0; i < n; ++i) { if (!ins[i]) return 0; }
+    if (!out) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_combine: out is NULL");
+        return 0;
+    }
+    if (!ins) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_combine: ins is NULL");
+        return 0;
+    }
+    if (n == 0) return 0;
+    for (size_t i = 0; i < n; ++i) {
+        if (!ins[i]) {
+            secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_combine: ins[i] is NULL");
+            return 0;
+        }
+    }
     auto acc = pubkey_data_to_point(ins[0]->data);
     for (size_t i = 1; i < n; ++i) {
         auto P = pubkey_data_to_point(ins[i]->data);
@@ -256,6 +286,10 @@ void secp256k1_ec_pubkey_sort(
     const secp256k1_pubkey **pubkeys,
     size_t n_pubkeys)
 {
+    if (!ctx) {
+        secp256k1_shim_call_illegal_cb(nullptr, "secp256k1_ec_pubkey_sort: ctx is NULL");
+        return;
+    }
     if (!pubkeys) {
         secp256k1_shim_call_illegal_cb(ctx,
             "secp256k1_ec_pubkey_sort: NULL pubkeys array");
