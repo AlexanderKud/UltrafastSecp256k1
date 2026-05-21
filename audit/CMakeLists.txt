@@ -3873,6 +3873,10 @@ target_sources(unified_audit_runner PRIVATE
     test_regression_musig2_infinity_nonce.cpp
     $<$<BOOL:${SECP256K1_BUILD_ADAPTOR}>:test_regression_adaptor_binding_domain.cpp>
     test_regression_musig2_abi_signer_index.cpp
+    # P1-SEC-002: schnorr_sign e_hash erasure (no special dependency)
+    test_regression_schnorr_sign_e_hash_erased.cpp
+    # P1-SEC-001: FROST frost_sign absent signer ID (real impl when FROST built)
+    $<$<BOOL:${SECP256K1_BUILD_FROST}>:test_exploit_frost_absent_signer_id.cpp>
     # Feature module stubs: when a module is OFF, these provide advisory-skip
     # _run() implementations so unified_audit_runner links without the real files.
     feature_run_stubs_unified.cpp)
@@ -3899,7 +3903,10 @@ if(TARGET secp256k1_shim)
         # 2026-05-16 CA-001: curve membership check in large-batch ECDSA verify
         test_regression_ecdsa_batch_curve_check.cpp
         # 2026-05-16 PERF-VAR: fe52 var-time paths correctness
-        test_regression_fe52_var_paths.cpp)
+        test_regression_fe52_var_paths.cpp
+        # 2026-05-21 P1-SEC-003: MuSig2 pubnonce infinity rejection (shim-dependent)
+        test_exploit_musig2_infinity_pubnonce.cpp)
+    target_compile_definitions(unified_audit_runner PRIVATE SECP256K1_BUILD_COMPAT_SHIM)
     target_link_libraries(unified_audit_runner PRIVATE secp256k1_shim)
     target_include_directories(unified_audit_runner PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../compat/libsecp256k1_shim/include)

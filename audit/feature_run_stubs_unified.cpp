@@ -66,6 +66,7 @@ int test_exploit_frost_identifiable_abort_run()         { return ADVISORY_SKIP_C
 int test_exploit_frost_ocl_shim_bip32_ct_regression_run() { return ADVISORY_SKIP_CODE; }
 int test_exploit_frost_secret_share_ct_run()            { return ADVISORY_SKIP_CODE; }
 int test_regression_frost_threshold_zero_run()          { return ADVISORY_SKIP_CODE; }
+int test_exploit_frost_absent_signer_id_run()           { return ADVISORY_SKIP_CODE; }
 #endif // !SECP256K1_HAS_FROST
 
 // ============================================================================
