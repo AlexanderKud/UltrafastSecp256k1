@@ -11,6 +11,25 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ---
 
+## secp256k1_schnorrsig_verify with msglen != 32 — ShimSchnorrCache bypassed (SHIM-007)
+
+- **Upstream behavior:** libsecp256k1 `secp256k1_schnorrsig_verify` supports variable-length
+  messages with full lift_x computation on every call (no lift_x caching in the reference impl).
+- **Shim behavior:** For `msglen == 32`, the shim uses `ShimSchnorrCache` to amortize the
+  lift_x and GLV table build across repeated verifications of the same pubkey. For
+  `msglen != 32`, the cache is bypassed and lift_x runs on every call — matching upstream
+  latency but not achieving the steady-state speedup that 32-byte message paths can achieve.
+- **Reason:** The ShimSchnorrCache keys on the full 32-byte pubkey x-coordinate to identify
+  cache entries. The `msglen != 32` code path uses the existing direct-verify overload which
+  does not consult the cache. This is a performance inconsistency, not a correctness or
+  security issue.
+- **Impact:** Callers using variable-length Schnorr messages (e.g., non-BIP-340 protocols)
+  will not benefit from lift_x amortization. Production Bitcoin validation only uses 32-byte
+  messages, so this does not affect the ConnectBlock benchmark.
+- **Test:** No dedicated differential test — behavior is equivalent to upstream on this path.
+
+---
+
 ## secp256k1_musig_nonce_agg / nonce_process / partial_sig_verify / pubkey_get — `ctx` ignored
 
 - **Upstream behavior:** These four MuSig2 functions accept a `secp256k1_context*`

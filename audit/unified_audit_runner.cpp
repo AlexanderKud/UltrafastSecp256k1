@@ -628,6 +628,7 @@ int test_exploit_musig2_infinity_pubnonce_run();      // P1-SEC-003: pubnonce_pa
 // ============================================================================
 int test_regression_p2_ct_shim_fixes_run();              // CT-001/002/003 + SHIM-002/003/004
 int test_regression_musig2_nonce_gen_seckey_run();        // P2-SEC-002/003: musig nonce_gen seckey
+int test_regression_shim_ndata_rgrind_run();             // SHIM-010: ndata hedged nonce R-grind
 
 // ============================================================================
 // Forward declarations -- 2026-05-21 shim security edge cases
@@ -1273,6 +1274,9 @@ static const AuditModule ALL_MODULES[] = {
     { "regression_ct_ops", "SEC-002/007/008/010,CT-004/005: FROST lagrange CT, batch weight non-zero, adaptor fail-closed, bip32 strict nonzero, musig2 blinded nonce, ecdsa_sign_verified direct ct:: call", "ct_analysis", test_regression_ct_ops_run, false },
     // === 2026-05-21 SEC-006 ===
     { "regression_bip324_privkey_lifetime", "SEC-006: Bip324Session privkey_ raw-byte window documented; complete_handshake erases after use (full store-Scalar fix tracked SEC-006)", "memory_safety", test_regression_bip324_privkey_lifetime_run, false },
+    // === 2026-05-21 SHIM-010: ndata R-grind bounded termination ===
+    // advisory=true: requires shim; stub returns 77 when not linked.
+    { "regression_shim_ndata_rgrind", "SHIM-010: secp256k1_ecdsa_sign ndata hedged nonce — valid sig, different ndata→different sigs, deterministic, Bitcoin Core R-grind terminates <100 iters, no-ndata path (NRG-1..5)", "exploit_poc", test_regression_shim_ndata_rgrind_run, true },
     // === 2026-05-21 P2-SEC-002/003: musig_nonce_gen seckey null + sk erase ===
     // advisory=true: requires shim; stub returns 77 when shim not linked.
     { "regression_musig2_nonce_gen_seckey", "P2-SEC-002: NULL seckey uses zero scalar (not session_id32 as HMAC key); P2-SEC-003: sk erased after nonce_gen; full 2-of-2 signing roundtrip (MNG-1..4)", "exploit_poc", test_regression_musig2_nonce_gen_seckey_run, true },

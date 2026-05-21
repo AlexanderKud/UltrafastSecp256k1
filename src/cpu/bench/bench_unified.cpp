@@ -157,7 +157,7 @@ extern "C" {
 // Accumulates all benchmark results for optional JSON export.
 
 struct BenchEntry {
-    char section[64];
+    char section[128];  // BENCH-003: was 64; increased to avoid JSON section-name truncation
     char name[64];
     double ns;
     double ratio;     // 0.0 if not a ratio entry
@@ -773,8 +773,12 @@ int main(int argc, char** argv) {
     }, N_FIELD);
     print_row("field_sqr", fsqr);
 
+    // BENCH-005: pool rotation prevents compiler from hoisting fe_a.inverse() outside loop.
     const double finv = bench_ns([&]() {
-        auto r = fe_a.inverse(); bench::DoNotOptimize(r);
+        // Use privkey bytes as field element inputs — 64-element pool ensures variance.
+        auto kb = privkeys[idx % POOL].to_bytes();
+        auto fe = FieldElement::from_bytes(kb);
+        auto r = fe.inverse(); bench::DoNotOptimize(r); ++idx;
     }, 200);
     print_row("field_inv", finv);
 
@@ -819,8 +823,9 @@ int main(int argc, char** argv) {
     }, N_FIELD);
     print_row("scalar_mul", smul);
 
+    // BENCH-005: pool rotation prevents compiler from hoisting sc_a.inverse() outside loop.
     const double sinv = bench_ns([&]() {
-        auto r = sc_a.inverse(); bench::DoNotOptimize(r);
+        auto r = privkeys[idx % POOL].inverse(); bench::DoNotOptimize(r); ++idx;
     }, 200);
     print_row("scalar_inv", sinv);
 

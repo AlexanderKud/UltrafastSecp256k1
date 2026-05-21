@@ -3909,7 +3909,9 @@ if(TARGET secp256k1_shim)
         # 2026-05-21 P1-SEC-003: MuSig2 pubnonce infinity rejection (shim-dependent)
         test_exploit_musig2_infinity_pubnonce.cpp
         # 2026-05-21 P2-SEC-002/003: musig_nonce_gen seckey null + sk erase
-        test_regression_musig2_nonce_gen_seckey.cpp)
+        test_regression_musig2_nonce_gen_seckey.cpp
+        # 2026-05-21 SHIM-010: ndata R-grind bounded termination
+        test_regression_shim_ndata_rgrind.cpp)
     target_compile_definitions(unified_audit_runner PRIVATE SECP256K1_BUILD_COMPAT_SHIM)
     target_link_libraries(unified_audit_runner PRIVATE secp256k1_shim)
     target_include_directories(unified_audit_runner PRIVATE

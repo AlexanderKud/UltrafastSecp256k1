@@ -164,11 +164,12 @@ jobs:
         fi
 
     - name: Store baseline + check regression (push to main/dev or manual dispatch)
-      # Baseline update policy: auto-push is DISABLED to prevent floating baseline.
-      # A regression that passes the threshold (shared-runner noise) would otherwise
-      # silently become the new baseline, masking further regressions.
-      # To reset/update the baseline: trigger workflow_dispatch manually on a
-      # known-good commit; review the JSON artifact before accepting it.
+      # CI-006 floating baseline note: auto-push is DISABLED. The stored baseline
+      # can become stale (e.g., from a slow build months ago). If the baseline is
+      # >30 days old, trigger workflow_dispatch on a known-good commit to refresh it.
+      # Baseline artifact is in the `dev/bench-gate` github-pages branch.
+      # A quick-mode baseline (±30% noise) masks regressions < 50% — not a real gate.
+      # For production evidence use the local CLAUDE.md §Performance protocol.
       # alert-threshold: '150%' = alert if >=50% slower than baseline (1.5x).
       # At 200% (2x slower) significant regressions pass silently.
       if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

@@ -82,19 +82,25 @@ __forceinline void ClobberMemory() {
 
 #else
 
+// BENCH-002: improved non-GCC/Clang fallback.
+// Reading the first byte via a volatile pointer forces the compiler to actually
+// compute 'value' before this call — address-only barriers allow value hoisting.
 template <typename T>
 inline void DoNotOptimize(T const& value) {
-    volatile auto sink = reinterpret_cast<uintptr_t>(&value);
-    (void)sink;
+    volatile const char* p = reinterpret_cast<volatile const char*>(&value);
+    (void)*p;
 }
 
 template <typename T>
 inline void DoNotOptimize(T& value) {
-    volatile auto sink = reinterpret_cast<uintptr_t>(&value);
-    (void)sink;
+    volatile char* p = reinterpret_cast<volatile char*>(&value);
+    (void)*p;
 }
 
-inline void ClobberMemory() {}
+inline void ClobberMemory() {
+    // Portable memory barrier equivalent (best-effort on unknown compilers).
+    volatile int barrier = 0; (void)barrier;
+}
 
 #endif
 

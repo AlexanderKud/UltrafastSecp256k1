@@ -96,12 +96,14 @@ static bool python3_available() {
 // _run()
 // ---------------------------------------------------------------------------
 int test_mutation_kill_rate_run() {
-    // Skip in CI: mutation testing requires repeated rebuild+test cycles
-    // that exceed the unified_audit_runner timeout (1200 s).  This module
-    // is advisory and CI resources are better spent on the other 200+ checks.
+    // P2-TEST-001: mutation testing requires repeated rebuild+test cycles (>20 min).
+    // SCHEDULED: run manually on release candidates or via `ci_local.sh --mutation`
+    // when that flag is added. For nightly runs, set CI=false or FORCE_MUTATION=1.
+    // To run locally: CI="" ./build/audit/unified_audit_runner (or standalone binary)
+    const char* force = std::getenv("FORCE_MUTATION");
     const char* ci_env = std::getenv("CI");
-    if (ci_env && std::string(ci_env) == "true") {
-        std::printf("[mutation_kill_rate] CI detected — skipping (too slow for unified runner)\n");
+    if (ci_env && std::string(ci_env) == "true" && !(force && std::string(force) == "1")) {
+        std::printf("[mutation_kill_rate] CI detected — skipping (set FORCE_MUTATION=1 to run)\n");
         return ADVISORY_SKIP_CODE;
     }
 
