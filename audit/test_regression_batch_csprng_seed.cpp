@@ -77,7 +77,8 @@ static void test_bwc1_schnorr_large_batch_correct() {
         msg[1] = static_cast<std::uint8_t>((i >> 8) & 0xFF);
         msg[2] = 0xAB; msg[31] = static_cast<std::uint8_t>(i ^ 0x5A);
 
-        SchnorrSignature sig = schnorr_sign(sk, msg);
+        std::array<std::uint8_t, 32> aux{};
+        SchnorrSignature sig = schnorr_sign(sk, msg, aux);
         if (sig.s.is_zero()) continue;
 
         Point P = ct::generator_mul(sk);
@@ -110,7 +111,8 @@ static void test_bwc2_schnorr_large_batch_failclosed() {
         msg[0] = static_cast<std::uint8_t>(i & 0xFF);
         msg[1] = 0xCC; msg[31] = static_cast<std::uint8_t>(i ^ 0x33);
 
-        SchnorrSignature sig = schnorr_sign(sk, msg);
+        std::array<std::uint8_t, 32> aux{};
+        SchnorrSignature sig = schnorr_sign(sk, msg, aux);
         if (sig.s.is_zero()) continue;
 
         Point P = ct::generator_mul(sk);
@@ -149,7 +151,8 @@ static void test_bwc3_schnorr_large_batch_soundness_agreement() {
         msg[0] = static_cast<std::uint8_t>(i & 0xFF);
         msg[1] = 0x42;
 
-        SchnorrSignature sig = schnorr_sign(sk, msg);
+        std::array<std::uint8_t, 32> aux{};
+        SchnorrSignature sig = schnorr_sign(sk, msg, aux);
         if (sig.s.is_zero()) continue;
 
         Point P = ct::generator_mul(sk);
