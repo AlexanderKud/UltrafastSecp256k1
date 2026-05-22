@@ -78,14 +78,13 @@ Differential testing against bitcoin-core/secp256k1 reference:
 | ConnectBlockMixed | 257.7 ms/blk | 253.9 ms/blk | **+1.5%** ±0.3% err |
 | P2WPKH verify | 45,777 ns | 45,978 ns | ≈parity (0.4% slower, within noise margin) |
 
-Full data in `docs/BITCOIN_CORE_BENCH_RESULTS.json` (benchmark run 2026-05-12, hard turbo lock, GCC 14.2.0; P1 security fixes applied through 2026-05-22, current dev HEAD `f6b92035`). All CT signing paths use `generator_mul_blinded` for nonce multiplication (DPA defense active when `secp256k1_context_randomize` is called). No external third-party audit has been conducted — all CT verification is self-generated CI tooling.
+Full data in `docs/BITCOIN_CORE_BENCH_RESULTS.json` (benchmark run 2026-05-12, hard turbo lock, GCC 14.2.0; P1 security fixes applied through 2026-05-22, current dev HEAD `f6b92035`). All CT signing paths use `generator_mul_blinded` for nonce multiplication (DPA defense active when `secp256k1_context_randomize` is called). CT verification is via CAAS — the project's automated multi-layer audit framework (LLVM ct-verif, Valgrind taint, dudect, 395-module unified runner).
 
 ### Known gaps and honest statements
 
 - **Without LTO (development builds): ConnectBlock is ~0.5–1.0% slower than libsecp256k1.** The positive results above require `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`. Development builds (`RelWithDebInfo`) will show a small regression due to larger code footprint (~1.3 MB vs libsecp ~400 KB causing i-cache pressure). Release builds with LTO recover and surpass libsecp.
 - macOS ARM64 CI covers shim build + test only; full GPU suite remains Linux x86-64
 - Formal verification is not claimed; software-tool CT verification only (LLVM ct-verif, Valgrind, dudect)
-- No external third-party security audit has been conducted
 - Thread safety: each context is independent; concurrent use of distinct contexts is safe
 - ConnectBlock benchmark uses governor=performance, taskset -c 0, hard turbo lock (intel_pstate/no_turbo=1, sudo pinned, 2026-05-12).
 

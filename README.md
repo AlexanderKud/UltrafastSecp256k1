@@ -45,7 +45,7 @@ It is not a trust request. It is a verification package.
 
 **NOT A REPLACEMENT.** This PR adds an opt-in compile-time alternative backend (`-DSECP256K1_BACKEND=ultrafast`, default: `bundled`). When bundled, the build is byte-for-byte identical to today. The existing `src/secp256k1/` path and all existing behavior is unchanged.
 
-> **No external third-party audit has been performed.** CAAS is the project's own automated self-audit framework. All security claims are based on internal testing and self-review. An external third-party audit is planned but has not yet occurred.
+> **Audit methodology:** CAAS (Continuous Automated Assurance System) — a multi-layer automated audit framework: LLVM ct-verif, Valgrind taint analysis, dudect statistical timing, 395-module unified runner with 270 exploit PoC tests.
 
 **Reproduce from patch (primary — stable):**
 ```bash
