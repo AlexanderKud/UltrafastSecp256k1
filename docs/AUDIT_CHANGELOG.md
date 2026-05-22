@@ -1,5 +1,40 @@
 # Audit Changelog
 
+## 2026-05-22 — Fix: TASK-006 Metal ECDH constant-time port (RED-001 / P1-SEC-001)
+
+- **`src/metal/shaders/secp256k1_ecdh.h`** — added the missing CT helper
+  `ct_ecdh_scalar_mul_metal(JacobianPoint peer, Scalar256 sk)`. The three
+  Metal ECDH entry points (`ecdh_compute_raw_metal`,
+  `ecdh_compute_xonly_metal`, `ecdh_compute_metal`) previously called
+  `scalar_mul(peer_pubkey, private_key)` — a variable-time, fixed-window
+  base-point multiplier that violates GPU Guardrail #8 when the scalar
+  is a private key, AND that overload does not exist for the
+  `(JacobianPoint, Scalar256)` argument types (latent build error;
+  the file would fail to compile in any pipeline that actually invoked
+  the Metal shader).
+- **Algorithm:** bit-by-bit double-and-add with mask-XOR conditional
+  move over x/y/z/infinity. Mirrors the OpenCL helper
+  `ct_ecdh_scalar_mul_affine` at
+  `src/opencl/kernels/secp256k1_extended.cl:1566`, adapted to Metal's
+  8×32-bit Scalar256 limb layout: bit `i` of the scalar is extracted as
+  `(sk.limbs[i >> 5] >> (i & 31)) & 1`, masked to 0xFFFFFFFF, and used
+  to select the doubled-then-added candidate T over the doubled-only R.
+  No data-dependent branches on scalar bits, no table lookups, no early
+  exits.
+- **`src/metal/shaders/secp256k1_extended.h`** unchanged — its own
+  `ct_ecdh_scalar_mul_metal(AffinePoint, Scalar256)` overload already
+  existed (added in commit a7debe11 with the OpenCL fix). Adding the
+  JacobianPoint overload in `secp256k1_ecdh.h` gives us two coexisting
+  overloads sharing the same algorithm but ingesting the peer pubkey
+  in whatever form the caller already has it.
+- **Why no paired audit test in the same commit:** the test surface is
+  Metal shader output, which requires a macOS host with the Metal SDK
+  + a real device (or Metal simulator) to validate. The CPU equivalent
+  is already covered by `audit/test_regression_gpu_ecdh_extended_ct.cpp`
+  (GEC-1..7); a Metal-specific differential test will land alongside
+  the Metal CI runner work in a follow-up commit. Code-only delivery
+  here per RED-001 review recommendation (Option A).
+
 ## 2026-05-22 — Fix: TASK-008 EUCLEAK timing harness split (correctness ↔ real timing)
 
 - **`audit/test_exploit_eucleak_inversion_correctness.cpp` (NEW):** carries the
