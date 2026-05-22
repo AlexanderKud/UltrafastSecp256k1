@@ -388,23 +388,35 @@ static void run_ps23_der_parse(ufsecp_ctx* ctx) {
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01
         };
 
-        // Helper: build a minimal DER sig: 0x30 len 0x02 0x20 r[32] 0x02 0x20 s[32]
-        // Uses fixed-length 32-byte (non-zero-prefixed) r and s for simplicity.
-        auto make_der = [](const uint8_t r[32], const uint8_t s[32],
-                           uint8_t out[72], size_t& outlen) {
-            outlen = 0;
+        // Helper: build a minimal canonical DER sig: 0x30 len 0x02 <r_len> r 0x02 <s_len> s.
+        // DER requires a leading 0x00 byte when the high bit of the first byte is set
+        // (otherwise the INTEGER would be interpreted as negative). Without this, the
+        // strict parser correctly rejects the blob as "negative integer" before it ever
+        // reaches the scalar range check — which is the wrong path for these tests.
+        auto append_int = [](uint8_t*& p, const uint8_t v[32]) -> size_t {
+            *p++ = 0x02;
+            const bool pad = (v[0] & 0x80) != 0;
+            const size_t len = pad ? 33 : 32;
+            *p++ = static_cast<uint8_t>(len);
+            if (pad) { *p++ = 0x00; }
+            std::memcpy(p, v, 32); p += 32;
+            return 2 + len;  // tag+len header + payload
+        };
+        auto make_der = [&append_int](const uint8_t r[32], const uint8_t s[32],
+                                      uint8_t out[80], size_t& outlen) {
             uint8_t* p = out;
             *p++ = 0x30;
-            // total content: 2 (r tag+len) + 32 (r) + 2 (s tag+len) + 32 (s) = 68
-            *p++ = 68;
-            *p++ = 0x02; *p++ = 32;
-            std::memcpy(p, r, 32); p += 32;
-            *p++ = 0x02; *p++ = 32;
-            std::memcpy(p, s, 32); p += 32;
-            outlen = 70;  // header (2) + content (68)
+            uint8_t* len_byte = p++;  // placeholder
+            const size_t r_total = append_int(p, r);
+            const size_t s_total = append_int(p, s);
+            const size_t content = r_total + s_total;
+            *len_byte = static_cast<uint8_t>(content);
+            outlen = 2 + content;
         };
 
-        uint8_t buf[72] = {};
+        // 80 bytes covers worst case: 0x30 + len + (0x02 + len + 0x00 + 32) * 2 = 72,
+        // but provide headroom for future test growth.
+        uint8_t buf[80] = {};
         size_t blen = 0;
         uint8_t out64[64] = {};
 

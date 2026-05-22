@@ -136,10 +136,19 @@ static void test_pkl4_handshake_erases_privkey() {
 }
 
 // ---------------------------------------------------------------------------
-// PKL-5: Deterministic fixed-key session IDs are stable across calls
+// PKL-5: Each handshake instance produces a matching, non-zero session_id pair
+//
+// NOTE: BIP-324 specifies that the ElligatorSwift encoding uses random padding
+// bits — `our_ellswift_encoding()` is intentionally randomized per instance, so
+// two `Bip324Session` constructions with the same private key DO NOT produce the
+// same session_id. The previous PKL-5 wording asserted cross-instance determinism
+// and was incorrect against the spec. The meaningful property to guard here is
+// that within a single handshake, both sides agree on a non-zero session_id, and
+// that two independent handshakes between the same fixed keys yield two valid
+// pairs (not all-zero, not pair-cross-matched).
 // ---------------------------------------------------------------------------
-static void test_pkl5_deterministic_session_ids() {
-    std::printf("  [PKL-5] fixed-key sessions produce stable, matching session IDs\n");
+static void test_pkl5_session_ids_paired_and_nonzero() {
+    std::printf("  [PKL-5] each handshake yields a matching, non-zero session_id pair\n");
 
     secp256k1::Bip324Session ini1(true,  kInitiatorPriv);
     secp256k1::Bip324Session res1(false, kResponderPriv);
@@ -151,9 +160,15 @@ static void test_pkl5_deterministic_session_ids() {
     ini2.complete_handshake(res2.our_ellswift_encoding().data());
     res2.complete_handshake(ini2.our_ellswift_encoding().data());
 
-    // Both run must produce matching session IDs (deterministic ECDH + HKDF)
-    CHECK(ini1.session_id() == ini2.session_id(), "PKL-5: initiator session ID is deterministic");
-    CHECK(res1.session_id() == res2.session_id(), "PKL-5: responder session ID is deterministic");
+    auto is_nonzero = [](const std::array<std::uint8_t, 32>& sid) {
+        for (auto b : sid) if (b != 0) return true;
+        return false;
+    };
+    CHECK(is_nonzero(ini1.session_id()), "PKL-5a: handshake 1 initiator session_id is non-zero");
+    CHECK(is_nonzero(res1.session_id()), "PKL-5b: handshake 1 responder session_id is non-zero");
+    CHECK(ini1.session_id() == res1.session_id(), "PKL-5c: handshake 1 ini==res");
+    CHECK(is_nonzero(ini2.session_id()), "PKL-5d: handshake 2 initiator session_id is non-zero");
+    CHECK(ini2.session_id() == res2.session_id(), "PKL-5e: handshake 2 ini==res");
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +234,7 @@ int test_regression_bip324_privkey_lifetime_run() {
     test_pkl2_supplied_valid_key();
     test_pkl3_invalid_key_rejected();
     test_pkl4_handshake_erases_privkey();
-    test_pkl5_deterministic_session_ids();
+    test_pkl5_session_ids_paired_and_nonzero();
     test_pkl6_destructor_safe_after_handshake();
     test_pkl7_double_handshake_rejected();
 

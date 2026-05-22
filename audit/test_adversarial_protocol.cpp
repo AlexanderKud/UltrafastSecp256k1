@@ -3958,18 +3958,26 @@ static void test_h8_batch_sign() {
              "H.8f: ecdsa_sign_batch count=1 valid OK");
 
     // schnorr_sign_batch ------------------------------------------------------
-    CHECK_ERR(ufsecp_schnorr_sign_batch(nullptr, 1, msg32, priv32, nullptr, sig64),
+    // SEC-006: aux_rands32 is strictly required (silent zero-aux fallback was
+    // removed). The CHECK_ERR cases below cover NULL-ctx / NULL-msgs / NULL-keys /
+    // NULL-output; each is a separate property and is fine with nullptr aux since
+    // the failure under test is the named NULL argument.
+    static const uint8_t aux32[32] = {0x5A};
+    CHECK_ERR(ufsecp_schnorr_sign_batch(nullptr, 1, msg32, priv32, aux32, sig64),
               "H.8g: schnorr_sign_batch NULL ctx rejected");
-    CHECK_ERR(ufsecp_schnorr_sign_batch(ctx, 0, msg32, priv32, nullptr, sig64),
+    CHECK_ERR(ufsecp_schnorr_sign_batch(ctx, 0, msg32, priv32, aux32, sig64),
               "H.8h: schnorr_sign_batch count=0 → ERR_BAD_INPUT (Rule 15)");
-    CHECK_ERR(ufsecp_schnorr_sign_batch(ctx, 1, nullptr, priv32, nullptr, sig64),
+    CHECK_ERR(ufsecp_schnorr_sign_batch(ctx, 1, nullptr, priv32, aux32, sig64),
               "H.8i: schnorr_sign_batch NULL msgs rejected");
-    CHECK_ERR(ufsecp_schnorr_sign_batch(ctx, 1, msg32, nullptr, nullptr, sig64),
+    CHECK_ERR(ufsecp_schnorr_sign_batch(ctx, 1, msg32, nullptr, aux32, sig64),
               "H.8j: schnorr_sign_batch NULL privkeys rejected");
-    CHECK_ERR(ufsecp_schnorr_sign_batch(ctx, 1, msg32, priv32, nullptr, nullptr),
+    CHECK_ERR(ufsecp_schnorr_sign_batch(ctx, 1, msg32, priv32, aux32, nullptr),
               "H.8k: schnorr_sign_batch NULL output rejected");
-    CHECK_OK(ufsecp_schnorr_sign_batch(ctx, 1, msg32, priv32, nullptr, sig64),
-             "H.8l: schnorr_sign_batch count=1 valid OK (null aux_rands)");
+    // SEC-006: NULL aux must be rejected explicitly (separate property from H.8a..k).
+    CHECK_ERR(ufsecp_schnorr_sign_batch(ctx, 1, msg32, priv32, nullptr, sig64),
+              "H.8k2: schnorr_sign_batch NULL aux_rands32 rejected (SEC-006)");
+    CHECK_OK(ufsecp_schnorr_sign_batch(ctx, 1, msg32, priv32, aux32, sig64),
+             "H.8l: schnorr_sign_batch count=1 valid OK (non-null aux_rands)");
 
     ufsecp_ctx_destroy(ctx);
 }
