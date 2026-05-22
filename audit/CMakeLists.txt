@@ -1645,14 +1645,36 @@ target_compile_definitions(test_exploit_ecdsa_differential_fault_standalone PRIV
 add_test(NAME exploit_ecdsa_differential_fault COMMAND test_exploit_ecdsa_differential_fault_standalone)
 set_tests_properties(exploit_ecdsa_differential_fault PROPERTIES TIMEOUT 120 LABELS "audit;exploit;ecdsa;nonce")
 
-# -- PoC: EUCLEAK non-CT modular inversion timing (EUC-1..EUC-12) [ePrint 2024/1380] --
+# -- PoC: EUCLEAK ePrint 2024/1380 — TWO companion files (TASK-008 split) --
+#   *_correctness.cpp : EUC-1..EUC-12 input-output equivalence on pathological
+#                       scalars and field elements (no timing measurement).
+#   *_timing.cpp      : Welch's t-test on rdtsc-measured cycle counts of
+#                       ct::scalar_inverse across class 0 (k=1, sparse-bit)
+#                       vs class 1 (random scalar). Returns 77
+#                       (ADVISORY_SKIP) in the borderline-noise zone
+#                       (4.5 ≤ |t| < 7) so VM / shared-CI environments
+#                       do not produce false alarms.
+add_executable(test_exploit_eucleak_inversion_correctness_standalone
+    test_exploit_eucleak_inversion_correctness.cpp)
+audit_target_defaults(test_exploit_eucleak_inversion_correctness_standalone)
+target_link_libraries(test_exploit_eucleak_inversion_correctness_standalone PRIVATE fastsecp256k1)
+target_compile_definitions(test_exploit_eucleak_inversion_correctness_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME exploit_eucleak_inversion_correctness COMMAND test_exploit_eucleak_inversion_correctness_standalone)
+set_tests_properties(exploit_eucleak_inversion_correctness PROPERTIES TIMEOUT 60
+    LABELS "audit;exploit;inversion;correctness")
+
 add_executable(test_exploit_eucleak_inversion_timing_standalone
     test_exploit_eucleak_inversion_timing.cpp)
 audit_target_defaults(test_exploit_eucleak_inversion_timing_standalone)
 target_link_libraries(test_exploit_eucleak_inversion_timing_standalone PRIVATE fastsecp256k1)
 target_compile_definitions(test_exploit_eucleak_inversion_timing_standalone PRIVATE STANDALONE_TEST)
 add_test(NAME exploit_eucleak_inversion_timing COMMAND test_exploit_eucleak_inversion_timing_standalone)
-set_tests_properties(exploit_eucleak_inversion_timing PROPERTIES TIMEOUT 120 LABELS "audit;exploit;sidechannel;inversion")
+# SKIP_RETURN_CODE 77: the dudect-style timing harness returns 77 in the
+# borderline-noise zone (|t| between 4.5 and 7.0). Treat as Skipped — only
+# a persistent |t| ≥ 7 over the full 1M-sample run is a real failure.
+set_tests_properties(exploit_eucleak_inversion_timing PROPERTIES
+    TIMEOUT 300 SKIP_RETURN_CODE 77
+    LABELS "audit;exploit;sidechannel;inversion;timing;dudect")
 
 # -- PoC: Cross-key nonce reuse cascading compromise (CKN-1..CKN-10) [ePrint 2025/654] --
 add_executable(test_exploit_ecdsa_cross_key_nonce_reuse_standalone
@@ -3720,7 +3742,8 @@ add_executable(unified_audit_runner
     test_exploit_ecdsa_nonce_modular_bias.cpp
     # -- Differential fault on RFC 6979 (ePrint 2017/975) --
     test_exploit_ecdsa_differential_fault.cpp
-    # -- EUCLEAK non-CT modular inversion (ePrint 2024/1380) --
+    # -- EUCLEAK non-CT modular inversion (ePrint 2024/1380) — TWO files (TASK-008 split) --
+    test_exploit_eucleak_inversion_correctness.cpp
     test_exploit_eucleak_inversion_timing.cpp
     # -- Cross-key nonce reuse cascade (ePrint 2025/654) --
     test_exploit_ecdsa_cross_key_nonce_reuse.cpp

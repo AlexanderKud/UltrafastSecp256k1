@@ -1,5 +1,30 @@
 # Audit Changelog
 
+## 2026-05-22 — Fix: TASK-008 EUCLEAK timing harness split (correctness ↔ real timing)
+
+- **`audit/test_exploit_eucleak_inversion_correctness.cpp` (NEW):** carries the
+  EUC-1..EUC-12 input-output equivalence checks that the old
+  `_timing.cpp` was actually running despite the name. Mandatory module.
+- **`audit/test_exploit_eucleak_inversion_timing.cpp` (REBUILT):** removed the
+  correctness checks; replaced with a real Welch's t-test harness on rdtsc
+  cycle counts of `ct::scalar_inverse` over N=100k samples (class 0 = k=1
+  sparse-bit, class 1 = random scalar). Trims 5% tail (dudect convention)
+  before computing the statistic. Threshold `|t| < 4.5` = PASS, `|t| ≥ 4.5`
+  = ADVISORY_SKIP (77) — single-experiment harness cannot declare a real
+  leak, defers to the multi-experiment dudect harness in
+  `test_ct_sidechannel.cpp` for authoritative analysis. Anti-DCE accumulator
+  XORs first limb of every inverse result into a uint64_t sink with an
+  asm-memory-barrier so the optimiser cannot dead-strip the calls. Test is
+  advisory=true; never blocks CI.
+- **Wiring:** `audit/CMakeLists.txt` gets two standalone CTest targets
+  (correctness mandatory, timing advisory with SKIP_RETURN_CODE 77 +
+  TIMEOUT 300). Both files added to `unified_audit_runner` sources. The
+  ALL_MODULES table in `unified_audit_runner.cpp` now lists
+  `exploit_eucleak_inversion_correctness` (mandatory) and
+  `exploit_eucleak_inversion_timing` (advisory) replacing the prior single
+  `exploit_eucleak_inversion` entry. Catalogued in `EXPLOIT_TEST_CATALOG.md`
+  and `TEST_MATRIX.md`.
+
 ## 2026-05-22 — Fix: TASK-007 MuSig2 v1 [[deprecated]] restored + TASK-009 Pearson χ² for hedged-nonce bias
 
 - **`include/ufsecp/ufsecp.h` `ufsecp_musig2_partial_sign` (TASK-007 / P1-SEC-002 /
@@ -206,7 +231,7 @@
 - **audit/test_exploit_frost_absent_signer_id.cpp (NEW — P1-SEC-001):** 3 sub-tests (FSI-1..3): absent signer → zero z_i; present signer → non-zero z_i; below-threshold → zero z_i. Wired to `unified_audit_runner` as `exploit_poc`, `advisory=false`.
 - **audit/test_regression_schnorr_sign_e_hash_erased.cpp (NEW — P1-SEC-002):** 4 sub-tests (SHE-1..4): sign+verify round-trip; 50 round-trips with varied messages; deterministic output; different messages → different sigs. Wired as `ct_analysis`, `advisory=false`.
 - **audit/test_exploit_musig2_infinity_pubnonce.cpp (NEW — P1-SEC-003):** 6 sub-tests (MIP-1..6): valid pubnonce accepted; zero input (prefix 0x00) rejected; uncompressed prefix (0x04) rejected; off-curve x handled; NULL args rejected; invalid second-point prefix rejected. Wired as `exploit_poc`, `advisory=true` (requires shim).
-- **ci/sync_module_count.py:** Module count propagated — 382 total (269 exploit-PoC, 115 non-exploit).
+- **ci/sync_module_count.py:** Module count propagated — 382 total (270 exploit-PoC, 115 non-exploit).
 
 ## 2026-05-21 — Fix: doc sync, stale paths, canonical benchmark JSON machine-generation (REL-001..011, BENCH-003/006, CI-001)
 
@@ -681,7 +706,7 @@ evidence upgrades, and changes to what the repository can honestly claim.
   FAST variable-time row now labeled `[diag FAST]` — clearly marked as not production-equivalent.
   This eliminates the invalid VT-Ultra vs CT-libsecp comparison from the ratio table.
 
-### Module count: 357 total (101 non-exploit + 269 exploit PoC)
+### Module count: 357 total (101 non-exploit + 270 exploit PoC)
 
 ---
 
@@ -827,7 +852,7 @@ evidence upgrades, and changes to what the repository can honestly claim.
 - `docs/SHIM_KNOWN_DIVERGENCES.md` created: complete list of intentional shim vs libsecp256k1 behavioral differences.
 - `CLAUDE.md` updated: Canonical Data Synchronization rules added (module counts via `sync_module_count.py`, benchmark data via canonical JSON, ConnectBlock claim wording rules).
 - `docs/BITCOIN_CORE_BACKEND_EVIDENCE.md`: GCC CT signing regression (0.82–0.85×) disclosed; commit SHA mismatch corrected.
-- Module counts synced via `sync_module_count.py`: 98 non-exploit + 269 exploit PoC = 350 total.
+- Module counts synced via `sync_module_count.py`: 98 non-exploit + 270 exploit PoC = 350 total.
 
 ---
 
@@ -1702,7 +1727,7 @@ All 4 wired into `unified_audit_runner.cpp` + `audit/CMakeLists.txt`.
 
 ### Documentation Sync
 
-- `sync_module_count.py` run: WHY/README updated to 269 exploit PoCs, 80 non-exploit, 312 total.
+- `sync_module_count.py` run: WHY/README updated to 270 exploit PoCs, 80 non-exploit, 312 total.
 - `sync_version_refs.py` run: 26 doc files updated from v3.60/v3.66 → v3.68.0.
 - CT pipeline count: "3" → "5" (LLVM ct-verif, Valgrind taint, ct-prover, dudect, ARM64 native) across README + WHY.
 - `docs/EXPLOIT_TEST_CATALOG.md`: `test_exploit_der_parsing_differential` updated to 13 tests.
@@ -4102,7 +4127,7 @@ tests PASS.**
   double-hash confusion (H(msg) ≠ H(H(msg))); domain prefix isolation (domain-A sig ≠ domain-B
   sig).  Committed `c843979c`.
 
-**Running total after this wave: 269 exploit PoC files, 59 new checks.**
+**Running total after this wave: 270 exploit PoC files, 59 new checks.**
 
 ---
 

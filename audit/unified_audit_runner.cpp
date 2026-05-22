@@ -177,7 +177,8 @@ int test_exploit_network_validation_bypass_run(); // Network selector validation
 int test_exploit_ecdsa_half_half_nonce_run();     // ePrint 2023/841 half-half nonce key recovery
 int test_exploit_ecdsa_nonce_modular_bias_run();  // CVE-2024-31497 nonce modular reduction bias
 int test_exploit_ecdsa_differential_fault_run();  // ePrint 2017/975 differential fault on RFC 6979
-int test_exploit_eucleak_inversion_timing_run();   // ePrint 2024/1380 EUCLEAK non-CT inversion
+int test_exploit_eucleak_inversion_correctness_run(); // EUC-1..EUC-12 input-output equivalence on pathological scalars (no timing)
+int test_exploit_eucleak_inversion_timing_run();      // Welch t-test on ct::scalar_inverse cycle counts (ePrint 2024/1380)
 int test_exploit_ecdsa_cross_key_nonce_reuse_run(); // ePrint 2025/654 cross-key nonce reuse cascade
 int test_exploit_schnorr_hash_order_run();          // ePrint 2025/1846 Fiat-Shamir hash order
 int test_exploit_zvp_glv_dcp_multiscalar_run();     // ePrint 2025/076 ZVP-DCP on GLV multiscalar
@@ -1057,7 +1058,13 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_half_half_nonce",         "Half-Half Nonce Key Recovery (HH-1..HH-10)", "exploit_poc", test_exploit_ecdsa_half_half_nonce_run, false },
     { "exploit_nonce_modular_bias",      "Nonce Modular Reduction Bias (NMB-1..NMB-6)","exploit_poc", test_exploit_ecdsa_nonce_modular_bias_run, false },
     { "exploit_differential_fault",      "Differential Fault RFC 6979 (DF-1..DF-8)",   "exploit_poc", test_exploit_ecdsa_differential_fault_run, false },
-    { "exploit_eucleak_inversion",        "EUCLEAK Inversion Timing (EUC-1..EUC-12)",   "exploit_poc", test_exploit_eucleak_inversion_timing_run, false },
+    // TASK-008 split: the original `exploit_eucleak_inversion` module was
+    // labelled "Timing" but only ran correctness round-trips. Renamed to
+    // `exploit_eucleak_inversion_correctness` (mandatory, no timing) and a
+    // new `exploit_eucleak_inversion_timing` (advisory — returns 77 in the
+    // borderline-noise zone, FAIL only on |t| ≥ 7) added alongside it.
+    { "exploit_eucleak_inversion_correctness", "EUC-1..EUC-12 input/output equivalence on pathological scalars (no timing measurement)", "exploit_poc", test_exploit_eucleak_inversion_correctness_run, false },
+    { "exploit_eucleak_inversion_timing",      "EUCLEAK timing harness — Welch t-test on rdtsc cycle counts of ct::scalar_inverse over N=1M samples; threshold |t|<4.5 PASS, |t|<7 advisory-skip (noise), |t|>=7 leak (ePrint 2024/1380 Roche/NinjaLab)", "exploit_poc", test_exploit_eucleak_inversion_timing_run, true },
     { "exploit_cross_key_nonce_reuse",    "Cross-Key Nonce Reuse (CKN-1..CKN-10)",      "exploit_poc", test_exploit_ecdsa_cross_key_nonce_reuse_run, false },
     { "exploit_schnorr_hash_order",       "Schnorr Hash Order (SHO-1..SHO-10)",         "exploit_poc", test_exploit_schnorr_hash_order_run, false },
     { "exploit_zvp_glv_dcp_multiscalar",   "ZVP-DCP GLV Multiscalar (ZVPDCP-1..8)",      "exploit_poc", test_exploit_zvp_glv_dcp_multiscalar_run, false },
