@@ -1495,6 +1495,23 @@ static void test_protocol_timing() {
         auto session = secp256k1::musig2_start_sign_session(
             agg_nonce, ctx, msg);
 
+        // Fix: clear individual_pubkeys so the signer-index validation block is
+        // skipped entirely. The validation block is a FUNCTIONAL branch (did the
+        // caller supply the right key for this signer slot?) not a CT concern —
+        // it exits early when the key doesn't match regardless of the key VALUE.
+        // With individual_pubkeys populated, class-0 (sk=1, matches slot 0) runs
+        // the full signing path while class-1 (sk=random, no match) returns early,
+        // creating a systematic timing difference that is NOT a secret-key CT leak.
+        // Clearing individual_pubkeys tests only the CT arithmetic of the signing
+        // computation itself.
+        ctx.individual_pubkeys.clear();
+
+        // Save original nonce for restoration: musig2_partial_sign consumes
+        // (erases) sec_nonce.k1 and sec_nonce.k2 on every call. Without
+        // restoration each iteration after the first uses a zeroed nonce,
+        // which is not representative of the signing path timing.
+        secp256k1::MuSig2SecNonce const saved_nonce = sec1;
+
         // Pre-generate test scalars: class 0=fixed(1), class 1=random
         auto* test_keys = new Scalar[N];
         int classes[N];
@@ -1508,13 +1525,15 @@ static void test_protocol_timing() {
             int const cls = classes[i];
             auto& sk = test_keys[i];
 
-            // Regenerate nonce for each iteration to avoid nonce reuse
-            // (same seed -> same nonce is OK for timing test, not crypto)
+            // Restore nonce before each call so every iteration exercises
+            // the full signing path (not the early-exit zeroed-nonce path).
+            secp256k1::MuSig2SecNonce iter_nonce = saved_nonce;
+
             BARRIER_FENCE();
             uint64_t const t0 = rdtsc();
             BARRIER_FENCE();
             volatile auto s = secp256k1::musig2_partial_sign(
-                sec1, sk, ctx, session, 0);
+                iter_nonce, sk, ctx, session, 0);
             (void)s;
             BARRIER_FENCE();
             uint64_t const t1 = rdtsc();

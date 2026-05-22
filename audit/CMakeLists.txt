@@ -47,14 +47,17 @@ add_executable(test_ct_sidechannel_standalone test_ct_sidechannel.cpp)
 audit_target_defaults(test_ct_sidechannel_standalone)
 target_compile_definitions(test_ct_sidechannel_standalone PRIVATE STANDALONE_TEST)
 add_test(NAME ct_sidechannel COMMAND test_ct_sidechannel_standalone)
-# WILL_FAIL TRUE: the standalone dudect harness currently reports a persistent
-# timing leak on musig2_partial_sign across CI hardware (see knowledge base
-# CT-MUSIG2-SIGN-001). The leak is a known open gap to be investigated; the
-# smoke variant (ct_sidechannel_smoke) is the authoritative gate until the
-# investigation completes. When the leak is fixed the test will pass, CTest
-# will report it as "unexpected pass" via WILL_FAIL, and this property should
-# be removed.
-set_tests_properties(ct_sidechannel PROPERTIES TIMEOUT 600 WILL_FAIL TRUE)
+# CT-MUSIG2-SIGN-001 RESOLVED (2026-05-22): The false "leak" was caused by two
+# test harness bugs:
+#   1. individual_pubkeys populated in key_agg_ctx → class-0 (sk=1) matched
+#      signer slot 0 and ran the full signing path; class-1 (sk=random) failed
+#      the key-validation check and returned early — a FUNCTIONAL difference,
+#      not a CT arithmetic leak.
+#   2. MuSig2SecNonce was consumed (erased) on each call without restoration,
+#      so iterations 2..N used a zeroed nonce and hit a different early-exit path.
+# Fix: clear individual_pubkeys + restore nonce before each iteration.
+# WILL_FAIL removed — test is expected to pass.
+set_tests_properties(ct_sidechannel PROPERTIES TIMEOUT 600)
 
 # Smoke version of dudect (short run, relaxed threshold -- safe for CI)
 add_executable(test_ct_sidechannel_smoke test_ct_sidechannel.cpp)
