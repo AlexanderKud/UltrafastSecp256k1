@@ -395,7 +395,7 @@ This top-level narrative maps directly to the assurance ledger: CT secret-key ro
 |--------|-------|
 | Internal audit assertions per build | **~1,000,000+** |
 | Audit modules (`unified_audit_runner`) | **125 non-exploit modules + 270 exploit PoCs across 9 sections, 0 mandatory failures** (see [docs/AUDIT_COVERAGE.md](docs/AUDIT_COVERAGE.md) for advisory cluster status) |
-| Exploit PoC test files | **270 exploit-PoC modules (258 source files), 20+ coverage areas, 0 mandatory failures** |
+| Exploit PoC test files | **270 exploit-PoC modules (261 source files), 20+ coverage areas, 0 mandatory failures** |
 | CI/CD workflows | **50+ GitHub Actions workflows** |
 | Build matrix (arch × config × OS) | **7 × 17 × 5 = 595 theoretical combinations** (actual CI matrix is a subset — see `.github/workflows/` for exact matrix) |
 | Differential tests (per push + manual) | **~1,300,000+ checks per deep-assurance run** |
@@ -445,7 +445,7 @@ In addition to the 395-module `unified_audit_runner`, UltrafastSecp256k1 ships *
 | Self-Test / Recovery | self-test API behavior and recovery boundary cases |
 | Batch Verify | aggregate verification math correctness |
 
-> All 270 registered exploit-PoC modules live in `audit/test_exploit_*.cpp` (258 source files; some files register multiple modules). Build with `python3 ci/configure_build.py audit` (or `cmake -S . -B out/audit -G Ninja -DCMAKE_BUILD_TYPE=Release`) and run them standalone or via `ctest`.
+> All 270 registered exploit-PoC modules live in `audit/test_exploit_*.cpp` (261 source files; some files register multiple modules). Build with `python3 ci/configure_build.py audit` (or `cmake -S . -B out/audit -G Ninja -DCMAKE_BUILD_TYPE=Release`) and run them standalone or via `ctest`.
 
 ### Self-Audit Document Index
 

@@ -96,6 +96,12 @@ EXPLOIT_TEST_COUNT_TABLE_RE = re.compile(
     r'\d+ exploit PoC modules \(\d+ source files\), \d+\+ coverage areas, \d+ failures'
 )
 
+# Matches "(N source files" — WHY doc table footnote "(261 source files — N modules share...)"
+SOURCE_FILES_PAREN_RE = re.compile(r'\(\d{1,3} source files')
+
+# Matches "**N modules, 0 failures**" — WHY doc table cell bold module count
+BOLD_MODULE_FAILURES_RE = re.compile(r'\*\*\d{1,3} modules, 0 failures\*\*')
+
 # Matches "All N registered exploit-test entries" or "All N registered exploit-PoC modules"
 ALL_REGISTERED_ENTRIES_RE = re.compile(
     r'All \d+ registered exploit-(?:test entries|PoC modules) live in'
@@ -256,6 +262,26 @@ def make_replacements(content: str,
 
     # "All N exploit PoCs modules pass" (plural variant)
     _sub(ALL_EXPLOIT_PLURAL_RE, f'All {exploit_mods} exploit PoCs modules pass')
+
+    # "(N source files" — WHY doc table footnote
+    def _replace_source_files(m: re.Match) -> str:
+        nonlocal changes
+        replacement = f'({exploit_files} source files'
+        if m.group(0) != replacement:
+            changes += 1
+        return replacement
+
+    new = SOURCE_FILES_PAREN_RE.sub(_replace_source_files, new)
+
+    # "**N modules, 0 failures**" — WHY doc table cell
+    def _replace_bold_module_failures(m: re.Match) -> str:
+        nonlocal changes
+        replacement = f'**{exploit_mods} modules, 0 failures**'
+        if m.group(0) != replacement:
+            changes += 1
+        return replacement
+
+    new = BOLD_MODULE_FAILURES_RE.sub(_replace_bold_module_failures, new)
 
     # "-- N modules, N failure classes" (AUDIT_COVERAGE.md Verdict line)
     def _replace_verdict_modules(m: re.Match) -> str:
