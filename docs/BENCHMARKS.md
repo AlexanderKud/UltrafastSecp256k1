@@ -1537,7 +1537,7 @@ Drop-in replacement via `compat/libsecp256k1_shim/` — the shim exposes
 the full `secp256k1.h` C API and links against `libfastsecp256k1.a`.
 
 > **Build mode matters:** Use `Release + LTO` (`-DCMAKE_BUILD_TYPE=Release -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`)
-> for full performance. Without LTO: parity after PERF-002 fix (removed redundant on-curve check). LTO is still recommended for optimal code layout (+1.0–2.1% faster than without LTO). With LTO the deficit is eliminated. See `docs/BITCOIN_CORE_BACKEND_EVIDENCE.md §2.1`.
+> for full performance. Without LTO: ~0.5–1.0% slower on ConnectBlock — the earlier ~1.1% deficit was reduced by two targeted fixes (PERF-002 redundant y²=x³+7 curve-check removal in commit `40697447`, and the DER parser fast-path replacing the previous Scalar-construct round-trip). The residual gap is consistent with the size delta of the inlined hot-path (~1.3 MB Ultra vs ~400 KB libsecp256k1 without cross-TU inlining). With LTO the deficit flips to +0.9–1.5%. See `docs/BITCOIN_CORE_BACKEND_EVIDENCE.md §2.1`.
 
 ### Release + LTO Results (recommended — i5-14400F, GCC 13, taskset -c 0)
 
@@ -1571,7 +1571,7 @@ CPU: Intel i5-14400F, GCC 13, Release+LTO, `taskset -c 0`, variance 0.1–0.3%.
 
 Bitcoin Core v29.3 `bench_bitcoin` results on x86-64 Linux (i5-14400F),
 w=18 precomputed fixed-base table, 5-second stable runs with CPU warmup.
-**Note:** These were measured without LTO; ConnectBlock shows expected i-cache deficit.
+**Note:** These were measured without LTO; ConnectBlock shows expected ~0.5–1.0% deficit consistent with the inlined hot-path size delta (~1.3 MB Ultra vs ~400 KB libsecp256k1 without cross-TU inlining). With LTO the deficit flips positive — see `docs/BITCOIN_CORE_BACKEND_EVIDENCE.md §2.1`.
 
 All 8 secp256k1-relevant benchmarks show improvement. The shim uses
 `scalar_mul_generator` (w=18 precomputed table) for all generator

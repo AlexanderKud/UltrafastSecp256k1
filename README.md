@@ -86,7 +86,16 @@ python3 ci/caas_runner.py --profile bitcoin-core-backend --json -o btc.json
 > **ConnectBlock (primary block-validation workload):** within ±1.5% of libsecp256k1 depending on build configuration.
 > - With Release+LTO (GCC 14.2.0, **required for any positive result — without LTO the result is negative**): **+0.9–1.5%** across ConnectBlock aggregate profiles (AllEcdsa, AllSchnorr, Mixed)
 > - VerifyScriptP2WPKH individual validation: **parity (Ultra ≤0.4% slower, within noise margin)**
-> - Without LTO: **−0.5–1.0%** on all profiles (larger code footprint causes i-cache pressure)
+> - Without LTO: **−0.5–1.0%** on all profiles. The earlier ~1.1% deficit was reduced after two
+>   targeted fixes (PERF-002 redundant y²=x³+7 curve-check removal in commit `40697447`, and the
+>   DER parser fast-path replacing the previous Scalar-construct round-trip); residual ~0.5–1.0%
+>   no-LTO deficit is consistent with the size delta of the inlined hot-path
+>   (**2,310 KB Ultra `.text` vs 1,261 KB libsecp256k1 `.text`, 1.83× — measured 2026-05-22**;
+>   see [`docs/SHIM_FOOTPRINT_COMPARISON.md`](docs/SHIM_FOOTPRINT_COMPARISON.md)).
+>   With LTO the cross-TU inliner co-optimises both sides and the deficit flips to a small
+>   advantage. The `bitcoin-core` deployment profile (`cmake --preset bitcoin-core`) strips
+>   FROST/ZK/ECIES/BIP-352/Adaptor/Wallet/Pippenger to save **359 KB `.text`** vs the full
+>   profile; see [`ci/profiles.json`](ci/profiles.json) for the full module set.
 > - Taproot key-path signing (wallet, not ConnectBlock): +10% faster (SignTransactionSchnorr)
 > - Taproot script-path signing (wallet, not ConnectBlock): +35% faster (SignSchnorrWithMerkleRoot)
 > - Canonical data: [docs/BITCOIN_CORE_BENCH_RESULTS.json](docs/BITCOIN_CORE_BENCH_RESULTS.json)
@@ -231,7 +240,7 @@ This project: `code → test → execution → evidence → continuous verificat
 We do not rely on trust. We provide reproducible evidence.
 
 - Every exploit attempt becomes a permanent regression test
-- Every commit runs 1,000,000+ assertions across 123 non-exploit audit modules and 270 exploit PoCs ( 393 modules total; count via `python3 ci/sync_module_count.py`; canonical data: `docs/canonical_numbers.json`)
+- Every commit runs 1,000,000+ assertions across 123 non-exploit audit modules and 270 exploit PoCs ( 395 modules total; count via `python3 ci/sync_module_count.py`; canonical data: `docs/canonical_numbers.json`)
 - Every claim maps to a test in [docs/AUDIT_TRACEABILITY.md](docs/AUDIT_TRACEABILITY.md)
 - Every performance number has pinned compiler/driver/toolkit versions and raw logs
 
@@ -413,11 +422,11 @@ This top-level narrative maps directly to the assurance ledger: CT secret-key ro
 - Performance evidence is tracked through manual/release deep-assurance workflows instead of every-push benchmark fan-out
 - Audit results are logged as **structured artifacts** (JSON reports, per-platform logs), not just pass/fail signals
 - Differential tests run on every push and via manual deep-assurance workflows; no separate nightly schedule
-- All 123 non-exploit audit modules and all 270 exploit PoCs return `AUDIT-READY (self-generated)` status as of the last CAAS gate run. Zero failures — see pinned evidence: [`docs/EXTERNAL_AUDIT_BUNDLE.json`](docs/EXTERNAL_AUDIT_BUNDLE.json).
+- All 125 non-exploit audit modules and all 270 exploit PoCs return `AUDIT-READY (self-generated)` status as of the last CAAS gate run. Zero failures — see pinned evidence: [`docs/EXTERNAL_AUDIT_BUNDLE.json`](docs/EXTERNAL_AUDIT_BUNDLE.json).
 
 ### Exploit PoC Test Suite (270 Tests, 20+ Coverage Areas)
 
-In addition to the 393-module `unified_audit_runner`, UltrafastSecp256k1 ships **270 exploit-style PoC modules files** that actively try to break the library across its highest-risk surfaces. Each `audit/test_exploit_*.cpp` target builds and runs standalone so failures stay easy to attribute and reproduce.
+In addition to the 395-module `unified_audit_runner`, UltrafastSecp256k1 ships **270 exploit-style PoC modules files** that actively try to break the library across its highest-risk surfaces. Each `audit/test_exploit_*.cpp` target builds and runs standalone so failures stay easy to attribute and reproduce.
 
 | Coverage Area | Representative attack focus |
 |---------------|-----------------------------|

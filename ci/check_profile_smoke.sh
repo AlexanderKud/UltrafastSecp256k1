@@ -35,6 +35,7 @@ PROFILES=(
   dogecoin
   bch-wallet
   wallet
+  audit
 )
 
 PASS=0

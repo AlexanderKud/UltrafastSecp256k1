@@ -135,11 +135,14 @@ by software tooling alone. This limitation is documented in RR-001
   Canonical data: `docs/BITCOIN_CORE_BENCH_RESULTS.json` (commit `48e7c02f`, 2026-05-12,
   hard turbo lock: intel_pstate/no_turbo=1, governor=performance, taskset -c 0, nice -20).
 - **Without LTO:** ~0.5–1.0% slower than libsecp256k1 (AllEcdsa −0.5%, AllSchnorr −1.0%,
-  Mixed −0.8%; measured 2026-05-12, hard turbo lock, 3 runs, non-overlapping). PERF-002 reduced
-  the no-LTO deficit from ~1.1% to ~0.5–1.0% by removing a redundant y²=x³+7 on-curve check
-  (~400 ns/call), but did not eliminate it. The remaining gap is caused by Ultra's larger code
-  footprint (~1.3 MB secp256k1 symbols vs libsecp ~400 KB) creating i-cache pressure without LTO.
-  LTO resolves this by co-optimizing code layout globally.
+  Mixed −0.8%; measured 2026-05-12, hard turbo lock, 3 runs, non-overlapping). The earlier
+  ~1.1% deficit was reduced by two targeted fixes — PERF-002 (removed a redundant y²=x³+7
+  on-curve check, ~400 ns/call, commit `40697447`) and the DER parser fast-path (replaced
+  a per-parse Scalar-construct round-trip). The residual ~0.5–1.0% no-LTO gap is consistent
+  with the size delta of the inlined hot-path (**2,310 KB Ultra `.text` vs 1,261 KB libsecp256k1
+  `.text`, 1.83× — measured 2026-05-22, no-LTO, `bitcoin-core` deployment profile**; see
+  [`docs/SHIM_FOOTPRINT_COMPARISON.md`](SHIM_FOOTPRINT_COMPARISON.md)). LTO co-optimises both
+  sides and the deficit flips to a small positive (+0.9–1.5%).
 
 Full no-LTO data: `docs/BITCOIN_CORE_BENCH_RESULTS.json` (`results_nolto` section,
 post-PERF-002 measured run, 2026-05-12).
@@ -182,14 +185,28 @@ core pinned, 500 warmup, 11 passes, IQR trimming):
 >
 > Both are correct — they measure different scopes. The full-path `SignTransaction*` numbers are the Bitcoin Core-relevant ones; the CT primitive numbers confirm no scalar-inverse regression on GCC 14.
 
-### Without-LTO gap — partially reduced by PERF-002
+### Without-LTO gap — root causes and residual size delta
 
 Without LTO, Ultra is ~0.5–1.0% slower than libsecp256k1 on ConnectBlock (measured 2026-05-12,
-hard turbo lock): AllEcdsa −0.5%, AllSchnorr −1.0%, Mixed −0.8%. The gap stems from Ultra's
-larger code footprint (~1.3 MB secp256k1 symbols vs libsecp ~400 KB) creating i-cache pressure
-without LTO. PERF-002 (removed redundant y²=x³+7 on-curve check, ~400 ns/call) reduced the gap
-from ~1.1% to ~0.5–1.0%, but did not fully eliminate it. **Use Release+LTO for production Bitcoin
-Core builds** — LTO eliminates the i-cache pressure by co-optimizing code layout globally.
+hard turbo lock): AllEcdsa −0.5%, AllSchnorr −1.0%, Mixed −0.8%. Two targeted fixes shrank the
+earlier ~1.1% deficit:
+
+* **PERF-002** (commit `40697447`) removed a redundant `y² = x³ + 7` on-curve check that ran on
+  every signature parse (~400 ns/call). The check was already enforced by the upstream parser;
+  the duplicate was pure overhead with no security value.
+* **DER parser fast-path** replaced a per-parse `Scalar`-construct round-trip with direct limb
+  copy + canonical-form check, eliminating a hot-path heap allocation that was invisible at the
+  algorithmic level but material in the per-block ConnectBlock budget.
+
+After both fixes, the residual ~0.5–1.0% gap matches the size delta of the inlined hot-path:
+**2,310 KB Ultra `.text` vs 1,261 KB libsecp256k1 `.text` (1.83×, measured 2026-05-22, no-LTO,
+`bitcoin-core` deployment profile)**. Full breakdown including per-translation-unit shim sizes
+and a measurement reproduction recipe is in
+[`docs/SHIM_FOOTPRINT_COMPARISON.md`](SHIM_FOOTPRINT_COMPARISON.md).
+
+With LTO the cross-TU inliner co-optimises both sides and the deficit flips to a small
+positive (+0.9–1.5%). **Use Release+LTO for production Bitcoin Core builds** — LTO is the
+recommended build configuration and is the one Bitcoin Core's release process already enables.
 
 ### Build command for full performance
 
