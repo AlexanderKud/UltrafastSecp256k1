@@ -127,6 +127,9 @@ int test_exploit_adaptor_extraction_soundness_run() { return ADVISORY_SKIP_CODE;
 int test_regression_adaptor_binding_domain_run()    { return ADVISORY_SKIP_CODE; }
 int test_regression_adaptor_degenerate_v7_run()     { return ADVISORY_SKIP_CODE; }
 int test_regression_ct_secret_is_zero_run()         { return ADVISORY_SKIP_CODE; }
+// P2-SEC-002 / P2-CT-RT-004: batch verify CSPRNG seed + adaptor nonce CT loop
+int test_regression_batch_csprng_seed_run()         { return ADVISORY_SKIP_CODE; }
+int test_regression_adaptor_ct_nonce_run()          { return ADVISORY_SKIP_CODE; }
 #endif // !SECP256K1_HAS_ADAPTOR
 
 // ============================================================================

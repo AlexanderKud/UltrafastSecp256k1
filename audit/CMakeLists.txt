@@ -4976,7 +4976,10 @@ endif()
 
 # SIZ-1..4: CT is_zero → is_zero_ct fixes in adaptor.cpp and taproot.cpp.
 # C++ API only — no shim/GPU dependency. advisory=false.
-if(SECP256K1_HAS_ADAPTOR)
+# Note: must use the CMake variable SECP256K1_BUILD_ADAPTOR (the option set in
+# src/cpu/CMakeLists.txt) rather than SECP256K1_HAS_ADAPTOR which is only a
+# compile-time C macro, not a CMake variable.
+if(SECP256K1_BUILD_ADAPTOR)
     add_executable(test_regression_ct_secret_is_zero_standalone
         test_regression_ct_secret_is_zero.cpp)
     audit_target_defaults(test_regression_ct_secret_is_zero_standalone)
@@ -5004,13 +5007,15 @@ target_sources(unified_audit_runner PRIVATE test_regression_rfc6979_ct_loop.cpp)
 # P2-SEC-002: batch verify CSPRNG-seeded weights regression guard.
 # C++ API only — no shim/GPU dependency. advisory=false (guarded by SECP256K1_HAS_ADAPTOR
 # in unified runner ALL_MODULES; standalone always builds when adaptor header present).
-if(SECP256K1_HAS_ADAPTOR)
+# Use CMake variable SECP256K1_BUILD_ADAPTOR (option) — SECP256K1_HAS_ADAPTOR is
+# only a compile-time C macro.
+if(SECP256K1_BUILD_ADAPTOR)
     target_sources(unified_audit_runner PRIVATE test_regression_batch_csprng_seed.cpp)
 endif()
 
 # P2-CT-RT-004: adaptor_nonce fixed 2-iteration CT loop regression guard.
 # C++ API only — no shim/GPU dependency. advisory=false.
-if(SECP256K1_HAS_ADAPTOR)
+if(SECP256K1_BUILD_ADAPTOR)
     add_executable(test_regression_adaptor_ct_nonce_standalone2
         test_regression_adaptor_ct_nonce.cpp)
     audit_target_defaults(test_regression_adaptor_ct_nonce_standalone2)
