@@ -67,8 +67,8 @@ extern "C" {
  * message.  Use it on the declaration in ufsecp.h to guide callers to the
  * replacement API without breaking the ABI.
  *
- * Example:
- *   UFSECP_DEPRECATED("Use ufsecp_foo_v2()") UFSECP_API ufsecp_error_t ufsecp_foo(...);
+ * Example (pseudo-code, not a real declaration):
+ *   UFSECP_DEPRECATED("Use <new_fn>()") UFSECP_API ufsecp_error_t <old_fn>(...);
  */
 #ifndef UFSECP_DEPRECATED
   #if defined(__cplusplus) && (__cplusplus >= 201402L)
