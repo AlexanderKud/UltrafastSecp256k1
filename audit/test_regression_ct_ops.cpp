@@ -401,23 +401,24 @@ static void test_sec002_adaptor_extract_ct() {
     CHECK(has_ct_cneg, "SEC-002-EXTRACT: schnorr_adaptor_extract uses ct::scalar_cneg");
     CHECK(has_is_zero_ct, "SEC-002-EXTRACT: schnorr_adaptor_extract uses is_zero_ct on result");
 
-    // Verify ecdsa_adaptor_extract also uses is_zero_ct (not is_zero)
-    // Find ecdsa_adaptor_extract body (after line containing ecdsa_adaptor_extract)
-    auto pos = src.find("ecdsa_adaptor_extract");
-    if (pos != std::string::npos) {
-        std::string body = src.substr(pos, 300);
-        bool no_bare_is_zero = (body.find("t.is_zero()") == std::string::npos);
-        CHECK(no_bare_is_zero, "SEC-002-EXTRACT: ecdsa_adaptor_extract uses is_zero_ct not is_zero");
-    }
+    // Verify ecdsa_adaptor_extract uses is_zero_ct on the recovered secret t.
+    // Positive assertion: the function body must contain the exact CT check
+    //   `if (t.is_zero_ct())`
+    // A substring search for `t.is_zero()` is unsafe — `hat.is_zero()` from
+    // `pre_sig.s_hat.is_zero()` matches it as a suffix.
+    bool ecdsa_t_is_zero_ct =
+        (src.find("if (t.is_zero_ct()) return {t, false};") != std::string::npos);
+    CHECK(ecdsa_t_is_zero_ct,
+          "SEC-002-EXTRACT: ecdsa_adaptor_extract uses is_zero_ct on recovered t");
 }
 
 // ---------------------------------------------------------------------------
 // Entry point
-// When compiled into unified_audit_runner, test_regression_ct_ops_2026_05_21.cpp
-// provides test_regression_ct_ops_run() (it supersedes this file's version).
-// This version only runs standalone.
+// Both this file and test_regression_ct_ops_2026_05_21.cpp are wired into
+// unified_audit_runner. This file provides `test_regression_ct_ops_run()`
+// (the v1 baseline). The 2026_05_21 file provides
+// `test_regression_ct_ops_v2_run()` (extended source-scan guards).
 // ---------------------------------------------------------------------------
-#ifndef UNIFIED_AUDIT_RUNNER
 int test_regression_ct_ops_run() {
     g_pass = 0;
     g_fail = 0;
@@ -450,4 +451,3 @@ int test_regression_ct_ops_run() {
 #ifdef STANDALONE_TEST
 int main() { return test_regression_ct_ops_run(); }
 #endif
-#endif // !UNIFIED_AUDIT_RUNNER

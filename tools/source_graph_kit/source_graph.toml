@@ -115,6 +115,18 @@ optional = true
 extensions = ["*.cmake", "CMakeLists.txt", "*.txt"]
 
 [[source_dirs]]
+label = "cpu_ltc"
+path = "../src/cpu/src/ltc"
+optional = true
+extensions = ["*.cpp", "*.cc", "*.c", "*.hpp", "*.hh", "*.h"]
+
+[[source_dirs]]
+label = "cpu_ltc_include"
+path = "../src/cpu/include/secp256k1/ltc"
+optional = true
+extensions = ["*.cpp", "*.cc", "*.c", "*.hpp", "*.hh", "*.h"]
+
+[[source_dirs]]
 label = "compat"
 path = "../compat"
 optional = true

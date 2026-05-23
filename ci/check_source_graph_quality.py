@@ -55,7 +55,7 @@ DIR_FLOORS: dict[str, int] = {
     "audit":  100,
     "compat":  10,
     "docs":    30,
-    "scripts": 3,   # only 3 scripts are git-tracked; rest are local-only
+    "scripts": 2,   # post script→ci/ migration: clean_local_artifacts.sh + sync_all_docs.py
 }
 
 # Symbols that must exist in the graph (checked against c_abi_functions,
