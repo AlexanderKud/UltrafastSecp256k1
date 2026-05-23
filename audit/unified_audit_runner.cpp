@@ -226,6 +226,7 @@ int test_regression_rfc6979_ct_loop_run();          // RFC6979-CT: fixed 2-itera
 int test_shim_recovery_and_noncefp_run();           // PASS3-001/002: recovery parse compat + noncefp callback (2026-05-21)
 int test_regression_shim_security_v9_run();         // SHIM-NEW-012/015: serialize + seckey NULL arg callbacks (2026-05-22)
 int test_regression_adaptor_blinded_nonce_run();    // SEC-NEW-001/002, P3-SHIM-STACK/BATCH-MEM: adaptor blinded nonce + BCH shim is_zero_ct + kStackMsgMax + shrink_to_fit (2026-05-23)
+int test_regression_musig_noncegen_extra_input_run(); // SHIM-NONCEGEN-001: secp256k1_musig_nonce_gen ignores extra_input32 — behavioral freeze (2026-05-23)
 
 // ============================================================================
 // Forward declarations -- Wycheproof & batch-randomness (Track I3, I6-3)
@@ -1393,6 +1394,11 @@ static const AuditModule ALL_MODULES[] = {
     // === 2026-05-22 SHIM-NEW-012/015: serialize + seckey NULL arg callbacks ===
     // advisory=true: depends on libsecp256k1 shim (returns ADVISORY_SKIP_CODE when absent).
     { "regression_shim_security_v9", "SHIM-NEW-012: serialize_compact/der NULL output/sig now fires illegal_callback matching libsecp256k1; SHIM-NEW-015: seckey_verify/negate/tweak_add/tweak_mul NULL seckey/tweak now fires illegal_callback (v9-012/015)", "shim_regression", test_regression_shim_security_v9_run, true },
+    // === 2026-05-23 SHIM-NONCEGEN-001: musig_nonce_gen extra_input32 behavioral freeze ===
+    // advisory=true: depends on libsecp256k1 shim (secp256k1_musig_nonce_gen ABI).
+    // Behavioral freeze: extra_input32 is silently ignored; pubnonce identical with NULL and
+    // non-NULL extra_input32. Documents known limitation until SHIM-NONCEGEN-001 is resolved.
+    { "regression_musig_noncegen_extra_input", "SHIM-NONCEGEN-001: secp256k1_musig_nonce_gen ignores extra_input32 — pubnonce identical with NULL vs non-NULL extra_input32 (NCI-1..3); source-scan marker + behavioral freeze; FAILS when SHIM-NONCEGEN-001 is fixed", "shim_regression", test_regression_musig_noncegen_extra_input_run, true },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);

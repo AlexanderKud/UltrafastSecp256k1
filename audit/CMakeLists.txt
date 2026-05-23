@@ -3290,6 +3290,24 @@ set_tests_properties(exploit_musig2_infinity_pubnonce PROPERTIES
     LABELS "audit;exploit;musig2;shim;infinity;pubnonce;p1_sec_003")
 endif()
 
+# -- SHIM-NONCEGEN-001: musig_nonce_gen extra_input32 behavioral freeze (NCI-1..3) --
+# advisory: documents that extra_input32 is silently ignored; behavioral freeze test.
+# SKIP_RETURN_CODE 77: when secp256k1_shim is absent the stub returns 77.
+if(TARGET secp256k1_shim)
+    add_executable(test_regression_musig_noncegen_extra_input_standalone
+        test_regression_musig_noncegen_extra_input.cpp)
+    audit_target_defaults(test_regression_musig_noncegen_extra_input_standalone)
+    target_link_libraries(test_regression_musig_noncegen_extra_input_standalone PRIVATE secp256k1_shim)
+    target_include_directories(test_regression_musig_noncegen_extra_input_standalone PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../compat/libsecp256k1_shim/include)
+    target_compile_definitions(test_regression_musig_noncegen_extra_input_standalone PRIVATE STANDALONE_TEST)
+    add_test(NAME regression_musig_noncegen_extra_input
+        COMMAND test_regression_musig_noncegen_extra_input_standalone)
+    set_tests_properties(regression_musig_noncegen_extra_input PROPERTIES
+        TIMEOUT 30 SKIP_RETURN_CODE 77
+        LABELS "audit;regression;shim;musig;noncegen;shim-noncegen-001")
+endif()
+
 # ===========================================================================
 # Cross-library differential test (vs bitcoin-core/libsecp256k1)
 # ===========================================================================
@@ -3975,6 +3993,8 @@ if(TARGET secp256k1_shim)
         test_regression_schnorr_varlen_ct_fixes.cpp
         # 2026-05-22 v9: SHIM-NEW-012/015: serialize + seckey NULL arg callbacks
         test_regression_shim_security_v9.cpp
+        # 2026-05-23 SHIM-NONCEGEN-001: musig_nonce_gen extra_input32 behavioral freeze
+        test_regression_musig_noncegen_extra_input.cpp
 )
     target_compile_definitions(unified_audit_runner PRIVATE SECP256K1_BUILD_COMPAT_SHIM)
     target_link_libraries(unified_audit_runner PRIVATE secp256k1_shim)

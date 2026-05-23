@@ -576,9 +576,12 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 - **Impact:** Callers relying on `extra_input32` for additional entropy get correct nonces
   (RFC 6979 / BIP-340 hedged) but without the extra input mixed in. For production Bitcoin
   Core usage (extra_input32 = NULL or ignored), there is no difference.
-- **Test:** TODO — differential test against libsecp256k1-zkp that verifies nonce bytes
-  differ when extra_input32 is non-NULL. No differential test currently exists — callers
-  should not rely on extra_input32 for entropy in this shim.
+- **Test:** `audit/test_regression_musig_noncegen_extra_input.cpp` — behavioral freeze test:
+  verifies that `extra_input32` is silently ignored (pubnonces are identical with NULL vs non-NULL
+  extra_input32, and identical for two distinct non-NULL extra_input32 values). Sub-tests NCI-1..3
+  also scan `shim_musig.cpp` for the `SHIM-NONCEGEN-001` marker. The test is `advisory=true` in
+  the unified runner (requires shim) and is designed to **fail** when SHIM-NONCEGEN-001 is fixed
+  (diverging pubnonces = correct signal to remove the advisory flag and promote to mandatory).
 
 ---
 

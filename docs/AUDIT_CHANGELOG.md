@@ -1,5 +1,13 @@
 # Audit Changelog
 
+## 2026-05-23 — Test: SHIM-NONCEGEN-001 extra_input32 behavioral freeze (P2-SHIM-02)
+
+- **`audit/test_regression_musig_noncegen_extra_input.cpp` (NEW)** — Behavioral freeze test for `SHIM-NONCEGEN-001`: documents that `secp256k1_musig_nonce_gen` silently ignores `extra_input32` (callers with NULL and non-NULL extra_input32 receive identical pubnonces). Sub-tests NCI-1..3: source-scan marker in `shim_musig.cpp`, NULL vs non-NULL extra_input32 pubnonce identity, two distinct non-NULL extra_input32 values pubnonce identity. Advisory=true (requires shim). Designed to FAIL when SHIM-NONCEGEN-001 is fixed.
+- **`audit/unified_audit_runner.cpp`** — forward declaration + `ALL_MODULES` entry in `shim_regression` section.
+- **`audit/shim_run_stubs_unified.cpp`** — advisory stub returning 77 when shim not linked.
+- **`audit/CMakeLists.txt`** — standalone CTest target `regression_musig_noncegen_extra_input` + source added to `if(TARGET secp256k1_shim)` unified runner block.
+- **`docs/SHIM_KNOWN_DIVERGENCES.md`** — SHIM-NONCEGEN-001 test field updated to reference the new test file.
+
 ## 2026-05-23 — Fix: SEC-NEW-001/002 + P3-SHIM-STACK + P3-BATCH-MEM
 
 - **`src/cpu/src/adaptor.cpp`** — `schnorr_adaptor_sign()`: `ct::generator_mul(k)` → `ct::generator_mul_blinded(k)`. Secret nonce `k` now uses the DPA-blinded generator multiply, matching the protection level of `ct_sign.cpp` (CT-004). Power/EM side-channels on the scalar ladder no longer expose `k` in a single trace. (SEC-NEW-001)

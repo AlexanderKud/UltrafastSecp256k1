@@ -38,3 +38,5 @@ int test_regression_ecdsa_verify_cache_consistency_run() { return ADVISORY_SKIP_
 // SHIM-NEW-012/015: serialize NULL callbacks + seckey NULL callbacks
 int test_regression_shim_security_v9_run()           { return ADVISORY_SKIP_CODE; }
 // test_regression_p2_ct_shim_fixes_run is always provided by test_regression_p2_ct_shim_fixes.cpp
+// SHIM-NONCEGEN-001: extra_input32 behavioral freeze (secp256k1_musig_nonce_gen ignores extra_input32)
+int test_regression_musig_noncegen_extra_input_run() { return ADVISORY_SKIP_CODE; }

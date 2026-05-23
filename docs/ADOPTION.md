@@ -58,6 +58,8 @@ Source: [Frigate README — Performance](https://github.com/sparrowwallet/frigat
 
 Public package traction provides a secondary adoption signal.
 
+> **Historical snapshot — 2026-03-29.** These figures were collected on that date and are not automatically updated. Current numbers may differ.
+
 **Snapshot date:** 2026-03-29
 
 | Surface | Package | Metric | Value |

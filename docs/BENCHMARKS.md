@@ -35,7 +35,7 @@ x86-64: GCC 14.2.0 · i5-14400F · 2.496 GHz · turbo unknown · core 0 pinned �
 
 > **CT Sign vs lib** = `bench_unified` CT-vs-CT section — production-equivalent comparison. Canonical data: `docs/bench_unified_2026-05-21_gcc14_x86-64.json`.
 > **ConnectBlock note:** +0.9–1.5% faster than libsecp256k1 **with Release+LTO**. Without LTO: ~0.5–1.0% **slower**. LTO is required for the positive result. See `docs/BITCOIN_CORE_BENCH_RESULTS.json`.
-> **Verify vs lib** = both variable-time paths on public data (fair comparison). **Warm-cache** = 64-key pool held in L1/L2. Cold-start (unique pubkey per call) numbers pending controlled measurement.
+> **Verify vs lib** = both variable-time paths on public data (fair comparison). **Warm-cache** = 64-key pool held in L1/L2 — Ultra: ShimSchnorrCache pre-warmed (lift_x + GLV tables amortized over many calls); libsecp: fresh GLV derivation every call (no caching). This comparison shows steady-state throughput after cache warmup, not first-encounter cost. Cold-start (unique pubkey per call, ShimSchnorrCache cold) numbers pending controlled measurement.
 > **FAST signing**: diagnostic-only variable-time vs libsecp CT comparison; **not** a production claim. Production-equivalent numbers are the **CT Sign vs lib** column above. For the diagnostic raw ratios, see `benchmarks/comparison/README.md` §BENCH-001 note.
 > **GPU rows:** kernel-only throughput at standard batch sizes — **excludes PCIe host↔device transfer overhead**. Wall-clock throughput (including transfer) is lower; measure end-to-end for production estimates.
 > For Bitcoin Core pipeline numbers (bench_bitcoin), see `docs/BITCOIN_CORE_BENCH_RESULTS.json`.
