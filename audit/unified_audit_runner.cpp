@@ -225,6 +225,7 @@ int test_regression_ct_secret_is_zero_run();        // SIZ-1..4: adaptor CT nonc
 int test_regression_rfc6979_ct_loop_run();          // RFC6979-CT: fixed 2-iteration CT nonce loop (2026-05-21)
 int test_shim_recovery_and_noncefp_run();           // PASS3-001/002: recovery parse compat + noncefp callback (2026-05-21)
 int test_regression_shim_security_v9_run();         // SHIM-NEW-012/015: serialize + seckey NULL arg callbacks (2026-05-22)
+int test_regression_adaptor_blinded_nonce_run();    // SEC-NEW-001/002, P3-SHIM-STACK/BATCH-MEM: adaptor blinded nonce + BCH shim is_zero_ct + kStackMsgMax + shrink_to_fit (2026-05-23)
 
 // ============================================================================
 // Forward declarations -- Wycheproof & batch-randomness (Track I3, I6-3)
@@ -674,7 +675,7 @@ int test_regression_gpu_ecdh_extended_ct_run(); // GEC-1..7: correctness guard a
 int test_regression_ecdsa_verify_cache_consistency_run(); // CVC-1..3: 1st-encounter strict parse + curve check
 
 // ============================================================================
-// Report section IDs -- 9 audit categories
+// Report section IDs -- 10 audit categories
 // ============================================================================
 //   1. math_invariants   -- Mathematical Invariants (Fp, Zn, Group Laws)
 //   2. ct_analysis       -- Constant-Time / Side-Channel Analysis
@@ -685,6 +686,7 @@ int test_regression_ecdsa_verify_cache_consistency_run(); // CVC-1..3: 1st-encou
 //   7. memory_safety     -- ABI & Memory Safety (sanitizer, zeroization)
 //   8. performance       -- Performance Validation & Regression
 //   9. exploit_poc       -- Exploit PoC Security Probes
+//  10. shim_regression   -- libsecp256k1 Shim Regression Guards
 // ============================================================================
 
 struct AuditModule {
@@ -721,6 +723,8 @@ static const SectionInfo SECTIONS[] = {
                            "Performance Validation & Regression" },
     { "exploit_poc",       "\xe1\x83\x94\xe1\x83\xa5\xe1\x83\xa1\xe1\x83\x9e\xe1\x83\x9a\xe1\x83\x9d\xe1\x83\x98\xe1\x83\xa2 PoC \xe1\x83\xa2\xe1\x83\x94\xe1\x83\xa1\xe1\x83\xa2\xe1\x83\x94\xe1\x83\x91\xe1\x83\x98",
                            "Exploit PoC Security Probes" },
+    { "shim_regression",   "Shim \xe1\x83\xa0\xe1\x83\x94\xe1\x83\x92\xe1\x83\xa0\xe1\x83\x94\xe1\x83\xa1\xe1\x83\x98\xe1\x83\x98\xe1\x83\xa1 \xe1\x83\x9d\xe1\x83\xae\xe1\x83\xa0\xe1\x83\x90\xe1\x83\x9b\xe1\x83\x93\xe1\x83\x94\xe1\x83\x91\xe1\x83\x98",
+                           "libsecp256k1 Shim Regression Guards" },
 };
 static constexpr int NUM_SECTIONS = sizeof(SECTIONS) / sizeof(SECTIONS[0]);
 
@@ -1319,6 +1323,9 @@ static const AuditModule ALL_MODULES[] = {
     // === 2026-05-21 source-scan guards (orphan file fixed 2026-05-22) ===
     // advisory=false: C++ API only, no shim/GPU dependency.
     { "regression_ct_ops_v2", "SEC-002/007/008/010,CT-004/005,SEC-002-EXTRACT: source-scan guards confirming CT fixes — ct::scalar_sub+cneg in schnorr_adaptor_extract, is_zero_ct on adaptor result, FROST lagrange mul, batch weight, adaptor sentinel, BIP-32 strict nonzero, MuSig2 blinded nonce, ecdsa_sign_verified CT call", "ct_analysis", test_regression_ct_ops_v2_run, false },
+    // === 2026-05-23 SEC-NEW-001/002, P3-SHIM-STACK, P3-BATCH-MEM ===
+    // advisory=false: source-scan + C++ adaptor round-trip; no shim/GPU dependency.
+    { "regression_adaptor_blinded_nonce", "SEC-NEW-001: adaptor.cpp generator_mul_blinded(k) DPA defence; SEC-NEW-002: BCH shim is_zero_ct on nonce k; P3-SHIM-STACK: kStackMsgMax 256->1024; P3-BATCH-MEM: batch vector shrink_to_fit -- source-scan + adaptor sign+adapt+verify round-trip", "ct_analysis", test_regression_adaptor_blinded_nonce_run, false },
     // === 2026-05-21 SEC-006 ===
     { "regression_bip324_privkey_lifetime", "SEC-006: Bip324Session privkey_ raw-byte window documented; complete_handshake erases after use (full store-Scalar fix tracked SEC-006)", "memory_safety", test_regression_bip324_privkey_lifetime_run, false },
     // === 2026-05-21 SHIM-010: ndata R-grind bounded termination ===

@@ -164,7 +164,7 @@ The BCH Schnorr scheme differs from BIP-340 (uses `SHA256(R.x || P_compressed ||
 scripts/bench_nodes/run_all.sh
 
 # Manual: Bitcoin Core
-cd bitcoin && cmake -B build -DUSE_ULTRAFAST_SECP256K1=ON
+cd bitcoin && cmake -B build -DSECP256K1_BACKEND=ultrafast
 cmake --build build --target bench_bitcoin
 ./build/src/bench/bench_bitcoin -filter="Sign|Verify"
 

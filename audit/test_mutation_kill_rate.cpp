@@ -67,11 +67,15 @@ static std::string detect_build_dir() {
 
 // Find the script relative to this executable (or fallback paths)
 static std::string find_script() {
-    // Try relative paths from the common build output locations
+    // Try relative paths from the common build output locations.
+    // Note: scripts/ was renamed to ci/ — both old and new paths are listed.
     static const char* kCandidates[] = {
-        "../scripts/mutation_kill_rate.py",     // from build/audit/
-        "scripts/mutation_kill_rate.py",        // from repo root
-        "../../scripts/mutation_kill_rate.py",  // from deep build dir
+        "../ci/mutation_kill_rate.py",          // from build/audit/ (current location)
+        "ci/mutation_kill_rate.py",             // from repo root (current location)
+        "../../ci/mutation_kill_rate.py",       // from deep build dir (current location)
+        "../scripts/mutation_kill_rate.py",     // legacy: from build/audit/
+        "scripts/mutation_kill_rate.py",        // legacy: from repo root
+        "../../scripts/mutation_kill_rate.py",  // legacy: from deep build dir
         nullptr
     };
     for (int i = 0; kCandidates[i]; ++i) {

@@ -90,6 +90,7 @@ while IFS= read -r mod_id; do
     # Some advisory tests have non-test_ prefix; try that too.
     [ -f "${bin}" ] || bin="${BUILD}/audit/${mod_id}_standalone"
     [ -f "${bin}" ] || bin="${BUILD}/audit/test_exploit_${mod_id}_standalone"
+    [ -f "${bin}" ] || bin="${BUILD}/audit/test_regression_${mod_id}_standalone"
     if [ ! -f "${bin}" ]; then
         MISSING=$((MISSING + 1))
         continue
@@ -131,6 +132,7 @@ if [ "${MISSING}" -gt 0 ]; then
         bin="${BUILD}/audit/test_${mod_id}_standalone"
         [ -f "${bin}" ] || bin="${BUILD}/audit/${mod_id}_standalone"
         [ -f "${bin}" ] || bin="${BUILD}/audit/test_exploit_${mod_id}_standalone"
+        [ -f "${bin}" ] || bin="${BUILD}/audit/test_regression_${mod_id}_standalone"
         [ -f "${bin}" ] || MISSING_IDS+=("${mod_id}")
     done <<< "${ADVISORY_IDS}"
     echo "  NOTE ${MISSING} advisory module(s) not found as binaries — Rule 16 NOT verified for these:"

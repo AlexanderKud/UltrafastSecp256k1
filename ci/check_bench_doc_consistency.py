@@ -33,6 +33,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import List
 
 ROOT = Path(__file__).resolve().parent.parent
 CANONICAL_NUMBERS = ROOT / "docs" / "canonical_numbers.json"
@@ -410,8 +411,8 @@ def check_canonical_vs_bench_json(canon: dict, verbose: bool) -> list[str]:
     canon_ecdsa_ratio = ct_gcc.get("ecdsa_ratio")
     canon_schnorr_ratio = ct_gcc.get("schnorr_ratio")
 
-    # Tolerance: 10% — ratios in canonical_numbers.json are rounded to 2 dp
-    TOLERANCE = 0.10
+    # Tolerance: 3% — tightened from 10% to catch real drift early
+    TOLERANCE = 0.03
 
     if ultra_ct_ecdsa_ns and libsecp_ecdsa_ns and ultra_ct_ecdsa_ns > 0:
         bench_ecdsa_ratio = libsecp_ecdsa_ns / ultra_ct_ecdsa_ns
@@ -577,6 +578,35 @@ def check_required_refs(verbose: bool) -> list[str]:
     return violations
 
 
+def build_reviewer_docs_list() -> List[str]:
+    """Return the merged list of reviewer docs: hardcoded REVIEWER_DOCS plus any
+    docs/*.md and README.md discovered automatically at runtime.
+
+    Auto-discovery ensures new reviewer-facing docs added to docs/ are scanned
+    for banned patterns without requiring a manual update to REVIEWER_DOCS.
+    The hardcoded list takes precedence (de-duplication by relative path).
+    """
+    known: set[str] = set(REVIEWER_DOCS)
+    discovered: List[str] = list(REVIEWER_DOCS)
+
+    # Auto-discover all *.md files in docs/
+    for md_path in sorted((ROOT / "docs").glob("*.md")):
+        rel = str(md_path.relative_to(ROOT))
+        if rel not in known:
+            known.add(rel)
+            discovered.append(rel)
+
+    # Auto-discover README.md at repo root
+    root_readme = ROOT / "README.md"
+    if root_readme.exists():
+        rel = "README.md"
+        if rel not in known:
+            known.add(rel)
+            discovered.append(rel)
+
+    return discovered
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verbose", "-v", action="store_true", help="Show match context")
@@ -590,7 +620,8 @@ def main() -> int:
     all_violations: list[str] = []
 
     # ── Check banned patterns ─────────────────────────────────────────────────
-    for rel in REVIEWER_DOCS:
+    effective_docs = build_reviewer_docs_list()
+    for rel in effective_docs:
         doc = ROOT / rel
         if not doc.exists():
             continue
@@ -658,7 +689,7 @@ def main() -> int:
         )
         return 1
 
-    print(f"check_bench_doc_consistency: OK ({len(REVIEWER_DOCS)} docs, {len(BANNED)} banned patterns, {len(REQUIRED_REFS)} required refs)")
+    print(f"check_bench_doc_consistency: OK ({len(effective_docs)} docs, {len(BANNED)} banned patterns, {len(REQUIRED_REFS)} required refs)")
     return 0
 
 

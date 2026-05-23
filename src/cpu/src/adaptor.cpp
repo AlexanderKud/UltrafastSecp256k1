@@ -138,8 +138,8 @@ schnorr_adaptor_sign(const Scalar& private_key,
     // Generate nonce k
     Scalar k = adaptor_nonce(sk, msg.data(), 32, adaptor_point, aux_rand.data(), 32);
 
-    // R^ = k * G (the pre-nonce, before adapting) — CT: k is secret
-    Point R_hat = ct::generator_mul(k);
+    // R^ = k * G (the pre-nonce, before adapting) — CT: k is secret, use blinded for DPA defence
+    Point R_hat = ct::generator_mul_blinded(k);
 
     // R = R^ + T (the final nonce point after adapting)
     Point R = R_hat.add(adaptor_point);

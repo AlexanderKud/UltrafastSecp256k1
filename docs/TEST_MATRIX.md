@@ -104,13 +104,13 @@ lags behind the generated validation surfaces, prefer the generated counts.
 |------|---------|-------|
 | `opencl/tests/test_opencl.cpp` | OpenCL | Kernel correctness |
 | `opencl/tests/opencl_extended_test.cpp` | OpenCL | Extended operations |
-| `opencl/src/opencl_audit_runner.cpp` | OpenCL | Unified GPU audit ( 395 modules, 8 sections) |
+| `opencl/src/opencl_audit_runner.cpp` | OpenCL | Unified GPU audit ( 396 modules, 8 sections) |
 | `metal/tests/test_metal_host.cpp` | Metal | Metal shader correctness |
-| `metal/src/metal_audit_runner.mm` | Metal | `secp256k1_metal_audit`: unified GPU audit ( 395 modules, 8 sections) |
+| `metal/src/metal_audit_runner.mm` | Metal | `secp256k1_metal_audit`: unified GPU audit ( 396 modules, 8 sections) |
 | `src/cuda/src/test_ct_smoke.cu` | CUDA | CT smoke tests incl. ZK knowledge + DLEQ prove/verify (9 tests) |
 | `src/cuda/src/gpu_ct_leakage_probe.cu` | CUDA | Fixed-vs-random device-cycle Welch t-test for CT generator/signing kernels with JSON evidence output |
 | `src/cuda/src/test_suite.cu` | CUDA | `cuda_selftest`: kernel correctness, field + scalar + point ops |
-| `src/cuda/src/gpu_audit_runner.cu` | CUDA | `gpu_audit`: unified GPU audit ( 395 modules, 8 sections) |
+| `src/cuda/src/gpu_audit_runner.cu` | CUDA | `gpu_audit`: unified GPU audit ( 396 modules, 8 sections) |
 | `metal/app/metal_test.mm` | Metal | `secp256k1_metal_test`: shader correctness, compute pipeline |
 | `metal/app/bench_metal.mm` | Metal | `secp256k1_metal_bench_full`: comprehensive Metal benchmark |
 | `compat/libsecp256k1_shim/tests/shim_test.cpp` | CPU | `secp256k1_shim_test`: libsecp256k1 API compatibility shim |
@@ -855,6 +855,7 @@ ctest --test-dir build-audit -R "exploit" --output-on-failure
 | `regression_rfc6979_ct_loop` | `audit/test_regression_rfc6979_ct_loop.cpp` | RFC6979-CT: rfc6979_nonce fixed 2-iteration CT loop + ct::scalar_select; 200 sign+verify round-trips, determinism, nonce uniqueness |
 | `regression_batch_csprng_seed` | `audit/test_regression_batch_csprng_seed.cpp` | P2-SEC-002: schnorr_batch_verify CSPRNG-seeded weights; BWC-1..4: 128-sig large-batch correct, fail-closed, soundness agreement, ECDSA path unchanged |
 | `regression_adaptor_ct_nonce` | `audit/test_regression_adaptor_ct_nonce.cpp` | P2-CT-RT-004: adaptor_nonce/ecdsa_adaptor_binding fixed 2-iter CT select; ACN-1..5: Schnorr/ECDSA adaptor round-trips, adapt+extract, determinism, nonce uniqueness |
+| `regression_adaptor_blinded_nonce` | `audit/test_regression_adaptor_blinded_nonce.cpp` | SEC-NEW-001/002 + P3-SHIM-STACK + P3-BATCH-MEM: schnorr_adaptor_sign ct::generator_mul_blinded(k) DPA defence, shim_schnorr_bch is_zero_ct on nonce, stack msg buffer 256→1024, batch vector shrink_to_fit |
 | `regression_nonce_candidate_erase` | `audit/test_regression_nonce_candidate_erase.cpp` | P2-CT-001/002/003/007: cand1+cand2 secure_erase after ct::scalar_select in rfc6979_nonce, rfc6979_nonce_hedged, musig2_nonce_gen (k1+k2), derive_scalar_from_hash; NCER-1..5: 200 ECDSA roundtrips, determinism, uniqueness, 50 hedged roundtrips, source scan |
 | `regression_shim_null_callback` | `audit/test_regression_shim_null_callback.cpp` | SHIM-A01/A02/A03/A07/A08: secp256k1 shim fires illegal_callback on NULL args matching libsecp256k1 ARG_CHECK; SNC-1..5: normalize(NULL sigin), pubkey_sort(NULL ctx), tagged_sha256(NULL msg+len=0 OK), pubkey_negate(NULL pubkey), tagged_sha256(NULL msg+len>0) |
 | `exploit_frost_absent_signer_id` | `audit/test_exploit_frost_absent_signer_id.cpp` | P1-SEC-001: frost_sign returns zero partial sig when caller ID absent from nonce_commitments signing set (FSI-1..3) |

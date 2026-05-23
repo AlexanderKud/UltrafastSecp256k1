@@ -1,5 +1,14 @@
 # Audit Changelog
 
+## 2026-05-23 — Fix: SEC-NEW-001/002 + P3-SHIM-STACK + P3-BATCH-MEM
+
+- **`src/cpu/src/adaptor.cpp`** — `schnorr_adaptor_sign()`: `ct::generator_mul(k)` → `ct::generator_mul_blinded(k)`. Secret nonce `k` now uses the DPA-blinded generator multiply, matching the protection level of `ct_sign.cpp` (CT-004). Power/EM side-channels on the scalar ladder no longer expose `k` in a single trace. (SEC-NEW-001)
+- **`compat/libsecp256k1_bchn_shim/src/shim_schnorr_bch.cpp`** — `secp256k1_schnorr_sign()`: `k.is_zero()` → `k.is_zero_ct()` on the RFC6979 nonce after generation. Removes data-dependent branch on a secret scalar. (SEC-NEW-002)
+- **`compat/libsecp256k1_shim/src/shim_schnorr.cpp`** — `kStackMsgMax` raised from 256 to 1024. Messages 257–1024 bytes (e.g. Lightning invoice payloads, some wallet protocols) no longer trigger a heap allocation in `secp256k1_schnorrsig_sign_custom`; stack path now covers the practical range of message sizes. (P3-SHIM-STACK)
+- **`compat/libsecp256k1_shim/src/shim_batch_verify.cpp`** — Added `batch.shrink_to_fit()` before returning in both `secp256k1_schnorrsig_verify_batch` and `secp256k1_ecdsa_verify_batch`. Thread-local vectors previously retained their peak capacity indefinitely after a large batch, causing unbounded per-thread memory growth on threads that see occasional large batches followed by small ones. (P3-BATCH-MEM)
+- **`audit/test_mutation_kill_rate.cpp`** — `find_script()` candidate list updated to search `ci/` paths first (`mutation_kill_rate.py` was moved from `scripts/` to `ci/`). Legacy `scripts/` paths kept as fallback.
+- **`audit/test_regression_adaptor_blinded_nonce.cpp` (NEW)** — Regression test covering all four fixes: source-scan guards for `generator_mul_blinded(k)`, `is_zero_ct()`, `kStackMsgMax=1024`, `shrink_to_fit()`, plus a full schnorr adaptor sign+adapt+verify functional round-trip. Wired into `unified_audit_runner.cpp` (`ct_analysis` section, `advisory=false`) and `audit/CMakeLists.txt`.
+
 ## 2026-05-22 — Fix: TASK-006 Metal ECDH constant-time port (RED-001 / P1-SEC-001)
 
 - **`src/metal/shaders/secp256k1_ecdh.h`** — added the missing CT helper
@@ -700,7 +709,9 @@ evidence upgrades, and changes to what the repository can honestly claim.
 
 ### Track C — CAAS/CI
 - **run_fast_gates.sh**: mandatory gates now FAIL on rc=77 (was SKIP); advisory gates unchanged; new `check_advisory_skip_returns.sh` gate added
-- **check_bench_doc_consistency.py**: added `BENCH-ARCHIVE-START/END` block exclusion so archived Clang-19 tables don't cause false-positive CI failures; added FAST-path ratio ban patterns (2.45×/2.34×/pubkey_create 2.2×)
+<!-- BENCH-ARCHIVE-START -->
+- **check_bench_doc_consistency.py**: added `BENCH-ARCHIVE-START/END` block exclusion so archived Clang-19 tables don't cause false-positive CI failures; added FAST-path ratio ban patterns (ECDSA-sign 2.45x / Schnorr-sign 2.34x / pubkey-create VT ratio 2.2x — all banned as non-production-equivalent)
+<!-- BENCH-ARCHIVE-END -->
 
 ### Track D — Test Quality
 - **test_batch_add_affine**: replaced `check(true, "no crash")` with real n=1 correctness + state-corruption assertions

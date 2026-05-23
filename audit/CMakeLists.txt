@@ -5002,6 +5002,18 @@ set_tests_properties(regression_ct_ops_v2 PROPERTIES TIMEOUT 60
     LABELS "audit;regression;ct;security;sec-002;sec-007;sec-008;ct-004;ct-005;source-scan")
 target_sources(unified_audit_runner PRIVATE test_regression_ct_ops_2026_05_21.cpp)
 
+# SEC-NEW-001/002, P3-SHIM-STACK, P3-BATCH-MEM (2026-05-23)
+# advisory=false: source-scan + C++ adaptor round-trip, no shim/GPU dependency.
+add_executable(test_regression_adaptor_blinded_nonce_standalone
+    test_regression_adaptor_blinded_nonce.cpp)
+audit_target_defaults(test_regression_adaptor_blinded_nonce_standalone)
+target_compile_definitions(test_regression_adaptor_blinded_nonce_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_adaptor_blinded_nonce
+    COMMAND test_regression_adaptor_blinded_nonce_standalone)
+set_tests_properties(regression_adaptor_blinded_nonce PROPERTIES TIMEOUT 30
+    LABELS "audit;regression;ct;security;sec-new-001;sec-new-002;source-scan")
+target_sources(unified_audit_runner PRIVATE test_regression_adaptor_blinded_nonce.cpp)
+
 # SEC-006: BIP-324 privkey_ raw-byte lifetime window (SEC-006)
 # Uses C++ API (Bip324Session) only — no shim/GPU dependency. advisory=false.
 add_executable(test_regression_bip324_privkey_lifetime_standalone

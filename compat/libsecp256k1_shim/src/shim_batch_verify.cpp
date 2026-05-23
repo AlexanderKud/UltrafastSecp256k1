@@ -107,7 +107,9 @@ int secp256k1_schnorrsig_verify_batch(
         batch.push_back(e);
     }
 
-    return secp256k1::schnorr_batch_verify(batch) ? 1 : 0;
+    int result = secp256k1::schnorr_batch_verify(batch) ? 1 : 0;
+    batch.shrink_to_fit();  // Release capacity after large batches to avoid indefinite retention
+    return result;
 }
 
 int secp256k1_ecdsa_verify_batch(
@@ -186,7 +188,9 @@ int secp256k1_ecdsa_verify_batch(
         batch.push_back(e);
     }
 
-    return secp256k1::ecdsa_batch_verify(batch) ? 1 : 0;
+    int result = secp256k1::ecdsa_batch_verify(batch) ? 1 : 0;
+    batch.shrink_to_fit();  // Release capacity after large batches to avoid indefinite retention
+    return result;
 }
 
 } // extern "C"

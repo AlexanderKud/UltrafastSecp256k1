@@ -306,7 +306,7 @@ int secp256k1_schnorrsig_sign_custom(
 
     // k' = H_BIP0340/nonce(t || P_x || msg)
     // PERF-001: use stack buffer for common message sizes (≤256 bytes); heap only for larger.
-    constexpr std::size_t kStackMsgMax = 256;
+    constexpr std::size_t kStackMsgMax = 1024;
     std::uint8_t nonce_stack[64 + kStackMsgMax];
     std::unique_ptr<std::uint8_t[]> nonce_heap;
     std::uint8_t* nonce_input = (msglen <= kStackMsgMax)

@@ -99,7 +99,7 @@ int secp256k1_schnorr_sign(
 
         // Nonce via RFC6979 (same path as ECDSA)
         auto k = secp256k1::rfc6979_nonce(d, msg);
-        if (k.is_zero()) {
+        if (k.is_zero_ct()) {
             secp256k1::detail::secure_erase(kb.data(), 32);
             secp256k1::detail::secure_erase(&d, sizeof(d));
             return 0;

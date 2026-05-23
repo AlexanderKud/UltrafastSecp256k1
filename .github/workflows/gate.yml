@@ -143,10 +143,12 @@ jobs:
           CG="${{ needs.caas-security.result }}"
           BS="${{ needs.bindings-smoke.result }}"
           GW="${{ needs.gpu-wasm-smoke.result }}"
+          SG="${{ needs.shim-gate.result }}"
 
           FAILED=0
           for label_result in "fast-gates:$FG" "caas-security:$CG" \
-                              "bindings-smoke:$BS" "gpu-wasm-smoke:$GW"; do
+                              "bindings-smoke:$BS" "gpu-wasm-smoke:$GW" \
+                              "shim-gate:$SG"; do
             label="${label_result%%:*}"
             result="${label_result##*:}"
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
@@ -304,7 +306,17 @@ jobs:
         if: always()
         run: |
           python3 ci/security_autonomy_check.py --json -o caas_autonomy.json; rc=$?
-          [ $rc -eq 77 ] && { echo "::notice::security_autonomy advisory-skip (exit 77 — GPU/infrastructure absent; score not verifiable on this runner)"; exit 0; } || exit $rc
+          if [ $rc -eq 77 ]; then
+            # rc=77 (advisory-skip) is only benign when audit_gate passed.
+            # If audit_gate failed, a 77 here could mask a real regression — treat as failure.
+            if [ "${{ steps.audit_gate.outcome }}" != "success" ]; then
+              echo "::error::security_autonomy returned advisory-skip (77) but audit_gate did not pass — treating as failure to prevent masking regressions"
+              exit 1
+            fi
+            echo "::notice::security_autonomy advisory-skip (exit 77 — GPU/infrastructure absent; score not verifiable on this runner)"
+            exit 0
+          fi
+          exit $rc
 
       - name: Annotate autonomy report on failed audit gate (CI-015)
         # CI-015 fix: if audit_gate failed, the autonomy.json may still show 100/100
