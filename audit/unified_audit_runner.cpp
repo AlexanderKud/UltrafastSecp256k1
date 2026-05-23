@@ -227,6 +227,9 @@ int test_shim_recovery_and_noncefp_run();           // PASS3-001/002: recovery p
 int test_regression_shim_security_v9_run();         // SHIM-NEW-012/015: serialize + seckey NULL arg callbacks (2026-05-22)
 int test_regression_adaptor_blinded_nonce_run();    // SEC-NEW-001/002, P3-SHIM-STACK/BATCH-MEM: adaptor blinded nonce + BCH shim is_zero_ct + kStackMsgMax + shrink_to_fit (2026-05-23)
 int test_regression_musig_noncegen_extra_input_run(); // SHIM-NONCEGEN-001: secp256k1_musig_nonce_gen ignores extra_input32 — behavioral freeze (2026-05-23)
+int test_regression_adaptor_ct_secret_extract_run(); // SEC-001/CT-001: adaptor extract uses ct::scalar_mul + erases s_inv (2026-05-23)
+int test_regression_ecdh_xy64_erase_run();           // SEC-002: shim_ecdh xy64 erased after hashfp call (2026-05-23)
+int test_regression_musig_xonly_zero_tweak_run();    // SHIM-001: xonly_tweak_add accepts zero tweak (2026-05-23)
 
 // ============================================================================
 // Forward declarations -- Wycheproof & batch-randomness (Track I3, I6-3)
@@ -1399,6 +1402,15 @@ static const AuditModule ALL_MODULES[] = {
     // Behavioral freeze: extra_input32 is silently ignored; pubnonce identical with NULL and
     // non-NULL extra_input32. Documents known limitation until SHIM-NONCEGEN-001 is resolved.
     { "regression_musig_noncegen_extra_input", "SHIM-NONCEGEN-001: secp256k1_musig_nonce_gen ignores extra_input32 — pubnonce identical with NULL vs non-NULL extra_input32 (NCI-1..3); source-scan marker + behavioral freeze; FAILS when SHIM-NONCEGEN-001 is fixed", "shim_regression", test_regression_musig_noncegen_extra_input_run, true },
+    // === 2026-05-23 SEC-001/CT-001: adaptor extract CT scalar mul + s_inv erase ===
+    // advisory=false: ufsecp ABI always available.
+    { "regression_adaptor_ct_secret_extract", "SEC-001/CT-001: ecdsa_adaptor_extract now uses ct::scalar_mul(s_hat, s_inv) + secure_erase(s_inv) — correctness verified via round-trip sign/adapt/extract (ACE-1..4)", "ct_analysis", test_regression_adaptor_ct_secret_extract_run, false },
+    // === 2026-05-23 SEC-002: shim_ecdh xy64 secure_erase ===
+    // advisory=true: depends on libsecp256k1 shim (secp256k1_ecdh ABI).
+    { "regression_ecdh_xy64_erase", "SEC-002: secp256k1_ecdh() erases xy64 shared-secret buffer after hashfp call — correctness verified (both parties same output, X-coord match, non-zero output, null-ctx rejection) (EXY-1..4)", "shim_regression", test_regression_ecdh_xy64_erase_run, true },
+    // === 2026-05-23 SHIM-001: musig xonly_tweak_add accepts zero tweak ===
+    // advisory=true: depends on libsecp256k1 shim (secp256k1_musig.h).
+    { "regression_musig_xonly_zero_tweak", "SHIM-001: secp256k1_musig_pubkey_xonly_tweak_add now accepts zero tweak32 (parse_bytes_strict, not _nonzero) matching libsecp256k1 behaviour (MXT-1..3)", "shim_regression", test_regression_musig_xonly_zero_tweak_run, true },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);

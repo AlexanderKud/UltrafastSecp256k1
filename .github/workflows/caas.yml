@@ -305,6 +305,14 @@ jobs:
           # advisory-skip into a hard failure and blocking the pipeline.
           if [ $rc -eq 77 ]; then
             echo "::notice::security_autonomy advisory-skip (exit 77 — GPU/infrastructure absent)"
+            # CI-006: cross-check audit_gate outcome before accepting advisory skip.
+            # security_autonomy runs after audit_gate (needs: [audit_gate]); if audit_gate
+            # failed, an exit-77 skip here would mask the failure as a spurious "pass".
+            audit_gate_result="${{ needs.audit_gate.result }}"
+            if [ "$audit_gate_result" != "success" ]; then
+              echo "::error::security_autonomy exit-77 skip rejected: audit_gate outcome is '$audit_gate_result' (not success)"
+              exit 1
+            fi
             if [ ! -f caas_autonomy.json ]; then
               echo '{"autonomy_score":0,"autonomy_ready":false,"advisory_skip":true,"reason":"exit 77 — infrastructure absent"}' > caas_autonomy.json
             fi

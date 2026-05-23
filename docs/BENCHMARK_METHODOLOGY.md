@@ -161,18 +161,18 @@ Benchmarks are collected on:
 
 ## Reference Numbers
 
-Current baseline: see [`docs/bench_unified_2026-05-11_gcc14_x86-64.json`](bench_unified_2026-05-11_gcc14_x86-64.json)
+Current baseline: see [`docs/bench_unified_2026-05-21_gcc14_x86-64_v2.json`](bench_unified_2026-05-21_gcc14_x86-64_v2.json)
 for canonical measurements (GCC 14.2.0, Release+LTO, Intel i5-14400F, turbo off,
 taskset -c 0, nice -20, 11 passes IQR).
 
-Key values (GCC 14.2.0, Release+LTO):
+Key values (GCC 14.2.0, Release+LTO, from `bench_unified_2026-05-21_gcc14_x86-64_v2.json`):
 
 | Operation | Time | Notes |
 |-----------|------|-------|
-| CT ECDSA sign | ~24.1 µs | `ct::ecdsa_sign` — constant-time production path |
-| CT Schnorr sign | ~23.7 µs | `ct::schnorr_sign` — constant-time production path |
-| ECDSA verify | ~38.4 µs | variable-time (correct for public data) |
-| Schnorr verify | ~35.1 µs | variable-time (correct for public data) |
+| CT ECDSA sign | ~14.6 µs | `ct::ecdsa_sign` — constant-time production path |
+| CT Schnorr sign | ~12.4 µs | `ct::schnorr_sign` — constant-time production path |
+| ECDSA verify | ~23.0 µs | variable-time (correct for public data) |
+| Schnorr verify | ~23.3 µs | variable-time, cached x-only (correct for public data) |
 
 These serve as the alert baseline. Any commit causing >100% regression on a tracked
 metric is flagged (200% threshold accounts for shared-runner noise).

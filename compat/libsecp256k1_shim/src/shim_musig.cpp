@@ -420,8 +420,10 @@ int secp256k1_musig_pubkey_xonly_tweak_add(
         e->ctx.Q = e->ctx.Q.negate();
         e->ctx.Q_negated = !e->ctx.Q_negated;
     }
+    // SHIM-001 fix: parse_bytes_strict (not nonzero) — tweak=0 is valid per libsecp256k1
+    // (result: Q unchanged, i.e. adding the identity). Matches ec_tweak_add behaviour.
     Scalar t;
-    if (!Scalar::parse_bytes_strict_nonzero(tweak32, t)) return 0;
+    if (!Scalar::parse_bytes_strict(tweak32, t)) return 0;
     Point tG = secp256k1::fast::scalar_mul_generator(t);
     e->ctx.Q = e->ctx.Q.add(tG);
     if (e->ctx.Q.is_infinity()) return 0;

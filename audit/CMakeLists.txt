@@ -5209,6 +5209,82 @@ set_tests_properties(regression_gpu_ecdh_extended_ct PROPERTIES TIMEOUT 30
     LABELS "audit;regression;ct;ecdh;gpu;security;p1-sec-001")
 target_sources(unified_audit_runner PRIVATE test_regression_gpu_ecdh_extended_ct.cpp)
 
+# SHIM-NEW-012/015: serialize NULL output + seckey NULL arg illegal_callback (2026-05-22)
+# advisory=true in unified runner; uses #if __has_include to skip gracefully when absent.
+add_executable(test_regression_shim_security_v9_standalone
+    test_regression_shim_security_v9.cpp)
+audit_target_defaults(test_regression_shim_security_v9_standalone)
+target_compile_definitions(test_regression_shim_security_v9_standalone PRIVATE STANDALONE_TEST)
+if(TARGET secp256k1_shim)
+    target_link_libraries(test_regression_shim_security_v9_standalone PRIVATE secp256k1_shim)
+endif()
+add_test(NAME regression_shim_security_v9
+    COMMAND test_regression_shim_security_v9_standalone)
+set_tests_properties(regression_shim_security_v9 PROPERTIES TIMEOUT 30
+    SKIP_RETURN_CODE 77
+    LABELS "audit;regression;shim;security;shim-new-012;shim-new-015")
+target_sources(unified_audit_runner PRIVATE test_regression_shim_security_v9.cpp)
+
+# SHIM-NONCEGEN-001: musig_nonce_gen extra_input32 behavioral freeze (2026-05-23)
+# advisory=true; records known limitation. Returns ADVISORY_SKIP_CODE when shim absent.
+add_executable(test_regression_musig_noncegen_extra_input_standalone
+    test_regression_musig_noncegen_extra_input.cpp)
+audit_target_defaults(test_regression_musig_noncegen_extra_input_standalone)
+target_compile_definitions(test_regression_musig_noncegen_extra_input_standalone PRIVATE STANDALONE_TEST)
+if(TARGET secp256k1_shim)
+    target_link_libraries(test_regression_musig_noncegen_extra_input_standalone PRIVATE secp256k1_shim)
+endif()
+add_test(NAME regression_musig_noncegen_extra_input
+    COMMAND test_regression_musig_noncegen_extra_input_standalone)
+set_tests_properties(regression_musig_noncegen_extra_input PROPERTIES TIMEOUT 30
+    SKIP_RETURN_CODE 77
+    LABELS "audit;regression;shim;musig;nonce;shim-noncegen-001")
+target_sources(unified_audit_runner PRIVATE test_regression_musig_noncegen_extra_input.cpp)
+
+# SEC-001/CT-001: adaptor extract CT scalar mul + s_inv erase (2026-05-23)
+# advisory=false: ufsecp ABI + C++ adaptor API always available.
+add_executable(test_regression_adaptor_ct_secret_extract_standalone
+    test_regression_adaptor_ct_secret_extract.cpp)
+audit_target_defaults(test_regression_adaptor_ct_secret_extract_standalone)
+target_compile_definitions(test_regression_adaptor_ct_secret_extract_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_adaptor_ct_secret_extract
+    COMMAND test_regression_adaptor_ct_secret_extract_standalone)
+set_tests_properties(regression_adaptor_ct_secret_extract PROPERTIES TIMEOUT 30
+    LABELS "audit;regression;ct;adaptor;security;sec-001;ct-001")
+target_sources(unified_audit_runner PRIVATE test_regression_adaptor_ct_secret_extract.cpp)
+
+# SEC-002: shim_ecdh xy64 secure_erase correctness (2026-05-23)
+# advisory=true: depends on secp256k1_ecdh shim.
+add_executable(test_regression_ecdh_xy64_erase_standalone
+    test_regression_ecdh_xy64_erase.cpp)
+audit_target_defaults(test_regression_ecdh_xy64_erase_standalone)
+target_compile_definitions(test_regression_ecdh_xy64_erase_standalone PRIVATE STANDALONE_TEST)
+if(TARGET secp256k1_shim)
+    target_link_libraries(test_regression_ecdh_xy64_erase_standalone PRIVATE secp256k1_shim)
+endif()
+add_test(NAME regression_ecdh_xy64_erase
+    COMMAND test_regression_ecdh_xy64_erase_standalone)
+set_tests_properties(regression_ecdh_xy64_erase PROPERTIES TIMEOUT 30
+    SKIP_RETURN_CODE 77
+    LABELS "audit;regression;shim;ecdh;memory_safety;sec-002")
+target_sources(unified_audit_runner PRIVATE test_regression_ecdh_xy64_erase.cpp)
+
+# SHIM-001: musig xonly_tweak_add accepts zero tweak (2026-05-23)
+# advisory=true: depends on secp256k1_musig shim.
+add_executable(test_regression_musig_xonly_zero_tweak_standalone
+    test_regression_musig_xonly_zero_tweak.cpp)
+audit_target_defaults(test_regression_musig_xonly_zero_tweak_standalone)
+target_compile_definitions(test_regression_musig_xonly_zero_tweak_standalone PRIVATE STANDALONE_TEST)
+if(TARGET secp256k1_shim)
+    target_link_libraries(test_regression_musig_xonly_zero_tweak_standalone PRIVATE secp256k1_shim)
+endif()
+add_test(NAME regression_musig_xonly_zero_tweak
+    COMMAND test_regression_musig_xonly_zero_tweak_standalone)
+set_tests_properties(regression_musig_xonly_zero_tweak PROPERTIES TIMEOUT 30
+    SKIP_RETURN_CODE 77
+    LABELS "audit;regression;shim;musig;tweak;shim-001")
+target_sources(unified_audit_runner PRIVATE test_regression_musig_xonly_zero_tweak.cpp)
+
 # ---------------------------------------------------------------------------
 # Per-file -Wno-deprecated-declarations suppression for tests that
 # INTENTIONALLY exercise ufsecp_musig2_partial_sign (v1) to verify the ABI

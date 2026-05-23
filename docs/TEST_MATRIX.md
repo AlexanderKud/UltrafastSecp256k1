@@ -104,13 +104,13 @@ lags behind the generated validation surfaces, prefer the generated counts.
 |------|---------|-------|
 | `opencl/tests/test_opencl.cpp` | OpenCL | Kernel correctness |
 | `opencl/tests/opencl_extended_test.cpp` | OpenCL | Extended operations |
-| `opencl/src/opencl_audit_runner.cpp` | OpenCL | Unified GPU audit ( 397 modules, 8 sections) |
+| `opencl/src/opencl_audit_runner.cpp` | OpenCL | Unified GPU audit ( 400 modules, 8 sections) |
 | `metal/tests/test_metal_host.cpp` | Metal | Metal shader correctness |
-| `metal/src/metal_audit_runner.mm` | Metal | `secp256k1_metal_audit`: unified GPU audit ( 397 modules, 8 sections) |
+| `metal/src/metal_audit_runner.mm` | Metal | `secp256k1_metal_audit`: unified GPU audit ( 400 modules, 8 sections) |
 | `src/cuda/src/test_ct_smoke.cu` | CUDA | CT smoke tests incl. ZK knowledge + DLEQ prove/verify (9 tests) |
 | `src/cuda/src/gpu_ct_leakage_probe.cu` | CUDA | Fixed-vs-random device-cycle Welch t-test for CT generator/signing kernels with JSON evidence output |
 | `src/cuda/src/test_suite.cu` | CUDA | `cuda_selftest`: kernel correctness, field + scalar + point ops |
-| `src/cuda/src/gpu_audit_runner.cu` | CUDA | `gpu_audit`: unified GPU audit ( 397 modules, 8 sections) |
+| `src/cuda/src/gpu_audit_runner.cu` | CUDA | `gpu_audit`: unified GPU audit ( 400 modules, 8 sections) |
 | `metal/app/metal_test.mm` | Metal | `secp256k1_metal_test`: shader correctness, compute pipeline |
 | `metal/app/bench_metal.mm` | Metal | `secp256k1_metal_bench_full`: comprehensive Metal benchmark |
 | `compat/libsecp256k1_shim/tests/shim_test.cpp` | CPU | `secp256k1_shim_test`: libsecp256k1 API compatibility shim |
@@ -371,6 +371,17 @@ validation sync so `TEST_MATRIX.md` matches the live generated CTest surface:
 - `secp256k1_noverify_tests`
 - `secp256k1_tests`
 - `zeroization`
+
+### Generated Inventory Sync (2026-05-23)
+
+The following active CTest targets were added during the 2026-05-23 security
+fix pass (SEC-001/CT-001/SEC-002/SEC-003/SHIM-001/CI-006):
+
+- `regression_adaptor_ct_secret_extract` — SEC-001/CT-001: adaptor extract CT scalar mul + s_inv erase (advisory=false)
+- `regression_ecdh_xy64_erase` — SEC-002: secp256k1_ecdh() xy64 shared-secret buffer erased after hashfp (advisory=true, shim)
+- `regression_musig_xonly_zero_tweak` — SHIM-001: secp256k1_musig_pubkey_xonly_tweak_add accepts zero tweak (advisory=true, shim)
+- `regression_shim_security_v9` — SHIM-NEW-012/015: serialize+seckey NULL arg illegal_callback (advisory=true, shim)
+- `regression_musig_noncegen_extra_input` — SHIM-NONCEGEN-001: musig_nonce_gen extra_input32 behavioral freeze (advisory=true, shim)
 
 ### Generated Inventory Sync (2026-05-12)
 

@@ -1,5 +1,17 @@
 # Audit Changelog
 
+## 2026-05-23 — Fix: SEC-001/CT-001/SEC-002/SEC-003/SHIM-001/CI-006
+
+- **`src/cpu/src/adaptor.cpp`** — `ecdsa_adaptor_extract()`: replaced `fast::operator*` (variable-time) with `ct::scalar_mul(s_hat, s_inv)` (CT-001); added `secure_erase(&s_inv)` after computing `t` (SEC-001). `ecdsa_adaptor_adapt()`: added `if (s.is_zero_ct()) return ECDSASignature{}` guard after `t_inv` erase (SEC-003).
+- **`compat/libsecp256k1_shim/src/shim_ecdh.cpp`** — `secp256k1_ecdh()`: added `secure_erase(xy64, 64)` after `hashfp` call to prevent shared-secret bytes lingering on stack (SEC-002). Added `#include "secp256k1/detail/secure_erase.hpp"`.
+- **`compat/libsecp256k1_shim/src/shim_musig.cpp`** — `secp256k1_musig_pubkey_xonly_tweak_add()`: changed `parse_bytes_strict_nonzero` → `parse_bytes_strict` for zero-tweak compatibility matching libsecp256k1 behaviour (SHIM-001).
+- **`.github/workflows/caas.yml`** — Stage 3 `security_autonomy`: exit-77 handler now checks `needs.audit_gate.result == "success"` before accepting advisory skip; prevents a failed audit_gate from being masked by a downstream skip (CI-006).
+- **`audit/test_regression_adaptor_ct_secret_extract.cpp` (NEW)** — SEC-001/CT-001 regression: full round-trip (sign→adapt→extract) verifying CT mul correctness + fail-closed on zero-sig extract (ACE-1..4). `advisory=false`.
+- **`audit/test_regression_ecdh_xy64_erase.cpp` (NEW)** — SEC-002 regression: ECDH shared-secret correctness + X-coord match + non-zero output + null-ctx rejection (EXY-1..4). `advisory=true` (shim).
+- **`audit/test_regression_musig_xonly_zero_tweak.cpp` (NEW)** — SHIM-001 regression: xonly_tweak_add with zero/nonzero/overflow tweaks (MXT-1..3). `advisory=true` (shim).
+- **`audit/unified_audit_runner.cpp`** — 3 forward declarations + 3 `ALL_MODULES` entries.
+- **`audit/CMakeLists.txt`** — standalone CTest targets + `target_sources` for all 3 new tests; also added previously-missing entries for `test_regression_shim_security_v9` and `test_regression_musig_noncegen_extra_input`.
+
 ## 2026-05-23 — Test: SHIM-NONCEGEN-001 extra_input32 behavioral freeze (P2-SHIM-02)
 
 - **`audit/test_regression_musig_noncegen_extra_input.cpp` (NEW)** — Behavioral freeze test for `SHIM-NONCEGEN-001`: documents that `secp256k1_musig_nonce_gen` silently ignores `extra_input32` (callers with NULL and non-NULL extra_input32 receive identical pubnonces). Sub-tests NCI-1..3: source-scan marker in `shim_musig.cpp`, NULL vs non-NULL extra_input32 pubnonce identity, two distinct non-NULL extra_input32 values pubnonce identity. Advisory=true (requires shim). Designed to FAIL when SHIM-NONCEGEN-001 is fixed.

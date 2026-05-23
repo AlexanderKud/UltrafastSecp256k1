@@ -13,6 +13,8 @@
 #include <cstring>
 #include <array>
 
+#include "secp256k1/detail/secure_erase.hpp"
+
 #include "secp256k1/ecdh.hpp"
 #include "secp256k1/field.hpp"
 #include "secp256k1/scalar.hpp"
@@ -98,7 +100,11 @@ int secp256k1_ecdh(
             std::memcpy(xy64 + 32, unc.data() + 33, 32);
         }
     }
-    return hashfp(output, xy64, xy64 + 32, data);
+    // SEC-002: xy64 holds shared secret (X‖Y of ECDH result) — erase before returning
+    // so it does not linger on the stack past the caller's stack frame.
+    int rc = hashfp(output, xy64, xy64 + 32, data);
+    secp256k1::detail::secure_erase(xy64, sizeof(xy64));
+    return rc;
 }
 
 } // extern "C"

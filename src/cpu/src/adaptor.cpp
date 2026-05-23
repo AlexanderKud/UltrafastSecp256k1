@@ -361,6 +361,8 @@ ecdsa_adaptor_adapt(const ECDSAAdaptorSig& pre_sig,
 
     detail::secure_erase(&t_inv, sizeof(t_inv));
 
+    if (s.is_zero_ct()) return ECDSASignature{}; // SEC-003: degenerate — caller must handle
+
     ECDSASignature sig;
     sig.r = pre_sig.r;
     sig.s = s;
@@ -372,11 +374,13 @@ ecdsa_adaptor_extract(const ECDSAAdaptorSig& pre_sig,
                       const ECDSASignature& sig) {
     if (sig.s.is_zero() || pre_sig.s_hat.is_zero()) return {Scalar::zero(), false};
 
-    // t = s * s^-^1 (multiplicative adaptor)
-    Scalar const s_inv = sig.s.inverse();
-    Scalar const t = pre_sig.s_hat * s_inv;
+    // t = s_hat * sig.s^-1 (multiplicative adaptor secret extraction).
+    // sig.s is public data; but t is the secret adaptor witness — use CT mul (SEC-001/CT-001).
+    Scalar s_inv = sig.s.inverse();
+    Scalar const t = ct::scalar_mul(pre_sig.s_hat, s_inv);
+    detail::secure_erase(&s_inv, sizeof(s_inv));
 
-    if (t.is_zero_ct()) return {t, false};
+    if (t.is_zero_ct()) return {Scalar::zero(), false};
     return {t, true};
 }
 
