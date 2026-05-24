@@ -210,9 +210,9 @@ Every benchmark number in this project is:
 
 *These are point-in-time diagnostic measurements. `canonical_numbers.json` status: "diagnostic — no canonical JSON artifact; unverified against current GPU build." Out of scope for Bitcoin Core evaluation.*
 
-**Canonical x86-64 numbers (i5-14400F, GCC 14.2.0, 2026-05-11):**
+**Canonical x86-64 numbers (i5-14400F, GCC 14.2.0, 2026-05-23):**
 
-Source: [`docs/bench_unified_2026-05-11_gcc14_x86-64.json`](bench_unified_2026-05-11_gcc14_x86-64.json)
+Source: [`docs/bench_unified_2026-05-23_gcc14_x86-64.json`](bench_unified_2026-05-23_gcc14_x86-64.json)
 
 | Operation | Latency | Note |
 |-----------|---------|------|

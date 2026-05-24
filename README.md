@@ -81,7 +81,7 @@ python3 ci/caas_runner.py --profile bitcoin-core-backend --json -o btc.json
 → [`docs/BITCOIN_CORE_BACKEND_EVIDENCE.md`](docs/BITCOIN_CORE_BACKEND_EVIDENCE.md) — evidence package  
 → [`docs/DER_PARITY_MATRIX.md`](docs/DER_PARITY_MATRIX.md) — DER/parser parity
 
-**CT signing (CT-vs-CT, production-equivalent, GCC 14.2.0, 2026-05-21):** **~1.32× ECDSA · ~1.27× Schnorr** vs libsecp256k1 (turbo lock unconfirmed — results may vary; taskset -c 0 nice -20). Canonical data: [`docs/bench_unified_2026-05-21_gcc14_x86-64.json`](docs/bench_unified_2026-05-21_gcc14_x86-64.json). Full compiler breakdown: [docs/BITCOIN_CORE_BACKEND_EVIDENCE.md §CT Signing](docs/BITCOIN_CORE_BACKEND_EVIDENCE.md).
+**CT signing (CT-vs-CT, production-equivalent, GCC 14.2.0, 2026-05-23):** **~1.32× ECDSA · ~1.27× Schnorr** vs libsecp256k1 (turbo lock CONFIRMED: intel_pstate/no_turbo=1, governor=performance, taskset -c 0 nice -20). Canonical data: [`docs/bench_unified_2026-05-23_gcc14_x86-64.json`](docs/bench_unified_2026-05-23_gcc14_x86-64.json). Full compiler breakdown: [docs/BITCOIN_CORE_BACKEND_EVIDENCE.md §CT Signing](docs/BITCOIN_CORE_BACKEND_EVIDENCE.md).
 
 > **ConnectBlock (primary block-validation workload):** within ±1.5% of libsecp256k1 depending on build configuration.
 > - With Release+LTO (GCC 14.2.0, **required for any positive result — without LTO the result is negative**): **+0.9–1.5%** across ConnectBlock aggregate profiles (AllEcdsa, AllSchnorr, Mixed)
@@ -273,7 +273,7 @@ Benchmark numbers and historical milestones are maintained in [`docs/BENCHMARKS.
 
 > All performance claims in this README link to that document. Do not rely on inline numbers without checking the corresponding benchmark entry for hardware, batch size, and measurement conditions.
 >
-> Canonical raw data (GCC 14.2.0, 2026-05-21): [`docs/bench_unified_2026-05-21_gcc14_x86-64_v2.json`](docs/bench_unified_2026-05-21_gcc14_x86-64_v2.json)
+> Canonical raw data (GCC 14.2.0, 2026-05-23): [`docs/bench_unified_2026-05-23_gcc14_x86-64.json`](docs/bench_unified_2026-05-23_gcc14_x86-64.json)
 
 ## Why UltrafastSecp256k1? — Detail
 
@@ -932,7 +932,7 @@ Full signature support across CPU and GPU:
 - **Batch verification**: ECDSA and Schnorr batch verify
 - **Multi-scalar**: Shamir's trick (k_1xG + k_2xQ) for fast verification
 
-### CPU Signature Benchmarks (x86-64, Clang 19, AVX2, Release) [archived — see docs/bench_unified_2026-05-21_gcc14_x86-64.json for current GCC 14.2.0 numbers]
+### CPU Signature Benchmarks (x86-64, Clang 19, AVX2, Release) [archived — see docs/bench_unified_2026-05-23_gcc14_x86-64.json for current GCC 14.2.0 numbers]
 
 | Operation | Time | Throughput |
 |-----------|------:|----------:|
@@ -944,7 +944,7 @@ Full signature support across CPU and GPU:
 | Key Generation (fast) | 5.5 us | 182,000 op/s |
 | ECDH | 23.9 us | 41,800 op/s |
 
-*All rows above are the FAST (variable-time) path — NOT the production CT signing path. Schnorr sign is ~25% faster than ECDSA sign due to simpler nonce derivation. Measured single-core, pinned, Clang 19, 2026-02-21. Current GCC 14.2.0 canonical data: [docs/bench_unified_2026-05-21_gcc14_x86-64.json](docs/bench_unified_2026-05-21_gcc14_x86-64.json).*
+*All rows above are the FAST (variable-time) path — NOT the production CT signing path. Schnorr sign is ~25% faster than ECDSA sign due to simpler nonce derivation. Measured single-core, pinned, Clang 19, 2026-02-21. Current GCC 14.2.0 canonical data: [docs/bench_unified_2026-05-23_gcc14_x86-64.json](docs/bench_unified_2026-05-23_gcc14_x86-64.json).*
 
 ---
 
