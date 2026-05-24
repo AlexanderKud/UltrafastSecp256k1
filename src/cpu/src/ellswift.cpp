@@ -307,9 +307,8 @@ static bool ellswift_try_u(
     bool y_odd,
     FieldElement& t_out) noexcept
 {
-    static const FieldElement FE_ZERO  = FieldElement::zero();
-    static const FieldElement FE_THREE = FieldElement::from_uint64(3);
-    static const FieldElement FE_FOUR  = FieldElement::from_uint64(4);
+    // FE_ZERO / FE_THREE / FE_FOUR live at file scope above (hoisted from
+    // per-function statics on 2026-05-24).
     static const FieldElement TWO_INV  = FieldElement::from_uint64(2).inverse();
     static const FieldElement C3 = [](){
         std::array<uint8_t,32> b={0x7a,0xe9,0x6a,0x2b,0x65,0x7c,0x07,0x10,
@@ -400,9 +399,8 @@ std::pair<bool, FieldElement> xswiftec_inv(
         };
         return FieldElement::from_bytes(b);
     }();
-    static const FieldElement FE_ZERO  = FieldElement::zero();
-    static const FieldElement FE_THREE = FieldElement::from_uint64(3);
-    static const FieldElement FE_FOUR  = FieldElement::from_uint64(4);
+    // FE_ZERO / FE_THREE / FE_FOUR live at file scope above (hoisted from
+    // per-function statics on 2026-05-24).
     static const FieldElement TWO_INV  = FieldElement::from_uint64(2).inverse();
 
     FieldElement v, s, w;
