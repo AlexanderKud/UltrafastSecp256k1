@@ -5031,6 +5031,18 @@ set_tests_properties(regression_adaptor_blinded_nonce PROPERTIES TIMEOUT 30
     LABELS "audit;regression;ct;security;sec-new-001;sec-new-002;source-scan")
 target_sources(unified_audit_runner PRIVATE test_regression_adaptor_blinded_nonce.cpp)
 
+# DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
+# advisory=false: roundtrips only on C++ API (no shim, no GPU).
+add_executable(test_regression_dedup_refactors_2026_05_24_standalone
+    test_regression_dedup_refactors_2026-05-24.cpp)
+audit_target_defaults(test_regression_dedup_refactors_2026_05_24_standalone)
+target_compile_definitions(test_regression_dedup_refactors_2026_05_24_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_dedup_refactors_2026_05_24
+    COMMAND test_regression_dedup_refactors_2026_05_24_standalone)
+set_tests_properties(regression_dedup_refactors_2026_05_24 PROPERTIES TIMEOUT 30
+    LABELS "audit;regression;dedup;behavioral-freeze")
+target_sources(unified_audit_runner PRIVATE test_regression_dedup_refactors_2026-05-24.cpp)
+
 # SEC-006: BIP-324 privkey_ raw-byte lifetime window (SEC-006)
 # Uses C++ API (Bip324Session) only — no shim/GPU dependency. advisory=false.
 add_executable(test_regression_bip324_privkey_lifetime_standalone

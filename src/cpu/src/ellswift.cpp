@@ -44,6 +44,39 @@ using secp256k1::detail::csprng_fill;
 // secp256k1 curve constant b = 7
 static const FieldElement FE_SEVEN = FieldElement::from_uint64(7);
 
+// Field-element constants shared across xswiftec_frac / xswiftec_fwd /
+// xswiftec_fwd_point. Hoisted from per-function statics to kill the
+// repetition jscpd previously flagged as 21–25-line duplicates.
+static const FieldElement FE_ZERO  = FieldElement::zero();
+static const FieldElement FE_ONE   = FieldElement::one();
+static const FieldElement FE_THREE = FieldElement::from_uint64(3);
+static const FieldElement FE_FOUR  = FieldElement::from_uint64(4);
+
+// XSwiftEC constants from BIP-324 §App.B / libsecp256k1:
+//   c1 = (sqrt(-3) - 1) / 2
+//   c2 = (-sqrt(-3) - 1) / 2
+// Stored as the 32-byte big-endian representation of the field element.
+// The two byte arrays are the precomputed values verified against
+// secp256k1's ellswift reference vectors.
+static const FieldElement XSWIFTEC_C1 = []() noexcept {
+    std::array<std::uint8_t, 32> b = {
+        0x85,0x16,0x95,0xd4, 0x9a,0x83,0xf8,0xef,
+        0x91,0x9b,0xb8,0x61, 0x53,0xcb,0xcb,0x16,
+        0x63,0x0f,0xb6,0x8a, 0xed,0x0a,0x76,0x6a,
+        0x3e,0xc6,0x93,0xd6, 0x8e,0x6a,0xfa,0x40
+    };
+    return FieldElement::from_bytes(b);
+}();
+static const FieldElement XSWIFTEC_C2 = []() noexcept {
+    std::array<std::uint8_t, 32> b = {
+        0x7a,0xe9,0x6a,0x2b, 0x65,0x7c,0x07,0x10,
+        0x6e,0x64,0x47,0x9e, 0xac,0x34,0x34,0xe9,
+        0x9c,0xf0,0x49,0x75, 0x12,0xf5,0x89,0x95,
+        0xc1,0x39,0x6c,0x28, 0x71,0x95,0x01,0xee
+    };
+    return FieldElement::from_bytes(b);
+}();
+
 // FieldElement from 32-byte big-endian (mod p), always succeeds
 FieldElement fe_from_bytes_mod_p(const std::uint8_t bytes[32]) noexcept {
     std::array<std::uint8_t, 32> arr;
@@ -119,31 +152,9 @@ static inline bool x_frac_on_curve(const FieldElement& xn, const FieldElement& x
 //   Return first xi (as fraction) that is a valid x-coord.
 static std::pair<FieldElement, FieldElement>
 xswiftec_frac(const FieldElement& u_in, const FieldElement& t) noexcept {
-    static const FieldElement FE_ZERO  = FieldElement::zero();
-    static const FieldElement FE_ONE   = FieldElement::one();
-    static const FieldElement FE_THREE = FieldElement::from_uint64(3);
-    static const FieldElement FE_FOUR  = FieldElement::from_uint64(4);
-    // FE_SEVEN is the file-scope constant (line 45) — no local redeclaration needed
-    // c1 = (sqrt(-3)-1)/2
-    static const FieldElement C1 = []() {
-        std::array<uint8_t, 32> b = {
-            0x85,0x16,0x95,0xd4, 0x9a,0x83,0xf8,0xef,
-            0x91,0x9b,0xb8,0x61, 0x53,0xcb,0xcb,0x16,
-            0x63,0x0f,0xb6,0x8a, 0xed,0x0a,0x76,0x6a,
-            0x3e,0xc6,0x93,0xd6, 0x8e,0x6a,0xfa,0x40
-        };
-        return FieldElement::from_bytes(b);
-    }();
-    // c2 = (-sqrt(-3)-1)/2
-    static const FieldElement C2 = []() {
-        std::array<uint8_t, 32> b = {
-            0x7a,0xe9,0x6a,0x2b, 0x65,0x7c,0x07,0x10,
-            0x6e,0x64,0x47,0x9e, 0xac,0x34,0x34,0xe9,
-            0x9c,0xf0,0x49,0x75, 0x12,0xf5,0x89,0x95,
-            0xc1,0x39,0x6c,0x28, 0x71,0x95,0x01,0xee
-        };
-        return FieldElement::from_bytes(b);
-    }();
+    // Field constants + XSWIFTEC_C1 / XSWIFTEC_C2 live at file scope above.
+    const FieldElement& C1 = XSWIFTEC_C1;
+    const FieldElement& C2 = XSWIFTEC_C2;
 
     FieldElement u = (u_in == FE_ZERO) ? FE_ONE : u_in;
     FieldElement s = (t == FE_ZERO) ? FE_ONE : t.square();
@@ -187,30 +198,9 @@ xswiftec_frac(const FieldElement& u_in, const FieldElement& t) noexcept {
 //   Try x2 = u*(c1*s+c2*g)/(g+s). If on curve, return.
 //   Return x1 = -(x2+u).
 FieldElement xswiftec_fwd(FieldElement u, FieldElement t) noexcept {
-    // c1 = (sqrt(-3)-1)/2
-    static const FieldElement C1 = []() {
-        std::array<uint8_t, 32> b = {
-            0x85,0x16,0x95,0xd4, 0x9a,0x83,0xf8,0xef,
-            0x91,0x9b,0xb8,0x61, 0x53,0xcb,0xcb,0x16,
-            0x63,0x0f,0xb6,0x8a, 0xed,0x0a,0x76,0x6a,
-            0x3e,0xc6,0x93,0xd6, 0x8e,0x6a,0xfa,0x40
-        };
-        return FieldElement::from_bytes(b);
-    }();
-    // c2 = (-sqrt(-3)-1)/2
-    static const FieldElement C2 = []() {
-        std::array<uint8_t, 32> b = {
-            0x7a,0xe9,0x6a,0x2b, 0x65,0x7c,0x07,0x10,
-            0x6e,0x64,0x47,0x9e, 0xac,0x34,0x34,0xe9,
-            0x9c,0xf0,0x49,0x75, 0x12,0xf5,0x89,0x95,
-            0xc1,0x39,0x6c,0x28, 0x71,0x95,0x01,0xee
-        };
-        return FieldElement::from_bytes(b);
-    }();
-    static const FieldElement FE_ZERO  = FieldElement::zero();
-    static const FieldElement FE_ONE   = FieldElement::one();
-    static const FieldElement FE_THREE = FieldElement::from_uint64(3);
-    static const FieldElement FE_FOUR  = FieldElement::from_uint64(4);
+    // Field constants + XSWIFTEC_C1 / XSWIFTEC_C2 live at file scope above.
+    const FieldElement& C1 = XSWIFTEC_C1;
+    const FieldElement& C2 = XSWIFTEC_C2;
 
     if (u == FE_ZERO) u = FE_ONE;
 
@@ -248,28 +238,9 @@ FieldElement xswiftec_fwd(FieldElement u, FieldElement t) noexcept {
 // Avoids the extra sqrt that callers (ECDH) would need to reconstruct the full point.
 // Saves ~1-2 field exponentiations vs decode+lift separately.
 static std::pair<FieldElement, FieldElement> xswiftec_fwd_point(FieldElement u, FieldElement t) noexcept {
-    static const FieldElement C1 = []() {
-        std::array<uint8_t, 32> b = {
-            0x85,0x16,0x95,0xd4, 0x9a,0x83,0xf8,0xef,
-            0x91,0x9b,0xb8,0x61, 0x53,0xcb,0xcb,0x16,
-            0x63,0x0f,0xb6,0x8a, 0xed,0x0a,0x76,0x6a,
-            0x3e,0xc6,0x93,0xd6, 0x8e,0x6a,0xfa,0x40
-        };
-        return FieldElement::from_bytes(b);
-    }();
-    static const FieldElement C2 = []() {
-        std::array<uint8_t, 32> b = {
-            0x7a,0xe9,0x6a,0x2b, 0x65,0x7c,0x07,0x10,
-            0x6e,0x64,0x47,0x9e, 0xac,0x34,0x34,0xe9,
-            0x9c,0xf0,0x49,0x75, 0x12,0xf5,0x89,0x95,
-            0xc1,0x39,0x6c,0x28, 0x71,0x95,0x01,0xee
-        };
-        return FieldElement::from_bytes(b);
-    }();
-    static const FieldElement FE_ZERO  = FieldElement::zero();
-    static const FieldElement FE_ONE   = FieldElement::one();
-    static const FieldElement FE_THREE = FieldElement::from_uint64(3);
-    static const FieldElement FE_FOUR  = FieldElement::from_uint64(4);
+    // Field constants + XSWIFTEC_C1 / XSWIFTEC_C2 live at file scope above.
+    const FieldElement& C1 = XSWIFTEC_C1;
+    const FieldElement& C2 = XSWIFTEC_C2;
 
     if (u == FE_ZERO) u = FE_ONE;
     FieldElement s = (t == FE_ZERO) ? FE_ONE : t.square();
@@ -477,6 +448,66 @@ std::pair<bool, FieldElement> xswiftec_inv(
     return {true, t};
 }
 
+// ----------------------------------------------------------------------------
+// Shared ellswift_create retry loop.
+//
+// All three ellswift_create / ellswift_create_fast call sites previously open-
+// coded the same retry pattern (SHA256(tag||tag||sk||0×32||auxrnd||cnt) → u
+// candidate → ellswift_try_u → on success encode result; up to 100 attempts).
+// This function centralises that loop. Each caller still computes its own
+// (x, y_odd, privkey_bytes) — the difference between the variants is in HOW
+// the pubkey is derived (CT vs variable-time), not in the retry mechanics.
+//
+// The deterministic (no-auxrnd) variant passes kEllswiftZero32 as auxrnd32 so
+// the same hash schedule is used — the two zero blocks are observationally
+// indistinguishable from "zero + auxrnd where auxrnd happens to be zero".
+//
+// Returns true on success (result filled); false if all kMaxAttempts failed.
+// ----------------------------------------------------------------------------
+static constexpr int          kEllswiftMaxAttempts = 100;
+static constexpr std::uint8_t kEllswiftZero32[32]  = {};
+
+static bool ellswift_create_retry_loop(
+    const FieldElement& x,
+    bool                y_odd,
+    const std::uint8_t  privkey_bytes[32],
+    const std::uint8_t  auxrnd32[32],
+    std::array<std::uint8_t, 64>& result) noexcept
+{
+    static constexpr char kTag[] = "secp256k1_ellswift_create";
+    static const auto kTagHash = SHA256::hash(
+        reinterpret_cast<const std::uint8_t*>(kTag), sizeof(kTag) - 1);
+
+    for (int attempt = 0; attempt < kEllswiftMaxAttempts; ++attempt) {
+        SHA256 h;
+        h.update(kTagHash.data(), 32);
+        h.update(kTagHash.data(), 32);
+        h.update(privkey_bytes, 32);
+        h.update(kEllswiftZero32, 32);
+        h.update(auxrnd32, 32);
+        auto cnt = static_cast<std::uint8_t>(attempt);
+        h.update(&cnt, 1);
+        auto rand_hash = h.finalize();
+
+        std::uint8_t rand_bytes[32];
+        std::memcpy(rand_bytes, rand_hash.data(), 32);
+
+        auto u = fe_from_bytes_mod_p(rand_bytes);
+        if (u == FieldElement::zero()) continue;
+
+        FieldElement t;
+        if (ellswift_try_u(x, u, y_odd, t)) {
+            auto u_bytes = u.to_bytes();
+            auto t_bytes = t.to_bytes();
+            std::memcpy(result.data(),      u_bytes.data(), 32);
+            std::memcpy(result.data() + 32, t_bytes.data(), 32);
+            detail::secure_erase(rand_bytes, sizeof(rand_bytes));
+            return true;
+        }
+    }
+    return false;
+}
+
 } // anonymous namespace
 
 // ============================================================================
@@ -510,8 +541,7 @@ std::array<std::uint8_t, 64> ellswift_create(const Scalar& privkey) {
 
 std::array<std::uint8_t, 64> ellswift_create(const Scalar& privkey,
                                               const std::uint8_t* auxrnd32) {
-    static constexpr std::uint8_t kZeroAux[32] = {};
-    if (!auxrnd32) auxrnd32 = kZeroAux;  // null → zero auxrnd, same hash path
+    if (!auxrnd32) auxrnd32 = kEllswiftZero32;  // null → zero auxrnd
 
     // Deterministic u derivation: SHA256(tag||tag||privkey||0x00*32||auxrnd32||cnt)
     // matching libsecp256k1's secp256k1_ellswift_create semantics.
@@ -520,43 +550,13 @@ std::array<std::uint8_t, 64> ellswift_create(const Scalar& privkey,
     bool y_is_odd = (pub.y().to_bytes()[31] & 1) != 0;
     auto privkey_bytes = privkey.to_bytes();
 
-    // Precompute tagged-hash prefix (tag applied twice per BIP-340 convention)
-    static constexpr char kTag[] = "secp256k1_ellswift_create";
-    static const auto kTagHash = SHA256::hash(
-        reinterpret_cast<const std::uint8_t*>(kTag), sizeof(kTag) - 1);
-
     std::array<std::uint8_t, 64> result{};
-    static constexpr int kMaxAttempts = 100;
-    static constexpr std::uint8_t kZero32[32] = {};
-
-    for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
-        SHA256 h;
-        h.update(kTagHash.data(), 32);
-        h.update(kTagHash.data(), 32);
-        h.update(privkey_bytes.data(), 32);
-        h.update(kZero32, 32);
-        h.update(auxrnd32, 32);
-        auto cnt = static_cast<std::uint8_t>(attempt);
-        h.update(&cnt, 1);
-        auto rand_hash = h.finalize();
-
-        std::uint8_t rand_bytes[32];
-        std::memcpy(rand_bytes, rand_hash.data(), 32);
-
-        auto u = fe_from_bytes_mod_p(rand_bytes);
-        if (u == FieldElement::zero()) continue;
-
-        FieldElement t;
-        if (ellswift_try_u(x, u, y_is_odd, t)) {
-            auto u_bytes = u.to_bytes();
-            auto t_bytes = t.to_bytes();
-            std::memcpy(result.data(),      u_bytes.data(), 32);
-            std::memcpy(result.data() + 32, t_bytes.data(), 32);
-            detail::secure_erase(rand_bytes, sizeof(rand_bytes));
-            return result;
-        }
+    if (!ellswift_create_retry_loop(x, y_is_odd, privkey_bytes.data(),
+                                    auxrnd32, result)) {
+        throw std::runtime_error(
+            "ellswift_create: auxrnd32 path exhausted 100 attempts");
     }
-    throw std::runtime_error("ellswift_create: auxrnd32 path exhausted 100 attempts");
+    return result;
 }
 
 std::array<std::uint8_t, 64> ellswift_encode_x(const FieldElement& x,
@@ -646,80 +646,35 @@ std::array<std::uint8_t, 64> ellswift_create_fast(const Scalar& privkey) {
     auto x = FieldElement::from_bytes(x_bytes);
     auto privkey_bytes = privkey.to_bytes();
 
-    static constexpr char kTag[] = "secp256k1_ellswift_create";
-    static const auto kTagHash = SHA256::hash(
-        reinterpret_cast<const std::uint8_t*>(kTag), sizeof(kTag) - 1);
-    static constexpr std::uint8_t kZero32[32] = {};
-
+    // Deterministic variant: no caller-supplied auxrnd → pass kEllswiftZero32
+    // so the hash schedule is (tag||tag||sk||0×32||0×32||cnt).
     std::array<std::uint8_t, 64> result{};
-    static constexpr int kMaxAttempts = 100;
-    for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
-        SHA256 h;
-        h.update(kTagHash.data(), 32); h.update(kTagHash.data(), 32);
-        h.update(privkey_bytes.data(), 32);
-        h.update(kZero32, 32); h.update(kZero32, 32);
-        auto cnt = static_cast<std::uint8_t>(attempt);
-        h.update(&cnt, 1);
-        auto rand_hash = h.finalize();
-        std::uint8_t rand_bytes[32];
-        std::memcpy(rand_bytes, rand_hash.data(), 32);
-
-        auto u = fe_from_bytes_mod_p(rand_bytes);
-        if (u == FieldElement::zero()) continue;
-
-        FieldElement t;
-        if (ellswift_try_u(x, u, y_odd, t)) {
-            auto u_bytes = u.to_bytes();
-            auto t_bytes = t.to_bytes();
-            std::memcpy(result.data(),      u_bytes.data(), 32);
-            std::memcpy(result.data() + 32, t_bytes.data(), 32);
-            detail::secure_erase(rand_bytes, sizeof(rand_bytes));
-            return result;
-        }
+    if (!ellswift_create_retry_loop(x, y_odd, privkey_bytes.data(),
+                                    kEllswiftZero32, result)) {
+        throw std::runtime_error(
+            "ellswift_create_fast: RNG produced unusable values");
     }
-    throw std::runtime_error("ellswift_create_fast: RNG produced unusable values");
+    return result;
 }
 
 std::array<std::uint8_t, 64> ellswift_create_fast(const Scalar& privkey,
                                                     const std::uint8_t* auxrnd32) {
     if (!auxrnd32) return ellswift_create_fast(privkey);
 
+    // "_fast" auxrnd variant: variable-time scalar_mul_generator instead of
+    // ct::generator_mul. Caller has opted out of CT for the pubkey derivation.
     auto pub = scalar_mul_generator(privkey);
     auto [x_bytes_a, y_odd] = pub.x_bytes_and_parity();
     auto x = FieldElement::from_bytes(x_bytes_a);
     auto privkey_bytes = privkey.to_bytes();
 
-    static constexpr char kTag[] = "secp256k1_ellswift_create";
-    static const auto kTagHash = SHA256::hash(
-        reinterpret_cast<const std::uint8_t*>(kTag), sizeof(kTag) - 1);
-    static constexpr std::uint8_t kZero32[32] = {};
-
     std::array<std::uint8_t, 64> result{};
-    for (int attempt = 0; attempt < 100; ++attempt) {
-        SHA256 h;
-        h.update(kTagHash.data(), 32); h.update(kTagHash.data(), 32);
-        h.update(privkey_bytes.data(), 32);
-        h.update(kZero32, 32);
-        h.update(auxrnd32, 32);
-        auto cnt = static_cast<std::uint8_t>(attempt);
-        h.update(&cnt, 1);
-        auto rand_hash = h.finalize();
-        std::uint8_t rand_bytes[32];
-        std::memcpy(rand_bytes, rand_hash.data(), 32);
-
-        auto u = fe_from_bytes_mod_p(rand_bytes);
-        if (u == FieldElement::zero()) continue;
-
-        FieldElement t;
-        if (ellswift_try_u(x, u, y_odd, t)) {
-            auto u_bytes = u.to_bytes(); auto t_bytes = t.to_bytes();
-            std::memcpy(result.data(),    u_bytes.data(), 32);
-            std::memcpy(result.data()+32, t_bytes.data(), 32);
-            detail::secure_erase(rand_bytes, sizeof(rand_bytes));
-            return result;
-        }
+    if (!ellswift_create_retry_loop(x, y_odd, privkey_bytes.data(),
+                                    auxrnd32, result)) {
+        throw std::runtime_error(
+            "ellswift_create_fast: auxrnd path exhausted");
     }
-    throw std::runtime_error("ellswift_create_fast: auxrnd path exhausted");
+    return result;
 }
 
 std::array<std::uint8_t, 32> ellswift_xdh_fast(

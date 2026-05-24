@@ -227,6 +227,7 @@ int test_shim_recovery_and_noncefp_run();           // PASS3-001/002: recovery p
 int test_regression_shim_security_v9_run();         // SHIM-NEW-012/015: serialize + seckey NULL arg callbacks (2026-05-22)
 int test_regression_adaptor_blinded_nonce_run();    // SEC-NEW-001/002, P3-SHIM-STACK/BATCH-MEM: adaptor blinded nonce + BCH shim is_zero_ct + kStackMsgMax + shrink_to_fit (2026-05-23)
 int test_regression_musig_noncegen_extra_input_run(); // SHIM-NONCEGEN-001: secp256k1_musig_nonce_gen ignores extra_input32 — behavioral freeze (2026-05-23)
+int test_regression_dedup_refactors_2026_05_24_run(); // DEDUP-2026-05-24: bip39 decode helper + sp_scan_batch_impl + to_data_cast + ellswift retry-loop invariants (2026-05-24)
 int test_regression_adaptor_ct_secret_extract_run(); // SEC-001/CT-001: adaptor extract uses ct::scalar_mul + erases s_inv (2026-05-23)
 int test_regression_ecdh_xy64_erase_run();           // SEC-002: shim_ecdh xy64 erased after hashfp call (2026-05-23)
 int test_regression_musig_xonly_zero_tweak_run();    // SHIM-001: xonly_tweak_add accepts zero tweak (2026-05-23)
@@ -1330,6 +1331,9 @@ static const AuditModule ALL_MODULES[] = {
     // === 2026-05-23 SEC-NEW-001/002, P3-SHIM-STACK, P3-BATCH-MEM ===
     // advisory=false: source-scan + C++ adaptor round-trip; no shim/GPU dependency.
     { "regression_adaptor_blinded_nonce", "SEC-NEW-001: adaptor.cpp generator_mul_blinded(k) DPA defence; SEC-NEW-002: BCH shim is_zero_ct on nonce k; P3-SHIM-STACK: kStackMsgMax 256->1024; P3-BATCH-MEM: batch vector shrink_to_fit -- source-scan + adaptor sign+adapt+verify round-trip", "ct_analysis", test_regression_adaptor_blinded_nonce_run, false },
+    // === 2026-05-24 DEDUP refactors (SonarCloud-driven, no security/ABI change) ===
+    // advisory=false: deterministic roundtrips + tag-separation + cast-invariance.
+    { "regression_dedup_refactors_2026_05_24", "DEDUP-2026-05-24: bip39 decode_bip39_words helper, sp_scanner+ltc_sp shared sp_scan_batch_impl, types.hpp to_data_cast<T> template, ellswift retry-loop helper -- invariant roundtrips proving no behavioural drift", "behavioral_freeze", test_regression_dedup_refactors_2026_05_24_run, false },
     // === 2026-05-21 SEC-006 ===
     { "regression_bip324_privkey_lifetime", "SEC-006: Bip324Session privkey_ raw-byte window documented; complete_handshake erases after use (full store-Scalar fix tracked SEC-006)", "memory_safety", test_regression_bip324_privkey_lifetime_run, false },
     // === 2026-05-21 SHIM-010: ndata R-grind bounded termination ===
