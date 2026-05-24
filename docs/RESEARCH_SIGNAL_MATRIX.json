@@ -226,7 +226,7 @@
         "complete formulas"
       ],
       "repo_evidence": [
-        "THREAT_MODEL.md",
+        "docs/THREAT_MODEL.md",
         "docs/SELF_AUDIT_FAILURE_MATRIX.md"
       ],
       "reason": "Hardware-wallet architecture work is worth watching, but it does not directly map to a missing software-library assurance surface unless the hardware roadmap changes."
