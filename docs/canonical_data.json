@@ -1,12 +1,12 @@
 {
   "version": "4.1.0",
   "last_updated": "2026-05-24",
-  "exploit_poc_count": 271,
+  "exploit_poc_count": 273,
   "non_exploit_modules": 132,
-  "total_modules": 403,
+  "total_modules": 405,
   "ci_workflow_count": 54,
   "ct_pipeline_count": 5,
   "bitcoin_core_tests_pass": 749,
   "bitcoin_core_tests_total": 749,
-  "shim_api_function_count": 76
+  "shim_api_function_count": 80
 }

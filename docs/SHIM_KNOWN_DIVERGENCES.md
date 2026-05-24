@@ -109,6 +109,35 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ---
 
+## secp256k1_ecdsa_sign — ndata/extra_entropy nonce divergence (SHIM-P3-006)
+
+- **Upstream behavior:** When `ndata` is non-NULL, `secp256k1_ecdsa_sign` passes it
+  to `secp256k1_nonce_function_rfc6979` as the `extra_entropy` argument. Upstream
+  mixes it using the `secp256k1_rfc6979_hmac_sha256` keydata-based structure:
+  `keydata = key32 || msg32 || algo16("ECDSA") || extra32` (112 bytes), which is
+  hashed into the HMAC-DRBG state as a key material block.
+- **Shim behavior:** When `ndata` is non-NULL, the shim calls
+  `ct::ecdsa_sign_hedged(msg, key, ndata)`. Our hedged nonce uses RFC6979 Section 3.2
+  with extra data in the HMAC **message** (not the key material):
+  `K = HMAC(K0, V || 0x00 || x || h1 || extra)` (129 bytes). This produces valid
+  signatures but different nonce values than upstream libsecp256k1 for the same inputs.
+- **Reason:** The hedged signing path was designed for forward-secrecy/DPA resistance
+  and uses a cryptographically equivalent (but not byte-identical) structure. Making
+  it byte-identical requires implementing libsecp256k1's exact `secp256k1_rfc6979_hmac_sha256_initialize`
+  keydata structure and a 1000-vector differential test — deferred to TASK-007 scope.
+- **Impact:** Bitcoin Core's R-grinding loop (`CKey::Sign()`) calls `secp256k1_ecdsa_sign`
+  with increasing `extra_entropy` counter bytes. Our shim produces **valid** signatures
+  on each iteration (verify passes), but the specific `(r, s)` values differ from
+  upstream. The final (low-S) signature accepted by the loop is cryptographically correct;
+  only the byte representation differs. No consensus impact: script validation accepts
+  any valid (r,s) that satisfies `r,s ∈ [1,n-1]` and DER encoding.
+- **Tracking:** SHIM-P3-006. Functional test:
+  `audit/test_regression_shim_rgrind_functional.cpp` RGF-1..4 (valid sig across 32 iterations).
+- **Planned fix:** TASK-007 — implement byte-identical keydata structure and add
+  1000-vector differential test against libsecp256k1.
+
+---
+
 ## secp256k1_ecdsa_sign — custom nonce function
 
 - **Upstream behavior:** Any non-NULL `noncefp` is called unconditionally; the

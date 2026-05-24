@@ -33,13 +33,13 @@
     {
       "exists": true,
       "path": "docs/TEST_MATRIX.md",
-      "sha256": "fb000887990eae79b32b1e2918c6507254ac527655589bf6f3147db712ea4a25",
+      "sha256": "3be2dd3e8208fecb505054fe331a0b0a8f019fdcf6685cdbfc7ff47ad725d978",
       "size": 58795
     },
     {
       "exists": true,
       "path": "docs/CT_VERIFICATION.md",
-      "sha256": "2749251a88e3a85e2d8d54fa5db4049868f946f5417ec255c09ecc7e1e863b2a",
+      "sha256": "9d1aa0b1890a0aa3d8e678fdd6cb5092a4e6c60d5faff6d8dfb56cff7a18693e",
       "size": 45428
     },
     {
@@ -136,7 +136,7 @@
           {
             "findings": [
               {
-                "message": "42 graph functions not in headers: secp256k1_context_clone, secp256k1_context_create, secp256k1_context_destroy, secp256k1_context_randomize, secp256k1_context_set_error_callback",
+                "message": "46 graph functions not in headers: secp256k1_context_clone, secp256k1_context_create, secp256k1_context_destroy, secp256k1_context_preallocated_clone, secp256k1_context_preallocated_create",
                 "severity": "WARN"
               }
             ],
@@ -146,7 +146,7 @@
           {
             "findings": [
               {
-                "message": "42 secp256k1_* shim ABI functions covered by standalone shim tests (not in unified runner call graph)",
+                "message": "46 secp256k1_* shim ABI functions covered by standalone shim tests (not in unified runner call graph)",
                 "severity": "WARN"
               }
             ],
@@ -156,7 +156,7 @@
           {
             "findings": [
               {
-                "message": "Audit test-quality findings: files=406, critical=0, high=0, medium=0, low=0",
+                "message": "Audit test-quality findings: files=407, critical=0, high=0, medium=0, low=0",
                 "severity": "INFO"
               },
               {
@@ -200,7 +200,7 @@
           {
             "findings": [
               {
-                "message": "35 files modified/deleted since graph build (2026-05-24T18:37:47)",
+                "message": "34 files modified/deleted since graph build (2026-05-24T19:22:23)",
                 "severity": "WARN"
               },
               {
@@ -260,7 +260,7 @@
           {
             "findings": [
               {
-                "message": "44 CTest targets not in TEST_MATRIX.md: ${_name}_shim, bip324_kat_cuda, exploit_bip352_address_collision, exploit_bip39_nfkd, exploit_bug001_addr_overflow",
+                "message": "45 CTest targets not in TEST_MATRIX.md: ${_name}_shim, bip324_kat_cuda, exploit_bip352_address_collision, exploit_bip39_nfkd, exploit_bug001_addr_overflow",
                 "severity": "WARN"
               }
             ],
@@ -630,11 +630,11 @@
           "value": {
             "dirty": true,
             "ref": "dev",
-            "sha": "48a35b3d228fc5a4dc3c1118b8163f7a63ae9321",
-            "short": "48a35b3d22"
+            "sha": "b5487be4f7eb8e10ed4048ccfabecaec7a2991d0",
+            "short": "b5487be4f7"
           }
         },
-        "generated_at": "2026-05-24T19:19:44.478953+00:00",
+        "generated_at": "2026-05-24T19:31:03.285321+00:00",
         "platform": "Linux",
         "provenance": {
           "build_flags": {
@@ -651,12 +651,12 @@
             },
             "flags_hash": "c03bf05b8a5e9aee"
           },
-          "collected_at": "2026-05-24T19:19:44.478918+00:00",
+          "collected_at": "2026-05-24T19:31:03.285268+00:00",
           "git": {
             "dirty": true,
             "ref": "dev",
-            "sha": "48a35b3d228fc5a4dc3c1118b8163f7a63ae9321",
-            "short": "48a35b3d22"
+            "sha": "b5487be4f7eb8e10ed4048ccfabecaec7a2991d0",
+            "short": "b5487be4f7"
           },
           "platform": {
             "machine": "x86_64",
@@ -677,7 +677,7 @@
           },
           "version": "4.1.0"
         },
-        "run_id": "audit_gate-48a35b3d22-20260524T191944",
+        "run_id": "audit_gate-b5487be4f7-20260524T193103",
         "runner": "audit_gate",
         "schema_version": "1.0.0",
         "sections": [
@@ -761,7 +761,7 @@
               {
                 "check_id": "p1__abi_completeness",
                 "severity": "advisory:medium",
-                "title": "42 graph functions not in headers: secp256k1_context_clone, secp256k1_context_create, secp256k1_context_destroy, secp256k1_context_randomize, secp256k1_context_set_error_callback"
+                "title": "46 graph functions not in headers: secp256k1_context_clone, secp256k1_context_create, secp256k1_context_destroy, secp256k1_context_preallocated_clone, secp256k1_context_preallocated_create"
               }
             ],
             "name": "P1: ABI Completeness",
@@ -772,7 +772,7 @@
               {
                 "check_id": "p2__test_coverage",
                 "severity": "advisory:medium",
-                "title": "42 secp256k1_* shim ABI functions covered by standalone shim tests (not in unified runner call graph)"
+                "title": "46 secp256k1_* shim ABI functions covered by standalone shim tests (not in unified runner call graph)"
               }
             ],
             "name": "P2: Test Coverage",
@@ -783,7 +783,7 @@
               {
                 "check_id": "p2__audit_test_quality",
                 "severity": "info",
-                "title": "Audit test-quality findings: files=406, critical=0, high=0, medium=0, low=0"
+                "title": "Audit test-quality findings: files=407, critical=0, high=0, medium=0, low=0"
               },
               {
                 "check_id": "p2__audit_test_quality",
@@ -832,7 +832,7 @@
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "advisory:medium",
-                "title": "35 files modified/deleted since graph build (2026-05-24T18:37:47)"
+                "title": "34 files modified/deleted since graph build (2026-05-24T19:22:23)"
               },
               {
                 "check_id": "p6__graph_freshness",
@@ -904,7 +904,7 @@
               {
                 "check_id": "p8__test_documentation",
                 "severity": "advisory:medium",
-                "title": "44 CTest targets not in TEST_MATRIX.md: ${_name}_shim, bip324_kat_cuda, exploit_bip352_address_collision, exploit_bip39_nfkd, exploit_bug001_addr_overflow"
+                "title": "45 CTest targets not in TEST_MATRIX.md: ${_name}_shim, bip324_kat_cuda, exploit_bip352_address_collision, exploit_bip39_nfkd, exploit_bug001_addr_overflow"
               }
             ],
             "name": "P8: Test Documentation",
@@ -1352,8 +1352,8 @@
       "passing": true,
       "required": true,
       "returncode": 0,
-      "stderr_sha256": "808377fa9fc1978df3ef094daee86f10eae981b0b63b2a8af22d58ed6d82dec7",
-      "stdout_sha256": "4f9b4f13e10b3c68325341b5431bb8b15eb2c29b81ac0cad2f188f7306e94fba"
+      "stderr_sha256": "201f348d5f9f0019856318fa86a77abc18dfc6716a40725ebcf6d2e74aef8b56",
+      "stdout_sha256": "d93f10d27b0245a7e42d47a8db8028a3bf7cad7b1430d605a81d071544b17fd1"
     },
     {
       "name": "audit_gap_report_strict",
@@ -1655,13 +1655,13 @@
         "gates_skipped": 0,
         "gates_total": 8,
         "overall_pass": true,
-        "timestamp": "2026-05-24T19:19:46.651642+00:00"
+        "timestamp": "2026-05-24T19:31:05.486574+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "50f631e60941d2c8ef73669bb09963105a04580f91a8ba86155fe23ffab4343f"
+      "stdout_sha256": "ba1234c125302651127cbec69a2c77f561f3f6ac77f64b01485421d2861740e1"
     },
     {
       "name": "supply_chain_gate",
@@ -1707,19 +1707,19 @@
         "checks_total": 5,
         "failing_checks": [],
         "overall_pass": true,
-        "timestamp": "2026-05-24T19:19:46.691560+00:00"
+        "timestamp": "2026-05-24T19:31:05.523082+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "3364f4ffe4b3461681550255f932aadcc9db209452b3daeb421eb38c60aeae10"
+      "stdout_sha256": "8bfcc5f20f5742011fa75d29c5fddc2414f6171b722381ed8459b574859818a1"
     }
   ],
-  "generated_at": "2026-05-24T19:19:46.710083+00:00",
+  "generated_at": "2026-05-24T19:31:05.542289+00:00",
   "git": {
     "branch": "dev",
-    "commit": "48a35b3d228fc5a4dc3c1118b8163f7a63ae9321",
+    "commit": "b5487be4f7eb8e10ed4048ccfabecaec7a2991d0",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
