@@ -172,11 +172,113 @@
     "summary_table_cell": "Wycheproof, fault injection, hundreds of thousands of corpus checks (grows with CI)"
   },
   "gpu_throughput": {
+    "_note": "Legacy umbrella block — superseded by silent_payments_btc / silent_payments_ltc / rpa_bch below. Kept for the ecdsa_signs_m_per_s field which still has no per-feature home. Will be removed after a controlled GPU ECDSA bench produces a canonical artifact.",
     "status": "diagnostic — no canonical JSON artifact; unverified against current GPU build",
-    "bip352_scans_m_per_s": null,
     "ecdsa_signs_m_per_s": null,
-    "wording": "[diagnostic/unverified — GPU throughput: see GPU_BACKEND_EVIDENCE.json for methodology; numbers require re-run against current build before citing]",
-    "note": "GPU performance is out of scope for the Bitcoin Core PR evaluation profile."
+    "wording": "[diagnostic/unverified — GPU ECDSA throughput: see GPU_BACKEND_EVIDENCE.json for methodology; numbers require re-run against current build before citing]",
+    "note": "GPU ECDSA performance is out of scope for the Bitcoin Core PR evaluation profile."
+  },
+  "silent_payments_btc": {
+    "_note": "Bitcoin Silent Payments (BIP-352) scan + pipeline throughput. Source-of-truth: the two canonical bench artifacts below. Top-level numbers are extracted FROM those artifacts and propagated to docs via sync_canonical_numbers.py. Do not edit numbers here without first updating the artifact JSON.",
+    "_canonical_artifact_cpu": "docs/bench_silent_payments_cpu_2026-05-19_i514400F.json",
+    "_canonical_artifact_gpu": "benchmarks/gpu/cuda/rtx-50xx/bip352_rtx5060ti_20260504.txt",
+    "_status": "canonical (CPU + CUDA GPU); OpenCL and Metal pending controlled runs",
+    "hardware_cpu": "Intel i5-14400F (6P+10E, 16T), Ubuntu 24.04, GCC 14.2.0 -O3 -march=native -flto",
+    "hardware_gpu": "NVIDIA RTX 5060 Ti (SM 12.0, 36 SMs, 2602 MHz)",
+    "cpu_scan_tx_per_s": {
+      "threads_1": 13684,
+      "threads_4": 52659,
+      "threads_8": 62162,
+      "threads_16": 91275,
+      "api": "secp256k1::silent_payment_scan(scan_sk, spend_sk, input_pubs, output_pubs)",
+      "spend_pubkey_precomputed": false,
+      "_artifact": "docs/bench_silent_payments_cpu_2026-05-19_i514400F.json"
+    },
+    "gpu_cuda_pipeline_ns_per_op": {
+      "naive_cpu_baseline": 93945.4,
+      "cpu_kplan": 25551.5,
+      "cpu_kplan_batch_opt": 24193.3,
+      "gpu_glv_w4": 179.1,
+      "gpu_lut": 91.2,
+      "gpu_lut_pretbl": 91.3,
+      "gpu_lut_sha256opt": 97.0,
+      "gpu_lut_preser": 17.8,
+      "_n_ops": 500000,
+      "_passes": 11,
+      "_method": "IQR median",
+      "_artifact": "benchmarks/gpu/cuda/rtx-50xx/bip352_rtx5060ti_20260504.txt"
+    },
+    "gpu_cuda_pipeline_m_per_s": {
+      "gpu_lut": 10.96,
+      "gpu_lut_preser": 56.18,
+      "_derived_from": "1e9 / gpu_cuda_pipeline_ns_per_op[...]"
+    },
+    "gpu_opencl_pipeline_m_per_s": null,
+    "gpu_metal_pipeline_m_per_s": null,
+    "wording": "BIP-352 scan throughput: CPU **13.7k tx/s (1T)** → **91k tx/s (16T)** on i5-14400F (artifact: `docs/bench_silent_payments_cpu_2026-05-19_i514400F.json`). GPU CUDA pipeline **10.96 M/s** (LUT, 91.2 ns/op) or **56.18 M/s** (LUT+PreSer, 17.8 ns/op) on RTX 5060 Ti (artifact: `benchmarks/gpu/cuda/rtx-50xx/bip352_rtx5060ti_20260504.txt`). OpenCL and Metal pipeline numbers pending controlled runs.",
+    "note": "BIP-352 (Silent Payments) is out of scope for the Bitcoin Core PR evaluation profile but tracked here for the multi-coin / GPU profile."
+  },
+  "silent_payments_ltc": {
+    "_note": "Litecoin Silent Payments scan throughput. Same secp256k1 primitives as BIP-352 BTC; LtcSpScanner precomputes spend_pubkey in constructor (closer to production wallet usage), which is why LTC-SP shows ~2.1x BTC throughput per-call.",
+    "_canonical_artifact_cpu": "docs/bench_silent_payments_cpu_2026-05-19_i514400F.json",
+    "_status": "canonical (CPU only); GPU pending controlled runs (estimated 5.38 M tx/s on RTX 5060 Ti per CPU artifact mainnet_context)",
+    "hardware_cpu": "Intel i5-14400F (6P+10E, 16T), Ubuntu 24.04, GCC 14.2.0 -O3 -march=native -flto",
+    "cpu_scan_tx_per_s": {
+      "threads_1": 28806,
+      "threads_4": 110060,
+      "threads_8": 136078,
+      "threads_16": 191965,
+      "api": "LtcSpScanner::scan_tx() with spend_pubkey precomputed in constructor",
+      "spend_pubkey_precomputed": true,
+      "_artifact": "docs/bench_silent_payments_cpu_2026-05-19_i514400F.json"
+    },
+    "gpu_cuda_estimated_m_per_s": 5.38,
+    "gpu_speedup_estimate_vs_cpu_16t": "28x",
+    "wording": "Litecoin SP scan throughput: CPU **28.8k tx/s (1T)** → **192k tx/s (16T)** on i5-14400F (artifact: `docs/bench_silent_payments_cpu_2026-05-19_i514400F.json`). ~2.1× BTC BIP-352 per-call due to spend_pubkey precomputation in `LtcSpScanner`. GPU estimate ~5.38 M tx/s (RTX 5060 Ti) — controlled GPU bench pending.",
+    "note": "Litecoin SP is out of scope for the Bitcoin Core PR evaluation profile."
+  },
+  "rpa_bch": {
+    "_note": "Bitcoin Cash Reusable Payment Address (RPA) scan + grinding throughput. Two canonical artifacts: a focused RPA-only bench (2026-05-18) and the unified Silent-Payments CPU bench (2026-05-19) which includes BCH RPA alongside BTC and LTC for direct comparison.",
+    "_canonical_artifact_focused": "docs/bench_bch_rpa_2026-05-18_gcc14_x86-64.json",
+    "_canonical_artifact_unified": "docs/bench_silent_payments_cpu_2026-05-19_i514400F.json",
+    "_status": "canonical (CPU scan + grinding); GPU estimated only",
+    "hardware_cpu": "Intel i5-14400F (6P+10E, 16T), Ubuntu 24.04, GCC 14.2.0 -O3 -march=native -flto",
+    "cpu_scan_tx_per_s": {
+      "threads_1_focused_bench": 20000,
+      "threads_16_focused_bench": 153000,
+      "threads_1_unified_bench": 13883,
+      "threads_16_unified_bench": 97426,
+      "api": "RpaScanner::scan_tx() with spend_epk precomputed in constructor (lift_x cached since 2026-05-19 fix)",
+      "spend_pubkey_precomputed": true,
+      "_note_dual_artifact": "focused bench (20k/153k) and unified bench (13.9k/97k) differ because the focused bench omits some scan validation steps that the unified bench includes for cross-chain parity.",
+      "_artifacts": [
+        "docs/bench_bch_rpa_2026-05-18_gcc14_x86-64.json",
+        "docs/bench_silent_payments_cpu_2026-05-19_i514400F.json"
+      ]
+    },
+    "cpu_grinding_ks_per_s": {
+      "threads_1": 78,
+      "threads_16": 590,
+      "time_8bit_ms_1c": 3.3,
+      "time_16bit_ms_1c": 840,
+      "time_8bit_ms_16c": 0.4,
+      "time_16bit_ms_16c": 111,
+      "_artifact": "docs/bench_bch_rpa_2026-05-18_gcc14_x86-64.json"
+    },
+    "gpu_estimated_m_per_s": {
+      "scan_rtx5060ti": 11,
+      "grinding_rtx5060ti": 7.5,
+      "_status": "estimated from ct_ecdsa_sign_batch RTX 5060 Ti benchmark + SHA256 overhead — controlled bench pending"
+    },
+    "context": {
+      "bch_mainnet_tx_per_day": 1000000,
+      "realtime_margin_1c": 1739,
+      "realtime_margin_16c": 13304,
+      "historical_sync_2B_txs_cpu16c_hours": 3.6,
+      "historical_sync_2B_txs_gpu_rtx5060ti_minutes": 3
+    },
+    "wording": "BCH RPA scan throughput: CPU **13.9k tx/s (1T)** → **97k tx/s (16T)** on i5-14400F (unified bench, artifact: `docs/bench_silent_payments_cpu_2026-05-19_i514400F.json`); focused RPA bench shows **20k tx/s (1c)** → **153k tx/s (16c)** with reduced cross-chain validation overhead (artifact: `docs/bench_bch_rpa_2026-05-18_gcc14_x86-64.json`). Grinding: **78k attempts/s (1c)** → **590k/s (16c)**. GPU scan estimate ~11 M tx/s (RTX 5060 Ti) — controlled GPU bench pending.",
+    "note": "BCH RPA is out of scope for the Bitcoin Core PR evaluation profile."
   },
   "_note_exploit_counts": "Dynamic counts (exploit PoC, modules) live in docs/canonical_data.json, generated by ci/build_canonical_data.py. Never duplicate them here.",
   "evidence_commit": {
