@@ -37,8 +37,14 @@ def _sub(pattern: str, replacement: str, text: str) -> tuple[str, int]:
     return new_text, n
 
 
-def sync_file(path: Path, c: dict, dry_run: bool, verbose: bool) -> int:
-    """Apply all canonical substitutions to one file. Returns number of replacements."""
+def sync_file(path: Path, c: dict, dry_run: bool, verbose: bool,
+              is_historical: bool = False) -> int:
+    """Apply all canonical substitutions to one file. Returns number of replacements.
+
+    is_historical: when True, skip rewrites that would alter dated/filename
+    references that legitimately record past state (changelogs, session logs,
+    bench-regeneration plans). Ratio-table and wording rewrites still apply.
+    """
     if not path.exists():
         return 0
     text = path.read_text(encoding="utf-8")
@@ -233,6 +239,114 @@ def sync_file(path: Path, c: dict, dry_run: bool, verbose: bool) -> int:
         repl = rf'\g<1>+{cb_min}% to +{cb_max}%\g<2>{cb_err}\g<3>'
         text, n = _sub(pat, repl, text); total += n
 
+    # ── 2026-05-24: Added pattern groups to close drift gaps surfaced by
+    # the multi-pass review. Each group below addresses a specific drift class
+    # that previously required hand-editing across 9 docs.
+
+    # ── CT ratio table cells (4 variants) ────────────────────────────────────
+    # Source: ct_signing_gcc.ecdsa_ratio / .schnorr_ratio in canonical_numbers.json.
+    # Covers the dual-ratio formats used in BENCHMARKS summary, BACKEND_EVIDENCE
+    # table rows, and PR_DESCRIPTION known-limitations rows. The dual-ratio
+    # with `~` prefix (README §For Bitcoin Core Reviewers) is already handled
+    # at line ~104; the variants below cover the no-`~` formats.
+    ecdsa_r = ct_gc.get('ecdsa_ratio')
+    schnorr_r = ct_gc.get('schnorr_ratio')
+    if ecdsa_r and schnorr_r:
+        ecdsa_pct = round((ecdsa_r - 1) * 100)
+        schnorr_pct = round((schnorr_r - 1) * 100)
+
+        # Variant 1: "(ECDSA N.NN×, Schnorr N.NN× — turbo lock <state>)"
+        # — BENCHMARKS.md per-column attribution table.
+        pat = r'\(ECDSA \d+\.\d+×, Schnorr \d+\.\d+× — turbo lock \w+\)'
+        repl = f'(ECDSA {ecdsa_r}×, Schnorr {schnorr_r}× — turbo lock CONFIRMED)'
+        text, n = _sub(pat, repl, text); total += n
+
+        # Variant 2: "**N.NN× ECDSA · N.NN× Schnorr** (turbo lock <state>)"
+        # — BENCHMARKS.md summary table row, bold no-`~` format.
+        pat = r'\*\*\d+\.\d+× ECDSA · \d+\.\d+× Schnorr\*\* \(turbo lock \w+\)'
+        repl = f'**{ecdsa_r}× ECDSA · {schnorr_r}× Schnorr** (turbo lock CONFIRMED)'
+        text, n = _sub(pat, repl, text); total += n
+
+        # Variant 3: Evidence table row pair
+        #   "| **N.NN× faster** (+N%) | **N.NN× faster** (+N%) |"
+        # — BACKEND_EVIDENCE.md CT signing compiler results table.
+        pat = (r'\*\*\d+\.\d+× faster\*\* \(\+\d+%\) \| '
+               r'\*\*\d+\.\d+× faster\*\* \(\+\d+%\)')
+        repl = (f'**{ecdsa_r}× faster** (+{ecdsa_pct}%) | '
+                f'**{schnorr_r}× faster** (+{schnorr_pct}%)')
+        text, n = _sub(pat, repl, text); total += n
+
+        # Variant 4: PR_DESCRIPTION known-limitations table row pair
+        #   "| **+N% vs libsecp (N.NN×)** | **+N% vs libsecp (N.NN×)** |"
+        pat = (r'\*\*\+\d+% vs libsecp \(\d+\.\d+×\)\*\* \| '
+               r'\*\*\+\d+% vs libsecp \(\d+\.\d+×\)\*\*')
+        repl = (f'**+{ecdsa_pct}% vs libsecp ({ecdsa_r}×)** | '
+                f'**+{schnorr_pct}% vs libsecp ({schnorr_r}×)**')
+        text, n = _sub(pat, repl, text); total += n
+
+    # ── Turbo wording variants ────────────────────────────────────────────────
+    # When the canonical hardware spec confirms turbo is disabled (no_turbo=1),
+    # rewrite all "turbo lock unconfirmed" / "turbo status unknown" mentions.
+    # Skipped for historical docs (sessions logs that record the prior state).
+    turbo_method = c.get("hardware", {}).get("turbo_method", "")
+    if "no_turbo=1" in turbo_method and not is_historical:
+        # Combined variant: "turbo lock unconfirmed — results may vary; <suffix>"
+        # The "results may vary" caveat is incompatible with a CONFIRMED state;
+        # rewrite to the canonical CONFIRMED phrasing preserving any trailing
+        # bench-context (taskset, nice).
+        pat = (r'turbo lock (?:un(?:known|confirmed)) — results may vary;'
+               r'\s*([^)\n]*)')
+        repl = (r'turbo lock CONFIRMED: intel_pstate/no_turbo=1, '
+                r'governor=performance, \g<1>')
+        text, n = _sub(pat, repl, text); total += n
+        # "turbo lock unconfirmed" / "turbo lock unknown" (standalone)
+        pat = r'\bturbo lock (?:un(?:known|confirmed))\b'
+        text, n = _sub(pat, "turbo lock CONFIRMED", text); total += n
+        # "turbo status unknown" / "turbo status: unknown ..."
+        pat = r'turbo status[:\s]+unknown\b[^,)\n]*'
+        text, n = _sub(pat, "turbo lock CONFIRMED (intel_pstate/no_turbo=1)", text); total += n
+        # bare "turbo unknown" (e.g. summary "x86-64 · ... · turbo unknown · ...")
+        pat = r'\bturbo unknown\b'
+        text, n = _sub(pat, "turbo CONFIRMED disabled", text); total += n
+
+    # ── Bench artifact filename canonicalization ──────────────────────────────
+    # Replaces every "bench_unified_YYYY-MM-DD_<compiler>_<arch>(_v<n>)?.json"
+    # reference with the canonical filename from `_canonical_bench_artifact`.
+    # Skipped for historical docs which legitimately reference past artifacts.
+    canon_bench = c.get("_canonical_bench_artifact", "")
+    if canon_bench and not is_historical:
+        canon_filename = canon_bench.split("/")[-1]
+        # Match the full filename pattern (with optional _v<n> suffix).
+        pat = r'bench_unified_\d{4}-\d{2}-\d{2}_(?:gcc|clang)\d+_[\w-]+(?:_v\d+)?\.json'
+        # Only replace where the filename differs from canonical (avoid no-op churn).
+        def _replace_bench_filename(m: re.Match) -> str:
+            return canon_filename if m.group(0) != canon_filename else m.group(0)
+        new_text = re.sub(pat, _replace_bench_filename, text)
+        if new_text != text:
+            # Count the actual changes (re.sub doesn't return n with a function).
+            total += sum(1 for _ in re.finditer(pat, text)
+                         if _.group(0) != canon_filename)
+            text = new_text
+
+    # ── Bench date in summary header context ──────────────────────────────────
+    # Replaces dates that appear adjacent to "GCC <version>," or in
+    # "x86-64: GCC ... · <date>" summary lines. Date is extracted from the
+    # `_generated` field (format: "YYYY-MM-DD — ...").
+    # Skipped for historical docs.
+    generated = c.get("_generated", "")
+    m = re.match(r'(\d{4}-\d{2}-\d{2})', generated)
+    if m and not is_historical:
+        canon_date = m.group(1)
+        # "GCC 14.2.0, 2026-05-21" → use canonical date
+        pat = r'(GCC \d+\.\d+\.\d+, )\d{4}-\d{2}-\d{2}\b'
+        text, n = _sub(pat, rf'\g<1>{canon_date}', text); total += n
+        # Summary line "· turbo ... · core ... · 11-pass IQR · 2026-05-21"
+        pat = r'(\b11-pass IQR\b[^\n]*?· )\d{4}-\d{2}-\d{2}\b'
+        text, n = _sub(pat, rf'\g<1>{canon_date}', text); total += n
+        # Summary header "**x86-64 (i5-14400F): 2026-05-21** GCC"
+        pat = r'(\bi5-14400F\): )\d{4}-\d{2}-\d{2}(\*\* GCC)'
+        text, n = _sub(pat, rf'\g<1>{canon_date}\g<2>', text); total += n
+
     if text == original:
         return 0
 
@@ -259,12 +373,30 @@ TARGET_DOCS = [
     # Reviewer-facing docs that contain inline benchmark claims
     "docs/CAAS_REVIEWER_QUICKSTART.md",
     "docs/BITCOIN_CORE_PR_BODY.md",
+    # Docs added 2026-05-24 after drift audit: each contains bench
+    # artifact filenames, dates, turbo wording, or CT ratio cells that
+    # the new pattern set below propagates from canonical_numbers.json.
+    "docs/ATTACK_GUIDE.md",
+    "docs/AUDIT_REPORT.md",
+    "docs/BENCHMARK_METHODOLOGY.md",
+    "docs/PR-PREP_STATUS.md",
     # CHANGELOG and citation metadata also reference canonical numbers.
     # Patterns above cover the [N.N.N] section's perf table rows. Older
     # sections are historical and must NOT be rewritten.
     "CHANGELOG.md",
     ".zenodo.json",
 ]
+
+# Historical/changelog docs that intentionally retain past artifact
+# names and dated wording. These are EXCLUDED from filename and date
+# rewriting even if they would otherwise match — the date/filename
+# IS the historical fact being recorded.
+HISTORICAL_DOCS = {
+    "docs/AUDIT_CHANGELOG.md",
+    "docs/BENCH_REGENERATION_PLAN.md",
+    "docs/BITCOIN_CORE_PR_BLOCKERS.md",  # contains a session-history log
+    "CHANGELOG.md",
+}
 
 
 def main() -> int:
@@ -279,7 +411,8 @@ def main() -> int:
     total_replaced = 0
     for rel in TARGET_DOCS:
         path = BASE / rel
-        n = sync_file(path, c, dry_run=args.dry_run, verbose=True)
+        n = sync_file(path, c, dry_run=args.dry_run, verbose=True,
+                      is_historical=(rel in HISTORICAL_DOCS))
         total_replaced += n
 
     verb = "Would replace" if args.dry_run else "Replaced"
