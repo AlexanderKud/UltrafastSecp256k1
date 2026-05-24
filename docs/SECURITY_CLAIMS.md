@@ -2,7 +2,42 @@
 
 **UltrafastSecp256k1 v4.1.0** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
-### 2026-05-23 — P1-SEC-01 / MED-3 partial mitigation: v2 ABI as the secure path
+### 2026-05-24 — v9 RT-001 / TASK-001: MuSig2 v1 partial_sign DISABLED (full closure)
+
+- **MED-3 / P1-SEC-002 status:** CLOSED. Prior revisions left
+  `ufsecp_musig2_partial_sign` (v1) functional for non-migrated callers
+  and relied on the `[[deprecated]]` compile warning to nudge migration.
+  Adversarial review v9 RT-001 confirmed this kept the C++-layer Rule-13
+  check (`musig2_partial_sign` at `src/cpu/src/musig2.cpp`) silently
+  disarmed because `parse_musig2_keyagg` does not populate
+  `MuSig2KeyAggCtx::individual_pubkeys`, so the entire validation block
+  was skipped. v1 therefore produced valid partial signatures for
+  arbitrary `(privkey, signer_index)` pairs.
+- **Closure (v9 TASK-001):** `ufsecp_musig2_partial_sign`
+  (`src/cpu/src/impl/ufsecp_musig2.cpp:203`) now hard-fails on every call
+  with the new error code `UFSECP_ERR_DEPRECATED_API` (= 12). The output
+  buffer is zeroed and the `secnonce` is securely erased on the reject
+  path so callers that ignore the return code cannot reuse the nonce.
+  `ufsecp_musig2_partial_sign_v2` is the only supported entry; it carries
+  the `pubkeys[]` array, performs constant-time
+  privkey↔pubkeys[signer_index] comparison, and populates
+  `kagg_check.individual_pubkeys` before invoking
+  `musig2_partial_sign_core` so the C++-layer Rule-13 check engages too.
+- **Regression coverage:**
+  `audit/test_regression_musig2_v1_partial_sign_deprecated.cpp`
+  (wired in `unified_audit_runner` as
+  `regression_musig2_v1_partial_sign_deprecated`, advisory=false) asserts:
+  (1) v1 returns `UFSECP_ERR_DEPRECATED_API` on valid inputs,
+  (2) output buffer all-zero on the reject path,
+  (3) `secnonce` securely erased on the reject path,
+  (4) NULL ctx still preempts with `UFSECP_ERR_NULL_ARG`,
+  (5) v2 still produces a valid partial signature.
+- **Breaking change:** any third-party caller still on v1 starts
+  receiving `UFSECP_ERR_DEPRECATED_API` after this change. This is
+  intentional. Migration to v2 takes one extra argument (the `pubkeys`
+  array) and is documented in `include/ufsecp/ufsecp.h:817`.
+
+### 2026-05-23 — P1-SEC-01 / MED-3 partial mitigation: v2 ABI as the secure path (SUPERSEDED 2026-05-24)
 
 - **P1-SEC-01 / MED-3 status:** PARTIAL CLOSURE. The realistic attack
   surface is the ABI boundary (an external coordinator passing a wrong

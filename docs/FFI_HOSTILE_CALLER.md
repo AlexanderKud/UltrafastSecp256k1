@@ -1,8 +1,31 @@
 # FFI Hostile-Caller Coverage
 
-**Last updated**: 2026-05-22 | **Version**: 4.1.0
+**Last updated**: 2026-05-24 | **Version**: 4.1.0
 
-### 2026-05-22 — TASK-007: ufsecp_musig2_partial_sign v1 ABI deprecation restored
+### 2026-05-24 — v9 RT-001 / TASK-001: MuSig2 v1 partial_sign hard-fail
+
+`ufsecp_musig2_partial_sign` (v1) at
+`src/cpu/src/impl/ufsecp_musig2.cpp:203` now returns
+`UFSECP_ERR_DEPRECATED_API` (new error code 12) on every call. The output
+buffer is zeroed and the `secnonce` is securely erased on the reject path
+to protect callers that ignore the return code from accidental nonce
+reuse. NULL-arg validation still takes precedence — a NULL `ctx` /
+`secnonce` / `privkey` / `keyagg` / `session` / `partial_sig32_out` still
+returns `UFSECP_ERR_NULL_ARG`, preserving argument-discipline coverage.
+
+Rationale (v9 RT-001): the v1 ABI cannot enforce the Rule-13
+privkey↔signer_index cross-check because the keyagg blob does not carry
+per-signer pubkeys; the prior revision left this check silently disarmed.
+Callers must migrate to `ufsecp_musig2_partial_sign_v2`, which carries
+the `pubkeys[]` array and validates the binding in constant time at the
+ABI boundary.
+
+Hostile-caller coverage added:
+`audit/test_regression_musig2_v1_partial_sign_deprecated.cpp` —
+verifies the reject path, the output-zero and secnonce-erase invariants,
+the NULL-arg precedence, and confirms v2 is unaffected.
+
+### 2026-05-22 — TASK-007: ufsecp_musig2_partial_sign v1 ABI deprecation restored (SUPERSEDED 2026-05-24)
 
 `include/ufsecp/ufsecp.h` `ufsecp_musig2_partial_sign` once again carries
 `UFSECP_DEPRECATED(...)` directing callers to

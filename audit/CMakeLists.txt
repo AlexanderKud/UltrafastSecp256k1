@@ -3950,6 +3950,8 @@ target_sources(unified_audit_runner PRIVATE
     test_regression_musig2_infinity_nonce.cpp
     $<$<BOOL:${SECP256K1_BUILD_ADAPTOR}>:test_regression_adaptor_binding_domain.cpp>
     test_regression_musig2_abi_signer_index.cpp
+    # v9 RT-001 / TASK-001: MuSig2 v1 partial_sign hard-fail closure (no special dependency)
+    test_regression_musig2_v1_partial_sign_deprecated.cpp
     # P1-SEC-002: schnorr_sign e_hash erasure (no special dependency)
     test_regression_schnorr_sign_e_hash_erased.cpp
     # P2: CT-001/002/003 + SHIM-002/003/004 fixes (includes secp256k1.h — needs shim include path)
@@ -4996,6 +4998,20 @@ add_test(NAME regression_musig2_abi_signer_index
 set_tests_properties(regression_musig2_abi_signer_index PROPERTIES TIMEOUT 60
     LABELS "audit;regression;musig2;abi;security;sec-001")
 
+# v9 RT-001 / TASK-001: MuSig2 v1 partial_sign hard-fail (UFSECP_ERR_DEPRECATED_API).
+# Uses C ABI via ufsecp_static. advisory=false in unified runner.
+add_executable(test_regression_musig2_v1_partial_sign_deprecated_standalone
+    test_regression_musig2_v1_partial_sign_deprecated.cpp)
+audit_target_defaults(test_regression_musig2_v1_partial_sign_deprecated_standalone)
+target_include_directories(test_regression_musig2_v1_partial_sign_deprecated_standalone PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/ufsecp
+    ${CMAKE_CURRENT_BINARY_DIR}/../include/ufsecp)
+target_compile_definitions(test_regression_musig2_v1_partial_sign_deprecated_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_musig2_v1_partial_sign_deprecated
+    COMMAND test_regression_musig2_v1_partial_sign_deprecated_standalone)
+set_tests_properties(regression_musig2_v1_partial_sign_deprecated PROPERTIES TIMEOUT 60
+    LABELS "audit;regression;musig2;abi;security;v9-rt-001;task-001")
+
 # 2026-05-21 CT ops regression: CT-004/005, SEC-002/007/008
 # Uses C++ API only (no shim/GPU dependency). advisory=false.
 add_executable(test_regression_ct_ops_standalone
@@ -5308,6 +5324,7 @@ set(_v1_musig2_v1_callers_unfortunately
     test_exploit_musig2_partial_forgery.cpp
     test_ffi_round_trip.cpp
     test_regression_musig2_abi_signer_index.cpp
+    test_regression_musig2_v1_partial_sign_deprecated.cpp
     test_regression_musig2_zero_psig.cpp
 )
 foreach(_src IN LISTS _v1_musig2_v1_callers_unfortunately)

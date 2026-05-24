@@ -30,6 +30,8 @@ const char* ufsecp_error_str(ufsecp_error_t err) {
     case UFSECP_ERR_SELFTEST:      return "self-test failed";
     case UFSECP_ERR_INTERNAL:      return "internal error";
     case UFSECP_ERR_BUF_TOO_SMALL: return "buffer too small";
+    case UFSECP_ERR_NOT_FOUND:     return "item not found";
+    case UFSECP_ERR_DEPRECATED_API:return "deprecated ABI; call the _v2 variant";
     default:                       return "unknown error";
     }
 }

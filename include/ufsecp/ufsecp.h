@@ -814,29 +814,25 @@ UFSECP_API ufsecp_error_t ufsecp_musig2_start_sign_session(
     const uint8_t msg32[32],
     uint8_t session_out[UFSECP_MUSIG2_SESSION_LEN]);
 
-/** Produce a partial signature.
- *  IMPORTANT: secnonce is zeroed after use to prevent nonce reuse.
- *  keyagg must be a valid opaque context previously produced by ufsecp_musig2_key_agg.
- *  signer_index must be a valid participant index within the aggregated key set.
- *  session must carry the same participant count as keyagg.
+/** Produce a MuSig2 partial signature — DISABLED (returns UFSECP_ERR_DEPRECATED_API).
  *
- *  SECURITY WARNING (SEC-001 / P1-SEC-002): This function does NOT validate that
- *  privkey corresponds to the claimed signer_index.  A wrong signer_index produces a
- *  misrouted partial signature that only fails at aggregation — after the secret nonce
- *  has been consumed.  Use ufsecp_musig2_partial_sign_v2() which enforces this
- *  cross-validation at the ABI boundary.
+ *  v9 RT-001 / TASK-001 finalisation (2026-05-24):
+ *    The v1 ABI cannot enforce the Rule-13 (privkey <-> signer_index) cross-
+ *    check because the keyagg blob carries no per-signer pubkeys. Prior
+ *    revisions left v1 functional for non-migrated callers; a fresh adversarial
+ *    review confirmed that this kept the Rule-13 check silently disarmed and
+ *    that v1 produced valid partial signatures for arbitrary (sk, signer_index)
+ *    pairs. The only correct hardening without an ABI break is to fail-close
+ *    unconditionally. v1 now returns UFSECP_ERR_DEPRECATED_API on every call;
+ *    callers MUST migrate to ufsecp_musig2_partial_sign_v2(), which carries the
+ *    pubkeys[] array and validates the binding at the ABI boundary.
  *
- *  @deprecated Use ufsecp_musig2_partial_sign_v2() for signer-index validation.
- *  Full signer-index cross-validation at the ABI layer requires passing the pubkeys
- *  array; this v1 overload cannot do so without an ABI break (deferred to v2 API). */
-/* P1-SEC-002 / MED-3 (closed via re-attribution): UFSECP_DEPRECATED is RESTORED
- * on the v1 export — the previous comment claimed it was removed to keep -Werror
- * builds green, but the only internal call to v1 (the delegation from v2 after
- * pubkey validation) lives inside an explicit `#pragma GCC diagnostic` suppression
- * pair, so v2 and the internal selftest compile clean even under
- * -Werror=deprecated-declarations. External callers get the compile-time warning
- * that points them at v2. */
-UFSECP_DEPRECATED("Use ufsecp_musig2_partial_sign_v2() — v1 cannot validate signer_index at the ABI boundary (P1-SEC-002 / MED-3); v2 takes a `pubkeys` array and performs constant-time cross-validation against the supplied signer_index.")
+ *  Fail-closed behaviour preserved on every exit path: the output buffer is
+ *  zeroed and the secnonce is consumed (zeroed) before the function returns —
+ *  protecting callers that ignore the error code from accidental nonce reuse.
+ *
+ *  @deprecated Always returns UFSECP_ERR_DEPRECATED_API. Use ufsecp_musig2_partial_sign_v2(). */
+UFSECP_DEPRECATED("ufsecp_musig2_partial_sign (v1) is disabled (v9 RT-001 / TASK-001): returns UFSECP_ERR_DEPRECATED_API on every call. Use ufsecp_musig2_partial_sign_v2() which takes a `pubkeys` array and validates privkey<->signer_index at the ABI boundary.")
 UFSECP_API ufsecp_error_t ufsecp_musig2_partial_sign(
     ufsecp_ctx* ctx,
     uint8_t secnonce[UFSECP_MUSIG2_SECNONCE_LEN],

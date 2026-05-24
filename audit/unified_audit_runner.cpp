@@ -583,6 +583,7 @@ int test_regression_ct_ops_run(); // CT correctness: FROST lagrange CT, batch_we
 // Forward declarations -- 2026-05-12 SEC-001 MuSig2 ABI signer-index fix
 // ============================================================================
 int test_regression_musig2_abi_signer_index_run(); // SEC-001: partial_sign_v2 validates privkey<->signer_index
+int test_regression_musig2_v1_partial_sign_deprecated_run(); // v9 RT-001 / TASK-001: v1 partial_sign hard-fails with UFSECP_ERR_DEPRECATED_API
 
 // ============================================================================
 // Forward declarations -- 2026-05-12 SEC-002/004/006/010 security fixes
@@ -1302,6 +1303,11 @@ static const AuditModule ALL_MODULES[] = {
     // === 2026-05-12 SEC-001: MuSig2 ABI signer-index cross-validation ===
     // advisory=false: uses C ABI via ufsecp_static, no GPU dependency.
     { "regression_musig2_abi_signer_index", "SEC-001: ufsecp_musig2_partial_sign_v2 enforces privkey<->signer_index at ABI boundary — wrong index → UFSECP_ERR_BAD_KEY (SIV-1..7)", "exploit_poc", test_regression_musig2_abi_signer_index_run, false },
+    // === 2026-05-24 v9 RT-001 / TASK-001: MuSig2 v1 ABI hard-fail closure ===
+    // advisory=false: uses C ABI via ufsecp_static, no GPU dependency.
+    // v1 partial_sign now returns UFSECP_ERR_DEPRECATED_API on every call;
+    // output zeroed and secnonce erased on the reject path (fail-closed).
+    { "regression_musig2_v1_partial_sign_deprecated", "v9 RT-001 / TASK-001: ufsecp_musig2_partial_sign (v1) hard-fails with UFSECP_ERR_DEPRECATED_API — closes signer-index bypass that remained in v1 after parse_musig2_keyagg left individual_pubkeys empty", "exploit_poc", test_regression_musig2_v1_partial_sign_deprecated_run, false },
     // === 2026-05-13 v7 security regression guards ===
     // advisory=true: shim must be linked.
     { "regression_shim_security_v7", "v7: T-01 MuSig2 blinding scope + T-07 sig strict parse + T-08 cache memcmp + T-10 context_randomize NULL callback", "exploit_poc", test_regression_shim_security_v7_run, true },

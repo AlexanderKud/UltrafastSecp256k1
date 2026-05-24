@@ -123,18 +123,21 @@ INVARIANTS = [
             "ufsecp_frost_sign to prevent over-committed signer count."
         ),
     },
-    # Regression guard: signer_index bounds check in musig2_partial_sign.
-    # Accepts either `kagg` (v1 form) or `kagg_check` (v2 form) as the parsed-
-    # keyagg variable name.
+    # Regression guard: signer_index bounds check in musig2_partial_sign_v2.
+    # v9 RT-001 / TASK-001 (2026-05-24): v1 (ufsecp_musig2_partial_sign) now
+    # hard-fails with UFSECP_ERR_DEPRECATED_API before any work — the bounds
+    # check moved permanently to v2 (ufsecp_musig2_partial_sign_v2), which is
+    # the only supported entry. Pattern accepts the v2 form using kagg_check.
     {
         "id": "MUSIG2_SIGNER_INDEX",
-        "function": "ufsecp_musig2_partial_sign",
-        "description": "MuSig2 signer_index out-of-range check",
+        "function": "ufsecp_musig2_partial_sign_v2",
+        "description": "MuSig2 v2 signer_index out-of-range check",
         "pattern": re.compile(r'signer_index\s*>=\s*kagg(?:_check)?\.key_coefficients\.size\(\)'),
         "must_be_present": True,
         "rationale": (
-            "Regression guard: the signer_index >= kagg.key_coefficients.size() check "
-            "prevents out-of-bounds access in ufsecp_musig2_partial_sign."
+            "Regression guard: the signer_index >= kagg_check.key_coefficients.size() "
+            "check prevents out-of-bounds access in ufsecp_musig2_partial_sign_v2. "
+            "v1 was intentionally hard-failed in v9 RT-001 / TASK-001."
         ),
     },
 ]

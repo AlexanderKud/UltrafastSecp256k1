@@ -208,43 +208,31 @@ ufsecp_error_t ufsecp_musig2_partial_sign(
     const uint8_t session[UFSECP_MUSIG2_SESSION_LEN],
     size_t signer_index,
     uint8_t partial_sig32_out[32]) {
+    // v9 RT-001 / TASK-001 finalisation. Prior revisions kept the v1 path
+    // functional for non-migrated callers; review confirmed that this left
+    // the Rule-13 (privkey <-> signer_index) cross-check silently disarmed
+    // because parse_musig2_keyagg() does not populate
+    // MuSig2KeyAggCtx::individual_pubkeys, so the check at
+    // musig2.cpp:musig2_partial_sign was gated on a non-empty list and
+    // skipped. The v1 ABI cannot be made safe without an ABI break (it has
+    // no `pubkeys` parameter); the only correct hardening is to fail-close
+    // unconditionally and direct callers to ufsecp_musig2_partial_sign_v2.
     if (SECP256K1_UNLIKELY(!ctx || !secnonce || !privkey || !keyagg || !session || !partial_sig32_out)) {
         return UFSECP_ERR_NULL_ARG;
     }
-    // Zero output before any processing so every error path is fail-closed (MZP-3 / Rule 3).
+    // Fail-closed: zero the output and consume (zero) the secnonce on every
+    // exit path — including the deprecation reject — to prevent nonce reuse
+    // by any caller that ignores the return code.
     std::memset(partial_sig32_out, 0, 32);
     ctx_clear_err(ctx);
-    // BIP-327: consume (zero) secnonce on every exit path.
     ScopeSecureErase<uint8_t> secnonce_guard(secnonce, UFSECP_MUSIG2_SECNONCE_LEN);
-    // SECURITY NOTE (MED-3 / P1-SEC-002): v1 ABI is compile-time
-    // [[deprecated]] because it cannot perform the Rule-13 cross-validation
-    // of (privkey <-> signer_index) — the keyagg blob does not carry per-
-    // signer compressed pubkeys, so the C++ layer's check is silently
-    // skipped (empty individual_pubkeys path). A malicious coordinator who
-    // places a victim's pubkey at the wrong position can elicit a
-    // partial-sig misattribution. The mitigation is to migrate to
-    // ufsecp_musig2_partial_sign_v2, which carries the pubkeys array and
-    // validates at the ABI boundary before invoking the signing core. v1
-    // remains functional for callers that have not migrated; behaviour is
-    // identical to a correct caller — only malicious wrong-index callers
-    // are unprotected here.
-    Scalar sk;
-    ScopeSecureErase<Scalar> sk_guard(&sk, sizeof(sk));
-    if (SECP256K1_UNLIKELY(!scalar_parse_strict_nonzero(privkey, sk))) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_KEY, "privkey is zero or >= n");
-    }
-    secp256k1::MuSig2KeyAggCtx kagg;
-    {
-        const ufsecp_error_t rc = parse_musig2_keyagg(ctx, keyagg, kagg);
-        if (rc != UFSECP_OK) {
-            return rc;
-        }
-    }
-    if (signer_index >= kagg.key_coefficients.size()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "signer_index out of range");
-    }
-    return musig2_partial_sign_core(ctx, secnonce, sk, kagg, session,
-                                    signer_index, partial_sig32_out);
+    return ctx_set_err(ctx, UFSECP_ERR_DEPRECATED_API,
+                       "ufsecp_musig2_partial_sign (v1) is disabled: "
+                       "Rule-13 signer-index cross-check cannot be enforced "
+                       "without per-signer pubkeys. Use "
+                       "ufsecp_musig2_partial_sign_v2 (carries the pubkeys[] "
+                       "array and validates privkey<->signer_index at the "
+                       "ABI boundary).");
 }
 
 ufsecp_error_t ufsecp_musig2_partial_sign_v2(
