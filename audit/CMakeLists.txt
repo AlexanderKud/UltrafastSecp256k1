@@ -5284,36 +5284,36 @@ set_tests_properties(regression_musig_noncegen_extra_input PROPERTIES TIMEOUT 30
 target_sources(unified_audit_runner PRIVATE test_regression_musig_noncegen_extra_input.cpp)
 
 # SHIM-P3-006: R-grinding functional (2026-05-24)
-add_executable(test_regression_shim_rgrind_functional_standalone
-    test_regression_shim_rgrind_functional.cpp)
-audit_target_defaults(test_regression_shim_rgrind_functional_standalone)
-target_compile_definitions(test_regression_shim_rgrind_functional_standalone PRIVATE STANDALONE_TEST)
 if(TARGET secp256k1_shim)
+    add_executable(test_regression_shim_rgrind_functional_standalone
+        test_regression_shim_rgrind_functional.cpp)
+    audit_target_defaults(test_regression_shim_rgrind_functional_standalone)
+    target_compile_definitions(test_regression_shim_rgrind_functional_standalone PRIVATE STANDALONE_TEST)
     target_link_libraries(test_regression_shim_rgrind_functional_standalone PRIVATE secp256k1_shim)
     target_include_directories(test_regression_shim_rgrind_functional_standalone PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../compat/libsecp256k1_shim/include)
+    add_test(NAME regression_shim_rgrind_functional
+        COMMAND test_regression_shim_rgrind_functional_standalone)
+    set_tests_properties(regression_shim_rgrind_functional PROPERTIES TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "audit;regression;shim;ecdsa;rgrind;shim-p3-006")
 endif()
-add_test(NAME regression_shim_rgrind_functional
-    COMMAND test_regression_shim_rgrind_functional_standalone)
-set_tests_properties(regression_shim_rgrind_functional PROPERTIES TIMEOUT 30
-    SKIP_RETURN_CODE 77
-    LABELS "audit;regression;shim;ecdsa;rgrind;shim-p3-006")
 
 # TASK-008: preallocated context API (2026-05-24)
-add_executable(test_regression_shim_preallocated_ctx_standalone
-    test_regression_shim_preallocated_ctx.cpp)
-audit_target_defaults(test_regression_shim_preallocated_ctx_standalone)
-target_compile_definitions(test_regression_shim_preallocated_ctx_standalone PRIVATE STANDALONE_TEST)
 if(TARGET secp256k1_shim)
+    add_executable(test_regression_shim_preallocated_ctx_standalone
+        test_regression_shim_preallocated_ctx.cpp)
+    audit_target_defaults(test_regression_shim_preallocated_ctx_standalone)
+    target_compile_definitions(test_regression_shim_preallocated_ctx_standalone PRIVATE STANDALONE_TEST)
     target_link_libraries(test_regression_shim_preallocated_ctx_standalone PRIVATE secp256k1_shim)
     target_include_directories(test_regression_shim_preallocated_ctx_standalone PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../compat/libsecp256k1_shim/include)
+    add_test(NAME regression_shim_preallocated_ctx
+        COMMAND test_regression_shim_preallocated_ctx_standalone)
+    set_tests_properties(regression_shim_preallocated_ctx PROPERTIES TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "audit;regression;shim;context;preallocated;task-008")
 endif()
-add_test(NAME regression_shim_preallocated_ctx
-    COMMAND test_regression_shim_preallocated_ctx_standalone)
-set_tests_properties(regression_shim_preallocated_ctx PROPERTIES TIMEOUT 30
-    SKIP_RETURN_CODE 77
-    LABELS "audit;regression;shim;context;preallocated;task-008")
 
 # SEC-001/CT-001: adaptor extract CT scalar mul + s_inv erase (2026-05-23)
 # advisory=false: ufsecp ABI + C++ adaptor API always available.
