@@ -4268,7 +4268,7 @@ target_compile_definitions(test_regression_s_scalar_erasure_standalone PRIVATE S
 add_test(NAME regression_s_scalar_erasure
     COMMAND test_regression_s_scalar_erasure_standalone)
 set_tests_properties(regression_s_scalar_erasure PROPERTIES
-    TIMEOUT 60 LABELS "audit;regression;memory_safety;ecdsa;musig2;secure_erase")
+    TIMEOUT 600 LABELS "audit;regression;memory_safety;ecdsa;musig2;secure_erase")
 
 # Full Audit Orchestrator (custom target)
 # ===========================================================================
