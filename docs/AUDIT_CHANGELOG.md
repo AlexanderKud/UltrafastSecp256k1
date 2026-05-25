@@ -1,5 +1,14 @@
 # Audit Changelog
 
+## 2026-05-25 — Fix: T-11/12 memset→secure_erase + is_zero→is_zero_ct in shim_context.cpp
+
+- **`compat/libsecp256k1_shim/src/shim_context.cpp`** — `secp256k1_context_destroy`, `secp256k1_context_randomize` (null-seed path), `secp256k1_context_preallocated_destroy`: replaced `std::memset(ctx->blind, 0, 32)` with `secp256k1::detail::secure_erase(ctx->blind, 32)`. Compilers may optimise away dead-store `memset` on secret buffers; `secure_erase` is protected against elimination.
+- **`compat/libsecp256k1_shim/src/shim_context.cpp`** — `ContextBlindingScope::ContextBlindingScope` fallback path: replaced `r.is_zero()` with `r.is_zero_ct()` on the secret blinding scalar derived from `ctx->blind`. `fast::Scalar::is_zero()` exits early on the first non-zero limb, leaking whether the scalar is zero through timing.
+- **`audit/test_regression_shim_context_erase.cpp` (NEW)** — SCE-1..5: source-scan guards confirming `std::memset(ctx->blind, 0, 32)` is absent and `secure_erase(ctx->blind` + `is_zero_ct()` are present; functional round-trips for create+randomize+sign+verify+destroy and null-seed disable. `advisory=true` (shim-dependent).
+- **`audit/unified_audit_runner.cpp`** — forward declaration + `ALL_MODULES` entry in `shim_regression` section.
+- **`audit/shim_run_stubs_unified.cpp`** — stub returning `ADVISORY_SKIP_CODE` (77) when shim not linked.
+- **`audit/CMakeLists.txt`** — standalone CTest target `regression_shim_context_erase` + `target_sources` entry.
+
 ## 2026-05-25 — Fix: T-09/10 NULL-arg illegal_callback in shim keypair + ecdsa parse functions
 
 - **`compat/libsecp256k1_shim/src/shim_extrakeys.cpp`** — `secp256k1_keypair_create`, `secp256k1_keypair_sec`, `secp256k1_keypair_pub`, `secp256k1_keypair_xonly_pub`: split combined `if (!a || !b) return 0` NULL checks into per-argument guards that call `secp256k1_shim_call_illegal_cb(ctx, "function: arg is NULL")` before returning 0. Matches libsecp256k1 upstream `ARG_CHECK` behaviour.

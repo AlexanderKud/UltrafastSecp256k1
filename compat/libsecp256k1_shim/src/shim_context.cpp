@@ -159,7 +159,7 @@ void secp256k1_context_destroy(secp256k1_context *ctx) {
         // Erase all sensitive fields before freeing.
         // SHIM-NEW-001 fix: also erase cached_r_G (Point object), not just the valid flag.
         // The Point stores r*G where r comes from the blinding seed — key material.
-        std::memset(ctx->blind, 0, 32);
+        secp256k1::detail::secure_erase(ctx->blind, 32);
         secp256k1::detail::secure_erase(&ctx->cached_r_G, sizeof(ctx->cached_r_G));
         secp256k1::detail::secure_erase(&ctx->cached_r, sizeof(ctx->cached_r));
         ctx->cached_r_G_valid = false;
@@ -216,7 +216,7 @@ int secp256k1_context_randomize(secp256k1_context *ctx, const unsigned char *see
         }
         secp256k1::detail::secure_erase(seed_arr.data(), 32);
     } else {
-        std::memset(ctx->blind, 0, 32);
+        secp256k1::detail::secure_erase(ctx->blind, 32);
         ctx->blinded = false;
         ctx->cached_r_G_valid = false;
         secp256k1::detail::secure_erase(&ctx->cached_r, sizeof(ctx->cached_r));
@@ -243,7 +243,7 @@ ContextBlindingScope::ContextBlindingScope(const secp256k1_context* ctx) noexcep
         std::array<uint8_t, 32> seed_arr{};
         std::memcpy(seed_arr.data(), c->blind, 32);
         Scalar r = Scalar::from_bytes(seed_arr);
-        if (r.is_zero()) return;  // negligible; skip blinding
+        if (r.is_zero_ct()) return;  // negligible; skip blinding — is_zero_ct avoids data-dependent branch on secret
         // PERF-005: use cached r*G (computed once at context_randomize time) to
         // avoid a ~9 µs CT generator_mul on every signing call.
         secp256k1::ct::set_blinding(r, secp256k1::ct::generator_mul(r));
@@ -347,7 +347,7 @@ secp256k1_context *secp256k1_context_preallocated_clone(
 void secp256k1_context_preallocated_destroy(secp256k1_context *ctx) {
     if (ctx && ctx != &g_static_ctx) {
         // Erase sensitive fields — same as context_destroy but do NOT free().
-        std::memset(ctx->blind, 0, 32);
+        secp256k1::detail::secure_erase(ctx->blind, 32);
         secp256k1::detail::secure_erase(&ctx->cached_r_G, sizeof(ctx->cached_r_G));
         secp256k1::detail::secure_erase(&ctx->cached_r, sizeof(ctx->cached_r));
         ctx->cached_r_G_valid = false;
