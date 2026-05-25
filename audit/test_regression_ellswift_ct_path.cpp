@@ -112,6 +112,55 @@ static void test_ellswift_zero_key() {
     secp256k1_context_destroy(ctx);
 }
 
+// ── ECP-6: general XDH path (non-BIP324 hashfp) ───────────────────────────
+// Exercises the general path in secp256k1_ellswift_xdh (SHIM-006 fix target).
+// The custom hashfp receives the ECDH secret x32 and must return 1; the shared
+// secret is written to output. Tests that the x32 secret is correctly passed to
+// hashfp and that the function returns 1.
+static int ecp6_hashfp_called = 0;
+static int ecp6_custom_hash(unsigned char* output,
+    const unsigned char* x32,
+    const unsigned char* /*ell_a64*/,
+    const unsigned char* /*ell_b64*/,
+    void* data)
+{
+    ecp6_hashfp_called = 1;
+    // Write x32 directly as output to allow symmetric check
+    memcpy(output, x32, 32);
+    (void)data;
+    return 1;
+}
+
+static void test_ellswift_xdh_general_path() {
+    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+
+    unsigned char ska[32] = {}, skb[32] = {};
+    ska[31] = 5; skb[31] = 11;
+    static const unsigned char aux[32] = {0};
+
+    unsigned char enc_a[64], enc_b[64];
+    check(secp256k1_ellswift_create(ctx, enc_a, ska, aux) == 1, "[ECP-6a] create A");
+    check(secp256k1_ellswift_create(ctx, enc_b, skb, aux) == 1, "[ECP-6b] create B");
+
+    unsigned char shared_ab[32], shared_ba[32];
+    ecp6_hashfp_called = 0;
+    int r_ab = secp256k1_ellswift_xdh(ctx, shared_ab, enc_a, enc_b, ska,
+                                       0, ecp6_custom_hash, nullptr);
+    check(r_ab == 1, "[ECP-6c] general XDH A side succeeds");
+    check(ecp6_hashfp_called == 1, "[ECP-6d] custom hashfp was called");
+
+    ecp6_hashfp_called = 0;
+    int r_ba = secp256k1_ellswift_xdh(ctx, shared_ba, enc_a, enc_b, skb,
+                                       1, ecp6_custom_hash, nullptr);
+    check(r_ba == 1, "[ECP-6e] general XDH B side succeeds");
+    // Both sides compute ECDH(skA, pkB) and ECDH(skB, pkA): these equal the
+    // same shared point x-coordinate, so shared_ab == shared_ba.
+    check(memcmp(shared_ab, shared_ba, 32) == 0,
+          "[ECP-6f] general path shared secret symmetric (SHIM-006 fix)");
+
+    secp256k1_context_destroy(ctx);
+}
+
 // ── _run() ─────────────────────────────────────────────────────────────────
 int test_regression_ellswift_ct_path_run() {
     g_pass = 0; g_fail = 0;
@@ -122,6 +171,7 @@ int test_regression_ellswift_ct_path_run() {
     test_ellswift_xdh_roundtrip();
     test_ellswift_null_seckey();
     test_ellswift_zero_key();
+    test_ellswift_xdh_general_path();
 
     std::printf("  pass=%d  fail=%d\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;

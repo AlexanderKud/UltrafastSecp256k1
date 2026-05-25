@@ -96,7 +96,7 @@ RecoverableSignature ecdsa_sign_recoverable(
     auto r_fe = R.x();
     auto r_bytes = r_fe.to_bytes();
     auto r = Scalar::from_bytes(r_bytes);
-    if (r.is_zero()) return {{Scalar::zero(), Scalar::zero()}, 0};
+    if (r.is_zero_ct()) return {{Scalar::zero(), Scalar::zero()}, 0};
 
     // Determine recovery ID
     int recid = 0;
@@ -126,7 +126,7 @@ RecoverableSignature ecdsa_sign_recoverable(
     auto r_times_d  = ct::scalar_mul(r, private_key);
     auto z_plus_rd  = ct::scalar_add(z, r_times_d);
     auto s          = ct::scalar_mul(k_inv, z_plus_rd);
-    if (s.is_zero()) {
+    if (s.is_zero_ct()) {
         detail::secure_erase(&k,          sizeof(k));
         detail::secure_erase(&k_inv,      sizeof(k_inv));
         detail::secure_erase(&r_times_d,  sizeof(r_times_d));

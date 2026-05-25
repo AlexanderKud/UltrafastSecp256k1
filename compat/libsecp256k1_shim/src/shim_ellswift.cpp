@@ -16,6 +16,7 @@
 #include "secp256k1/precompute.hpp"
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/ct/point.hpp"
+#include "secp256k1/detail/secure_erase.hpp"
 
 using namespace secp256k1::fast;
 
@@ -174,6 +175,8 @@ int secp256k1_ellswift_xdh(
     if (hashfp == secp256k1_ellswift_xdh_hash_function_bip324) {
         auto secret = secp256k1::bip324::xdh(ell_a64, ell_b64, sk, initiating);
         std::memcpy(output, secret.data(), 32);
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));
+        secp256k1::detail::secure_erase(kb.data(), 32);
         return 1;
     }
 
@@ -194,7 +197,11 @@ int secp256k1_ellswift_xdh(
     if (ecdh_point.is_infinity()) return 0;
 
     auto x32_arr = ecdh_point.x().to_bytes();
-    return hashfp(output, x32_arr.data(), ell_a64, ell_b64, data);
+    int rc = hashfp(output, x32_arr.data(), ell_a64, ell_b64, data);
+    secp256k1::detail::secure_erase(x32_arr.data(), 32);
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    secp256k1::detail::secure_erase(kb.data(), 32);
+    return rc;
 }
 
 } // extern "C"

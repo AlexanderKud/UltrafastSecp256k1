@@ -673,8 +673,9 @@ __device__ inline void rfc6979_nonce_hedged(
 
     for (int attempt = 0; attempt < 100; attempt++) {
         hmac_sha256(K, 32, V, 32, V);
-        scalar_from_bytes(V, k_out);
-        if (!scalar_is_zero(k_out)) return;
+        // CT-GPU-001 fix: use strict_nonzero to reject k==0 AND k>=n (matches rfc6979_nonce).
+        // scalar_from_bytes silently reduces mod n, accepting k>=n as a different k value.
+        if (scalar_from_bytes_strict_nonzero(V, k_out)) return;
         uint8_t buf[33];
         for (int i = 0; i < 32; i++) buf[i] = V[i];
         buf[32] = 0x00;

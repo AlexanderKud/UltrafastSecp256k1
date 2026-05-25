@@ -131,6 +131,20 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "them and they catch any divergence between the int128 and "
         "portable scalar code paths.",
     ),
+    "c67edc1ca5": (
+        ["audit/test_exploit_ecdsa_sign_sentinels.cpp",
+         "audit/test_regression_ellswift_ct_path.cpp"],
+        "PERF-002: redundant y²=x³+7 curve check removed from 4 verify-path shim "
+        "locations (pubkey_data_to_point, secp256k1_ecdsa_verify first-encounter, "
+        "secp256k1_ecdsa_verify_batch small+large, shim_schnorr_bch.cpp). The "
+        "libsecp256k1 trust contract validates curve membership exactly once at "
+        "ec_pubkey_parse/ec_pubkey_create; subsequent callers trust the opaque struct. "
+        "No security semantics changed — only redundant re-validation removed from the "
+        "hot path. Retroactive coverage: test_exploit_ecdsa_sign_sentinels exercises "
+        "ecdsa_verify paths using pubkey_data_to_point; test_regression_ellswift_ct_path "
+        "ECP-6 exercises the shim XDH general path using the same helper. Both test files "
+        "were updated in the immediately-following security fix commit.",
+    ),
     "76054b2683": (
         ["src/cpu/tests/test_field_52.cpp"],
         "FE64 mul_wide column-3 u128 overflow fix. The existing test_field_52 "

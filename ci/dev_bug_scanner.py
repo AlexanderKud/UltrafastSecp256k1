@@ -2050,7 +2050,7 @@ def check_scalar_not_reduced(path: str, lines: List[str]) -> List[Finding]:
             if stripped.endswith(';') and '=' not in stripped and '{' not in stripped:
                 continue
             ctx = '\n'.join(lines[max(0, i - 4): min(len(lines), i + 4)])
-            if not re.search(r'\b(scalar_reduce|scalar_set_b32|set_int|is_zero|zero_check)\b', ctx):
+            if not re.search(r'\b(scalar_reduce|scalar_set_b32|set_int|is_zero|is_zero_ct|zero_check)\b', ctx):
                 findings.append(Finding(
                     file=path, line=i + 1, severity="MEDIUM",
                     category="SCALAR_NOT_REDUCED",

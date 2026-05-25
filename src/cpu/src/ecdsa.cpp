@@ -552,7 +552,7 @@ ECDSASignature ecdsa_sign(const std::array<uint8_t, 32>& msg_hash,
             // Normalization is required — Jacobian X = affine_x * Z^2 (wrong if not Z=1).
             R.normalize();
             auto r = Scalar::from_limbs(R.x().limbs());
-            if (!r.is_zero()) {
+            if (!r.is_zero_ct()) {
                 // s = k^{-1} * (z + r * d) mod n  (CT scalar arithmetic)
                 auto k_inv = ct::scalar_inverse(k);
                 auto s = ct::scalar_mul(k_inv, ct::scalar_add(z, ct::scalar_mul(r, private_key)));
@@ -611,7 +611,7 @@ ECDSASignature ecdsa_sign_hedged(const std::array<uint8_t, 32>& msg_hash,
         auto R = signing_generator_mul(k);
         if (!R.is_infinity()) {
             auto r = Scalar::from_limbs(R.x().limbs());
-            if (!r.is_zero()) {
+            if (!r.is_zero_ct()) {
                 auto k_inv = ct::scalar_inverse(k);
                 auto s = ct::scalar_mul(k_inv, ct::scalar_add(z, ct::scalar_mul(r, private_key)));
                 if (!s.is_zero_ct()) {

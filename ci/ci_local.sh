@@ -216,7 +216,7 @@ fi
 
 # ── Full build + no-ASM test (~5min) ─────────────────────────────────────────
 if [[ $FULL -eq 1 ]]; then
-  echo -e "${BOLD}[4] Build (Release, no-ASM — mirrors sanitizer CI path)${NC}"
+  echo -e "${BOLD}[6] Build (Release, no-ASM — mirrors sanitizer CI path)${NC}"
   BUILD_DIR="${TMPDIR:-/tmp}/ci_local_build_$$"
   _cmake_log="${TMPDIR:-/tmp}/ci_local_cmake_$$.log"
   _build_log="${TMPDIR:-/tmp}/ci_local_build_$$.log"
@@ -258,7 +258,7 @@ if [[ $FULL -eq 1 ]]; then
   fi
 
   if [[ $fail -eq 0 ]]; then
-    echo -e "${BOLD}[5] Tests (no-ASM — mul_wide portable path)${NC}"
+    echo -e "${BOLD}[7] Tests (no-ASM — mul_wide portable path)${NC}"
     run_check "field_26 cross-check"    "$BUILD_DIR/src/cpu/test_field_26_standalone"
     run_check "field_52 cross-check"    "$BUILD_DIR/src/cpu/test_field_52_standalone"
     # Cross-platform KAT binary may not exist in every cmake mode;

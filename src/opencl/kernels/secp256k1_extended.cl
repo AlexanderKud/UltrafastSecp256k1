@@ -1136,7 +1136,9 @@ inline void rfc6979_nonce_impl(const Scalar* priv, const uchar msg_hash[32], Sca
     // V = HMAC_K(V)
     hmac_sha256_impl(K_, 32, V, 32, V);
 
-    // Generate k
+    // Generate k — CT-GPU-002 fix: replaced data-dependent goto with break.
+    // Logic unchanged: accept k iff k != 0 AND k < order (strict RFC 6979).
+    int _found = 0;
     for (int attempt = 0; attempt < 100; attempt++) {
         hmac_sha256_impl(K_, 32, V, 32, V);
         scalar_from_bytes_impl(V, k_out);
@@ -1144,7 +1146,7 @@ inline void rfc6979_nonce_impl(const Scalar* priv, const uchar msg_hash[32], Sca
             Scalar order;
             order.limbs[0] = ORDER_N0; order.limbs[1] = ORDER_N1;
             order.limbs[2] = ORDER_N2; order.limbs[3] = ORDER_N3;
-            if (!scalar_ge_impl(k_out, &order)) goto rfc6979_cleanup;
+            if (!scalar_ge_impl(k_out, &order)) { _found = 1; break; }
         }
         // Retry: K = HMAC_K(V || 0x00), V = HMAC_K(V)
         uchar retry_input[33];
@@ -1153,8 +1155,7 @@ inline void rfc6979_nonce_impl(const Scalar* priv, const uchar msg_hash[32], Sca
         hmac_sha256_impl(K_, 32, retry_input, 33, K_);
         hmac_sha256_impl(K_, 32, V, 32, V);
     }
-
-rfc6979_cleanup:
+    (void)_found;  // caller checks k_out == 0 on failure
     // Erase private key material from stack (Guardrail #10)
     for (int _i = 0; _i < 32; _i++) { priv_bytes[_i] = 0; }
     for (int _i = 0; _i < 32; _i++) { hmac_input[33 + _i] = 0; }
