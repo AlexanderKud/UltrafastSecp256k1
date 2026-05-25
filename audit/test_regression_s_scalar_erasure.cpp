@@ -79,7 +79,7 @@ static void test_ssr1_ecdsa_fast_path_roundtrip() {
         if (sig.r.is_zero() || sig.s.is_zero()) continue;
 
         Point pk = ct::generator_mul(sk);
-        if (secp256k1::ecdsa_verify(sig, msg, pk)) ++ok;
+        if (secp256k1::ecdsa_verify(msg, pk, sig)) ++ok;
     }
     CHECK(ok >= 9, "[SSR-1] >=9/10 ecdsa_sign fast-path roundtrips passed");
 }
@@ -103,7 +103,7 @@ static void test_ssr2_ct_ecdsa_sign_roundtrip() {
         if (sig.r.is_zero() || sig.s.is_zero()) continue;
 
         Point pk = ct::generator_mul(sk);
-        if (secp256k1::ecdsa_verify(sig, msg, pk)) ++ok;
+        if (secp256k1::ecdsa_verify(msg, pk, sig)) ++ok;
     }
     CHECK(ok >= 9, "[SSR-2] >=9/10 ct::ecdsa_sign roundtrips passed");
 }
@@ -120,40 +120,45 @@ static void test_ssr3_musig2_agg_correctness() {
         return;
     }
 
-    Point pk1 = ct::generator_mul(sk1);
-    Point pk2 = ct::generator_mul(sk2);
+    // Compressed 33-byte pubkeys for key_agg
+    auto pk1_c = Point::generator().scalar_mul(sk1).to_compressed();
+    auto pk2_c = Point::generator().scalar_mul(sk2).to_compressed();
+    // x-only 32-byte pubkeys for nonce_gen
+    auto pk1_x = Point::generator().scalar_mul(sk1).x().to_bytes();
+    auto pk2_x = Point::generator().scalar_mul(sk2).x().to_bytes();
 
-    std::vector<Point> pubkeys = {pk1, pk2};
-    auto agg = musig2_key_agg(pubkeys);
-    CHECK(!agg.aggregated_pubkey.is_infinity(), "[SSR-3] key_agg non-infinity");
-    if (agg.aggregated_pubkey.is_infinity()) return;
+    std::vector<std::array<std::uint8_t, 33>> pks_c = {pk1_c, pk2_c};
+    auto key_agg = secp256k1::musig2_key_agg(pks_c);
+    CHECK(!key_agg.Q.is_infinity(), "[SSR-3] key_agg non-infinity");
+    if (key_agg.Q.is_infinity()) return;
 
     std::array<std::uint8_t, 32> msg{};
     msg[0] = 0xDE; msg[1] = 0xAD; msg[15] = 0xBE; msg[31] = 0xEF;
 
-    auto [sec1, pub1] = musig2_generate_pubnonce(sk1, msg);
-    auto [sec2, pub2] = musig2_generate_pubnonce(sk2, msg);
+    auto [sec1, pub1] = secp256k1::musig2_nonce_gen(sk1, pk1_x, key_agg.Q_x, msg, nullptr);
+    auto [sec2, pub2] = secp256k1::musig2_nonce_gen(sk2, pk2_x, key_agg.Q_x, msg, nullptr);
 
-    std::vector<MuSig2PubNonce> pubnonces = {pub1, pub2};
+    std::vector<MuSig2PubNonce> pub_nonces = {pub1, pub2};
+    auto agg_nonce = secp256k1::musig2_nonce_agg(pub_nonces);
+    auto session   = secp256k1::musig2_start_sign_session(agg_nonce, key_agg, msg);
 
-    auto sess1 = musig2_start_sign_session(agg, pubnonces, msg, sk1, 0);
-    auto sess2 = musig2_start_sign_session(agg, pubnonces, msg, sk2, 1);
+    // partial_sign takes sec_nonce by mutable reference (consumes it)
+    Scalar psig1 = secp256k1::musig2_partial_sign(sec1, sk1, key_agg, session, 0);
+    Scalar psig2 = secp256k1::musig2_partial_sign(sec2, sk2, key_agg, session, 1);
 
-    auto psig1 = musig2_partial_sign(sec1, sess1, sk1);
-    auto psig2 = musig2_partial_sign(sec2, sess2, sk2);
+    std::vector<Scalar> partial_sigs = {psig1, psig2};
 
-    std::vector<Scalar> psigs = {psig1, psig2};
-
-    // This call contains the s-erasure fix
-    auto sig64 = musig2_partial_sig_agg(psigs, sess1);
+    // This call exercises the s-erasure fix
+    auto sig64 = secp256k1::musig2_partial_sig_agg(partial_sigs, session);
 
     bool non_zero = false;
     for (auto b : sig64) { if (b) { non_zero = true; break; } }
     CHECK(non_zero, "[SSR-3] musig2_partial_sig_agg output non-zero (s erasure intact)");
     if (!non_zero) return;
 
-    auto pk_xonly = agg.aggregated_pubkey.x().to_bytes();
-    bool v = secp256k1::schnorr_verify(sig64, pk_xonly, msg);
+    // Schnorr verify against aggregated pubkey (x-only)
+    auto schnorr_sig = secp256k1::SchnorrSignature::from_bytes(sig64);
+    bool v = secp256k1::schnorr_verify(key_agg.Q_x, msg, schnorr_sig);
     CHECK(v, "[SSR-3] musig2 aggregate sig verifies against aggregated pubkey");
 }
 
@@ -165,12 +170,10 @@ int main() {
 #else
 int test_regression_s_scalar_erasure_run() {
 #endif
-    printf("[s_scalar_erasure] 2026-05-25 fix: r/s/s erase in ecdsa_sign + musig2_partial_sig_agg\n");
-
+    printf("[s_scalar_erasure] 2026-05-25: r/s erasure in ecdsa_sign + musig2_partial_sig_agg\n");
     test_ssr1_ecdsa_fast_path_roundtrip();
     test_ssr2_ct_ecdsa_sign_roundtrip();
     test_ssr3_musig2_agg_correctness();
-
     printf("[s_scalar_erasure] %d passed, %d failed\n", g_pass, g_fail);
     return g_fail;
 }
