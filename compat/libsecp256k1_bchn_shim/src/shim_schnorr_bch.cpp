@@ -36,19 +36,14 @@ using namespace secp256k1::fast;
 
 // -- Internal helpers ---------------------------------------------------------
 
-static Point pubkey_data_to_point(const unsigned char data[64]) {
-    std::array<uint8_t, 32> xb{}, yb{};
-    std::memcpy(xb.data(), data,      32);
-    std::memcpy(yb.data(), data + 32, 32);
+// Trust contract (matches libsecp256k1): secp256k1_pubkey is populated only
+// by secp256k1_ec_pubkey_parse / secp256k1_ec_pubkey_create, both of which
+// validate y²=x³+7. We do not re-check curve membership here.
+static Point pubkey_data_to_point(const unsigned char data[64]) noexcept {
+    const auto& xb = *reinterpret_cast<const std::array<uint8_t, 32>*>(data);
+    const auto& yb = *reinterpret_cast<const std::array<uint8_t, 32>*>(data + 32);
     FieldElement x = FieldElement::from_bytes(xb);
     FieldElement y = FieldElement::from_bytes(yb);
-    // On-curve check: reject off-curve points that bypass secp256k1_ec_pubkey_parse.
-    // A hostile caller could write arbitrary bytes into a secp256k1_pubkey struct.
-    // y^2 == x^3 + 7 must hold; otherwise return infinity (verify will return 0).
-    auto b7 = FieldElement::from_uint64(7);
-    if (y * y != x * x * x + b7) {
-        return Point::infinity();
-    }
     return Point::from_affine(x, y);
 }
 

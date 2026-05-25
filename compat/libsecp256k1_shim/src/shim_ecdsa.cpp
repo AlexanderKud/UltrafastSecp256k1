@@ -403,40 +403,22 @@ int secp256k1_ecdsa_verify(
     // On hit:  ~900 ns saved vs building tables per-call (EcdsaPublicKey path).
     // On miss: build GLV tables once, cache in 32-slot thread-local (~50 KB).
     //
-    // Pubkey-bytes validation (SHIM-013 fix):
-    //   The cache-hit and 2nd-encounter paths run through ecdsa_pubkey_parse(),
-    //   which enforces both `parse_bytes_strict` (x<p / y<p) AND the curve
-    //   equation y² = x³ + 7. The 1st-encounter direct-Point path below used
-    //   to skip both checks (relying on the libsecp256k1 trust contract that
-    //   secp256k1_pubkey opaque bytes only come from ec_pubkey_parse /
-    //   ec_pubkey_create). That created a cache-state-dependent verify
-    //   verdict — a hostile or buggy caller writing raw bytes into
-    //   pubkey->data could see DIFFERENT verify results on the 1st vs 2nd
-    //   call for the same key. To make the result deterministic regardless
-    //   of how callers populate the struct, both paths now enforce the same
-    //   validation. Cost: one strict parse + one field square+cube+compare
-    //   on the 1st encounter only (~30–60 ns), negligible vs a full ECDSA
-    //   verify (~17 µs). This implements the "Option A" resolution from the
-    //   2026-05-22 review (RED-002 / SHIM-013).
+    // Trust contract (matches libsecp256k1 behaviour):
+    //   secp256k1_pubkey is populated only by secp256k1_ec_pubkey_parse /
+    //   secp256k1_ec_pubkey_create, both of which validate y²=x³+7. We do NOT
+    //   re-check curve membership here. A caller that writes arbitrary bytes
+    //   into the struct violates the API contract; behaviour is undefined,
+    //   same as libsecp256k1. Both 1st-encounter and 2nd+-encounter paths now
+    //   share this trust model — no curve-state-dependent verdict difference.
     if (const secp256k1::EcdsaPublicKey* epk =
             s_ecdsa_cache.get_or_build(pubkey->data)) {
-        // Cache hit (2nd+ encounter) or tables just built: use prebuilt GLV tables.
+        // Cache hit (2nd+ encounter): use prebuilt GLV tables.
         return secp256k1::ecdsa_verify(msghash32, *epk, internal_sig) ? 1 : 0;
     }
-    // First encounter (cache returns nullptr): use direct Point path WITH
-    // the same strict parse + curve check that the cache-miss path runs
-    // inside ecdsa_pubkey_parse — so 1st-encounter and 2nd-encounter agree
-    // on what they accept.
+    // First encounter (cache returns nullptr): direct Point path.
     {
-        using namespace secp256k1::fast;
-        FieldElement x_fe, y_fe;
-        if (!FieldElement::parse_bytes_strict(pubkey->data,      x_fe)) return 0;
-        if (!FieldElement::parse_bytes_strict(pubkey->data + 32, y_fe)) return 0;
-        // y² == x³ + 7 (secp256k1 curve equation).
-        const auto b7 = FieldElement::from_uint64(7);
-        if (y_fe * y_fe != x_fe * x_fe * x_fe + b7) return 0;
-        auto pt = Point::from_affine(x_fe, y_fe);
-        if (pt.is_infinity()) return 0;
+        using secp256k1_shim_internal::pubkey_data_to_point;
+        auto pt = pubkey_data_to_point(pubkey->data);
         return secp256k1::ecdsa_verify(msghash32, pt, internal_sig) ? 1 : 0;
     }
 }

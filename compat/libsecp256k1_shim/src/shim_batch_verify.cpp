@@ -18,6 +18,7 @@
 
 #include "secp256k1_batch.h"
 #include "shim_internal.hpp"
+#include "shim_pubkey_helpers.hpp"
 
 #include <cstring>
 #include <array>
@@ -145,18 +146,9 @@ int secp256k1_ecdsa_verify_batch(
             // No is_low_s() check: batch verify must accept high-S sigs to match
             // single secp256k1_ecdsa_verify behaviour (SHIM-008 fix).
 
-            // Reconstruct Point from opaque uncompressed x||y.
-            std::array<uint8_t, 32> xb{}, yb{};
-            std::memcpy(xb.data(), pubkeys[i]->data,      32);
-            std::memcpy(yb.data(), pubkeys[i]->data + 32, 32);
-            auto x = FieldElement::from_bytes(xb);
-            auto y = FieldElement::from_bytes(yb);
-            // Curve membership check: y² == x³ + 7
-            auto lhs = y.square();
-            auto rhs = x.square() * x + FieldElement::from_uint64(7);
-            if (!(lhs == rhs)) return 0;
-            auto pt = Point::from_affine(x, y);
-            if (pt.is_infinity()) return 0;
+            // Trust contract: pubkey->data was validated at ec_pubkey_parse time.
+            using secp256k1_shim_internal::pubkey_data_to_point;
+            auto pt = pubkey_data_to_point(pubkeys[i]->data);
 
             std::array<uint8_t, 32> msg{};
             std::memcpy(msg.data(), msgs32[i], 32);
@@ -182,18 +174,9 @@ int secp256k1_ecdsa_verify_batch(
         e.signature = secp256k1::ECDSASignature{r, s};
         // No is_low_s() check: must accept high-S to match single verify (SHIM-008).
 
-        std::array<uint8_t, 32> xb{}, yb{};
-        std::memcpy(xb.data(), pubkeys[i]->data,      32);
-        std::memcpy(yb.data(), pubkeys[i]->data + 32, 32);
-        auto x = FieldElement::from_bytes(xb);
-        auto y = FieldElement::from_bytes(yb);
-        // Curve membership check: y² == x³ + 7 (matches small-batch path behaviour).
-        // Rejects invalid-curve points before they enter the batch MSM.
-        auto lhs = y.square();
-        auto rhs = x.square() * x + FieldElement::from_uint64(7);
-        if (!(lhs == rhs)) return 0;
-        e.public_key = Point::from_affine(x, y);
-        if (e.public_key.is_infinity()) return 0;
+        // Trust contract: pubkey->data was validated at ec_pubkey_parse time.
+        using secp256k1_shim_internal::pubkey_data_to_point;
+        e.public_key = pubkey_data_to_point(pubkeys[i]->data);
 
         batch.push_back(e);
     }
