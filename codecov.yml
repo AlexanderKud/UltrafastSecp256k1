@@ -57,6 +57,12 @@ ignore:
   # 2/3 of the file are OS-API wrappers never compiled on Linux.
   # BIP-39 NFKD correctness is verified by test_exploit_bip39_nfkd.
   - "src/cpu/src/unicode_nfkd.cpp"
+  # C ABI compat shims — tested by shim test suite, not CPU unit tests;
+  # not compiled into the coverage build.
+  - "compat/**"
+  # GPU kernels — cannot be instrumented on CPU-only CI runners.
+  - "src/cuda/**"
+  - "src/opencl/**"
 
 comment:
   layout: "reach,diff,flags,files"
