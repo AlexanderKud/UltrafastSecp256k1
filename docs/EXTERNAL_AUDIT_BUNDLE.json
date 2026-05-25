@@ -33,13 +33,13 @@
     {
       "exists": true,
       "path": "docs/TEST_MATRIX.md",
-      "sha256": "3be2dd3e8208fecb505054fe331a0b0a8f019fdcf6685cdbfc7ff47ad725d978",
-      "size": 58795
+      "sha256": "d2e0bdb8ecf6ae8d87be802af5c8ee6a270c3dbe7a01f8e5a64cbbebc6c21f6f",
+      "size": 59551
     },
     {
       "exists": true,
       "path": "docs/CT_VERIFICATION.md",
-      "sha256": "9d1aa0b1890a0aa3d8e678fdd6cb5092a4e6c60d5faff6d8dfb56cff7a18693e",
+      "sha256": "29a0953eeabaa3e0399f8c24651e066696d01744aacbba7a90884e493f1fbc61",
       "size": 45428
     },
     {
@@ -156,7 +156,7 @@
           {
             "findings": [
               {
-                "message": "Audit test-quality findings: files=407, critical=0, high=0, medium=0, low=0",
+                "message": "Audit test-quality findings: files=410, critical=0, high=0, medium=0, low=0",
                 "severity": "INFO"
               },
               {
@@ -170,7 +170,7 @@
           {
             "findings": [
               {
-                "message": "All 666 security patterns preserved",
+                "message": "All 671 security patterns preserved",
                 "severity": "PASS"
               }
             ],
@@ -200,27 +200,11 @@
           {
             "findings": [
               {
-                "message": "34 files modified/deleted since graph build (2026-05-24T19:22:23)",
+                "message": "1 files modified/deleted since graph build (2026-05-25T16:24:13)",
                 "severity": "WARN"
               },
               {
-                "message": "MODIFIED: README.md",
-                "severity": "INFO"
-              },
-              {
-                "message": "MODIFIED: docs/ARM64_AUDIT_BENCHMARK.md",
-                "severity": "INFO"
-              },
-              {
-                "message": "MODIFIED: docs/ATTACK_GUIDE.md",
-                "severity": "INFO"
-              },
-              {
-                "message": "MODIFIED: docs/AUDIT_CHANGELOG.md",
-                "severity": "INFO"
-              },
-              {
-                "message": "MODIFIED: docs/AUDIT_COVERAGE.md",
+                "message": "MODIFIED: docs/SECURITY_AUTONOMY_KPI.json",
                 "severity": "INFO"
               }
             ],
@@ -260,7 +244,7 @@
           {
             "findings": [
               {
-                "message": "45 CTest targets not in TEST_MATRIX.md: ${_name}_shim, bip324_kat_cuda, exploit_bip352_address_collision, exploit_bip39_nfkd, exploit_bug001_addr_overflow",
+                "message": "46 CTest targets not in TEST_MATRIX.md: ${_name}_shim, bip324_kat_cuda, exploit_bip352_address_collision, exploit_bip39_nfkd, exploit_bug001_addr_overflow",
                 "severity": "WARN"
               }
             ],
@@ -392,8 +376,8 @@
           {
             "findings": [
               {
-                "message": "CMakeLists.txt changed but docs/BUILDING.md not updated",
-                "severity": "WARN"
+                "message": "1 changed files have matching docs",
+                "severity": "PASS"
               }
             ],
             "name": "P10: Doc-Code Pairing",
@@ -402,11 +386,11 @@
           {
             "findings": [
               {
-                "message": "Mutation report age: 40.5 days (threshold: 14)",
+                "message": "Mutation report age: 41.4 days (threshold: 14)",
                 "severity": "INFO"
               },
               {
-                "message": "Mutation report is stale (40.5 > 14 days) \u2014 rerun recommended",
+                "message": "Mutation report is stale (41.4 > 14 days) \u2014 rerun recommended",
                 "severity": "WARN"
               }
             ],
@@ -616,7 +600,7 @@
                 "severity": "INFO"
               },
               {
-                "message": "Source graph \"files\" has 1320 rows (threshold: 200)",
+                "message": "Source graph \"files\" has 1325 rows (threshold: 200)",
                 "severity": "PASS"
               }
             ],
@@ -630,11 +614,11 @@
           "value": {
             "dirty": true,
             "ref": "dev",
-            "sha": "b5487be4f7eb8e10ed4048ccfabecaec7a2991d0",
-            "short": "b5487be4f7"
+            "sha": "74e3d6de56c80aa0a90986148b6536fee1403406",
+            "short": "74e3d6de56"
           }
         },
-        "generated_at": "2026-05-24T19:31:03.285321+00:00",
+        "generated_at": "2026-05-25T16:50:00.530852+00:00",
         "platform": "Linux",
         "provenance": {
           "build_flags": {
@@ -651,12 +635,12 @@
             },
             "flags_hash": "c03bf05b8a5e9aee"
           },
-          "collected_at": "2026-05-24T19:31:03.285268+00:00",
+          "collected_at": "2026-05-25T16:50:00.530811+00:00",
           "git": {
             "dirty": true,
             "ref": "dev",
-            "sha": "b5487be4f7eb8e10ed4048ccfabecaec7a2991d0",
-            "short": "b5487be4f7"
+            "sha": "74e3d6de56c80aa0a90986148b6536fee1403406",
+            "short": "74e3d6de56"
           },
           "platform": {
             "machine": "x86_64",
@@ -677,7 +661,7 @@
           },
           "version": "4.1.0"
         },
-        "run_id": "audit_gate-b5487be4f7-20260524T193103",
+        "run_id": "audit_gate-74e3d6de56-20260525T165000",
         "runner": "audit_gate",
         "schema_version": "1.0.0",
         "sections": [
@@ -783,7 +767,7 @@
               {
                 "check_id": "p2__audit_test_quality",
                 "severity": "info",
-                "title": "Audit test-quality findings: files=407, critical=0, high=0, medium=0, low=0"
+                "title": "Audit test-quality findings: files=410, critical=0, high=0, medium=0, low=0"
               },
               {
                 "check_id": "p2__audit_test_quality",
@@ -799,7 +783,7 @@
               {
                 "check_id": "p3__security_patterns",
                 "severity": "pass",
-                "title": "All 666 security patterns preserved"
+                "title": "All 671 security patterns preserved"
               }
             ],
             "name": "P3: Security Patterns",
@@ -832,32 +816,12 @@
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "advisory:medium",
-                "title": "34 files modified/deleted since graph build (2026-05-24T19:22:23)"
+                "title": "1 files modified/deleted since graph build (2026-05-25T16:24:13)"
               },
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "info",
-                "title": "MODIFIED: README.md"
-              },
-              {
-                "check_id": "p6__graph_freshness",
-                "severity": "info",
-                "title": "MODIFIED: docs/ARM64_AUDIT_BENCHMARK.md"
-              },
-              {
-                "check_id": "p6__graph_freshness",
-                "severity": "info",
-                "title": "MODIFIED: docs/ATTACK_GUIDE.md"
-              },
-              {
-                "check_id": "p6__graph_freshness",
-                "severity": "info",
-                "title": "MODIFIED: docs/AUDIT_CHANGELOG.md"
-              },
-              {
-                "check_id": "p6__graph_freshness",
-                "severity": "info",
-                "title": "MODIFIED: docs/AUDIT_COVERAGE.md"
+                "title": "MODIFIED: docs/SECURITY_AUTONOMY_KPI.json"
               }
             ],
             "name": "P6: Graph Freshness",
@@ -904,7 +868,7 @@
               {
                 "check_id": "p8__test_documentation",
                 "severity": "advisory:medium",
-                "title": "45 CTest targets not in TEST_MATRIX.md: ${_name}_shim, bip324_kat_cuda, exploit_bip352_address_collision, exploit_bip39_nfkd, exploit_bug001_addr_overflow"
+                "title": "46 CTest targets not in TEST_MATRIX.md: ${_name}_shim, bip324_kat_cuda, exploit_bip352_address_collision, exploit_bip39_nfkd, exploit_bug001_addr_overflow"
               }
             ],
             "name": "P8: Test Documentation",
@@ -1065,24 +1029,24 @@
             "findings": [
               {
                 "check_id": "p10__doc-code_pairing",
-                "severity": "advisory:medium",
-                "title": "CMakeLists.txt changed but docs/BUILDING.md not updated"
+                "severity": "pass",
+                "title": "1 changed files have matching docs"
               }
             ],
             "name": "P10: Doc-Code Pairing",
-            "verdict": "PASS with advisory"
+            "verdict": "PASS"
           },
           {
             "findings": [
               {
                 "check_id": "p2__mutation_evidence_freshness",
                 "severity": "info",
-                "title": "Mutation report age: 40.5 days (threshold: 14)"
+                "title": "Mutation report age: 41.4 days (threshold: 14)"
               },
               {
                 "check_id": "p2__mutation_evidence_freshness",
                 "severity": "advisory:medium",
-                "title": "Mutation report is stale (40.5 > 14 days) \u2014 rerun recommended"
+                "title": "Mutation report is stale (41.4 > 14 days) \u2014 rerun recommended"
               }
             ],
             "name": "P2: Mutation Evidence Freshness",
@@ -1331,7 +1295,7 @@
               {
                 "check_id": "g-12__source_graph_quality",
                 "severity": "pass",
-                "title": "Source graph \"files\" has 1320 rows (threshold: 200)"
+                "title": "Source graph \"files\" has 1325 rows (threshold: 200)"
               }
             ],
             "name": "G-12: Source Graph Quality",
@@ -1339,21 +1303,21 @@
           }
         ],
         "summary": {
-          "advisory": 54,
+          "advisory": 49,
           "blocking": 0,
-          "info": 47,
+          "info": 43,
           "sections": 26,
           "skipped_sections": 0,
-          "total_findings": 100,
-          "warnings": 7
+          "total_findings": 96,
+          "warnings": 6
         },
         "verdict": "PASS with advisory"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
-      "stderr_sha256": "201f348d5f9f0019856318fa86a77abc18dfc6716a40725ebcf6d2e74aef8b56",
-      "stdout_sha256": "d93f10d27b0245a7e42d47a8db8028a3bf7cad7b1430d605a81d071544b17fd1"
+      "stderr_sha256": "4fcee230b2aab9f65622b98e1557e7404f42a96db1a43c3b5569be3bdc2cdd32",
+      "stdout_sha256": "e50611688a7ab39706a8a9ed1d7f62e88457036084fc24f07fc7c1d77f8c9188"
     },
     {
       "name": "audit_gap_report_strict",
@@ -1655,13 +1619,13 @@
         "gates_skipped": 0,
         "gates_total": 8,
         "overall_pass": true,
-        "timestamp": "2026-05-24T19:31:05.486574+00:00"
+        "timestamp": "2026-05-25T16:50:02.818039+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "ba1234c125302651127cbec69a2c77f561f3f6ac77f64b01485421d2861740e1"
+      "stdout_sha256": "fda6e64482339527c8738297c27e4e3a05a979897b460a8169a3f5af9f797ad4"
     },
     {
       "name": "supply_chain_gate",
@@ -1707,19 +1671,19 @@
         "checks_total": 5,
         "failing_checks": [],
         "overall_pass": true,
-        "timestamp": "2026-05-24T19:31:05.523082+00:00"
+        "timestamp": "2026-05-25T16:50:02.856197+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "8bfcc5f20f5742011fa75d29c5fddc2414f6171b722381ed8459b574859818a1"
+      "stdout_sha256": "c73d3c1ee5a3f73f31b8cafc06b3983537ad44e05418ed84efe6217549ca8d13"
     }
   ],
-  "generated_at": "2026-05-24T19:31:05.542289+00:00",
+  "generated_at": "2026-05-25T16:50:02.871124+00:00",
   "git": {
     "branch": "dev",
-    "commit": "b5487be4f7eb8e10ed4048ccfabecaec7a2991d0",
+    "commit": "74e3d6de56c80aa0a90986148b6536fee1403406",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
