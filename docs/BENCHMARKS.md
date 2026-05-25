@@ -470,6 +470,8 @@ All throughput numbers below are **Kernel-only (excl. PCIe DMA)**. Wall-clock th
 
 ### GPU ECDSA SNARK Witness (`ufsecp_gpu_zk_ecdsa_snark_witness_batch`)
 
+> **[diagnostic — GPU vs single-core CPU, unverified against current build]**
+
 > **2026-04-05 — CUDA, N=65536, 11 passes median, tpb=128, RTX 5060 Ti**
 
 | Metric | Value |
@@ -484,6 +486,7 @@ All throughput numbers below are **Kernel-only (excl. PCIe DMA)**. Wall-clock th
 Implements the s_inv modular inverse witness computation from [eprint 2025/695](https://eprint.iacr.org/2025/695), enabling efficient SNARK circuit verification of ECDSA signatures.
 
 > **2026-04-04 — CUDA, N=500,000 tweak points, 11 passes median, 3 warmup**
+> **[diagnostic — GPU vs single-core CPU, unverified against current build]**
 
 | Mode | Time/Op | Throughput | vs CPU (i5-14400F) |
 |------|---------|------------|---------------------|
@@ -505,7 +508,7 @@ The `ufsecp_gpu_bip352_scan_batch` C ABI wrapper adds <2 ns dispatch overhead
 (virtual function + context lookup) over the kernel measurements above.
 Validation: `[OK] ALL MATCH` (CPU = GPU GLV = GPU+LUT prefix check).
 
-**GPU vs CPU ZK Speedup (single-core throughput):**
+**GPU vs CPU ZK Speedup (single-core throughput) — [diagnostic: GPU vs single-core CPU, unverified against current build]:**
 
 | Operation | CPU (i5-14400F) | GPU (RTX 5060 Ti) | GPU/CPU Speedup |
 |-----------|----------------:|------------------:|----------------:|
@@ -588,7 +591,7 @@ The `512`-thread launch showed only a marginal `k*G` gain, while the same harnes
 constant-time timings. Until the CT timing methodology is tightened, no global CUDA TPB default change
 is retained from this sweep.
 
-**GPU vs CPU ZK Speedup (single-core throughput):**
+**GPU vs CPU ZK Speedup (single-core throughput) — [diagnostic: GPU vs single-core CPU, unverified against current build]:**
 
 | Operation | CPU (i5-14400F) | GPU (RTX 5060 Ti) | GPU/CPU Speedup |
 |-----------|----------------:|------------------:|----------------:|
