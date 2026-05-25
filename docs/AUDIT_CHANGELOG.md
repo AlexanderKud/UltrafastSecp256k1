@@ -1,5 +1,14 @@
 # Audit Changelog
 
+## 2026-05-25 — Fix: T-09/10 NULL-arg illegal_callback in shim keypair + ecdsa parse functions
+
+- **`compat/libsecp256k1_shim/src/shim_extrakeys.cpp`** — `secp256k1_keypair_create`, `secp256k1_keypair_sec`, `secp256k1_keypair_pub`, `secp256k1_keypair_xonly_pub`: split combined `if (!a || !b) return 0` NULL checks into per-argument guards that call `secp256k1_shim_call_illegal_cb(ctx, "function: arg is NULL")` before returning 0. Matches libsecp256k1 upstream `ARG_CHECK` behaviour.
+- **`compat/libsecp256k1_shim/src/shim_ecdsa.cpp`** — `secp256k1_ecdsa_signature_parse_compact`, `secp256k1_ecdsa_signature_parse_der`: same fix for `sig` and `input`/`input64` NULL checks. The `inputlen < 8` guard in `parse_der` is a parse-failure condition, not API misuse, and remains a silent `return 0`.
+- **`audit/test_regression_shim_keypair_null_cb.cpp` (NEW)** — NCA-1..9: each NULL-arg path verified to fire the illegal_callback (counter incremented) and return 0. `advisory=true` (shim-dependent).
+- **`audit/unified_audit_runner.cpp`** — forward declaration + `ALL_MODULES` entry in `shim_regression` section.
+- **`audit/shim_run_stubs_unified.cpp`** — stub returning `ADVISORY_SKIP_CODE` (77) when shim not linked.
+- **`audit/CMakeLists.txt`** — standalone CTest target `regression_shim_keypair_null_cb` + `target_sources` entry in `if(TARGET secp256k1_shim)` block.
+
 ## 2026-05-25 — Fix: T-08 r/s scalar erasure in ecdsa_sign + musig2_partial_sig_agg
 
 - **`src/cpu/src/ecdsa.cpp`** — `ecdsa_sign()` fast-path: added `secure_erase(&s, sizeof(s))` and `secure_erase(&r, sizeof(r))` immediately after the existing `secure_erase(&k_inv)`. The intermediate scalars `r` and `s` are secrets during computation; they are now erased after being copied into the returned `ECDSASignature{r,s}`, eliminating stack residue.

@@ -187,7 +187,14 @@ int secp256k1_ecdsa_signature_parse_compact(
     const unsigned char *input64)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!sig || !input64) return 0;
+    if (!sig) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ecdsa_signature_parse_compact: sig is NULL");
+        return 0;
+    }
+    if (!input64) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ecdsa_signature_parse_compact: input64 is NULL");
+        return 0;
+    }
     // libsecp accepts r==0 and s==0 at parse time (verify will reject them).
     // Only r>=n or s>=n triggers a parse failure, matching upstream behaviour.
     Scalar r, s;
@@ -227,7 +234,15 @@ int secp256k1_ecdsa_signature_parse_der(
     const unsigned char *input, size_t inputlen)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!sig || !input || inputlen < 8) return 0;
+    if (!sig) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ecdsa_signature_parse_der: sig is NULL");
+        return 0;
+    }
+    if (!input) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ecdsa_signature_parse_der: input is NULL");
+        return 0;
+    }
+    if (inputlen < 8) return 0;
 
     const unsigned char *p = input;
     const unsigned char *end = input + inputlen;

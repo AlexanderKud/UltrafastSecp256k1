@@ -122,7 +122,14 @@ int secp256k1_keypair_create(
 {
     // SHIM-007: require sign-capable context (NULL ctx fires illegal callback/abort)
     if (!secp256k1_shim_internal::ctx_can_sign(ctx)) return 0;
-    if (!keypair || !seckey) return 0;
+    if (!keypair) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_keypair_create: keypair is NULL");
+        return 0;
+    }
+    if (!seckey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_keypair_create: seckey is NULL");
+        return 0;
+    }
     secp256k1_shim_internal::ContextBlindingScope _blind(ctx);
 
     Scalar k;
@@ -145,7 +152,14 @@ int secp256k1_keypair_sec(
     const secp256k1_keypair *keypair)
 {
     SHIM_REQUIRE_CTX(ctx);  // SHIM-NEW-003: NULL ctx fires illegal callback
-    if (!seckey || !keypair) return 0;
+    if (!seckey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_keypair_sec: seckey is NULL");
+        return 0;
+    }
+    if (!keypair) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_keypair_sec: keypair is NULL");
+        return 0;
+    }
     std::memcpy(seckey, keypair->data, 32);
     return 1;
 }
@@ -155,7 +169,14 @@ int secp256k1_keypair_pub(
     const secp256k1_keypair *keypair)
 {
     SHIM_REQUIRE_CTX(ctx);  // SHIM-NEW-003: NULL ctx fires illegal callback
-    if (!pubkey || !keypair) return 0;
+    if (!pubkey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_keypair_pub: pubkey is NULL");
+        return 0;
+    }
+    if (!keypair) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_keypair_pub: keypair is NULL");
+        return 0;
+    }
     std::memcpy(pubkey->data, keypair->data + 32, 64);
     return 1;
 }
@@ -165,7 +186,14 @@ int secp256k1_keypair_xonly_pub(
     int *pk_parity, const secp256k1_keypair *keypair)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!pubkey || !keypair) return 0;
+    if (!pubkey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_keypair_xonly_pub: pubkey is NULL");
+        return 0;
+    }
+    if (!keypair) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_keypair_xonly_pub: keypair is NULL");
+        return 0;
+    }
 
     // keypair layout: data[0..31]=sk, data[32..63]=X, data[64..95]=Y (big-endian)
     int y_is_odd = (keypair->data[95] & 1) ? 1 : 0;

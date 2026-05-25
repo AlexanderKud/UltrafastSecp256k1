@@ -48,3 +48,5 @@ int test_regression_shim_security_v9_run()           { return ADVISORY_SKIP_CODE
 // test_regression_p2_ct_shim_fixes_run is always provided by test_regression_p2_ct_shim_fixes.cpp
 // SHIM-NONCEGEN-001: extra_input32 behavioral freeze (secp256k1_musig_nonce_gen ignores extra_input32)
 int test_regression_musig_noncegen_extra_input_run() { return ADVISORY_SKIP_CODE; }
+// T-09/10: NULL-arg illegal_callback for keypair_create/sec/pub/xonly_pub + sig parse (2026-05-25)
+int test_regression_shim_keypair_null_cb_run() { return ADVISORY_SKIP_CODE; }

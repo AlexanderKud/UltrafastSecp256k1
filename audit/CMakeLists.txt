@@ -3308,6 +3308,22 @@ if(TARGET secp256k1_shim)
         LABELS "audit;regression;shim;musig;noncegen;shim-noncegen-001")
 endif()
 
+# -- 2026-05-25 T-09/10: NULL-arg illegal_callback — keypair + sig parse (NCA-1..9) --
+if(TARGET secp256k1_shim)
+    add_executable(test_regression_shim_keypair_null_cb_standalone
+        test_regression_shim_keypair_null_cb.cpp)
+    audit_target_defaults(test_regression_shim_keypair_null_cb_standalone)
+    target_link_libraries(test_regression_shim_keypair_null_cb_standalone PRIVATE secp256k1_shim)
+    target_include_directories(test_regression_shim_keypair_null_cb_standalone PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../compat/libsecp256k1_shim/include)
+    target_compile_definitions(test_regression_shim_keypair_null_cb_standalone PRIVATE STANDALONE_TEST)
+    add_test(NAME regression_shim_keypair_null_cb
+        COMMAND test_regression_shim_keypair_null_cb_standalone)
+    set_tests_properties(regression_shim_keypair_null_cb PROPERTIES
+        TIMEOUT 30 SKIP_RETURN_CODE 77
+        LABELS "audit;regression;shim;keypair;ecdsa;null_callback;t09_t10")
+endif()
+
 # ===========================================================================
 # Cross-library differential test (vs bitcoin-core/libsecp256k1)
 # ===========================================================================
@@ -4005,6 +4021,8 @@ if(TARGET secp256k1_shim)
         test_regression_shim_preallocated_ctx.cpp
         # 2026-05-24 SHIM-P3-006: R-grinding functional coverage
         test_regression_shim_rgrind_functional.cpp
+        # 2026-05-25 T-09/10: NULL-arg illegal_callback for keypair_create/sec/pub/xonly_pub + sig parse
+        test_regression_shim_keypair_null_cb.cpp
 )
     target_compile_definitions(unified_audit_runner PRIVATE SECP256K1_BUILD_COMPAT_SHIM)
     target_link_libraries(unified_audit_runner PRIVATE secp256k1_shim)

@@ -691,6 +691,11 @@ int test_regression_ecdsa_verify_cache_consistency_run(); // CVC-1..3: 1st-encou
 int test_regression_s_scalar_erasure_run(); // SSR-1..3: r/s erase in ecdsa_sign; s erase in musig2_partial_sig_agg
 
 // ============================================================================
+// Forward declarations -- 2026-05-25 T-09/10: NULL-arg illegal_callback in shim extrakeys + ecdsa parse
+// ============================================================================
+int test_regression_shim_keypair_null_cb_run(); // NCA-1..9: keypair_create/sec/pub/xonly_pub + parse_compact/der
+
+// ============================================================================
 // Report section IDs -- 10 audit categories
 // ============================================================================
 //   1. math_invariants   -- Mathematical Invariants (Fp, Zn, Group Laws)
@@ -1413,6 +1418,9 @@ static const AuditModule ALL_MODULES[] = {
     // === 2026-05-21 SHIM-A01/A02/A03/A07/A08: null-arg illegal_callback ===
     // advisory=true: requires shim to be linked (shim-gate only).
     { "regression_shim_null_callback", "SHIM-A01/A02/A03/A07/A08: libsecp256k1 shim fires illegal_callback on NULL args — normalize(NULL sigin), pubkey_sort(NULL ctx), tagged_sha256(NULL msg/len=0 OK vs len>0 fires CB), pubkey_negate(NULL pubkey); (SNC-1..5)", "shim_regression", test_regression_shim_null_callback_run, true },
+    // === 2026-05-25 T-09/10: NULL-arg illegal_callback for extrakeys + ecdsa parse ===
+    // advisory=true: requires shim to be linked (stub returns ADVISORY_SKIP_CODE when absent).
+    { "regression_shim_keypair_null_cb", "T-09/10: shim fires illegal_callback on NULL args — keypair_create/sec/pub/xonly_pub + ecdsa_signature_parse_compact/der; previously silent return 0 (NCA-1..9)", "shim_regression", test_regression_shim_keypair_null_cb_run, true },
     // === 2026-05-21 P1-SEC-001: GPU extended ECDH CT fix ===
     // advisory=false: exercises ufsecp_ecdh() CPU API — no GPU/shim dependency.
     // Verifies correctness of ECDH arithmetic after secp256k1_extended.cl and
