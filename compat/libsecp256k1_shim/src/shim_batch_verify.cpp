@@ -119,9 +119,10 @@ int secp256k1_schnorrsig_verify_batch(
         batch.push_back(e);
     }
 
-    int result = secp256k1::schnorr_batch_verify(batch) ? 1 : 0;
-    batch.shrink_to_fit();  // Release capacity after large batches to avoid indefinite retention
-    return result;
+    // shrink_to_fit() removed (PERF-004 fix): calling it after each large batch
+    // deallocates capacity, causing the next large batch to reallocate. The
+    // thread_local vector amortizes allocation correctly without explicit shrinking.
+    return secp256k1::schnorr_batch_verify(batch) ? 1 : 0;
 }
 
 int secp256k1_ecdsa_verify_batch(
@@ -187,9 +188,7 @@ int secp256k1_ecdsa_verify_batch(
         batch.push_back(e);
     }
 
-    int result = secp256k1::ecdsa_batch_verify(batch) ? 1 : 0;
-    batch.shrink_to_fit();  // Release capacity after large batches to avoid indefinite retention
-    return result;
+    return secp256k1::ecdsa_batch_verify(batch) ? 1 : 0;
 }
 
 } // extern "C"

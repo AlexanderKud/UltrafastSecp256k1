@@ -141,48 +141,44 @@ bool Bip324Cipher::decrypt(
 
 Bip324Session::Bip324Session(bool initiator) noexcept
     : initiator_(initiator) {
-    // Generate ephemeral private key — retry until valid (≈ 2^-128 chance of retry)
+    // SEC-006 fix: generate key on stack, store Scalar directly — no raw bytes in heap.
+    std::uint8_t raw[32];
     fast::Scalar sk;
-    csprng_fill(privkey_.data(), 32);
-    while (!fast::Scalar::parse_bytes_strict_nonzero(privkey_.data(), sk)) {
-        csprng_fill(privkey_.data(), 32);
+    csprng_fill(raw, 32);
+    while (!fast::Scalar::parse_bytes_strict_nonzero(raw, sk)) {
+        csprng_fill(raw, 32);
     }
+    detail::secure_erase(raw, sizeof(raw));
     our_encoding_ = ellswift_create(sk);
+    privkey_scalar_ = sk;
+    privkey_valid_  = true;
     detail::secure_erase(&sk, sizeof(sk));
-    // SEC-006: privkey_ raw bytes remain in memory until complete_handshake() is called,
-    // which re-parses them into a Scalar for the ECDH step and then erases them.
-    // Risk window: process memory dump between this constructor and complete_handshake().
-    // Full fix would store a Scalar member directly and erase it after ellswift_create(),
-    // eliminating the raw-byte window entirely. Tracked as SEC-006.
 }
 
 Bip324Session::Bip324Session(bool initiator, const std::uint8_t* privkey) noexcept
     : initiator_(initiator) {
-    std::memcpy(privkey_.data(), privkey, 32);
+    // SEC-006 fix: parse directly from caller's buffer — no copy to heap member.
     fast::Scalar sk;
-    if (!fast::Scalar::parse_bytes_strict_nonzero(privkey_.data(), sk)) {
-        // Invalid caller-supplied key: zero out and produce unusable session
-        std::memset(privkey_.data(), 0, 32);
+    if (!fast::Scalar::parse_bytes_strict_nonzero(privkey, sk)) {
         our_encoding_ = {};
         return;
     }
-    our_encoding_ = ellswift_create(sk);
+    our_encoding_   = ellswift_create(sk);
+    privkey_scalar_ = sk;
+    privkey_valid_  = true;
     detail::secure_erase(&sk, sizeof(sk));
-    // SEC-006: privkey_ raw bytes remain in memory until complete_handshake() is called.
-    // Risk window: process memory dump between this constructor and complete_handshake().
-    // The caller's privkey buffer is already a security concern at call time; this
-    // adds a bounded window during session setup. Tracked as SEC-006.
 }
 
 bool Bip324Session::complete_handshake(const std::uint8_t* peer_encoding) noexcept {
     if (established_) return false;
+    if (!privkey_valid_) return false;
 
     std::memcpy(peer_encoding_.data(), peer_encoding, 64);
 
-    fast::Scalar sk;
-    if (!fast::Scalar::parse_bytes_strict_nonzero(privkey_.data(), sk)) {
-        return false;  // invalid stored key (should not happen if constructors are used)
-    }
+    // SEC-006 fix: use stored Scalar directly — no raw-byte re-parse.
+    fast::Scalar sk = privkey_scalar_;
+    detail::secure_erase(&privkey_scalar_, sizeof(privkey_scalar_));
+    privkey_valid_ = false;
 
     // Determine ell_a and ell_b (initiator = a, responder = b)
     const std::uint8_t* ell_a = initiator_ ? our_encoding_.data() : peer_encoding_.data();

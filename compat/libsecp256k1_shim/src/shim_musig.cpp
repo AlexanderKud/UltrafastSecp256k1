@@ -286,20 +286,26 @@ static secp256k1::MuSig2Session sess_unpack(const secp256k1_musig_session* in) {
     return s;
 }
 
-// Stash the keyagg_cache address in the session's reserved bytes so that
-// partial_sig_agg can clean up the side-channel map entry without an extra
-// parameter (the libsecp256k1 ABI omits keyagg_cache from that call).
-static void sess_stash_cache_ptr(secp256k1_musig_session* s,
-                                  const secp256k1_musig_keyagg_cache* p) {
-    static_assert(sizeof(p) <= 8, "pointer wider than reserved slot");
-    std::memcpy(s->data + 98, &p, sizeof(p));
+// AUDIT-004 fix: store the uint64_t token (from g_ka key) instead of the raw
+// heap pointer. session->data[98..105] now contains an opaque counter value,
+// not a real address — eliminates the ASLR information leak.
+static void sess_stash_cache_token(secp256k1_musig_session* s,
+                                    const secp256k1_musig_keyagg_cache* p) {
+    std::uint64_t tok = read_token(p);
+    std::memcpy(s->data + 98, &tok, sizeof(tok));
 }
 
-static const secp256k1_musig_keyagg_cache*
-sess_load_cache_ptr(const secp256k1_musig_session* s) {
-    const secp256k1_musig_keyagg_cache* p = nullptr;
-    std::memcpy(&p, s->data + 98, sizeof(p));
-    return p;
+static std::uint64_t
+sess_load_cache_token(const secp256k1_musig_session* s) {
+    std::uint64_t tok = 0;
+    std::memcpy(&tok, s->data + 98, sizeof(tok));
+    return tok;
+}
+
+static void ka_remove_by_token(std::uint64_t tok) {
+    if (tok == 0) return;
+    std::lock_guard<std::mutex> lk(g_mu);
+    g_ka.erase(tok);
 }
 
 } // namespace
@@ -596,7 +602,7 @@ int secp256k1_musig_nonce_process(
     auto s = secp256k1::musig2_start_sign_session(an, e->ctx, msg);
     if (s.e.is_zero()) return 0;  // SEC-006: combined R = R1 + b*R2 was infinity
     sess_pack(session, s);
-    sess_stash_cache_ptr(session, keyagg_cache);
+    sess_stash_cache_token(session, keyagg_cache);
     return 1;
 }
 
@@ -723,13 +729,13 @@ int secp256k1_musig_partial_sig_agg(
     for (int i = 0; i < 64; ++i) nonzero |= static_cast<uint32_t>(final_sig[i]);
     const bool all_zero = (nonzero == 0);
     if (all_zero) {
-        ka_remove(sess_load_cache_ptr(session));
+        ka_remove_by_token(sess_load_cache_token(session));
         return 0;
     }
     std::memcpy(sig64, final_sig.data(), 64);
     // Protocol complete — release the side-channel map entry so the
     // keyagg_cache address can be safely reused by a future session.
-    ka_remove(sess_load_cache_ptr(session));
+    ka_remove_by_token(sess_load_cache_token(session));
     return 1;
 }
 

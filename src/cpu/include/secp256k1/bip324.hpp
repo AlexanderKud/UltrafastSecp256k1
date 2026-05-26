@@ -85,9 +85,7 @@ public:
     Bip324Session(bool initiator, const std::uint8_t* privkey) noexcept;
 
     ~Bip324Session() noexcept {
-        // Use canonical platform-specific secure erase (includes atomic_signal_fence
-        // barrier), consistent with Bip324Cipher::~Bip324Cipher().
-        secp256k1::detail::secure_erase(privkey_.data(), privkey_.size());
+        secp256k1::detail::secure_erase(&privkey_scalar_, sizeof(privkey_scalar_));
     }
 
     // Get our 64-byte ElligatorSwift-encoded public key to send to peer
@@ -126,9 +124,11 @@ public:
 private:
     bool initiator_;
     bool established_ = false;
+    bool privkey_valid_ = false;
 
-    // Our ephemeral key
-    std::array<std::uint8_t, 32> privkey_{};
+    // SEC-006 fix: store Scalar directly — raw key bytes are never resident in
+    // heap memory after the constructor returns, eliminating the fork-window.
+    secp256k1::fast::Scalar privkey_scalar_{};
     std::array<std::uint8_t, 64> our_encoding_{};
 
     // Peer's encoding
