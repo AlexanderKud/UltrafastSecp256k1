@@ -284,7 +284,7 @@ SchnorrSignature schnorr_sign_verified(const SchnorrKeypair& kp,
     // Rule 14: check both s==0 AND R.x all-zeros before returning success.
     const auto* rw = reinterpret_cast<const std::uint64_t*>(sig.r.data());
     const bool r_zero = ((rw[0] | rw[1] | rw[2] | rw[3]) == 0);
-    if (sig.s.is_zero() || r_zero) return SchnorrSignature{};
+    if (sig.s.is_zero_ct() || r_zero) return SchnorrSignature{};
 
     // Fast (non-CT) verify: timing variation is over the public sig/key only —
     // d and k are both erased inside schnorr_sign before this call.

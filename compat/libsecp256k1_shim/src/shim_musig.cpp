@@ -374,10 +374,11 @@ int secp256k1_musig_pubkey_agg(
 }
 
 int secp256k1_musig_pubkey_get(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     secp256k1_pubkey* agg_pk,
     const secp256k1_musig_keyagg_cache* keyagg_cache)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!agg_pk || !keyagg_cache) return 0;
     KAEntry* e = ka_get(keyagg_cache);
     if (!e) return 0;
@@ -386,11 +387,12 @@ int secp256k1_musig_pubkey_get(
 }
 
 int secp256k1_musig_pubkey_ec_tweak_add(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     secp256k1_pubkey* output_pubkey,
     secp256k1_musig_keyagg_cache* keyagg_cache,
     const unsigned char* tweak32)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!keyagg_cache || !tweak32) return 0;
     KAEntry* e = ka_get(keyagg_cache);
     if (!e) return 0;
@@ -408,11 +410,12 @@ int secp256k1_musig_pubkey_ec_tweak_add(
 }
 
 int secp256k1_musig_pubkey_xonly_tweak_add(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     secp256k1_pubkey* output_pubkey,
     secp256k1_musig_keyagg_cache* keyagg_cache,
     const unsigned char* tweak32)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!keyagg_cache || !tweak32) return 0;
     KAEntry* e = ka_get(keyagg_cache);
     if (!e) return 0;
@@ -643,13 +646,14 @@ int secp256k1_musig_partial_sign(
 }
 
 int secp256k1_musig_partial_sig_verify(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     const secp256k1_musig_partial_sig* partial_sig,
     const secp256k1_musig_pubnonce* pubnonce,
     const secp256k1_pubkey* pubkey,
     const secp256k1_musig_keyagg_cache* keyagg_cache,
     const secp256k1_musig_session* session)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!partial_sig || !pubnonce || !pubkey || !keyagg_cache || !session) return 0;
     KAEntry* e = ka_get(keyagg_cache);
     if (!e) return 0;
@@ -735,20 +739,22 @@ int secp256k1_musig_partial_sig_agg(
 }
 
 int secp256k1_musig_partial_sig_serialize(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     unsigned char* out32,
     const secp256k1_musig_partial_sig* partial_sig)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!out32 || !partial_sig) return 0;
     std::memcpy(out32, partial_sig->data, 32);
     return 1;
 }
 
 int secp256k1_musig_partial_sig_parse(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     secp256k1_musig_partial_sig* partial_sig,
     const unsigned char* in32)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!partial_sig || !in32) return 0;
     Scalar s;
     if (!Scalar::parse_bytes_strict(in32, s)) return 0;

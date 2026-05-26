@@ -54,20 +54,27 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ---
 
-## secp256k1_musig_nonce_agg / nonce_process / partial_sig_verify / pubkey_get — `ctx` ignored
+## secp256k1_musig_pubnonce_serialize / pubnonce_parse / nonce_agg / nonce_process — `ctx` ignored
 
 - **Upstream behavior:** These four MuSig2 functions accept a `secp256k1_context*`
   argument but do not require it to be non-NULL in upstream libsecp256k1-zkp at
   the version targeted by this shim. The argument is reserved for forward
   compatibility but is currently unused.
-- **Shim behavior:** Same — the `ctx` parameter is declared `/*ctx*/` (unused).
+- **Shim behavior:** The `ctx` parameter is declared `/*ctx*/` (unused) in all four.
   A NULL `ctx` will NOT fire the illegal-callback path on these functions; only
   the explicit argument checks apply.
-- **Reason:** Matches upstream. These calls do not consume context state
-  (no signing context flags, no blinding, no callbacks needed for the operation).
+- **Reason:** Matches upstream. These calls are pure data-transformation operations
+  (serialize/parse/aggregate nonces, compute session state) that do not consume
+  context flags, signing permission, or blinding.
 - **Impact:** Callers relying on a NULL-ctx illegal-callback firing for these
   specific functions will not see it. The illegal-callback contract holds for
   every other shim function that uses the context.
+- **Previously listed functions now FIXED (2026-05-25):** `secp256k1_musig_pubkey_get`,
+  `secp256k1_musig_partial_sig_verify`, `secp256k1_musig_partial_sig_serialize`,
+  and `secp256k1_musig_partial_sig_parse` previously shared this behavior — all four
+  now use `SHIM_REQUIRE_CTX(ctx)` and fire the illegal callback on NULL ctx.
+  `secp256k1_musig_pubkey_ec_tweak_add` and `secp256k1_musig_pubkey_xonly_tweak_add`
+  are also fixed — see SHIM-MUSIG-CTX-001 below.
 - **Test:** Covered indirectly by `audit/test_regression_shim_security_v7.cpp`
   (musig2 partial sign + verify round-trip) and `audit/test_exploit_shim_musig_*`
   family. A targeted differential test against upstream libsecp256k1-zkp can be
@@ -677,25 +684,21 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ---
 
-## secp256k1_musig_pubkey_ec_tweak_add / secp256k1_musig_pubkey_xonly_tweak_add — ctx silently discarded (SHIM-MUSIG-CTX-001)
+## secp256k1_musig_pubkey_ec_tweak_add / secp256k1_musig_pubkey_xonly_tweak_add — NULL ctx now fires illegal callback (SHIM-MUSIG-CTX-001, FIXED 2026-05-25)
 
 - **Upstream behavior:** NULL ctx fires the illegal callback (default: abort). Non-NULL ctx is
   validated for context flags before proceeding.
-- **Shim behavior:** Both `secp256k1_musig_pubkey_ec_tweak_add` and
-  `secp256k1_musig_pubkey_xonly_tweak_add` declare the ctx parameter as `/*ctx*/` — it is
-  **completely discarded** and never inspected. NULL ctx will NOT fire the illegal callback;
-  it silently proceeds to the `keyagg_cache` / `tweak32` NULL check instead. SHIM_REQUIRE_CTX
-  is NOT used by these functions (contrary to an earlier version of this document).
-- **Reason:** These operations act purely on the `secp256k1_musig_keyagg_cache` state and do
-  not require context flags (no signing, no blinding). The ctx parameter exists only for
-  API symmetry with upstream. The discarding matches the upstream libsecp256k1-zkp pattern
-  for these specific functions (see also `secp256k1_musig_nonce_agg` above).
-- **Impact:** A caller passing NULL ctx will not get a callback/abort. The only guard is the
-  `!keyagg_cache || !tweak32` NULL check. Callers that rely on NULL-ctx abort from these two
-  functions (e.g. fuzzing harnesses) will see silent-return-0 instead.
-- **Open:** Consider adding explicit NULL-ctx guard firing the illegal callback for parity.
-  Tracked as SHIM-MUSIG-CTX-001 (open).
-- **Test:** Covered indirectly by context-flag tests in `test_regression_shim_security_v7_run`.
+- **Previous shim behavior:** Both functions declared ctx as `/*ctx*/` — completely discarded.
+  NULL ctx silently proceeded to `!keyagg_cache || !tweak32` check without firing the callback.
+- **Current shim behavior:** Both functions now call `SHIM_REQUIRE_CTX(ctx)` as their first
+  statement. NULL ctx fires the illegal callback (default: abort) and returns 0 — matching
+  upstream libsecp256k1 behavior. **Fixed 2026-05-25 (SHIM-MUSIG-CTX-001).**
+- **Reason:** Matches upstream libsecp256k1 contract. NULL ctx is always a programming error
+  and should fire the callback for all public API functions, not silently return 0.
+- **Impact:** None for correct callers. Callers that accidentally pass NULL ctx now get the
+  same abort behavior as with upstream libsecp256k1.
+- **Test:** Differential test: call `secp256k1_musig_pubkey_ec_tweak_add(NULL, ...)` with a
+  valid keyagg_cache and tweak32 — verify callback fires and function returns 0.
 
 ---
 
@@ -716,3 +719,66 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 - **Reason:** Normalization-at-store vs normalization-at-sign is semantically equivalent for signing but differs in what `keypair_sec` returns for odd-Y keys
 - **Impact:** If a caller extracts the private key via `keypair_sec` and compares it to the original, they may observe a different value for keys where P.y is odd
 - **Test:** `test_differential_keypair_sec` (to be added)
+
+---
+
+## secp256k1_context_randomize — blinding is per-thread, not per-context (SHIM-THREAD-BLIND)
+
+- **Upstream behavior:** `secp256k1_context_randomize` stores the blinding scalar inside the
+  `secp256k1_context` struct. The blinding is strictly per-context: two contexts on the same
+  thread each maintain independent blinding scalars. Signing with context A always uses A's
+  blinding; signing with context B always uses B's blinding. Multiple threads signing
+  concurrently with different contexts do not interfere with each other's blinding state
+  (each context's blinding is local to that struct).
+- **Shim behavior:** The shim stores the blinding scalar in a `static thread_local BlindingState
+  g_blinding` variable (`src/cpu/src/ct_point.cpp:3417`). The per-context blinding seed IS
+  stored in `secp256k1_context::blind[]` and `cached_r` / `cached_r_G`, but the _active_
+  blinding applied during signing is a thread-local singleton — not the context's own stored
+  seed. `ContextBlindingScope` (entered at sign time via `shim_context.cpp:230`) loads the
+  context's cached seed into `g_blinding`, uses it for the signing operation, then clears it
+  via `clear_blinding()` on scope exit.
+  **Consequence:** Two contexts on the same thread used in an interleaved pattern will
+  overwrite each other's active blinding. For example, if context A's `ContextBlindingScope`
+  is entered, then context B's `ContextBlindingScope` is entered before A's exits (which
+  cannot happen via the shim's current synchronous API but could happen via callbacks or
+  coroutines), context A would clear B's blinding on exit. The source contains a comment
+  `// DEVIATION FROM LIBSECP CONTRACT` acknowledging this limitation.
+- **Reason:** The CT blinding API (`ct::set_blinding` / `ct::clear_blinding` /
+  `ct::generator_mul_blinded`) is a global singleton by design — it operates on a thread-local
+  scalar pair that applies to all CT operations on that thread. Plumbing per-context blinding
+  through the CT layer would require a significant internal API refactor (passing the blinding
+  state through every CT call as an explicit parameter). The current design is safe for the
+  dominant use pattern: one context per thread, or multiple contexts used sequentially
+  (not interleaved within a single call frame).
+- **Impact:**
+  1. **Single-context-per-thread callers:** No divergence. The behavior is identical to
+     upstream — `secp256k1_context_randomize(ctx, seed)` sets the blinding, and all signing
+     calls using `ctx` on that thread apply the blinding correctly.
+  2. **Multiple-contexts-same-thread, sequential callers:** No divergence. As long as signing
+     operations from different contexts do not interleave (i.e., one complete sign call
+     finishes before another starts), each `ContextBlindingScope` loads its own context's seed
+     and clears it correctly.
+  3. **Interleaved contexts (callbacks, coroutines, C++ co_await):** Potential mismatch.
+     If context A's signing path is suspended (co_await) after entering its
+     `ContextBlindingScope` and context B's signing is invoked on the same thread, B will
+     overwrite `g_blinding`; when A resumes, it will operate under B's (or no) blinding.
+     This scenario does not arise in Bitcoin Core's synchronous signing paths.
+  4. **Two randomized contexts same thread:** `secp256k1_context_randomize(ctx_a, seed_a)`
+     then `secp256k1_context_randomize(ctx_b, seed_b)` — both stores succeed. But if both
+     contexts are used to sign on the same thread within the same call stack (nested),
+     only the innermost `ContextBlindingScope` is active at any given moment. This is
+     architecturally safe for synchronous stacks.
+- **Tracking:** SHIM-THREAD-BLIND. The source acknowledgement `// DEVIATION FROM LIBSECP
+  CONTRACT` is at `src/cpu/src/ct_point.cpp` near the `thread_local BlindingState` definition.
+  This divergence is not a security vulnerability for the targeted Bitcoin Core use case
+  (one-context-per-thread, synchronous signing), but is a correctness gap for advanced
+  multi-context patterns.
+- **Planned fix:** Refactor CT blinding to accept an explicit `BlindingState*` parameter,
+  thread-local as a fallback only. Deferred — requires changes throughout the CT layer.
+- **Differential test:** Instantiate two contexts A and B, randomize both with distinct seeds,
+  call a sign function with A and verify the result, then call with B and verify. Assert both
+  produce valid signatures. This proves sequential multi-context operation is safe. Testing
+  interleaved/nested is not feasible via the synchronous C ABI.
+- **Test:** `audit/test_regression_shim_thread_blinding.cpp` (to be added) — TBL-1: sign with
+  ctx_a then sign with ctx_b on same thread, both must verify. TBL-2: randomize then sign 1000
+  times with alternating contexts, all must verify.
