@@ -607,11 +607,21 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Setup Emscripten
-        uses: mymindstorm/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021 # v14
+      - name: Cache emsdk
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
-          version: 3.1.51
-          actions-cache-folder: emsdk-cache
+          path: emsdk
+          key: emsdk-3.1.51-${{ runner.os }}
+
+      - name: Setup Emscripten
+        run: |
+          if [ ! -d "emsdk/.git" ]; then
+            git clone https://github.com/emscripten-core/emsdk.git
+          fi
+          ./emsdk/emsdk install 3.1.51
+          ./emsdk/emsdk activate 3.1.51
+          echo "$PWD/emsdk" >> $GITHUB_PATH
+          echo "$PWD/emsdk/upstream/emscripten" >> $GITHUB_PATH
 
       - name: Configure (WASM)
         run: emcmake cmake -S bindings/wasm -B build/wasm -DCMAKE_BUILD_TYPE=Release
