@@ -358,41 +358,76 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ---
 
-## secp256k1_ecdsa_signature_parse_der — rejects r=0 or s=0
+## secp256k1_ecdsa_signature_parse_der — rejects r=0 or s=0 (DER-STRICT) [FIXED 2026-05-26]
+
+> **FIXED 2026-05-26.** This entry is retained for historical reference.
 
 - **Upstream behavior:** Accepts r=0 or s=0 in DER signatures at parse time; rejects
   them at verify time (r=0 makes the group element undefined; s=0 makes the equation
   degenerate).
-- **Shim behavior:** Uses `parse_bytes_strict_nonzero` in the DER parser — rejects
-  r=0 or s=0 at parse time.
-- **Asymmetry:** The compact signature parser (`signature_parse_compact`) uses
-  `parse_bytes_strict` and does NOT reject r=0/s=0 at parse time, matching upstream.
-  DER parse is stricter than compact parse — this asymmetry is intentional (defense-in-depth
-  for the DER path, where zero-value fields indicate malformed input).
-- **Reason for the divergence (per CLAUDE.md Canonical Rule 3):** the failure modes are
-  observationally equivalent for any cryptographically valid caller — a signature with
-  r=0 or s=0 fails verify on both upstream and the shim. The only place the difference
-  surfaces is in code that distinguishes between parse failure and verify failure on
-  the same input. For Bitcoin Core's consensus path that means: parse failure returns
-  `SCRIPT_ERR_SIG_DER` while verify failure (after parse OK) returns
-  `SCRIPT_ERR_SIG_VERIFY`. Bitcoin Core script validation treats both as a hard reject,
-  so the divergence is not consensus-observable in practice. Any caller that DOES want
-  to know whether a signature is structurally well-formed before verification should
-  use the compact parser (which matches upstream) or accept the DER-strictness contract.
-- **Impact:** Callers parsing DER-encoded ECDSA signatures with r=0 or s=0 (astronomically
-  rare in practice; all such signatures are cryptographically invalid and any caller
-  that gets one is going to fail verify anyway). Probability per random 256-bit r/s:
-  ≤ 2^-128 each. No mainnet/testnet signature with r=0 or s=0 has ever been recorded.
-- **Test:** `test_shim_der_zero_r.cpp` in `compat/libsecp256k1_shim/tests/` —
-  calls `secp256k1_ecdsa_signature_parse_der` with a hardcoded DER blob encoding r=0
-  and verifies return value is 0. Upstream libsecp returns 1 (passes to verify which
-  then rejects).
-- **Tracking:** Review finding `P1-SEC-003` / `RED-003` — kept as a documented
-  divergence rather than a fix because the no-observable-consensus-change argument
-  above stands. If a future PR needs full parse-time symmetry with upstream, the fix is
-  one-line: switch the DER parser at `compat/libsecp256k1_shim/src/shim_ecdsa.cpp:248`
-  from `Scalar::parse_bytes_strict_nonzero` to `Scalar::parse_bytes_strict`, and let
-  the verify path reject the zero scalars.
+- **Previous shim behavior:** Used `parse_bytes_strict_nonzero` in the DER parser —
+  rejected r=0 or s=0 at parse time, diverging from upstream.
+- **Current shim behavior (FIXED):** Uses `in_range_scalar` (accepting [0, n-1]) in
+  `shim_ecdsa.cpp`. r=0 and s=0 are accepted at parse time; verify rejects them. Now
+  matches upstream libsecp256k1.
+- **Fix date:** 2026-05-26. Tracking: DER-STRICT.
+- **Test:** `audit/test_regression_shim_divergence_fixes.cpp` SDF-3 — DER blob with r=0,
+  s=1 must return 1 from `secp256k1_ecdsa_signature_parse_der`.
+
+---
+
+## secp256k1_ec_pubkey_parse — NULL pubkey/input didn't fire illegal callback (SHIM-ILLCB-002) [FIXED 2026-05-26]
+
+> **FIXED 2026-05-26.** Entry retained for historical reference.
+
+- **Upstream behavior:** NULL `pubkey` or NULL `input` triggers the illegal callback
+  (default: abort) via `ARG_CHECK`.
+- **Previous shim behavior:** Combined `if (!pubkey || !input) return 0;` — the callback
+  was not fired; the function silently returned 0.
+- **Current shim behavior (FIXED):** Per-argument NULL checks each call
+  `secp256k1_shim_call_illegal_cb` before returning 0. Matches upstream.
+- **Fix date:** 2026-05-26. Tracking: SHIM-ILLCB-002.
+- **Test:** `audit/test_regression_shim_divergence_fixes.cpp` SDF-1 (NULL pubkey), SDF-2 (NULL input).
+
+---
+
+## secp256k1_context_set_illegal_callback / set_error_callback — NULL ctx silent return (SHIM-ILLCB-001) [FIXED 2026-05-26]
+
+> **FIXED 2026-05-26.** Entry retained for historical reference.
+
+- **Upstream behavior:** NULL `ctx` triggers `ARG_CHECK(ctx != NULL)`, which calls the
+  default illegal callback (abort).
+- **Previous shim behavior:** `if (!ctx) return;` — silently returned without firing any
+  callback.
+- **Current shim behavior (FIXED):** `if (!ctx) { default_illegal_callback("ctx != NULL", nullptr); return; }`
+  — fires abort() on NULL ctx, matching upstream. Both `set_illegal_callback` and
+  `set_error_callback` are fixed.
+- **Fix date:** 2026-05-26. Tracking: SHIM-ILLCB-001.
+- **Test:** SDF-4 in `audit/test_regression_shim_divergence_fixes.cpp` — code-review verified
+  (in-process test not feasible as the fix calls abort()).
+
+---
+
+## secp256k1_keypair_create — stored seckey not BIP-340 normalized [FIXED 2026-05-26]
+
+> **FIXED 2026-05-26.** Entry retained for historical reference.
+
+- **Upstream behavior:** `secp256k1_keypair_create` stores the BIP-340-normalized seckey
+  `d` such that `d*G` has even Y. If the input `seckey` produces an odd-Y pubkey, `n - seckey`
+  is stored instead (BIP-340 requires the signer to use the negated key for even-Y).
+- **Previous shim behavior:** Stored the raw input `seckey` bytes verbatim. If the input
+  produced an odd-Y pubkey, `secp256k1_keypair_sec` would return the unnormalized key, causing
+  a signing divergence: Schnorr signatures produced via `schnorrsig_sign32` used the normalized
+  key internally (via Y-parity check in `shim_schnorr.cpp`) but `keypair_sec` returned the raw
+  input — a caller that retrieved the seckey from the keypair and re-derived the pubkey would
+  get the wrong (negated) pubkey.
+- **Current shim behavior (FIXED):** `secp256k1_keypair_create` now negates `k` (CT, via
+  `ct::scalar_cneg + ct::bool_to_mask`) when `P.y` is odd. The normalized key bytes are stored
+  in `keypair->data[0..31]` using `secure_erase` on the stack copy. `keypair_sec` returns the
+  BIP-340-normalized key.
+- **Fix date:** 2026-05-26. Tracking: keypair_sec BIP-340 normalization.
+- **Test:** `audit/test_regression_shim_divergence_fixes.cpp` SDF-5 (stored sk produces even-Y
+  pubkey for sk=1..4), SDF-6 (Schnorr sign+verify roundtrip via keypair_create).
 
 ---
 

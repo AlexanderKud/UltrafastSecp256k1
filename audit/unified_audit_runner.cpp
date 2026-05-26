@@ -707,6 +707,11 @@ int test_regression_shim_context_erase_run(); // SCE-1..5: blind erase + is_zero
 int test_regression_shim_rfc6979_compat_run(); // SHIM-P3-006: rfc6979_nonce_libsecp_compat determinism + signing correctness
 
 // ============================================================================
+// Forward declarations -- 2026-05-26 ILLCB-001/002, DER-STRICT, keypair_sec BIP-340 normalization
+// ============================================================================
+int test_regression_shim_divergence_fixes_run(); // SDF-1..6: pubkey_parse NULL callbacks, DER r=0, keypair BIP-340
+
+// ============================================================================
 // Report section IDs -- 10 audit categories
 // ============================================================================
 //   1. math_invariants   -- Mathematical Invariants (Fp, Zn, Group Laws)
@@ -1471,6 +1476,9 @@ static const AuditModule ALL_MODULES[] = {
     // === 2026-05-26 SHIM-P3-006: rfc6979_nonce_libsecp_compat ===
     // advisory=false: uses CPU C++ API only, no GPU/shim dependency.
     { "regression_shim_rfc6979_compat", "SHIM-P3-006: rfc6979_nonce_libsecp_compat determinism + signing correctness — same inputs → same nonce, NULL vs non-NULL ndata differ, ecdsa_sign_libsecp_compat verifies (RFC-1..9)", "protocol_security", test_regression_shim_rfc6979_compat_run, false },
+    // === 2026-05-26 ILLCB-001/002, DER-STRICT, keypair_sec BIP-340 normalization ===
+    // advisory=true: depends on libsecp256k1 shim ABI.
+    { "regression_shim_divergence_fixes", "ILLCB-001/002: pubkey_parse NULL args fire illegal_cb; DER-STRICT: r=0/s=0 accepted at parse; keypair_sec BIP-340: stored sk produces even-Y pubkey (SDF-1..6)", "protocol_security", test_regression_shim_divergence_fixes_run, true },
 };
 
 static constexpr int NUM_MODULES = sizeof(ALL_MODULES) / sizeof(ALL_MODULES[0]);

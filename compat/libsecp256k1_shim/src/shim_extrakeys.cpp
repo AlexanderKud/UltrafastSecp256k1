@@ -15,6 +15,7 @@
 #include "secp256k1/precompute.hpp"
 #include "secp256k1/ct/scalar.hpp"
 #include "secp256k1/ct/point.hpp"
+#include "secp256k1/detail/secure_erase.hpp"
 
 using namespace secp256k1::fast;
 
@@ -138,12 +139,23 @@ int secp256k1_keypair_create(
     auto P = secp256k1::ct::generator_mul(k);   // CT: Rule 12 — sk is a private key
     if (P.is_infinity()) return 0;
 
-    // Store seckey
-    std::memcpy(keypair->data, seckey, 32);
+    // BIP-340 normalization: Schnorr signing requires d to produce an even-Y pubkey.
+    // Negate k (CT) when P.y is odd so that k*G has even Y, matching libsecp256k1
+    // keypair_create behavior. Y-parity of P is a public output — bool_to_mask is
+    // safe here. ct::scalar_cneg is branchless (follows shim_schnorr.cpp NEW-006 pattern).
+    bool const y_odd = !P.has_even_y();
+    k = secp256k1::ct::scalar_cneg(k, secp256k1::ct::bool_to_mask(y_odd));
+    // If y was odd, negate P to produce the even-Y point matching the new k.
+    if (y_odd) P = P.negate();
 
-    // Store pubkey (X || Y)
-    auto unc = P.to_uncompressed();
-    std::memcpy(keypair->data + 32, unc.data() + 1, 64);
+    // Store BIP-340-normalized seckey, then erase the stack copy.
+    auto k_bytes = k.to_bytes();
+    std::memcpy(keypair->data, k_bytes.data(), 32);
+    secp256k1::detail::secure_erase(k_bytes.data(), k_bytes.size());
+
+    // Store pubkey (X || Y). point_to_pubkey_data avoids the 65-byte to_uncompressed()
+    // allocation (PERF pattern from keypair_xonly_tweak_add / NEW-PERF-002).
+    point_to_pubkey_data(P, keypair->data + 32);
     return 1;
 }
 

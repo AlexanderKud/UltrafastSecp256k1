@@ -52,3 +52,5 @@ int test_regression_musig_noncegen_extra_input_run() { return ADVISORY_SKIP_CODE
 int test_regression_shim_keypair_null_cb_run() { return ADVISORY_SKIP_CODE; }
 // T-11/12: memset→secure_erase + is_zero→is_zero_ct in shim_context.cpp (2026-05-25)
 int test_regression_shim_context_erase_run() { return ADVISORY_SKIP_CODE; }
+// ILLCB-001/002, DER-STRICT, keypair_sec BIP-340 normalization (2026-05-26)
+int test_regression_shim_divergence_fixes_run() { return ADVISORY_SKIP_CODE; }

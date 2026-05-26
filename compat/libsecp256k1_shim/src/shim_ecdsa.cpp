@@ -301,25 +301,26 @@ int secp256k1_ecdsa_signature_parse_der(
         return UFSECP_SHIM_BSWAP64(v);
     };
 
-    // Returns true if the 32-byte big-endian value is in [1, n-1].
-    auto valid_scalar = [&](const unsigned char* b) noexcept -> bool {
+    // Returns true if the 32-byte big-endian value is in [0, n-1].
+    // DER-STRICT fix: r=0/s=0 accepted at parse time — verify rejects degenerate sigs.
+    // This matches upstream libsecp256k1 behavior (secp256k1_ecdsa_sig_parse does not
+    // reject zero; secp256k1_ecdsa_sig_verify does).
+    auto in_range_scalar = [&](const unsigned char* b) noexcept -> bool {
         uint64_t a0 = load64be(b);       // most significant
         uint64_t a1 = load64be(b + 8);
         uint64_t a2 = load64be(b + 16);
         uint64_t a3 = load64be(b + 24);  // least significant
 
-        // Check non-zero (at least one limb non-zero).
-        if ((a0 | a1 | a2 | a3) == 0) return false;
-
         // Check < n: lexicographic comparison from most-significant limb.
+        // Zero (r=0 or s=0) satisfies 0 < N0 → returns true. Verify will reject it.
         if (a0 < N0) return true;   if (a0 > N0) return false;
         if (a1 < N1) return true;   if (a1 > N1) return false;
         if (a2 < N2) return true;   if (a2 > N2) return false;
         return a3 < N3;
     };
 
-    if (!valid_scalar(sig->data))      return 0;  // r
-    if (!valid_scalar(sig->data + 32)) return 0;  // s
+    if (!in_range_scalar(sig->data))      return 0;  // r
+    if (!in_range_scalar(sig->data + 32)) return 0;  // s
 
     return 1;
 }

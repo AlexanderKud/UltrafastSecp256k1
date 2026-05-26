@@ -4049,6 +4049,8 @@ if(TARGET secp256k1_shim)
         test_regression_shim_keypair_null_cb.cpp
         # 2026-05-25 T-11/12: memset→secure_erase + is_zero→is_zero_ct in shim_context.cpp
         test_regression_shim_context_erase.cpp
+        # 2026-05-26 ILLCB-001/002, DER-STRICT, keypair_sec BIP-340 normalization
+        test_regression_shim_divergence_fixes.cpp
 )
     target_compile_definitions(unified_audit_runner PRIVATE SECP256K1_BUILD_COMPAT_SHIM)
     target_link_libraries(unified_audit_runner PRIVATE secp256k1_shim)
@@ -4112,6 +4114,19 @@ if(TARGET secp256k1_shim)
         COMMAND test_regression_ecdsa_batch_curve_check_standalone)
     set_tests_properties(regression_ecdsa_batch_curve_check PROPERTIES
         TIMEOUT 60 LABELS "audit;regression;shim;security;ecdsa;batch")
+
+    # -- 2026-05-26: ILLCB-001/002, DER-STRICT, keypair_sec BIP-340 normalization --
+    add_executable(test_regression_shim_divergence_fixes_standalone
+        test_regression_shim_divergence_fixes.cpp)
+    audit_target_defaults(test_regression_shim_divergence_fixes_standalone)
+    target_link_libraries(test_regression_shim_divergence_fixes_standalone PRIVATE secp256k1_shim)
+    target_include_directories(test_regression_shim_divergence_fixes_standalone PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../compat/libsecp256k1_shim/include)
+    target_compile_definitions(test_regression_shim_divergence_fixes_standalone PRIVATE STANDALONE_TEST)
+    add_test(NAME regression_shim_divergence_fixes
+        COMMAND test_regression_shim_divergence_fixes_standalone)
+    set_tests_properties(regression_shim_divergence_fixes PROPERTIES
+        TIMEOUT 60 LABELS "audit;regression;shim;security;illcb;keypair;bip340")
 endif()
 
 # -- PERF-VAR: fe52 var-time paths correctness — standalone CTest --

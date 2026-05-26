@@ -30,7 +30,14 @@ int secp256k1_ec_pubkey_parse(
     const unsigned char *input, size_t inputlen)
 {
     SHIM_REQUIRE_CTX(ctx);
-    if (!pubkey || !input) return 0;
+    if (!pubkey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_parse: pubkey is NULL");
+        return 0;
+    }
+    if (!input) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_parse: input is NULL");
+        return 0;
+    }
 
     if (inputlen == 33) {
         // Compressed: 02/03 || X

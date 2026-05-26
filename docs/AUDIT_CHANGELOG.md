@@ -1,5 +1,30 @@
 # Audit Changelog
 
+## 2026-05-26 — Fix: ILLCB-001/002, DER-STRICT, keypair_sec BIP-340 normalization
+
+- **`compat/libsecp256k1_shim/src/shim_pubkey.cpp`** (SHIM-ILLCB-002) — `secp256k1_ec_pubkey_parse`:
+  split combined `if (!pubkey || !input) return 0` into per-argument guards that call
+  `secp256k1_shim_call_illegal_cb`. NULL pubkey and NULL input now each fire the illegal callback,
+  matching upstream libsecp256k1 ARG_CHECK behavior.
+- **`compat/libsecp256k1_shim/src/shim_ecdsa.cpp`** (DER-STRICT) — `secp256k1_ecdsa_signature_parse_der`:
+  removed the `r=0/s=0` rejection from the `valid_scalar` lambda (renamed `in_range_scalar`). Parse
+  now accepts r=0 or s=0; only verify rejects degenerate scalars. Matches upstream libsecp256k1
+  (`secp256k1_ecdsa_sig_parse` does not reject zero; `secp256k1_ecdsa_sig_verify` does).
+- **`compat/libsecp256k1_shim/src/shim_context.cpp`** (SHIM-ILLCB-001) —
+  `secp256k1_context_set_illegal_callback` and `secp256k1_context_set_error_callback`: replaced
+  silent `if (!ctx) return` with `default_illegal_callback("ctx != NULL", nullptr)` + return.
+  Upstream libsecp256k1 calls ARG_CHECK(ctx != NULL) which fires the default callback (abort)
+  rather than silently ignoring the call.
+- **`compat/libsecp256k1_shim/src/shim_extrakeys.cpp`** (keypair_sec BIP-340 normalization) —
+  `secp256k1_keypair_create`: now negates `k` (CT, via `ct::scalar_cneg + ct::bool_to_mask`) when
+  `P.y` is odd, so the stored seckey always produces an even-Y pubkey. Matches libsecp256k1
+  `secp256k1_keypair_create` behavior required for BIP-340 Schnorr signing. The normalized key
+  bytes are stored with `secure_erase` on the stack copy. Added
+  `#include "secp256k1/detail/secure_erase.hpp"`.
+- **`audit/test_regression_shim_divergence_fixes.cpp`** — New regression test (SDF-1..6):
+  NULL pubkey/input callbacks (SDF-1/2), DER r=0 parse success (SDF-3), NULL ctx callback note
+  (SDF-4), keypair_sec even-Y check for sk=1..4 (SDF-5), Schnorr sign+verify roundtrip (SDF-6).
+
 ## 2026-05-26 — Fix: SHIM-P3-006: rfc6979_nonce_libsecp_compat + SECP256K1_SHIM_RFC6979_COMPAT build flag
 
 - **`src/cpu/include/secp256k1/ecdsa.hpp`** — Added `rfc6979_nonce_libsecp_compat` declaration
