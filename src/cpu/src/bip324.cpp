@@ -239,9 +239,7 @@ bool Bip324Session::complete_handshake(const std::uint8_t* peer_encoding) noexce
     detail::secure_erase(initiator_key, sizeof(initiator_key));
     detail::secure_erase(responder_key, sizeof(responder_key));
     detail::secure_erase(&sk, sizeof(sk));
-    // Proactively erase privkey_ now that it has served its purpose.
-    // The destructor will also clear it, but zeroing here reduces the window.
-    detail::secure_erase(privkey_.data(), privkey_.size());
+    // privkey_scalar_ was already erased at function entry (lines above).
 
     established_ = true;
     return true;

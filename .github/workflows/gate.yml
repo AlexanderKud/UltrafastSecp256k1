@@ -154,10 +154,14 @@ jobs:
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "::error::$label → $result — blocking build phase"
               FAILED=1
-            elif [ "$result" = "skipped" ] && [ "$label" = "caas-security" ] && \
+            elif [ "$result" = "skipped" ] && \
+                 { [ "$label" = "caas-security" ] || [ "$label" = "shim-gate" ]; } && \
                  [ "${{ needs.detect-impact.outputs.docs_only }}" != "true" ]; then
-              # caas-security must not skip on a non-docs-only change.
-              # For docs-only changes detect-impact sets docs_only=true → skip is expected.
+              # caas-security and shim-gate must not skip on a non-docs-only change.
+              # shim-gate carries mandatory shim security regression tests (CRIT-1, HIGH-2/3,
+              # SHIM-001/010/012) that must run whenever any core, compat, caas, or bindings
+              # file changes. For docs-only changes detect-impact sets docs_only=true → skip
+              # is expected. CAAS-001 fix (2026-05-26).
               echo "::error::$label → skipped — security gate must not skip on non-docs-only changes"
               FAILED=1
             else
@@ -320,6 +324,16 @@ jobs:
         run: |
           python3 ci/build_project_graph.py --rebuild
           python3 tools/source_graph_kit/source_graph.py build -i
+
+      - name: Rule 16 enforcement (advisory skip-return) — post-build
+        # CAAS-002 fix (2026-05-26): caas-security builds only ufsecp_shared (no standalone
+        # audit binaries), so rule16_enforce.sh returns rc=77 (soft-skip) — this is expected.
+        # The step is kept here to surface any future regression where an advisory module
+        # accidentally returns 0 (silent false-PASS) in a build that does produce binaries.
+        # A hard failure (rc != 0 && rc != 77) is still a gate failure.
+        env:
+          UFSECP_BUILD_DIR: ${{ github.workspace }}/out/ci-audit
+        run: bash ci/rule16_enforce.sh
 
       - name: Audit gate (P0–P18)
         id: audit_gate
