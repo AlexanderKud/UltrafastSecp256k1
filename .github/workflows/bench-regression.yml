@@ -30,6 +30,7 @@ on:
       - 'src/**'
       - 'include/**'
       - 'CMakeLists.txt'
+      - 'audit/**'
       - '.github/workflows/bench-regression.yml'
       - '.github/scripts/parse_benchmark.py'
   pull_request:
@@ -38,6 +39,7 @@ on:
       - 'src/**'
       - 'include/**'
       - 'CMakeLists.txt'
+      - 'audit/**'
       - '.github/workflows/bench-regression.yml'
       - '.github/scripts/parse_benchmark.py'
   schedule:
