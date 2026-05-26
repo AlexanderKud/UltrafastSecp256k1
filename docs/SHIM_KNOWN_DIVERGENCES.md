@@ -827,3 +827,59 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 - **Test:** `audit/test_regression_shim_thread_blinding.cpp` (to be added) — TBL-1: sign with
   ctx_a then sign with ctx_b on same thread, both must verify. TBL-2: randomize then sign 1000
   times with alternating contexts, all must verify.
+
+---
+
+## secp256k1_ec_pubkey_parse — hybrid pubkeys (0x06/0x07 prefix) now accepted (SHIM-HYBRID-001)
+
+- **Upstream behavior:** libsecp256k1 accepts 0x04 (uncompressed), 0x02/0x03 (compressed),
+  and 0x06/0x07 (hybrid) prefixes in `secp256k1_ec_pubkey_parse`. Hybrid-format public keys
+  (which encode both the full X and Y coordinates plus a parity byte) are a valid but rarely
+  used SEC encoding. All three formats parse to the same on-curve point.
+- **Previous shim behavior (divergence — FIXED 2026-05-21):** The shim's 65-byte parse path
+  in `shim_pubkey.cpp` only accepted 0x04 (uncompressed). 0x06 and 0x07 (hybrid prefix)
+  caused the parse to return 0 (failure) without firing the illegal callback. This caused
+  70 out of 693 Bitcoin Core integration test cases to fail (hybrid-pubkey test vectors).
+- **Current shim behavior:** `secp256k1_ec_pubkey_parse` now accepts 0x04, 0x06, and 0x07
+  prefixes for 65-byte inputs, parsing the Y coordinate directly and ignoring the parity byte
+  (Y is reconstructed from the SEC encoding, and the encoded Y is used as-is). This matches
+  libsecp256k1 behavior. 0x02/0x03 (33-byte compressed) continue to be handled separately.
+- **Reason:** BIP-340, Bitcoin Core test vectors, and SEC-encoded public keys distributed
+  on-chain can carry the 0x06/0x07 prefix. Rejection broke the Bitcoin Core integration test
+  suite. Fixed to match upstream.
+- **Impact:** None for callers sending standard compressed (0x02/0x03) or uncompressed (0x04)
+  public keys. Callers sending hybrid-encoded keys (0x06/0x07) now succeed where they
+  previously failed.
+- **Test:** Bitcoin Core integration test suite — 693/693 pass after fix (2026-04-27,
+  commit c1df659e). Dedicated shim unit test in `compat/libsecp256k1_shim/tests/` for
+  hybrid-prefix round-trip (to be added).
+
+---
+
+## secp256k1_context_* — SECP256K1_CONTEXT_NONE accepted for sign and verify (SHIM-CTX-NONE)
+
+- **Upstream behavior (libsecp256k1 v0.6+):** Starting with v0.6, libsecp256k1 deprecated
+  the `SECP256K1_CONTEXT_SIGN` / `SECP256K1_CONTEXT_VERIFY` flags. All operations now accept
+  any non-NULL context regardless of the creation flags. `SECP256K1_CONTEXT_NONE` is valid for
+  both signing and verification in v0.6+. The flags are kept for source compatibility but are
+  no longer meaningful — `secp256k1_context_create(SECP256K1_CONTEXT_NONE)` is the recommended
+  idiomatic form.
+- **Shim behavior:** `ctx_can_sign()` and `ctx_can_verify()` return `true` when the context
+  flags are `SECP256K1_CONTEXT_NONE` (0x0), in addition to the explicit SIGN and VERIFY flags.
+  This matches the libsecp256k1 v0.6+ behavior and ensures callers that pass
+  `secp256k1_context_create(SECP256K1_CONTEXT_NONE)` to sign functions do not receive a
+  spurious illegal callback.
+- **Reason:** Bitcoin Core 28.x uses `SECP256K1_CONTEXT_NONE` as the recommended context type.
+  Rejecting it in the shim would cause all Bitcoin Core signing and verification calls to fail
+  or fire illegal callbacks, breaking the integration.
+- **Impact:** Callers using the older `SECP256K1_CONTEXT_SIGN` / `SECP256K1_CONTEXT_VERIFY`
+  flags continue to work. Callers using `SECP256K1_CONTEXT_NONE` (v0.6+ idiom) now work
+  correctly. This is intentional v0.6+ compat.
+- **Note:** If a strictly wrong-flag context is passed (e.g., VERIFY-only context to a sign
+  function in a build that enforces the old semantics), the shim fires the illegal callback
+  per the `ctx_can_sign()` path — see the "All sign functions -- wrong-flag context (SHIM-001)"
+  entry above. CONTEXT_NONE is explicitly exempt from that path.
+- **Test:** `audit/test_regression_shim_context_none.cpp` — creates a CONTEXT_NONE context,
+  calls `secp256k1_ecdsa_sign` and `secp256k1_schnorrsig_sign` with it, and asserts both
+  return 1 without firing the illegal callback. Also calls `secp256k1_ecdsa_verify` and
+  `secp256k1_schnorrsig_verify` with CONTEXT_NONE and asserts both return correct results.
