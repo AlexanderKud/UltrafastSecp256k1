@@ -374,8 +374,8 @@ DOC_FILES = [
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--dry-run', action='store_true',
-                        help='Show what would change without writing files')
+    parser.add_argument('--dry-run', '--check', action='store_true',
+                        help='Show what would change without writing files (--check is an alias)')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Print each file processed')
     args = parser.parse_args()

@@ -35,6 +35,10 @@ SECURITY_DIRS = (
     "src/cpu/src/",
     "compat/libsecp256k1_shim/src/",
     "src/cpu/include/secp256k1/ct/",
+    # GPU backends: signing kernels, ECDH, CT signing paths on GPU
+    "src/gpu_backend",        # src/gpu_backend_{cuda,opencl,metal,fallback}.*
+    "src/secp256k1.cu",       # main CUDA kernel (CT sign, ECDH, verify)
+    "shaders/",               # Metal GPU shader files (.metal)
 )
 
 # If a commit touches only these directories/files, no test is required.
