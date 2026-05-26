@@ -1,5 +1,19 @@
 # Audit Changelog
 
+## 2026-05-26 — Fix: SHIM-NONCEGEN-001 extra_input32 now forwarded in secp256k1_musig_nonce_gen
+
+- **`src/cpu/include/secp256k1/musig2.hpp`** — added `nonce_extra` parameter (default nullptr) to
+  `musig2_nonce_gen`. When non-NULL, 32 bytes are mixed into the nonce_input before the counter byte,
+  expanding the hash input from 129 → 161 bytes. Backward-compatible: NULL → identical k1/k2 as before.
+- **`src/cpu/src/musig2.cpp`** — both k1 and k2 derivation blocks updated to use 161-byte nonce_input
+  path when nonce_extra != NULL. Both paths secured with `secure_erase(nonce_input, ...)` on exit.
+- **`compat/libsecp256k1_shim/src/shim_musig.cpp`** — `secp256k1_musig_nonce_gen`: changed
+  `const unsigned char* /*extra_input32*/` to named parameter and forwarded it as the 6th argument
+  to `musig2_nonce_gen`. Removed SHIM-NONCEGEN-001 TODO comment and marker.
+- **`audit/unified_audit_runner.cpp`** — `regression_musig_noncegen_extra_input` entry changed from
+  `advisory=true` to `advisory=false`. Updated description to reflect fixed behavior.
+- **`docs/SHIM_KNOWN_DIVERGENCES.md`** — SHIM-NONCEGEN-001 entry removed (no longer a divergence).
+
 ## 2026-05-26 — Fix: SHIM-006 verify_batch varlen support
 
 - **`compat/libsecp256k1_shim/src/shim_batch_verify.cpp`** — removed `if (msglen != 32) return 0`

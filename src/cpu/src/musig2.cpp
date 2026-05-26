@@ -162,7 +162,8 @@ std::pair<MuSig2SecNonce, MuSig2PubNonce> musig2_nonce_gen(
     const std::array<uint8_t, 32>& pub_key,
     const std::array<uint8_t, 32>& agg_pub_key,
     const std::array<uint8_t, 32>& msg,
-    const uint8_t* extra_input) {
+    const uint8_t* extra_input,
+    const uint8_t* nonce_extra) {
 
     MuSig2SecNonce sec{};
     MuSig2PubNonce pub{};
@@ -183,19 +184,29 @@ std::pair<MuSig2SecNonce, MuSig2PubNonce> musig2_nonce_gen(
     uint8_t t[32];
     for (std::size_t i = 0; i < 32; ++i) t[i] = sk_bytes[i] ^ aux_hash[i];
 
-    // k1 = tagged_hash("MuSig/nonce", t || pub_key || agg_pub_key || msg || 0x01)
+    // k1 = tagged_hash("MuSig/nonce", t || pub_key || agg_pub_key || msg || [nonce_extra] || 0x01)
     // CT: fixed 2-iteration approach — data-dependent retry loop is non-CT because
     // the iteration count leaks whether k1_hash >= n or == 0 (both functions of
     // the private-key-derived t). Probability of retry ~2^-128. Fix: always run
     // exactly 2 iterations and use ct::scalar_select (matches rfc6979_nonce fix).
+    // nonce_extra: when non-NULL, included in nonce_input before counter (BIP-327 extra_input32
+    // defense-in-depth). nonce_input is 161 bytes when set, 129 when NULL. Backward-compatible.
     {
-        uint8_t nonce_input[129];
+        uint8_t nonce_input[161];
         std::memcpy(nonce_input, t, 32);
         std::memcpy(nonce_input + 32, pub_key.data(), 32);
         std::memcpy(nonce_input + 64, agg_pub_key.data(), 32);
         std::memcpy(nonce_input + 96, msg.data(), 32);
-        nonce_input[128] = 0x01;
-        auto k1_hash = cached_tagged_hash(g_musig_nonce_midstate, nonce_input, 129);
+        std::size_t ni_len;
+        if (nonce_extra) {
+            std::memcpy(nonce_input + 128, nonce_extra, 32);
+            nonce_input[160] = 0x01;
+            ni_len = 161;
+        } else {
+            nonce_input[128] = 0x01;
+            ni_len = 129;
+        }
+        auto k1_hash = cached_tagged_hash(g_musig_nonce_midstate, nonce_input, ni_len);
         Scalar cand1{}, cand2{};
         bool const ok1 = Scalar::parse_bytes_strict_nonzero(k1_hash.data(), cand1);
         // Advance hash state unconditionally: XOR byte 31 of the candidate hash to
@@ -215,16 +226,24 @@ std::pair<MuSig2SecNonce, MuSig2PubNonce> musig2_nonce_gen(
         secure_erase(k1_hash2.data(), k1_hash2.size());
     }
 
-    // k2 = tagged_hash("MuSig/nonce", t || pub_key || agg_pub_key || msg || 0x02)
+    // k2 = tagged_hash("MuSig/nonce", t || pub_key || agg_pub_key || msg || [nonce_extra] || 0x02)
     // Same CT fixed 2-iteration approach as k1 above.
     {
-        uint8_t nonce_input[129];
+        uint8_t nonce_input[161];
         std::memcpy(nonce_input, t, 32);
         std::memcpy(nonce_input + 32, pub_key.data(), 32);
         std::memcpy(nonce_input + 64, agg_pub_key.data(), 32);
         std::memcpy(nonce_input + 96, msg.data(), 32);
-        nonce_input[128] = 0x02;
-        auto k2_hash = cached_tagged_hash(g_musig_nonce_midstate, nonce_input, 129);
+        std::size_t ni_len;
+        if (nonce_extra) {
+            std::memcpy(nonce_input + 128, nonce_extra, 32);
+            nonce_input[160] = 0x02;
+            ni_len = 161;
+        } else {
+            nonce_input[128] = 0x02;
+            ni_len = 129;
+        }
+        auto k2_hash = cached_tagged_hash(g_musig_nonce_midstate, nonce_input, ni_len);
         Scalar cand1{}, cand2{};
         bool const ok1 = Scalar::parse_bytes_strict_nonzero(k2_hash.data(), cand1);
         auto k2_hash2 = k2_hash;

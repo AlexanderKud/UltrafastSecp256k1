@@ -1,6 +1,17 @@
 # Secret Lifecycle Review
 
-**Last updated**: 2026-05-26 | **Version**: 4.1.1
+**Last updated**: 2026-05-26 | **Version**: 4.1.2
+
+### 2026-05-26 — SHIM-NONCEGEN-001: musig2_nonce_gen nonce_extra parameter
+
+`src/cpu/src/musig2.cpp` — `musig2_nonce_gen` now accepts a `nonce_extra`
+parameter (BIP-327 `extra_input32`). When non-NULL, the 32 bytes are appended
+to the `nonce_input` buffer before the counter byte, expanding the hash input
+from 129 → 161 bytes for both k1 and k2 derivations. Both code paths call
+`secure_erase(nonce_input, sizeof(nonce_input))` unconditionally before return
+(existing lifecycle; unchanged). The `nonce_extra` buffer is caller-owned
+(no erase required on our side). Backward-compatible: NULL → 129-byte path,
+identical k1/k2 as before.
 
 ### 2026-05-24 — v9 RT-006/-007/-014/-015 / TASK-022: stack-residue hardening bundle
 

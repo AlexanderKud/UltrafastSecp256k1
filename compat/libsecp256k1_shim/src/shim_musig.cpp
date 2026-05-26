@@ -448,13 +448,8 @@ int secp256k1_musig_nonce_gen(
     const secp256k1_pubkey* pubkey,
     const unsigned char* msg32,
     const secp256k1_musig_keyagg_cache* /*keyagg_cache*/,
-    const unsigned char* /*extra_input32*/)
+    const unsigned char* extra_input32)
 {
-    // TODO(SHIM-A09): extra_input32 is accepted but not forwarded to musig2_nonce_gen.
-    // BIP-327 §8.3: this provides additional entropy defense. Forwarding requires
-    // internal API change to musig2_nonce_gen. Impact: callers relying on extra_input32
-    // for defense-in-depth get the same security as without it — still sound but weaker.
-    // Tracked in docs/SHIM_KNOWN_DIVERGENCES.md as SHIM-NONCEGEN-001.
     SHIM_REQUIRE_CTX(ctx);
     if (!secnonce || !pubnonce || !session_id32) return 0;
 
@@ -485,7 +480,7 @@ int secp256k1_musig_nonce_gen(
 
     std::array<unsigned char, 32> agg_x = {};
 
-    auto [sn, pn] = secp256k1::musig2_nonce_gen(sk, pub_x, agg_x, msg, session_id32);
+    auto [sn, pn] = secp256k1::musig2_nonce_gen(sk, pub_x, agg_x, msg, session_id32, extra_input32);
     // P2-SEC-003: erase sk from stack before returning — sk was derived from the
     // caller's private key and must not persist after musig2_nonce_gen consumed it.
     secp256k1::detail::secure_erase(&sk, sizeof(sk));

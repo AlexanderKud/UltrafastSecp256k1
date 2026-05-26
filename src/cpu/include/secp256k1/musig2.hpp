@@ -72,7 +72,10 @@ struct MuSig2PubNonce {
 // pub_key: signer's public key (X-only)
 // agg_pub_key: aggregated public key (X-only)
 // msg: 32-byte message
-// extra_input: optional extra randomness (32 bytes, or nullptr)
+// extra_input: optional aux randomness (32 bytes, or nullptr) — feeds t = sk XOR H("MuSig/aux", .)
+// nonce_extra: optional BIP-327 extra_input32 (32 bytes, or nullptr) — mixed into nonce_input hash
+//              when non-NULL, produces different k1/k2 than with nullptr (defense-in-depth).
+//              Backward-compatible: nullptr → identical behavior to before.
 //
 // Returns {secret_nonce, public_nonce}
 std::pair<MuSig2SecNonce, MuSig2PubNonce> musig2_nonce_gen(
@@ -80,7 +83,8 @@ std::pair<MuSig2SecNonce, MuSig2PubNonce> musig2_nonce_gen(
     const std::array<std::uint8_t, 32>& pub_key,
     const std::array<std::uint8_t, 32>& agg_pub_key,
     const std::array<std::uint8_t, 32>& msg,
-    const std::uint8_t* extra_input = nullptr);
+    const std::uint8_t* extra_input = nullptr,
+    const std::uint8_t* nonce_extra  = nullptr);
 
 // -- Nonce Aggregation --------------------------------------------------------
 

@@ -2,6 +2,15 @@
 
 **UltrafastSecp256k1 v4.1.0** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-05-26 — SHIM-NONCEGEN-001 fixed: secp256k1_musig_nonce_gen now mixes extra_input32
+
+**Claim update:** `secp256k1_musig_nonce_gen(extra_input32 ≠ NULL)` now produces
+nonces distinct from `extra_input32 = NULL` and from any other non-NULL
+`extra_input32` value. The BIP-327 defense-in-depth property is now satisfied:
+callers supplying session-specific entropy in `extra_input32` receive uniquely
+derived nonces. Verified by `audit/test_regression_musig_noncegen_extra_input.cpp`
+NCI-2 and NCI-3 (bug-fixed mode assertions).
+
 ### 2026-05-24 — v9 RT-002 / TASK-002: Adaptor signing — DPA-blinded generator_mul on every secret
 
 `src/cpu/src/adaptor.cpp` now routes every secret-scalar generator
