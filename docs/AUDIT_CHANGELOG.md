@@ -13,6 +13,15 @@
   Tests specifically the large-batch MSM path (N > kSchnorrBatchIndividualCutoff=96)
   where g_coeff accumulation and the generator term apply.
 
+## 2026-05-26 — Fix: TEST-001: regression_musig2_signer_index marked advisory=true
+
+- **`audit/unified_audit_runner.cpp`** — Changed `regression_musig2_signer_index` from
+  `advisory=false` to `advisory=true`. The module's MSI-4 sub-case (`test_abi_ctx_skips_check`)
+  is an INFO-only probe (`g_pass++` without a real CHECK) documenting a known open behavior in
+  `RESIDUAL_RISK_REGISTER.md` (MED-3). Registering the module as `advisory=false` falsely
+  signaled full Rule 13 enforcement. `advisory=true` correctly reflects partial coverage:
+  MSI-1..3 (v2 ABI path) are hard-enforced; MSI-4 (empty individual_pubkeys C++ path) is open.
+
 ## 2026-05-26 — Fix: SHIM-004-PRECOMP: NULL ctx guard added to all 4 precomp shim functions
 
 - **`compat/libsecp256k1_shim/src/shim_ecdsa.cpp`** — `secp256k1_ec_pubkey_precomp` (line 455)
