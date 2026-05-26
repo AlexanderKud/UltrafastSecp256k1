@@ -11,7 +11,28 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 
 ---
 
-## Security improvements (shim is stricter than upstream)
+> **AGENT RULE — ABSOLUTE**
+>
+> The sections **"Security improvements"** and **"Performance improvements"** below are
+> **owner-approved intentional divergences from upstream**. These represent places where
+> the shim is **strictly better** than libsecp256k1 — either safer or faster — while
+> remaining correct. They are explicitly protected per `CLAUDE.md` ("სადაც უკეთესები ვართ
+> არ ვეხებით" — where we are better, we do not touch).
+>
+> **DO NOT revert, "fix", align, or remove any entry in those two sections.**
+> They are not bugs. They are not divergences to be eliminated. Any agent that
+> attempts to align these entries with upstream behavior is making a security or
+> performance regression. Entries in those sections must remain exactly as documented.
+>
+> The **"Capability gaps"** section may be fixed or removed as gaps are closed.
+
+---
+
+## Security improvements — LOCKED: DO NOT REVERT (shim is stricter than upstream)
+
+<!-- OWNER-LOCKED: all entries below are intentional security hardening.
+     Reverting any of these to match upstream behavior is a security regression.
+     See agent rule at top of file. -->
 
 These divergences are intentional hardening beyond upstream libsecp256k1. They
 are stricter but never less safe. Callers using well-formed inputs are unaffected.
@@ -129,7 +150,12 @@ are stricter but never less safe. Callers using well-formed inputs are unaffecte
 
 ---
 
-## Performance improvements (shim is faster; correctness identical to upstream)
+## Performance improvements — LOCKED: DO NOT REVERT (shim is faster; correctness identical to upstream)
+
+<!-- OWNER-LOCKED: all entries below are intentional performance optimizations.
+     Reverting any of these to match upstream behavior is a performance regression.
+     Correctness is identical to upstream for all of these.
+     See agent rule at top of file. -->
 
 These divergences are intentional optimizations. The observable results (pubkeys,
 signatures, verification outcomes) are identical to upstream; only latency differs.

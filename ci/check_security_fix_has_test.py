@@ -494,6 +494,17 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "checks fe_to_data / sc_to_data return the original address across all four "
         "void* / const void* overloads, pinning the no-op nature of the refactor.",
     ),
+    "6faecd4dc5": (
+        ["audit/test_regression_musig_noncegen_extra_input.cpp"],
+        "SHIM-NONCEGEN-001: musig2_nonce_gen gains nonce_extra parameter; "
+        "secp256k1_musig_nonce_gen now forwards extra_input32. "
+        "The self-healing regression test (test_regression_musig_noncegen_extra_input.cpp) "
+        "is the pairing test — it automatically switches from bug-open mode (asserts "
+        "identical nonces) to bug-fixed mode (asserts distinct nonces) when the "
+        "SHIM-NONCEGEN-001 marker is removed from shim_musig.cpp. No code change to "
+        "the test file was needed because of the self-healing design; the test was "
+        "already wired as advisory=true and is promoted to advisory=false in this commit.",
+    ),
 }
 
 # Bot commits that auto-update evidence — skip.
