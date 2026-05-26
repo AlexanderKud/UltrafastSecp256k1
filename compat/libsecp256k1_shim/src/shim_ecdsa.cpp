@@ -448,10 +448,11 @@ static_assert(alignof(secp256k1_pubkey_precomp) >= alignof(secp256k1::EcdsaPubli
     "secp256k1_pubkey_precomp alignment insufficient for EcdsaPublicKey");
 
 int secp256k1_ec_pubkey_precomp(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     secp256k1_pubkey_precomp* out,
     const secp256k1_pubkey* pubkey)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!out || !pubkey) return 0;
     auto* epk = reinterpret_cast<secp256k1::EcdsaPublicKey*>(out);
     unsigned char unc[65]; unc[0] = 0x04;
@@ -460,10 +461,11 @@ int secp256k1_ec_pubkey_precomp(
 }
 
 int secp256k1_ec_pubkey_parse_precomp(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     secp256k1_pubkey_precomp* out,
     const unsigned char* input, size_t inputlen)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!out || !input) return 0;
     auto* epk = reinterpret_cast<secp256k1::EcdsaPublicKey*>(out);
     return secp256k1::ecdsa_pubkey_parse(*epk, input, inputlen) ? 1 : 0;

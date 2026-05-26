@@ -464,10 +464,11 @@ static_assert(alignof(secp256k1_xonly_pubkey_precomp) >= alignof(secp256k1::Schn
     "secp256k1_xonly_pubkey_precomp alignment insufficient for SchnorrXonlyPubkey");
 
 int secp256k1_xonly_ec_pubkey_precomp(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     secp256k1_xonly_pubkey_precomp* out,
     const secp256k1_xonly_pubkey* pubkey)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!out || !pubkey) return 0;
     auto* epk = reinterpret_cast<secp256k1::SchnorrXonlyPubkey*>(out);
     // pubkey->data[0..31] = x-only key bytes
@@ -475,10 +476,11 @@ int secp256k1_xonly_ec_pubkey_precomp(
 }
 
 int secp256k1_xonly_pubkey_parse_precomp(
-    const secp256k1_context* /*ctx*/,
+    const secp256k1_context* ctx,
     secp256k1_xonly_pubkey_precomp* out,
     const unsigned char* pubkey_x32)
 {
+    SHIM_REQUIRE_CTX(ctx);
     if (!out || !pubkey_x32) return 0;
     auto* epk = reinterpret_cast<secp256k1::SchnorrXonlyPubkey*>(out);
     // Single call: schnorr_xonly_pubkey_parse now builds GLV tables on first call.

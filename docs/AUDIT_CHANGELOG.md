@@ -13,6 +13,20 @@
   Tests specifically the large-batch MSM path (N > kSchnorrBatchIndividualCutoff=96)
   where g_coeff accumulation and the generator term apply.
 
+## 2026-05-26 — Fix: SHIM-004-PRECOMP: NULL ctx guard added to all 4 precomp shim functions
+
+- **`compat/libsecp256k1_shim/src/shim_ecdsa.cpp`** — `secp256k1_ec_pubkey_precomp` (line 455)
+  and `secp256k1_ec_pubkey_parse_precomp` (line 468): replaced discarded `/*ctx*/` parameter
+  with `ctx` and added `SHIM_REQUIRE_CTX(ctx)` as first statement. Previously NULL ctx was
+  silently accepted; now it fires `secp256k1_shim_call_illegal_cb(NULL, __func__)` → abort,
+  matching libsecp256k1 behavior.
+- **`compat/libsecp256k1_shim/src/shim_schnorr.cpp`** — `secp256k1_xonly_ec_pubkey_precomp`
+  (line 471) and `secp256k1_xonly_pubkey_parse_precomp` (line 483): same fix applied.
+- **`compat/libsecp256k1_shim/tests/test_shim_security_edge_cases.cpp`** — Added
+  `test_shim004_precomp_null_ctx_fires_callback()`: GTM-1..4 verify all 4 precomp functions
+  succeed with valid ctx; GTM-5..8 verify NULL out-pointer returns 0; NULL ctx abort behavior
+  documented by code review (abort() prevents in-process test).
+
 ## 2026-05-26 — Fix: CI build/audit portability fixes — advisory flag + GCC __has_feature
 
 - **`audit/unified_audit_runner.cpp`** — Changed `test_exploit_context_flag_bypass` from
