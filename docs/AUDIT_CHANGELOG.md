@@ -1,5 +1,24 @@
 # Audit Changelog
 
+## 2026-05-25 — Fix: P1 multi-session shim hardening — CFB semantics, MuSig2 NULL ctx, is_zero_ct, per-thread blinding docs
+
+- **`audit/test_exploit_context_flag_bypass.cpp`** — Corrected 4 assertions (CFB-2, CFB-3, CFB-4,
+  CFB-9) to match libsecp256k1 v0.6+ semantics: NONE context can sign and verify; SIGN-only can
+  verify. CFB-9 replaced dangerous NULL-ctx test (would abort process) with safe
+  `secp256k1_context_static` test. Module changed to `advisory=false`.
+- **`compat/libsecp256k1_shim/src/shim_musig.cpp`** — 6 functions fixed: `pubkey_get`,
+  `pubkey_ec_tweak_add`, `pubkey_xonly_tweak_add`, `partial_sig_verify`, `partial_sig_serialize`,
+  `partial_sig_parse` now call `SHIM_REQUIRE_CTX(ctx)` — NULL ctx fires illegal callback (abort).
+- **`src/cpu/src/ct_sign.cpp` + `src/cpu/src/schnorr.cpp`** — `is_zero()` → `is_zero_ct()` on
+  `sig.s` (3 call sites). `sig.s` is derived from CT scalar operations — data-dependent branch
+  via `is_zero()` was a CT violation on a secret-adjacent value.
+- **`audit/test_exploit_shim_musig_ka_cap.cpp`** — Added KAC-4: fills kMaxKaEntries+1 sessions
+  (1025 calls with distinct cache structs), asserts at least one returns 0 (DoS cap enforced) and
+  total successes ≤ 1024. Previously only tested normal path and input validation (KAC-1..3).
+- **`docs/SHIM_KNOWN_DIVERGENCES.md`** — Updated musig ctx-ignored section (removed fixed
+  functions); marked SHIM-MUSIG-CTX-001 as FIXED; added SHIM-THREAD-BLIND section documenting
+  per-thread vs per-context blinding deviation, impact analysis, planned fix, and test plan.
+
 ## 2026-05-25 — Fix: T-11/12 memset→secure_erase + is_zero→is_zero_ct in shim_context.cpp
 
 - **`compat/libsecp256k1_shim/src/shim_context.cpp`** — `secp256k1_context_destroy`, `secp256k1_context_randomize` (null-seed path), `secp256k1_context_preallocated_destroy`: replaced `std::memset(ctx->blind, 0, 32)` with `secp256k1::detail::secure_erase(ctx->blind, 32)`. Compilers may optimise away dead-store `memset` on secret buffers; `secure_erase` is protected against elimination.

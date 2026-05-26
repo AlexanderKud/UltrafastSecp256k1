@@ -292,7 +292,8 @@ For the complete compatibility test matrix see `compat/libsecp256k1_shim/tests/`
 - **Leak risk:** If a caller errors out before completing a session, the map entry persists
   until the cache address is reused. Callers must ensure sessions are completed or abandoned
   cleanly. A future `secp256k1_musig_keyagg_cache_destroy` API could address this.
-- **Test:** `audit/test_exploit_shim_musig_ka_cap.cpp` KAC-1..3.
+- **Test:** `audit/test_exploit_shim_musig_ka_cap.cpp` KAC-1..4.
+  KAC-4 fills kMaxKaEntries+1 sessions and asserts at least one pubkey_agg returns 0.
 
 ---
 
