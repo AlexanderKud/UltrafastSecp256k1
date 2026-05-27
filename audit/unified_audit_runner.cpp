@@ -1467,7 +1467,8 @@ static const AuditModule ALL_MODULES[] = {
     // advisory=true: depends on libsecp256k1 shim (returns ADVISORY_SKIP_CODE when absent).
     { "regression_shim_security_v9", "SHIM-NEW-012: serialize_compact/der NULL output/sig now fires illegal_callback matching libsecp256k1; SHIM-NEW-015: seckey_verify/negate/tweak_add/tweak_mul NULL seckey/tweak now fires illegal_callback (v9-012/015)", "shim_regression", test_regression_shim_security_v9_run, true },
     // === 2026-05-23 SHIM-NONCEGEN-001: musig_nonce_gen extra_input32 behavioral freeze ===
-    { "regression_musig_noncegen_extra_input", "SHIM-NONCEGEN-001 fixed: secp256k1_musig_nonce_gen now forwards extra_input32 to musig2_nonce_gen — pubnonce differs with NULL vs non-NULL extra_input32 (NCI-1..3)", "shim_regression", test_regression_musig_noncegen_extra_input_run, false },
+    // advisory=true: depends on libsecp256k1 shim (returns ADVISORY_SKIP_CODE when absent).
+    { "regression_musig_noncegen_extra_input", "SHIM-NONCEGEN-001 fixed: secp256k1_musig_nonce_gen now forwards extra_input32 to musig2_nonce_gen — pubnonce differs with NULL vs non-NULL extra_input32 (NCI-1..3)", "shim_regression", test_regression_musig_noncegen_extra_input_run, true },
     // === 2026-05-23 SEC-001/CT-001: adaptor extract CT scalar mul + s_inv erase ===
     // advisory=false: ufsecp ABI always available.
     { "regression_adaptor_ct_secret_extract", "SEC-001/CT-001: ecdsa_adaptor_extract now uses ct::scalar_mul(s_hat, s_inv) + secure_erase(s_inv) — correctness verified via round-trip sign/adapt/extract (ACE-1..4)", "ct_analysis", test_regression_adaptor_ct_secret_extract_run, false },
