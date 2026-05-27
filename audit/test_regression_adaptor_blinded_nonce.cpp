@@ -275,7 +275,7 @@ static void test_bchn_shim_is_zero_ct_source_scan() {
 // ── P3-SHIM-STACK: shim_schnorr.cpp kStackMsgMax = 1024 ──────────────────────
 
 static void test_shim_schnorr_stack_msg_max_source_scan() {
-    printf("[4] P3-SHIM-STACK: shim_schnorr.cpp — kStackMsgMax = 1024\n");
+    printf("[4] P3-SHIM-STACK: shim_schnorr.cpp — kStackMsgMax = 1024 or AUDIT-003 makes it irrelevant\n");
 
     std::string src = read_source_file(
         "compat/libsecp256k1_shim/src/shim_schnorr.cpp");
@@ -288,18 +288,31 @@ static void test_shim_schnorr_stack_msg_max_source_scan() {
         (src.find("kStackMsgMax = 1024") != std::string::npos);
     bool has_old_256 =
         (src.find("kStackMsgMax = 256") != std::string::npos);
+    // AUDIT-003 restricted sign_custom to msglen == 32 only, forwarding to sign32.
+    // When this restriction is present, kStackMsgMax is unnecessary (no heap path
+    // for variable-length messages exists). Accept both the upgrade and the AUDIT-003 path.
+    bool has_audit003 =
+        (src.find("msglen != 32") != std::string::npos ||
+         src.find("msglen must be 32") != std::string::npos);
 
     if (has_old_256 && !has_1024) {
         CHECK(false, "shim_schnorr.cpp: kStackMsgMax still = 256 — P3-SHIM-STACK regression");
+    } else if (has_1024) {
+        ++g_pass; // kStackMsgMax = 1024 present — P3-SHIM-STACK satisfied
+        printf("  OK: kStackMsgMax = 1024 found\n");
     } else {
-        CHECK(has_1024, "shim_schnorr.cpp: kStackMsgMax = 1024 present (P3-SHIM-STACK)");
+        // Neither 256 nor 1024: AUDIT-003 made variable-length sign_custom irrelevant.
+        CHECK(has_audit003,
+              "shim_schnorr.cpp: AUDIT-003 msglen=32 restriction present (kStackMsgMax irrelevant)");
+        if (has_audit003)
+            printf("  OK: AUDIT-003 restriction present — kStackMsgMax unnecessary\n");
     }
 }
 
 // ── P3-BATCH-MEM: shim_batch_verify.cpp shrink_to_fit() ──────────────────────
 
 static void test_batch_verify_shrink_to_fit_source_scan() {
-    printf("[5] P3-BATCH-MEM: shim_batch_verify.cpp — shrink_to_fit() on batch vectors\n");
+    printf("[5] P3-BATCH-MEM: shim_batch_verify.cpp — shrink_to_fit() or PERF-004 removal\n");
 
     std::string src = read_source_file(
         "compat/libsecp256k1_shim/src/shim_batch_verify.cpp");
@@ -308,19 +321,28 @@ static void test_batch_verify_shrink_to_fit_source_scan() {
         return;
     }
 
-    // The fix adds shrink_to_fit() in both the Schnorr and ECDSA batch paths.
-    // We count occurrences: expect at least 2 (one per function).
+    // P3-BATCH-MEM originally added shrink_to_fit() after each batch.
+    // PERF-004 subsequently removed it: thread_local vectors retain capacity for
+    // amortized performance across calls — shrinking would force reallocation on
+    // the next large batch. Accept both the original addition and the PERF-004 removal.
     size_t count = 0;
     size_t pos = 0;
     while ((pos = src.find("shrink_to_fit()", pos)) != std::string::npos) {
         ++count;
-        pos += 15;  // len("shrink_to_fit()")
+        pos += 15;
     }
+    bool has_perf004_removal =
+        (src.find("shrink_to_fit() removed (PERF-004") != std::string::npos);
 
-    CHECK(count >= 2,
-          "shim_batch_verify.cpp: shrink_to_fit() present in both batch paths (P3-BATCH-MEM)");
     if (count >= 2) {
+        ++g_pass; // shrink_to_fit() present in both batch paths — P3-BATCH-MEM satisfied
         printf("  OK: %zu shrink_to_fit() calls found\n", count);
+    } else {
+        // PERF-004 deliberately removed shrink_to_fit() for amortized perf.
+        CHECK(has_perf004_removal,
+              "shim_batch_verify.cpp: PERF-004 removed shrink_to_fit() for amortized perf (correct)");
+        if (has_perf004_removal)
+            printf("  OK: PERF-004 removal comment found — intentional design\n");
     }
 }
 
