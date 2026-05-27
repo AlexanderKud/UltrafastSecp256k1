@@ -84,7 +84,8 @@ ECDSASignature ecdsa_sign_verified(const std::array<uint8_t, 32>& msg_hash,
                                    const Scalar& private_key) {
     auto sig = ecdsa_sign(msg_hash, private_key);
 
-    if (!sig.r.is_zero()) {
+    // CT: use is_zero_ct() for consistency with hedged_verified (belt-and-suspenders).
+    if (!sig.r.is_zero_ct()) {
         auto pk = ct::generator_mul(private_key);
         if (!ecdsa_verify(msg_hash.data(), pk, sig)) {
             return {Scalar::zero(), Scalar::zero()};
@@ -149,7 +150,8 @@ ECDSASignature ecdsa_sign_hedged_verified(const std::array<uint8_t, 32>& msg_has
                                           const std::array<uint8_t, 32>& aux_rand) {
     auto sig = ecdsa_sign_hedged(msg_hash, private_key, aux_rand);
 
-    if (!sig.r.is_zero()) {
+    // CT: r = kG.x mod n is nonce-derived — use is_zero_ct() not is_zero().
+    if (!sig.r.is_zero_ct()) {
         auto pk = ct::generator_mul(private_key);
         if (!ecdsa_verify(msg_hash.data(), pk, sig)) {
             return {Scalar::zero(), Scalar::zero()};

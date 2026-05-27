@@ -744,7 +744,8 @@ ECDSASignature ecdsa_sign_hedged_verified(const std::array<uint8_t, 32>& msg_has
                                           const std::array<uint8_t, 32>& aux_rand) {
     auto result = ecdsa_sign_hedged(msg_hash, private_key, aux_rand);
 
-    if (!result.r.is_zero()) {
+    // CT: r = kG.x mod n is nonce-derived — use is_zero_ct() not is_zero().
+    if (!result.r.is_zero_ct()) {
         auto pk = ct::generator_mul(private_key);
         if (!ecdsa_verify(msg_hash.data(), pk, result)) {
             result = {Scalar::zero(), Scalar::zero()};

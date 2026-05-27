@@ -1,5 +1,18 @@
 # Constant-Time Verification
 
+### 2026-05-27 ct_sign.cpp — is_zero_ct on r in ecdsa_sign_verified paths (CT-008/SEC-004)
+
+- **`src/cpu/src/ct_sign.cpp`**: `secp256k1::ct::ecdsa_sign_verified` and
+  `ecdsa_sign_hedged_verified` used `sig.r.is_zero()` (variable-time branch)
+  to guard the fault-attack verification step. `sig.r` is derived from the
+  nonce point `R.x mod n` — a nonce-adjacent value. Changed to `sig.r.is_zero_ct()`
+  (branchless `cmov`-based check) in both functions.
+- **`src/cpu/src/ecdsa.cpp`**: Same fix applied to the fast-path
+  `secp256k1::ecdsa_sign_hedged_verified` (benchmarking path, not production ABI,
+  but consistent defence-in-depth).
+- **CT status**: Both CT signing paths now uniformly use `is_zero_ct()` on all
+  nonce-derived values. No algorithm change.
+
 ### 2026-05-14 ct_field.cpp — drop dead add256 + add_carry_u64 (build-only cleanup)
 
 - **`src/cpu/src/ct_field.cpp`**: After delegating field_add/sub/neg

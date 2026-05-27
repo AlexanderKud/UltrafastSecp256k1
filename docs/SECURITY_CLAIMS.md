@@ -2,6 +2,36 @@
 
 **UltrafastSecp256k1 v4.1.0** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-05-27 — Security fix bundle: SEC-001/004/005/006, CT-007/008, COMPAT-001/004/006/010, VER-006
+
+**SEC-006 (P1):** `compute_challenge` in `frost.cpp` now erases `e_hash` (32 B,
+nonce-adjacent) and `challenge_data` (96 B, nonce + pubkey + msg) before return.
+
+**SEC-005 (P2):** All three `ecdh_compute*` functions reject off-curve public keys
+before `ct::scalar_mul`. Guard: `is_infinity()` + `y²=x³+7` field check.
+
+**CT-008 / SEC-004 (P1):** `is_zero_ct()` now used on `sig.r` in
+`ct::ecdsa_sign_verified`, `ct::ecdsa_sign_hedged_verified`, and
+`secp256k1::ecdsa_sign_hedged_verified` (was `is_zero()` — VT branch on nonce-derived value).
+
+**SEC-001 / COMPAT-010 (P1):** BCHN shim `secp256k1_schnorr_sign`: `s.is_zero_ct()` (was VT
+`is_zero()`); `secp256k1_schnorr_verify`: `parse_bytes_strict` rejects `s >= n`.
+
+**CT-007 (P2):** CUDA `ecdsa_sign_recoverable` overflow compare loop replaced with branchless
+mask-accumulation (no early `break` on nonce-derived `rx_bytes`).
+
+**COMPAT-001 (P2):** `secp256k1_context_create` and `secp256k1_context_preallocated_create` now
+reject unknown flag bits above `BIT_CONTEXT_SIGN` (bits 10+).
+
+**COMPAT-004 (P2):** `secp256k1_schnorrsig_sign_custom` returns 0 for `msglen != 32` without
+firing the illegal callback (firing was wrong — not a programming error per upstream).
+
+**COMPAT-006 (P2):** `secp256k1_xonly_pubkey_from_pubkey` NULL `xonly_pubkey` / `pubkey` args
+now fire the illegal callback (was silent return 0).
+
+**VER-006 (P2):** CocoaPods podspec no longer defines `SECP256K1_FAST_NO_SECURITY_CHECKS=1`
+or `SECP256K1_ULTRA_SPEED=1` — shipping with security checks disabled was a distribution error.
+
 ### 2026-05-26 — SHIM-NONCEGEN-001 fixed: secp256k1_musig_nonce_gen now mixes extra_input32
 
 **Claim update:** `secp256k1_musig_nonce_gen(extra_input32 ≠ NULL)` now produces

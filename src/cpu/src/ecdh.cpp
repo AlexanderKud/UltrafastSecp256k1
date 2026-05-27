@@ -8,6 +8,7 @@ namespace secp256k1 {
 
 using fast::Scalar;
 using fast::Point;
+using fast::FieldElement;
 
 // -- ECDH: SHA-256(compressed point) ------------------------------------------
 
@@ -16,6 +17,14 @@ std::array<std::uint8_t, 32> ecdh_compute(
     const Point& public_key) {
 
     if (private_key.is_zero_ct()) return {};
+
+    // SEC-005: reject off-curve pubkeys (invalid-curve attack defense).
+    if (public_key.is_infinity()) return {};
+    {
+        auto px = public_key.x(), py = public_key.y();
+        auto rhs = px * px * px + FieldElement::from_uint64(7);
+        if (!(py * py == rhs)) return {};
+    }
 
     auto shared_point = ct::scalar_mul(public_key, private_key);
     if (shared_point.is_infinity()) return {};
@@ -38,6 +47,14 @@ std::array<std::uint8_t, 32> ecdh_compute_xonly(
 
     if (private_key.is_zero_ct()) return {};
 
+    // SEC-005: reject off-curve pubkeys (invalid-curve attack defense).
+    if (public_key.is_infinity()) return {};
+    {
+        auto px = public_key.x(), py = public_key.y();
+        auto rhs = px * px * px + FieldElement::from_uint64(7);
+        if (!(py * py == rhs)) return {};
+    }
+
     auto shared_point = ct::scalar_mul(public_key, private_key);
     if (shared_point.is_infinity()) return {};
 
@@ -57,6 +74,14 @@ std::array<std::uint8_t, 32> ecdh_compute_raw(
     const Point& public_key) {
 
     if (private_key.is_zero_ct()) return {};
+
+    // SEC-005: reject off-curve pubkeys (invalid-curve attack defense).
+    if (public_key.is_infinity()) return {};
+    {
+        auto px = public_key.x(), py = public_key.y();
+        auto rhs = px * px * px + FieldElement::from_uint64(7);
+        if (!(py * py == rhs)) return {};
+    }
 
     auto shared_point = ct::scalar_mul(public_key, private_key);
     if (shared_point.is_infinity()) return {};

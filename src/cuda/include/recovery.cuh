@@ -125,19 +125,24 @@ __device__ inline bool ecdsa_sign_recoverable(
     if (ry_bytes[31] & 1) recid |= 1;
 
     // bit 1: R.x >= n (overflow)
-    // Compare rx_bytes (big-endian) with ORDER_BYTES
-    // ORDER in big-endian:
+    // CT-007: branchless comparison — no early-exit on nonce-derived rx_bytes.
+    // Mask-accumulation pattern: gt tracks if rx > order seen so far (MSB first).
     static const uint8_t ORDER_BE[32] = {
         0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,
         0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFE,
         0xBA,0xAE,0xDC,0xE6, 0xAF,0x48,0xA0,0x3B,
         0xBF,0xD2,0x5E,0x8C, 0xD0,0x36,0x41,0x41
     };
-    bool overflow = false;
+    uint32_t gt = 0u, eq_acc = 0xFFFFFFFFu;
     for (int i = 0; i < 32; i++) {
-        if (rx_bytes[i] < ORDER_BE[i]) break;
-        if (rx_bytes[i] > ORDER_BE[i]) { overflow = true; break; }
+        const uint32_t a = (uint32_t)rx_bytes[i];
+        const uint32_t b = (uint32_t)ORDER_BE[i];
+        const uint32_t byte_gt = (uint32_t)(-(int32_t)(a > b));
+        const uint32_t byte_lt = (uint32_t)(-(int32_t)(a < b));
+        gt |= (byte_gt & eq_acc);
+        eq_acc &= ~(byte_gt | byte_lt);
     }
+    const bool overflow = (gt != 0u);
     if (overflow) recid |= 2;
 
     // BUG-H2 FIX: CT Fermat inverse — fixed 256-iteration trace, no secret-dependent branches.

@@ -127,6 +127,13 @@ secp256k1_context *secp256k1_context_create(unsigned int flags) {
                                 const_cast<void*>(g_static_ctx.illegal_cb_data));
         return nullptr;
     }
+    // COMPAT-001: reject unknown flag bits above the type field (bits 10+).
+    // Matches upstream libsecp256k1 which fires illegal_callback for unrecognised bits.
+    if (flags & ~(SECP256K1_FLAGS_TYPE_MASK | SECP256K1_FLAGS_BIT_CONTEXT_VERIFY | SECP256K1_FLAGS_BIT_CONTEXT_SIGN)) {
+        g_static_ctx.illegal_cb("secp256k1_context_create: unknown flag bits",
+                                const_cast<void*>(g_static_ctx.illegal_cb_data));
+        return nullptr;
+    }
     shim_ensure_fixed_base();
     void* mem = std::malloc(sizeof(secp256k1_context));
     if (!mem) return nullptr;
@@ -326,6 +333,12 @@ secp256k1_context *secp256k1_context_preallocated_create(void *prealloc, unsigne
     }
     if ((flags & SECP256K1_FLAGS_TYPE_MASK) != SECP256K1_FLAGS_TYPE_CONTEXT) {
         g_static_ctx.illegal_cb("secp256k1_context_preallocated_create: invalid flags",
+                                const_cast<void*>(g_static_ctx.illegal_cb_data));
+        return nullptr;
+    }
+    // COMPAT-001: reject unknown flag bits (matches secp256k1_context_create).
+    if (flags & ~(SECP256K1_FLAGS_TYPE_MASK | SECP256K1_FLAGS_BIT_CONTEXT_VERIFY | SECP256K1_FLAGS_BIT_CONTEXT_SIGN)) {
+        g_static_ctx.illegal_cb("secp256k1_context_preallocated_create: unknown flag bits",
                                 const_cast<void*>(g_static_ctx.illegal_cb_data));
         return nullptr;
     }

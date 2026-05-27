@@ -58,8 +58,6 @@ Pod::Spec.new do |s|
       "$(PODS_TARGET_SRCROOT)/include",
     ].join(" "),
     "GCC_PREPROCESSOR_DEFINITIONS" => [
-      "SECP256K1_FAST_NO_SECURITY_CHECKS=1",
-      "SECP256K1_ULTRA_SPEED=1",
       "SECP256K1_HAS_ARM64_ASM=1",
       "SECP256K1_HAS_ASM=1",
       "NDEBUG=1",

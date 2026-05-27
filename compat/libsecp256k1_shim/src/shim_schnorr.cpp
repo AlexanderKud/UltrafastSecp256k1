@@ -268,13 +268,12 @@ int secp256k1_schnorrsig_sign_custom(
         secp256k1_shim_call_illegal_cb(ctx, "secp256k1_schnorrsig_sign_custom: NULL msg with nonzero msglen");
         return 0;
     }
-    // AUDIT-003 fix: reject msglen != 32 to match upstream libsecp256k1 v0.6+ behavior
-    // and eliminate the sign/verify asymmetry (verify only accepts msglen == 32).
-    // Callers that need varlen Schnorr must use the native C++ API directly.
+    // COMPAT-004: reject msglen != 32 — this shim does not support variable-length Schnorr.
+    // Return 0 (fail-closed) without firing the illegal callback: unsupported msglen is
+    // not a programming error (upstream libsecp v0.4+ accepts any msglen), so callers
+    // that register a no-op callback must not be aborted. Divergence documented in
+    // docs/SHIM_KNOWN_DIVERGENCES.md (sign_custom varlen).
     if (msglen != 32) {
-        secp256k1_shim_call_illegal_cb(ctx,
-            "secp256k1_schnorrsig_sign_custom: msglen must be 32; "
-            "this shim does not support variable-length messages");
         return 0;
     }
 

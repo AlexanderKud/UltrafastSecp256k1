@@ -241,7 +241,11 @@ static Scalar compute_challenge(const Point& R, const Point& group_key,
     std::memcpy(challenge_data + 32, P_x.data(), 32);
     std::memcpy(challenge_data + 64, msg.data(), 32);
     auto e_hash = cached_tagged_hash(g_challenge_midstate, challenge_data, 96);
-    return Scalar::from_bytes(e_hash);
+    auto result = Scalar::from_bytes(e_hash);
+    // Erase nonce-adjacent material from stack (same pattern as schnorr_sign, P1-SEC-002).
+    secp256k1::detail::secure_erase(e_hash.data(), e_hash.size());
+    secp256k1::detail::secure_erase(challenge_data, sizeof(challenge_data));
+    return result;
 }
 
 // -- Lagrange Coefficient -----------------------------------------------------

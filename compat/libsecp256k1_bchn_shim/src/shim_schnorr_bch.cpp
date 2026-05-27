@@ -121,7 +121,8 @@ int secp256k1_schnorr_sign(
 
         // CT arithmetic for s = k + e*d (k and d are secrets — use ct:: primitives).
         auto s = secp256k1::ct::scalar_add(k, secp256k1::ct::scalar_mul(e, d));
-        if (s.is_zero()) {
+        // CT: s is nonce+privkey-derived — use is_zero_ct() not is_zero() (SEC-001 fix).
+        if (s.is_zero_ct()) {
             secp256k1::detail::secure_erase(kb.data(), 32);
             secp256k1::detail::secure_erase(&d, sizeof(d));
             secp256k1::detail::secure_erase(&k, sizeof(k));
@@ -157,8 +158,10 @@ int secp256k1_schnorr_verify(
         std::memcpy(sb.data(),  sig64 + 32, 32);
         std::memcpy(msg.data(), msg32,      32);
 
-        auto s = Scalar::from_bytes(sb);
-        if (s.is_zero()) return 0;
+        // COMPAT-010: strict parse rejects s >= n (from_bytes silently reduces).
+        // s is a public signature component — VT is_zero() is correct for verify.
+        Scalar s;
+        if (!Scalar::parse_bytes_strict(sb.data(), s) || s.is_zero()) return 0;
 
         auto P = pubkey_data_to_point(pubkey->data);
         if (P.is_infinity()) return 0;

@@ -94,7 +94,15 @@ int secp256k1_xonly_pubkey_from_pubkey(
     int *pk_parity, const secp256k1_pubkey *pubkey)
 {
     SHIM_REQUIRE_CTX(ctx);  // SHIM-NEW-003: NULL ctx fires illegal callback (abort)
-    if (!xonly_pubkey || !pubkey) return 0;
+    // COMPAT-006: NULL xonly_pubkey or pubkey must fire illegal callback (ARG_CHECK in upstream).
+    if (!xonly_pubkey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_xonly_pubkey_from_pubkey: xonly_pubkey is NULL");
+        return 0;
+    }
+    if (!pubkey) {
+        secp256k1_shim_call_illegal_cb(ctx, "secp256k1_xonly_pubkey_from_pubkey: pubkey is NULL");
+        return 0;
+    }
 
     // SHIM-A10: validate curve membership before trusting the stored bytes.
     // pubkey_data_to_point checks y²=x³+7; returns infinity if off-curve.

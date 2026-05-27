@@ -1,6 +1,30 @@
 # Secret Lifecycle Review
 
-**Last updated**: 2026-05-26 | **Version**: 4.1.2
+**Last updated**: 2026-05-27 | **Version**: 4.1.3
+
+### 2026-05-27 — SEC-006: FROST compute_challenge — e_hash and challenge_data erasure
+
+`src/cpu/src/frost.cpp` — `compute_challenge()` now calls
+`secure_erase(e_hash.data(), e_hash.size())` and
+`secure_erase(challenge_data, sizeof(challenge_data))` before returning.
+`e_hash` is the output of `cached_tagged_hash(g_challenge_midstate, ...)` —
+a 32-byte digest seeded in part by the nonce commitment; `challenge_data`
+(96 bytes) holds the concatenated nonce R + pubkey X + message, which
+includes the nonce. Both are nonce-adjacent secrets and must be erased.
+Previously neither was erased, leaving residue on the FROST signing stack.
+
+### 2026-05-27 — SEC-005: ECDH off-curve pubkey rejection (invalid-curve attack)
+
+`src/cpu/src/ecdh.cpp` — all three `ecdh_compute`, `ecdh_compute_xonly`, and
+`ecdh_compute_raw` functions now validate the public key before
+`ct::scalar_mul`:
+1. `is_infinity()` check — rejects the point at infinity.
+2. `y² = x³ + 7` field-element equality check — rejects points on twist curves
+   (invalid-curve / small-subgroup attack).
+If either check fails the function returns an empty array (no ECDH output).
+The private key is never passed to `ct::scalar_mul` on an invalid input.
+
+### 2026-05-26 — SHIM-NONCEGEN-001: musig2_nonce_gen nonce_extra parameter
 
 ### 2026-05-26 — SHIM-NONCEGEN-001: musig2_nonce_gen nonce_extra parameter
 
