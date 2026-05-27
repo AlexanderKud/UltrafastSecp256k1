@@ -33,13 +33,13 @@
     {
       "exists": true,
       "path": "docs/TEST_MATRIX.md",
-      "sha256": "9a83d7d4160b774fb9f6d4dd29c59fdc37b287bf7e414ac76d8e16f2fabe7a0c",
+      "sha256": "8626bf81e2f231ff37289abea4f530e83046de3565a9b99486c8e9243476e904",
       "size": 60815
     },
     {
       "exists": true,
       "path": "docs/CT_VERIFICATION.md",
-      "sha256": "0853e376147d29edbed47e17a9e98e5759e2260492ee00643b697c45fa390e61",
+      "sha256": "b589a345696246da9458686b9039b36043b25956791a7fb409c2459e497f13ad",
       "size": 46195
     },
     {
@@ -1683,7 +1683,7 @@
   "generated_at": "2026-05-26T22:09:50.783187+00:00",
   "git": {
     "branch": "dev",
-    "commit": "abbba7b35bca9fc91a5a590ec13e0d72fc67a28b",
+    "commit": "518f07ae2836b218cccaf1459d1890356896a00d",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
