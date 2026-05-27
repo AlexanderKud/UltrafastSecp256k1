@@ -569,6 +569,16 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
     ),
 }
 
+# Frozen count guard (CAAS-006): prevents silent whitelist growth.
+# When adding a new entry above, increment this constant too.
+# Unauthorized bypass (adding an entry without incrementing) → import-time assertion failure.
+RETROACTIVELY_COVERED_FROZEN_COUNT: int = 51
+assert len(RETROACTIVELY_COVERED) == RETROACTIVELY_COVERED_FROZEN_COUNT, (
+    f"RETROACTIVELY_COVERED has {len(RETROACTIVELY_COVERED)} entries but "
+    f"RETROACTIVELY_COVERED_FROZEN_COUNT={RETROACTIVELY_COVERED_FROZEN_COUNT}. "
+    "Increment RETROACTIVELY_COVERED_FROZEN_COUNT when adding a new retroactive entry."
+)
+
 # Bot commits that auto-update evidence — skip.
 BOT_MSG_PREFIXES = (
     "[bot]",

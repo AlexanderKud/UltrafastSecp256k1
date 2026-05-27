@@ -164,7 +164,7 @@ struct BenchEntry {
     bool is_ratio;
 };
 
-static constexpr int MAX_ENTRIES = 256;
+static constexpr int MAX_ENTRIES = 512;
 
 struct BenchReport {
     BenchEntry entries[MAX_ENTRIES];
@@ -891,30 +891,29 @@ int main(int argc, char** argv) {
     }, N_SCALAR);
     print_row("dual_mul (a*G + b*P)", dualmul);
 
+    idx = 0;
     const double ptadd = bench_ns([&]() {
-        auto r = pubkeys[0].add(pubkeys[1]);
-        bench::DoNotOptimize(r);
+        auto r = pubkeys[idx % POOL].add(pubkeys[(idx + 1) % POOL]);
+        bench::DoNotOptimize(r); ++idx;
     }, N_POINT);
     print_row("point_add (affine+affine)", ptadd);
 
-    // Mixed add: Jacobian + Affine (8M+3S -- the actual hot path in scalar_mul)
-    // Apple-to-apple with libsecp: split I/O, constant inputs, no loop-carried dep.
-    // libsecp measures gej_add_ge_var(r, a, b) where a/b are constant per iteration;
-    // we use Point::add() which calls jac52_add_mixed_to (same split I/O pattern).
-    Point jac_test = pubkeys[0].dbl();  // non-affine (z != 1)
+    // Mixed add: Jacobian + Affine (8M+3S — the actual hot path in scalar_mul).
+    // Pool-rotated Jacobian inputs prevent LTO from hoisting the computation.
+    // No loop-carried dep: each iteration's result is discarded before the next.
+    Point jac_pool[POOL];
+    for (int i = 0; i < POOL; ++i) jac_pool[i] = pubkeys[i].dbl();
+    idx = 0;
     const double ptadd_mixed = bench_ns([&]() {
-        auto r = jac_test.add(pubkeys[1]);
-        bench::DoNotOptimize(r);
+        auto r = jac_pool[idx % POOL].add(pubkeys[(idx + 1) % POOL]);
+        bench::DoNotOptimize(r); ++idx;
     }, N_POINT);
     print_row("point_add (J+A mixed)", ptadd_mixed);
 
-    // Apple-to-apple with libsecp: split I/O, constant input, no loop-carried dep.
-    // libsecp measures gej_double_var(r, a) where a is constant per iteration;
-    // we use Point::dbl() which returns a new Point (same independence pattern).
-    Point dbl_target = pubkeys[0].dbl();  // non-affine start
+    idx = 0;
     const double ptdbl = bench_ns([&]() {
-        auto r = dbl_target.dbl();
-        bench::DoNotOptimize(r);
+        auto r = pubkeys[idx % POOL].dbl();
+        bench::DoNotOptimize(r); ++idx;
     }, N_POINT);
     print_row("point_dbl", ptdbl);
 

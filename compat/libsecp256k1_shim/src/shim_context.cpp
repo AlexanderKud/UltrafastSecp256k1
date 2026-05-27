@@ -9,6 +9,7 @@
 #include <cstring>
 #include <mutex>
 #include <new>
+#include <type_traits>
 
 #include "secp256k1/precompute.hpp"
 #include "secp256k1/scalar.hpp"
@@ -45,6 +46,8 @@ struct secp256k1_context_struct {
     secp256k1_callback_fn error_cb{default_illegal_callback};
     const void* error_cb_data{nullptr};
 };
+static_assert(std::is_trivially_copyable_v<secp256k1_context_struct>,
+              "secp256k1_context_clone uses memcpy — struct must remain trivially copyable");
 
 static secp256k1_context_struct g_static_ctx = {
     SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY, {}, false,   // flags, blind, blinded

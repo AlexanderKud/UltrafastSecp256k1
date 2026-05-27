@@ -148,6 +148,7 @@ run "Bench/doc consistency (banned patterns)" ci/check_bench_doc_consistency.py
 run "Profile manifest consistency" ci/profile_manifest.py --quiet
 
 run_sh "Advisory skip returns (Rule 16)" ci/check_advisory_skip_returns.sh
+run "Advisory skip ceiling (TEST-004)"  ci/check_advisory_skip_ceiling.py
 run "Section IDs consistency"        ci/check_section_ids.py
 
 if [[ "${FAILED}" -gt 0 ]]; then
