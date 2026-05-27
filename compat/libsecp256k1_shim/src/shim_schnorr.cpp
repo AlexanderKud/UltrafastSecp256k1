@@ -21,19 +21,16 @@
 using namespace secp256k1::fast;
 
 // -- Thread-local Schnorr xonly pubkey cache ----------------------------------
-// Two-phase design to eliminate ~27 MB cache pollution for ConnectBlock:
-//
-// PHASE 1 (first encounter, ~8 bytes written): record fingerprint + seen_once=true.
-//   No SchnorrXonlyPubkey written — avoids polluting 1.5 KB × N unique pubkeys
-//   into L1/L2 cache (ConnectBlock: ~19K unique pubkeys × 1.5 KB = 27 MB/block).
-//
-// PHASE 2 (second encounter): parse + build GLV tables → store full struct.
-//   Repeated pubkeys (wallet, P2PK coinbases) amortize the table build cost.
+// One-phase design: build GLV tables on FIRST encounter (TASK-011 fix).
 //
 // HOT PATH:
 //   HIT  → return cached SchnorrXonlyPubkey (tables pre-built, skip lift_x).
-//   MISS-1st → write fingerprint (8 bytes), return nullptr → caller uses x32 path.
-//   MISS-2nd → build full struct, return it for immediate use.
+//   MISS → parse + build GLV tables immediately; return for use in same call.
+//          put() returns nullptr only when x-coordinate is invalid (x >= p).
+//
+// Trade-off: unique-pubkey workloads (ConnectBlock ~19K unique P2TR outputs)
+// write 1.5 KB × N into cache on first verify. Repeated-pubkey workloads
+// (wallet, P2PK coinbases) amortize the table-build cost fully on cache hits.
 namespace {
 struct ShimSchnorrCache {
     static constexpr std::size_t SLOTS = 256;
@@ -52,7 +49,7 @@ struct ShimSchnorrCache {
     // full rationale. Schnorr's 256-slot FNV cache needs the same per-thread
     // salt so the slot mapping is not attacker-predictable (otherwise a single
     // attacker pubkey whose FNV1a maps to a victim's slot can perpetually
-    // keep the victim's seen_once flag overwritten, preventing cache hits).
+    // evict the victim's cached entry, preventing cache hits).
     static std::uint64_t thread_salt() noexcept {
         static thread_local std::uint64_t salt = []() noexcept {
             std::uint64_t seed = 0;

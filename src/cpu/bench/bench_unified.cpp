@@ -1124,6 +1124,26 @@ int main(int argc, char** argv) {
         bench::DoNotOptimize(ok); ++idx;
     }, N_VERIFY);
     print_row("schnorr_verify (raw bytes)", u_schnorr_verify_raw);
+
+    // Cold-start verify: lift_x sqrt + GLV table build every call.
+    // Models the first-encounter cost for a unique P2TR pubkey
+    // (e.g. ConnectBlock all-unique-pubkey workload).
+    // Contrast with "cached xonly" (tables pre-built, zero parse cost).
+    {
+        SchnorrXonlyPubkey epk_scratch;
+        idx = 0;
+        const double u_schnorr_verify_cold = bench_ns([&]() {
+            schnorr_xonly_pubkey_parse(epk_scratch,
+                                      schnorr_pubkeys_x[idx % POOL].data());
+            int ok = schnorr_verify(epk_scratch, msghashes[idx % POOL],
+                                    schnorr_sigs[idx % POOL]) ? 1 : 0;
+            bench::DoNotOptimize(ok); ++idx;
+        }, N_VERIFY);
+        print_row("schnorr_verify (cold: parse+verify)", u_schnorr_verify_cold);
+        printf("| %-44s | %8.2fx  |\n",
+               "  -> cached/cold speedup",
+               u_schnorr_verify_cold / u_schnorr_verify);
+    }
     print_sep();
     printf("\n");
 
