@@ -34,7 +34,7 @@ from pathlib import Path
 # Increment this when adding a new advisory module (with documentation).
 # +1: regression_shim_tweak_recover_null_cb (shim-dependent, TRNC-1..4, 2026-05-28)
 # +1: regression_musig2_signer_index (MSI-4 open behavior, advisory=true, 2026-05-28)
-ADVISORY_CEILING: int = 63
+ADVISORY_CEILING: int = 62
 
 RUNNER_PATH = Path("audit/unified_audit_runner.cpp")
 
