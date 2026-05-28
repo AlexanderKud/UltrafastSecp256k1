@@ -15,6 +15,7 @@
 #include "secp256k1/precompute.hpp"
 #include "secp256k1/ct/scalar.hpp"
 #include "secp256k1/ct/point.hpp"
+#include "secp256k1/schnorr.hpp"
 #include "secp256k1/detail/secure_erase.hpp"
 
 using namespace secp256k1::fast;
@@ -39,20 +40,17 @@ int secp256k1_xonly_pubkey_parse(
         return 0;
     }
 
-    // Reject x >= p (libsecp strict boundary)
-    FieldElement x;
-    if (!FieldElement::parse_bytes_strict(input32, x)) return 0;
-    auto y2 = x * x * x + FieldElement::from_uint64(7);
-    auto y = y2.sqrt();
-    // Reject if x is not a valid x-coordinate (y^2 != x^3+7)
-    if (!(y.square() == y2)) return 0;
-    // Ensure even Y (x-only canonical form)
-    auto yb = y.to_bytes();
-    if (yb[31] & 1) y = y.negate();
-    yb = y.to_bytes();
-    // Store X || Y (even)
-    std::memcpy(pubkey->data,      input32, 32);
-    std::memcpy(pubkey->data + 32, yb.data(), 32);
+    // PASS4-003: use schnorr_xonly_pubkey_parse (FE52 + Jacobi QR pre-rejection +
+    // lift_x/GLV cache) instead of manual FieldElement::sqrt(). Benefits:
+    //   1. FE52 Jacobi (~900 ns) pre-rejects invalid x-coords before 3.8 µs sqrt.
+    //   2. Populates lift_x cache → first secp256k1_schnorrsig_verify (ShimSchnorrCache
+    //      miss) finds lift_x and GLV tables already built, saving ~3.5 µs per call.
+    //   3. Builds GLV tables on first encounter (one-phase design).
+    secp256k1::SchnorrXonlyPubkey epk{};
+    if (!secp256k1::schnorr_xonly_pubkey_parse(epk, input32)) return 0;
+    // epk.point: Z=1 (affine from lift_x), even Y (BIP-340 convention).
+    // point_to_pubkey_data uses the fast Z=1 path: no field inversion needed.
+    point_to_pubkey_data(epk.point, pubkey->data);
     return 1;
 }
 

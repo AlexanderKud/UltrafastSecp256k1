@@ -271,12 +271,17 @@ CHECKS = [
         "checks": [
             {
                 "kind": "require",
-                "pattern": r"FieldElement::parse_bytes_strict",
-                "message": "must use FieldElement::parse_bytes_strict for the x-coordinate (rejects x >= p)",
+                # Accept either the explicit FieldElement path or schnorr_xonly_pubkey_parse
+                # (which internally calls parse_and_check_lt_p + lift_x — equivalent checks).
+                "pattern": r"FieldElement::parse_bytes_strict|schnorr_xonly_pubkey_parse",
+                "message": "must use FieldElement::parse_bytes_strict or schnorr_xonly_pubkey_parse (both reject x >= p)",
             },
             {
                 "kind": "require",
-                "pattern": r"y\.square\(\)\s*==\s*y2|y2\s*==\s*y\.square\(\)",
+                # schnorr_xonly_pubkey_parse performs the curve check (lift_x returns
+                # infinity for invalid x-coords) — accept it as equivalent to the manual
+                # y.square()==y2 pattern.
+                "pattern": r"y\.square\(\)\s*==\s*y2|y2\s*==\s*y\.square\(\)|schnorr_xonly_pubkey_parse",
                 "message": "must verify x is a valid curve x-coordinate with y.square() == y2 check",
             },
         ],
