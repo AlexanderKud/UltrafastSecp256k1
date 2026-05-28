@@ -226,6 +226,13 @@ BANNED: list[tuple[str, str, str | None]] = [
         "Invalid pubkey_create VT-vs-CT ratio (2.2×) — production pubkey_create uses CT; cite CT-vs-CT ratio instead",
         None,
     ),
+    # ── Unverified derived number must not appear in reviewer docs ────────────
+    (
+        r"claimed_saving_ns",
+        "Use 'unverified_estimate_ns' instead of 'claimed_saving_ns' in canonical_numbers.json — "
+        "this field contains a derived (not measured) estimate. Reviewer docs must not reference it.",
+        None,
+    ),
 ]
 
 # ---------------------------------------------------------------------------
