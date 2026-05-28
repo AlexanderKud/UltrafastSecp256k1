@@ -127,9 +127,18 @@ jobs:
         print(f"Benchmark artifact OK: {len(data)} entries, no zero timings")
         EOF
 
+    - name: Add diagnostic disclaimer to summary
+      if: always()
+      run: |
+        echo "## ⚠️ DIAGNOSTIC ONLY" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "These benchmark results are from an **uncontrolled GitHub runner** (no CPU pinning, no turbo lock, no governor fix)." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Do NOT cite these numbers as release-grade evidence.** For canonical release-grade benchmarks, see \`docs/bench_unified_*_gcc14_x86-64.json\` (produced locally with turbo lock + CPU pinning)." >> $GITHUB_STEP_SUMMARY
+
     - name: Upload benchmark artifact
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: benchmark-json-linux-${{ github.sha }}
         path: /tmp/benchmark_results/benchmark.json
@@ -240,7 +249,7 @@ jobs:
 
     - name: Upload benchmark artifact (Windows)
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: benchmark-raw-windows-${{ github.sha }}
         path: benchmark_results\raw_output.txt
