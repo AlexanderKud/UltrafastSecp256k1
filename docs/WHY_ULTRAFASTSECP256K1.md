@@ -13,7 +13,7 @@ Traditional audits produce documents. This system produces **continuous evidence
 | Checks per run | ~1,000,000+ assertions |
 | Deep assurance checks | ~1,300,000+ random differential tests on manual/release evidence runs |
 | CI/CD model | Block-based PR/push gate + release CAAS gate + manual deep-assurance workflows |
-| CT verification | 3 CI-enforced CT verification pipelines: LLVM ct-verif (`ct-verif.yml`), Valgrind taint (`valgrind-ct.yml`), dudect statistical smoke (`cycle-ct.yml`, x86-64 + ARM64) — all run on every push |
+| CT verification | 3 CT verification pipelines available as GitHub Actions workflows (`ct-verif.yml`, `valgrind-ct.yml`, `ct-prover.yml`) — triggered manually or on release tag push, not on every commit push; plus 2 local pipelines (dudect statistical, ARM64 native) |
 | Philosophy | Don't trust — reproduce |
 
 Every exploit attempt becomes a permanent regression test. Security hardens on every commit, not just on release day.
