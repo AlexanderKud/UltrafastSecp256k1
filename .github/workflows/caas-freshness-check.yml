@@ -37,7 +37,13 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          fetch-depth: 10
+          # CAAS-08: full history. A shallow clone (was fetch-depth: 10) cannot
+          # reach the last commit that touched an evidence file when it is older
+          # than the window (e.g. AUDIT_DASHBOARD.md, refreshed nightly, can be
+          # hundreds of commits back). `git log -1 --format=%cI -- <file>` then
+          # returns empty → the fail-closed "no timestamp" branch fired → this
+          # scheduled gate was permanently red, masking real staleness.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -47,19 +53,26 @@ jobs:
       - name: Check evidence bundle freshness (T10 mitigation)
         run: |
           python3 - <<'EOF'
-          import json, sys, subprocess
+          import json, sys, subprocess, re
           from datetime import datetime, timezone
           from pathlib import Path
 
-          # Read MAX_AGE_DAYS from AUDIT_SLA.json if available so the freshness
-          # threshold stays in sync with the SLA document. Fall back to 7 days
-          # (stricter than the 30-day SLA default) to catch stale evidence quickly.
+          # CAAS-08: enforce exactly the threshold AUDIT_SLA.json documents. The
+          # threshold lives at slos.max_stale_evidence_days.threshold (nested), NOT
+          # a top-level "max_stale_evidence_days" key. The old top-level .get()
+          # always missed and silently fell back to 7 days while the SLA documents
+          # 30 — a 7-vs-30 divergence (gate stricter than its own policy doc). Read
+          # the nested value so the gate and the SLA cannot drift apart.
           _sla_path = Path("docs/AUDIT_SLA.json")
-          MAX_AGE_DAYS = 7
+          MAX_AGE_DAYS = 30   # AUDIT_SLA.json slos.max_stale_evidence_days default
           if _sla_path.exists():
               try:
                   _sla = json.loads(_sla_path.read_text())
-                  MAX_AGE_DAYS = int(_sla.get("max_stale_evidence_days", MAX_AGE_DAYS))
+                  _slo = _sla.get("slos", {}).get("max_stale_evidence_days", {})
+                  if isinstance(_slo, dict) and "threshold" in _slo:
+                      MAX_AGE_DAYS = int(_slo["threshold"])
+                  elif "max_stale_evidence_days" in _sla:   # legacy flat layout
+                      MAX_AGE_DAYS = int(_sla["max_stale_evidence_days"])
               except Exception:
                   pass
 
@@ -116,9 +129,20 @@ jobs:
                   ts_str = _parse_generated_at(data)
                   date_source = "json:generated_at"
 
+              if not ts_str and p.suffix == ".md":
+                  # CAAS-08: markdown evidence (AUDIT_DASHBOARD.md) carries an
+                  # embedded "_Generated <ISO8601>._" header written by
+                  # ci/render_audit_dashboard.py. Prefer it over the git commit date:
+                  # it reflects actual generation time and does not depend on the
+                  # checkout history depth.
+                  m = re.search(r"_Generated\s+(.+?)\._", p.read_text())
+                  if m:
+                      ts_str = m.group(1).strip()
+                      date_source = "md:generated-header"
+
               if not ts_str:
-                  # Markdown evidence, or JSON without an embedded timestamp: use the
-                  # git commit date.
+                  # Markdown evidence without an embedded header, or JSON without an
+                  # embedded timestamp: use the git commit date.
                   result = subprocess.run(
                       ["git", "log", "-1", "--format=%cI", "--", path_str],
                       capture_output=True, text=True, timeout=30,

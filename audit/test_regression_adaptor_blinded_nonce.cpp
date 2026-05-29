@@ -91,10 +91,11 @@ static void test_adaptor_blinded_nonce_source_scan() {
     if (src.empty()) {
         src = read_source_file("adaptor.cpp");
     }
-    if (src.empty()) {
-        printf("  [SKIP] adaptor.cpp not found — source scan skipped\n");
-        return;
-    }
+    // TEST-08: adaptor.cpp always exists in-tree. A failed read means the harness
+    // ran from an unexpected cwd, NOT that the property holds — fail-closed so this
+    // source-scan guard cannot silently pass when it scanned nothing.
+    CHECK(!src.empty(), "adaptor.cpp must be readable (in-tree source always exists)");
+    if (src.empty()) return;
 
     // Old (unfixed) code: ct::generator_mul(k) — single trace DPA-vulnerable.
     // Any occurrence of this on the nonce k (after the nonce assignment) is a bug.
@@ -201,10 +202,11 @@ static void test_adaptor_blinded_all_secret_sites_source_scan() {
     if (src.empty()) {
         src = read_source_file("adaptor.cpp");
     }
-    if (src.empty()) {
-        printf("  [SKIP] adaptor.cpp not found — source scan skipped\n");
-        return;
-    }
+    // TEST-08: adaptor.cpp always exists in-tree. A failed read means the harness
+    // ran from an unexpected cwd, NOT that the property holds — fail-closed so this
+    // source-scan guard cannot silently pass when it scanned nothing.
+    CHECK(!src.empty(), "adaptor.cpp must be readable (in-tree source always exists)");
+    if (src.empty()) return;
 
     // schnorr_adaptor_sign long-term key: must use blinded variant.
     bool has_blinded_priv =
