@@ -298,7 +298,11 @@ def check_preflight_ctest_registry_classification() -> None:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir)
-            build_rel = temp_root / "build_rel"
+            # check_ctest_registry_health scans LIB_ROOT/out/* (BUILD-DIR-001 moved
+            # all builds under out/). The synthetic build dir must live under out/,
+            # not at the repo root — otherwise the scan finds nothing and returns
+            # "no CTest build directory found", and this classification test fails.
+            build_rel = temp_root / "out" / "build_rel"
             build_rel.mkdir(parents=True)
             (build_rel / "CTestTestfile.cmake").write_text("# synthetic ctest registry\n", encoding="utf-8")
             (build_rel / "build.ninja").write_text("# synthetic ninja file\n", encoding="utf-8")
