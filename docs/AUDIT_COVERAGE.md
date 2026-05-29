@@ -36,7 +36,7 @@ This system continuously verifies correctness across math, protocol, constant-ti
 **Audit Runner**: `unified_audit_runner`
 **Verdict**: **CAAS Self-Audit Verdict: AUDIT-READY (self-generated continuous audit; no external third-party security audit has been completed)** -- 418 modules, 9 failure classes
 **Total Checks**: ~1,000,000+ (audit) + 1.3M+ (nightly differential)
-**CT Verification**: Three-tier -- ct-verif (LLVM IR) + Valgrind CT + dudect (all CI-enforced)
+**CT Verification**: Three-tier -- ct-verif (LLVM IR) + Valgrind CT + dudect (available as `workflow_dispatch` GitHub Actions + local dudect; triggered manually, **not** on every commit push -- matches README "Constant-time verification pipelines" row)
 
 ---
 
@@ -930,9 +930,9 @@ ctest --test-dir build_rel --output-on-failure
 | 2 | **Security Audit** | push main, weekly | -Werror, ASan+UBSan, Valgrind, dudect smoke |
 | 3 | **Nightly** | daily 03:00 UTC | Extended differential (1.3M+ checks), longer dudect, sanitizer expansion |
 | 4 | **Audit Report** | push/manual | `unified_audit_runner` structured report |
-| 5 | **CT Verification** | push/PR | ct-verif formal pass |
-| 6 | **CT ARM64** | push/PR | Native ARM64 dudect |
-| 7 | **Valgrind CT** | push/PR | CT taint analysis |
+| 5 | **CT Verification** | manual (`workflow_dispatch`) | ct-verif formal pass |
+| 6 | **CT ARM64** | manual (`workflow_dispatch`) | Native ARM64 dudect |
+| 7 | **Valgrind CT** | manual (`workflow_dispatch`) | CT taint analysis |
 | 8 | **Bindings** | push/PR | binding compile + smoke coverage |
 | 9 | **Benchmark Dashboard** | push | benchmark publication |
 | 10 | **Bench Regression** | push/PR | perf regression gate |

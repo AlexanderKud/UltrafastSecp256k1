@@ -159,22 +159,31 @@ libfastsecp256k1.3.14.0.dylib       -> current version
 ### Stable ABI Surface
 
 All functions declared with `UFSECP_API` in `include/ufsecp/ufsecp.h` are part of
-the stable ABI. Currently 42 functions across these categories:
+the stable ABI. There are **153** such functions (the authoritative list is every
+`UFSECP_API`-marked declaration in the header; counts and example names below are
+verified against it by `ci/check_abi_count.py`). Functions carry the `ufsecp_`
+prefix in the header (e.g. `ufsecp_ctx_create`); the short names are used here.
 
-| Category | Count | Functions |
+| Category | Count | Example functions |
 |----------|-------|-----------|
-| Context | 6 | `ctx_create`, `ctx_clone`, `ctx_destroy`, `last_error`, `last_error_msg`, `ctx_size` |
-| Secret Key | 4 | `seckey_verify`, `seckey_negate`, `seckey_tweak_add`, `seckey_tweak_mul` |
-| Public Key | 4 | `pubkey_create`, `pubkey_create_uncompressed`, `pubkey_parse`, `pubkey_xonly` |
-| ECDSA | 4 | `ecdsa_sign`, `ecdsa_verify`, `ecdsa_sig_to_der`, `ecdsa_sig_from_der` |
-| Recovery | 2 | `ecdsa_sign_recoverable`, `ecdsa_recover` |
-| Schnorr | 2 | `schnorr_sign`, `schnorr_verify` |
-| ECDH | 1 | `ecdh` |
-| BIP32 | 4 | `bip32_master_key`, `bip32_derive_child`, `bip32_pubkey`, `bip32_serialize` |
-| Address | 4 | `address_p2pkh`, `address_p2sh_p2wpkh`, `address_p2wpkh`, `address_p2tr` |
-| Hash | 5 | `sha256`, `sha256_init`, `sha256_update`, `sha256_finalize`, `hash160` |
-| Version | 3 | `version`, `abi_version`, `version_string` |
-| Selftest | 3 | `selftest_run`, `selftest_report`, `selftest_passed` |
+| Context & lifecycle | 7 | `ctx_create`, `ctx_clone`, `ctx_destroy`, `ctx_size`, `context_randomize`, `last_error`, `last_error_msg` |
+| Secret key | 4 | `seckey_verify`, `seckey_negate`, `seckey_tweak_add`, `seckey_tweak_mul` |
+| Public key | 9 | `pubkey_create`, `pubkey_create_uncompressed`, `pubkey_parse`, `pubkey_xonly`, `pubkey_add`, `pubkey_negate`, `pubkey_tweak_add`, `pubkey_tweak_mul`, `pubkey_combine` |
+| ECDSA (sign/verify/recover/batch/adaptor) | 14 | `ecdsa_sign`, `ecdsa_verify`, `ecdsa_sig_to_der`, `ecdsa_sig_from_der`, `ecdsa_sign_recoverable`, `ecdsa_recover`, `ecdsa_sign_batch`, `ecdsa_batch_verify`, `ecdsa_adaptor_sign`, `ecdsa_adaptor_adapt` |
+| Schnorr (sign/verify/batch/adaptor/msg) | 12 | `schnorr_sign`, `schnorr_verify`, `schnorr_sign_batch`, `schnorr_batch_verify`, `schnorr_adaptor_sign`, `schnorr_sign_msg`, `schnorr_verify_msg` |
+| ECDH | 3 | `ecdh`, `ecdh_xonly`, `ecdh_raw` |
+| MuSig2 | 8 | `musig2_key_agg`, `musig2_nonce_gen`, `musig2_nonce_agg`, `musig2_partial_sign`, `musig2_partial_sign_v2`, `musig2_partial_verify`, `musig2_partial_sig_agg` |
+| FROST | 6 | `frost_keygen_begin`, `frost_keygen_finalize`, `frost_sign_nonce_gen`, `frost_sign`, `frost_verify_partial`, `frost_aggregate` |
+| Taproot & Tapscript | 5 | `taproot_output_key`, `taproot_tweak_seckey`, `taproot_verify`, `taproot_keypath_sighash`, `tapscript_sighash` |
+| BIP32 / BIP39 / BIP85 derivation | 11 | `bip32_master`, `bip32_derive`, `bip32_derive_path`, `bip32_pubkey`, `bip39_generate`, `bip39_to_seed`, `bip85_entropy` |
+| BIP143 / BIP144 sighash & txid | 5 | `bip143_sighash`, `bip143_p2wpkh_script_code`, `bip144_txid`, `bip144_wtxid`, `bip144_witness_commitment` |
+| BIP322 / BTC / Ethereum message | 10 | `bip322_sign`, `bip322_verify`, `btc_message_sign`, `btc_message_verify`, `eth_sign`, `eth_ecrecover`, `eth_address` |
+| BIP324 v2 transport | 5 | `bip324_create`, `bip324_handshake`, `bip324_encrypt`, `bip324_decrypt`, `bip324_destroy` |
+| Addresses / SegWit / descriptors / WIF | 18 | `addr_p2pkh`, `addr_p2wpkh`, `addr_p2tr`, `segwit_p2wpkh_spk`, `segwit_p2tr_spk`, `descriptor_parse`, `wif_encode`, `wif_decode`, `coin_address` |
+| Hashing | 5 | `sha256`, `sha512`, `hash160`, `keccak256`, `tagged_hash` |
+| AEAD & ECIES | 4 | `aead_chacha20_poly1305_encrypt`, `aead_chacha20_poly1305_decrypt`, `ecies_encrypt`, `ecies_decrypt` |
+| ellswift (BIP324 encoding) | 2 | `ellswift_create`, `ellswift_xdh` |
+| Pedersen / ZK / GCS / Silent Payments / PSBT / misc | 25 | `pedersen_commit`, `zk_dleq_prove`, `zk_range_prove`, `gcs_build`, `gcs_match`, `silent_payment_scan`, `psbt_sign_taproot`, `shamir_trick`, `multi_scalar_mul` |
 
 ### Unstable / Internal
 
@@ -236,18 +245,18 @@ build installs (`secp256k1-fast` on the standard root build).
 
 | Binding | Minimum ABI | Notes |
 |---------|-------------|-------|
-| Python (ctypes) | 1 | Full 41-fn coverage |
-| Rust (FFI) | 1 | Full 41-fn coverage |
-| Go (CGo) | 1 | Full 41-fn coverage |
-| C# (P/Invoke) | 1 | Full 41-fn coverage |
-| Java (JNI) | 1 | Full 41-fn coverage |
-| Swift | 1 | Full 41-fn coverage |
-| Dart (FFI) | 1 | Full 41-fn coverage |
-| React Native | 1 | Full 41-fn coverage |
-| Node.js (NAPI) | 1 | Full 41-fn coverage |
-| Node.js (WASM) | 1 | Full 41-fn coverage |
-| Ruby (FFI) | 1 | Full 41-fn coverage |
-| Kotlin (JNI) | 1 | Full 41-fn coverage |
+| Python (ctypes) | 1 | Targets ABI v1 (153 stable C functions) |
+| Rust (FFI) | 1 | Targets ABI v1 (153 stable C functions) |
+| Go (CGo) | 1 | Targets ABI v1 (153 stable C functions) |
+| C# (P/Invoke) | 1 | Targets ABI v1 (153 stable C functions) |
+| Java (JNI) | 1 | Targets ABI v1 (153 stable C functions) |
+| Swift | 1 | Targets ABI v1 (153 stable C functions) |
+| Dart (FFI) | 1 | Targets ABI v1 (153 stable C functions) |
+| React Native | 1 | Targets ABI v1 (153 stable C functions) |
+| Node.js (NAPI) | 1 | Targets ABI v1 (153 stable C functions) |
+| Node.js (WASM) | 1 | Targets ABI v1 (153 stable C functions) |
+| Ruby (FFI) | 1 | Targets ABI v1 (153 stable C functions) |
+| Kotlin (JNI) | 1 | Targets ABI v1 (153 stable C functions) |
 
 All bindings target `UFSECP_ABI_VERSION >= 1`. When ABI version bumps, binding
 maintainers update their minimum version requirement and adjust any changed signatures.
