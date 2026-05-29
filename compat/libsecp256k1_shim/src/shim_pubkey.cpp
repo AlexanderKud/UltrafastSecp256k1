@@ -16,6 +16,7 @@
 #include "secp256k1/point.hpp"
 #include "secp256k1/precompute.hpp"
 #include "secp256k1/ct/point.hpp"
+#include "secp256k1/detail/secure_erase.hpp"   // secret-residue sweep (CT-04/RT-05 class)
 
 using namespace secp256k1::fast;
 
@@ -167,8 +168,12 @@ int secp256k1_ec_pubkey_create(
     }
 
     Scalar k;
-    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) return 0;
+    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));   // secret-residue sweep
+        return 0;
+    }
     auto P = secp256k1::ct::generator_mul(k);   // CT: Rule 12 — sk is a private key
+    secp256k1::detail::secure_erase(&k, sizeof(k));   // erase parsed private key after last use
     if (P.is_infinity()) return 0;
     point_to_pubkey_data(P, pubkey->data);
     return 1;

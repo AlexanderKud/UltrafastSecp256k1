@@ -641,11 +641,23 @@ int secp256k1_musig_partial_sign(
     if (!e) return 0;
 
     Scalar k1, k2;
-    if (!sn_unpack(secnonce, k1, k2)) return 0;
+    if (!sn_unpack(secnonce, k1, k2)) {
+        secp256k1::detail::secure_erase(&k1, sizeof(k1));   // secret-residue sweep
+        secp256k1::detail::secure_erase(&k2, sizeof(k2));
+        return 0;
+    }
     std::memset(secnonce->data, 0, sizeof(secnonce->data)); // zeroize (single-use)
 
     Scalar sk;
-    if (!Scalar::parse_bytes_strict_nonzero(keypair->data, sk)) return 0;
+    // MuSig2 signing-share residue: erase the nonce scalars (k1,k2) and the parsed
+    // signing key (sk) on every return path after this point. Erasure runs AFTER
+    // each value's last use, so the signature output is unchanged.
+    auto erase_secrets = [&]() {
+        secp256k1::detail::secure_erase(&k1, sizeof(k1));
+        secp256k1::detail::secure_erase(&k2, sizeof(k2));
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    };
+    if (!Scalar::parse_bytes_strict_nonzero(keypair->data, sk)) { erase_secrets(); return 0; }
 
     secp256k1::MuSig2SecNonce sn{ k1, k2 };
     auto s = sess_unpack(session);
@@ -653,15 +665,19 @@ int secp256k1_musig_partial_sign(
     if (!idx_found) {
         // Unknown key: clear output and fail-closed to prevent signing as signer #0.
         std::memset(partial_sig->data, 0, sizeof(partial_sig->data));
+        secp256k1::detail::secure_erase(&sn, sizeof(sn));
+        erase_secrets();
         return 0;
     }
     auto psig = secp256k1::musig2_partial_sign(sn, sk, e->ctx, s, idx);
+    secp256k1::detail::secure_erase(&sn, sizeof(sn));   // nonce-pair copy consumed
     // Fail-closed: zero partial sig means degenerate nonce (k=0).
     // Returning success with zeros would silently break the aggregation.
-    if (psig.is_zero()) return 0;
+    if (psig.is_zero()) { erase_secrets(); return 0; }
     auto b = psig.to_bytes();
     std::memcpy(partial_sig->data, b.data(), 32);
     std::memset(partial_sig->data + 32, 0, 4);
+    erase_secrets();
     return 1;
 }
 

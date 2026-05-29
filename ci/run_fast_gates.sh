@@ -142,6 +142,14 @@ run "Nonce erase coverage (BIP-327)"           ci/check_nonce_erase_coverage.py
 run "Doc drift (badges, removed files)"        ci/check_doc_drift.py
 run "Bench/doc consistency (banned patterns)" ci/check_bench_doc_consistency.py
 
+# Regression gates for the 2026-05-29 read-only-review fixes:
+#  - ABI count + names: docs/nuspec must match the real UFSECP_API surface (REL-04)
+#  - Workflow trigger claims: docs must not call a workflow_dispatch-only workflow CI-enforced (CLAIM-07)
+#  - Secret-erase coverage: every seckey-parsing shim fn must secure_erase (CT-04/RT-05)
+run "ABI count + names (REL-04)"               ci/check_abi_count.py
+run "Workflow trigger claims (CLAIM-07)"       ci/check_workflow_trigger_claims.py
+run "Secret-erase coverage (CT-04/RT-05)"      ci/check_secret_erase_coverage.py
+
 # Profile manifest cross-check: ci/profiles.json -> CMakePresets.json -> ci/caas_runner.py.
 # Fast (<1s) — catches the class of bug where a chain-specific preset disables an
 # optional module but a dependent module remains ON (e.g. LTC_SP needs BIP352)

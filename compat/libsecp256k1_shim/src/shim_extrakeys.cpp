@@ -148,10 +148,16 @@ int secp256k1_keypair_create(
     secp256k1_shim_internal::ContextBlindingScope _blind(ctx);
 
     Scalar k;
-    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) return 0;
+    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));   // secret-residue sweep
+        return 0;
+    }
 
     auto P = secp256k1::ct::generator_mul(k);   // CT: Rule 12 — sk is a private key
-    if (P.is_infinity()) return 0;
+    if (P.is_infinity()) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));   // secret-residue sweep
+        return 0;
+    }
 
     // BIP-340 normalization: Schnorr signing requires d to produce an even-Y pubkey.
     // Negate k (CT) when P.y is odd so that k*G has even Y, matching libsecp256k1
@@ -162,10 +168,12 @@ int secp256k1_keypair_create(
     // If y was odd, negate P to produce the even-Y point matching the new k.
     if (y_odd) P = P.negate();
 
-    // Store BIP-340-normalized seckey, then erase the stack copy.
+    // Store BIP-340-normalized seckey, then erase the stack copies (both the
+    // serialized bytes AND the Scalar k holding the normalized private key).
     auto k_bytes = k.to_bytes();
     std::memcpy(keypair->data, k_bytes.data(), 32);
     secp256k1::detail::secure_erase(k_bytes.data(), k_bytes.size());
+    secp256k1::detail::secure_erase(&k, sizeof(k));   // secret-residue sweep
 
     // Store pubkey (X || Y). point_to_pubkey_data avoids the 65-byte to_uncompressed()
     // allocation (PERF pattern from keypair_xonly_tweak_add / NEW-PERF-002).
@@ -339,8 +347,17 @@ int secp256k1_keypair_xonly_tweak_add(
         return 0;
     }
 
+    // CT-04: tweaked private-key material (sk, new_sk, new_skb) is the BIP-341
+    // key-path-spend secret. It MUST be secure_erase'd on EVERY return path —
+    // mirroring the discipline already applied to keypair_create (line ~168) and
+    // the shim ECDSA/ellswift sign paths (CT-01/SHIM-01/02). The CT-01 sweep
+    // (commit 24b29021) covered shim_ecdsa/ellswift/recovery + bip32 but not this
+    // function.
     Scalar sk;
-    if (!Scalar::parse_bytes_strict_nonzero(keypair->data, sk)) return 0;
+    if (!Scalar::parse_bytes_strict_nonzero(keypair->data, sk)) {
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));   // CT-04
+        return 0;
+    }
 
     // If Y is odd, negate the secret key (so the x-only key has even Y).
     // Use ct::scalar_cneg to avoid branching on keypair state.
@@ -349,15 +366,26 @@ int secp256k1_keypair_xonly_tweak_add(
 
     // tweak in [0, n-1]; libsecp allows 0 (keypair unchanged)
     Scalar t;
-    if (!Scalar::parse_bytes_strict(tweak32, t)) return 0;
+    if (!Scalar::parse_bytes_strict(tweak32, t)) {
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));   // CT-04
+        return 0;
+    }
 
     auto new_sk = secp256k1::ct::scalar_add(sk, t);
     // CT-002: is_zero_ct() reads all limbs unconditionally before comparing.
     // is_zero() (fast::) has a data-dependent early-exit; new_sk is a secret.
-    if (new_sk.is_zero_ct()) return 0;
+    if (new_sk.is_zero_ct()) {
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));         // CT-04
+        secp256k1::detail::secure_erase(&new_sk, sizeof(new_sk));
+        return 0;
+    }
 
     auto P = secp256k1::ct::generator_mul(new_sk);   // CT: Rule 12 — new_sk is secret
-    if (P.is_infinity()) return 0;
+    if (P.is_infinity()) {
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));         // CT-04
+        secp256k1::detail::secure_erase(&new_sk, sizeof(new_sk));
+        return 0;
+    }
 
     auto new_skb = new_sk.to_bytes();
     std::memcpy(keypair->data, new_skb.data(), 32);
@@ -365,6 +393,10 @@ int secp256k1_keypair_xonly_tweak_add(
     // allocation + extra memcpy. secp256k1_xonly_pubkey_tweak_add and
     // secp256k1_xonly_pubkey_tweak_add_check already use this pattern (PERF-004 fix).
     point_to_pubkey_data(P, keypair->data + 32);
+    // CT-04: erase the tweaked-private-key stack residue after its last use.
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    secp256k1::detail::secure_erase(&new_sk, sizeof(new_sk));
+    secp256k1::detail::secure_erase(new_skb.data(), new_skb.size());
     return 1;
 }
 

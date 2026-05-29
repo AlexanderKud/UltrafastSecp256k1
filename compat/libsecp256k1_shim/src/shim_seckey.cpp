@@ -9,6 +9,7 @@
 
 #include "secp256k1/scalar.hpp"
 #include "secp256k1/ct/scalar.hpp"
+#include "secp256k1/detail/secure_erase.hpp"   // RT-05
 
 using namespace secp256k1::fast;
 
@@ -22,8 +23,11 @@ int secp256k1_ec_seckey_verify(
         secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_seckey_verify: seckey is NULL");
         return 0;
     }
+    // RT-05: erase the parsed private-key scalar before returning.
     Scalar k;
-    return Scalar::parse_bytes_strict_nonzero(seckey, k) ? 1 : 0;
+    bool ok = Scalar::parse_bytes_strict_nonzero(seckey, k);
+    secp256k1::detail::secure_erase(&k, sizeof(k));
+    return ok ? 1 : 0;
 }
 
 int secp256k1_ec_seckey_negate(
@@ -35,7 +39,10 @@ int secp256k1_ec_seckey_negate(
         return 0;
     }
     Scalar k;
-    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) return 0;
+    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));   // RT-05
+        return 0;
+    }
     // CT-SECKEY-NEGATE: use scalar_cneg with always-negate mask (all-ones) so
     // that the negate is unconditional and branchless on the secret key value.
     // k.negate() is variable-time (data-dependent branch on is_zero) — banned
@@ -43,6 +50,10 @@ int secp256k1_ec_seckey_negate(
     auto neg = secp256k1::ct::scalar_cneg(k, ~std::uint64_t(0));
     auto out = neg.to_bytes();
     std::memcpy(seckey, out.data(), 32);
+    // RT-05: erase parsed key, negated scalar, and the serialized new key.
+    secp256k1::detail::secure_erase(&k, sizeof(k));
+    secp256k1::detail::secure_erase(&neg, sizeof(neg));
+    secp256k1::detail::secure_erase(out.data(), out.size());
     return 1;
 }
 
@@ -59,14 +70,33 @@ int secp256k1_ec_seckey_tweak_add(
         secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_seckey_tweak_add: tweak32 is NULL");
         return 0;
     }
+    // RT-05: k is the caller's private key; t (a BIP-32 IL tweak) is also
+    // secret-derived; result/out is the NEW private key. Erase all on every path.
     Scalar k, t;
-    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) return 0;
+    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));   // RT-05
+        secp256k1::detail::secure_erase(&t, sizeof(t));
+        return 0;
+    }
     // tweak in [0, n-1]; 0 is valid (result == seckey)
-    if (!Scalar::parse_bytes_strict(tweak32, t)) return 0;
+    if (!Scalar::parse_bytes_strict(tweak32, t)) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));   // RT-05
+        secp256k1::detail::secure_erase(&t, sizeof(t));
+        return 0;
+    }
     auto result = secp256k1::ct::scalar_add(k, t);  // CT-001: k is secret
-    if (result.is_zero_ct()) return 0;
+    if (result.is_zero_ct()) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));        // RT-05
+        secp256k1::detail::secure_erase(&t, sizeof(t));
+        secp256k1::detail::secure_erase(&result, sizeof(result));
+        return 0;
+    }
     auto out = result.to_bytes();
     std::memcpy(seckey, out.data(), 32);
+    secp256k1::detail::secure_erase(&k, sizeof(k));           // RT-05
+    secp256k1::detail::secure_erase(&t, sizeof(t));
+    secp256k1::detail::secure_erase(&result, sizeof(result));
+    secp256k1::detail::secure_erase(out.data(), out.size());
     return 1;
 }
 
@@ -83,13 +113,31 @@ int secp256k1_ec_seckey_tweak_mul(
         secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_seckey_tweak_mul: tweak32 is NULL");
         return 0;
     }
+    // RT-05: k is the caller's private key; result/out is the NEW private key.
     Scalar k, t;
-    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) return 0;
-    if (!Scalar::parse_bytes_strict_nonzero(tweak32, t)) return 0;
+    if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));   // RT-05
+        secp256k1::detail::secure_erase(&t, sizeof(t));
+        return 0;
+    }
+    if (!Scalar::parse_bytes_strict_nonzero(tweak32, t)) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));   // RT-05
+        secp256k1::detail::secure_erase(&t, sizeof(t));
+        return 0;
+    }
     auto result = secp256k1::ct::scalar_mul(k, t);  // CT-001: k is secret
-    if (result.is_zero_ct()) return 0;
+    if (result.is_zero_ct()) {
+        secp256k1::detail::secure_erase(&k, sizeof(k));        // RT-05
+        secp256k1::detail::secure_erase(&t, sizeof(t));
+        secp256k1::detail::secure_erase(&result, sizeof(result));
+        return 0;
+    }
     auto out = result.to_bytes();
     std::memcpy(seckey, out.data(), 32);
+    secp256k1::detail::secure_erase(&k, sizeof(k));           // RT-05
+    secp256k1::detail::secure_erase(&t, sizeof(t));
+    secp256k1::detail::secure_erase(&result, sizeof(result));
+    secp256k1::detail::secure_erase(out.data(), out.size());
     return 1;
 }
 

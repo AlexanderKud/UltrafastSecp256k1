@@ -29,6 +29,16 @@
 //               (strict-DER `if (p != end) return 0;`), matching upstream
 //               secp256k1_ecdsa_sig_parse and the native C-ABI parser.
 //
+//   CT-04 (P2): secp256k1_keypair_xonly_tweak_add (shim_extrakeys.cpp) must
+//               secure_erase the tweaked-private-key residue (sk, new_sk, new_skb)
+//               on every return path — the BIP-341 key-path-spend secret. The
+//               CT-01 sweep (24b29021) did not cover this function.
+//
+//   RT-05 (P2): shim_seckey.cpp negate/tweak_add/tweak_mul/verify must include
+//               detail/secure_erase.hpp and erase the parsed key k (and the new
+//               key out / tweak t / result) on every return path. The file had
+//               zero secure_erase calls before this fix.
+//
 // Verification model (same as test_regression_secret_stack_residue_v9.cpp):
 // source scans assert the presence of the required secure_erase / strict-DER
 // constructs in the named functions; functional round-trips confirm the fixes
@@ -186,6 +196,59 @@ static void test_bip32_derive_child_erases_il_scalar() {
           "CT-02: il_scalar erased on all derive_child return paths");
 }
 
+// ── CT-04: keypair_xonly_tweak_add erases sk/new_sk/new_skb ───────────────────
+
+static void test_shim_keypair_xonly_tweak_add_erases() {
+    printf("[8] CT-04: shim_extrakeys.cpp keypair_xonly_tweak_add erases tweaked secret\n");
+
+    std::string ek = read_repo_file("compat/libsecp256k1_shim/src/shim_extrakeys.cpp");
+    CHECK(!ek.empty(), "CT-04: shim_extrakeys.cpp readable");
+    if (ek.empty()) return;
+    std::string body = extract_function_body(ek, "secp256k1_keypair_xonly_tweak_add(");
+    CHECK(!body.empty(), "CT-04: keypair_xonly_tweak_add body located");
+    // Secrets: parsed key `sk` (erased on parse-fail, tweak-fail, zero, infinity,
+    // success = >=3), the tweaked key `new_sk` (zero/infinity/success = >=2), and
+    // its serialization `new_skb` (success = >=1).
+    CHECK(count_substr(body, "secure_erase(&sk") >= 3,
+          "CT-04: keypair_xonly_tweak_add erases sk on multiple return paths");
+    CHECK(count_substr(body, "secure_erase(&new_sk") >= 2,
+          "CT-04: keypair_xonly_tweak_add erases tweaked new_sk");
+    CHECK(body.find("secure_erase(new_skb.data()") != std::string::npos,
+          "CT-04: keypair_xonly_tweak_add erases serialized new_skb");
+
+    // keypair_create must erase BOTH the serialized bytes and the Scalar k itself.
+    std::string kc = extract_function_body(ek, "secp256k1_keypair_create(");
+    CHECK(!kc.empty(), "CT-04: keypair_create body located");
+    if (!kc.empty())
+        CHECK(kc.find("secure_erase(&k") != std::string::npos,
+              "CT-04: keypair_create erases the Scalar k (normalized private key)");
+}
+
+// ── RT-05: shim_seckey.cpp negate/tweak_add/tweak_mul/verify erase secrets ────
+
+static void test_shim_seckey_funcs_erase() {
+    printf("[9] RT-05: shim_seckey.cpp negate/tweak_add/tweak_mul/verify erase secrets\n");
+
+    std::string sk = read_repo_file("compat/libsecp256k1_shim/src/shim_seckey.cpp");
+    CHECK(!sk.empty(), "RT-05: shim_seckey.cpp readable");
+    if (sk.empty()) return;
+    CHECK(sk.find("secure_erase.hpp") != std::string::npos,
+          "RT-05: shim_seckey.cpp includes detail/secure_erase.hpp");
+
+    struct { const char* sig; const char* label; } fns[] = {
+        { "secp256k1_ec_seckey_verify(",    "RT-05: seckey_verify erases parsed k" },
+        { "secp256k1_ec_seckey_negate(",    "RT-05: seckey_negate erases k/neg/out" },
+        { "secp256k1_ec_seckey_tweak_add(", "RT-05: seckey_tweak_add erases k/t/result/out" },
+        { "secp256k1_ec_seckey_tweak_mul(", "RT-05: seckey_tweak_mul erases k/t/result/out" },
+    };
+    for (auto& f : fns) {
+        std::string body = extract_function_body(sk, f.sig);
+        CHECK(!body.empty(), f.label);
+        if (!body.empty())
+            CHECK(body.find("secure_erase(&k") != std::string::npos, f.label);
+    }
+}
+
 // ── Functional: fixes did not regress the underlying CPU primitives ───────────
 
 static void test_functional_ecdsa_roundtrip() {
@@ -239,6 +302,26 @@ static void test_functional_bip32_derive() {
     CHECK(nonzero, "functional: derived child key is non-zero");
 }
 
+static void test_functional_seckey_tweak() {
+    printf("[10] Functional: CT seckey tweak/negate primitives still correct\n");
+    std::array<uint8_t, 32> kb{}; kb[31] = 0x07;
+    std::array<uint8_t, 32> tb{}; tb[31] = 0x05;
+    Scalar k, t;
+    bool ok = Scalar::parse_bytes_strict_nonzero(kb.data(), k)
+           && Scalar::parse_bytes_strict_nonzero(tb.data(), t);
+    CHECK(ok, "functional: seckey/tweak parse");
+    if (!ok) return;
+    // tweak_add: result = k + t = 12 (mod n); nonzero and matches expectation.
+    auto sum = secp256k1::ct::scalar_add(k, t);
+    CHECK(!sum.is_zero_ct(), "functional: ct::scalar_add(k,t) is non-zero");
+    auto sumb = sum.to_bytes();
+    CHECK(sumb[31] == 0x0C, "functional: 7 + 5 == 12 (CT scalar_add)");
+    // negate then add original == 0 (n - k + k == 0): confirms scalar_cneg path.
+    auto negk = secp256k1::ct::scalar_cneg(k, ~std::uint64_t(0));
+    auto zero = secp256k1::ct::scalar_add(negk, k);
+    CHECK(zero.is_zero_ct(), "functional: ct::scalar_cneg(k) + k == 0");
+}
+
 int test_regression_shim_seckey_erase_run() {
     g_pass = 0; g_fail = 0;
     printf("======================================================================\n");
@@ -251,9 +334,12 @@ int test_regression_shim_seckey_erase_run() {
     test_shim_der_strict_consumption();         printf("\n");
     test_shim_ellswift_erases_secrets();        printf("\n");
     test_bip32_derive_child_erases_il_scalar(); printf("\n");
+    test_shim_keypair_xonly_tweak_add_erases(); printf("\n");
+    test_shim_seckey_funcs_erase();             printf("\n");
     test_functional_ecdsa_roundtrip();          printf("\n");
     test_functional_ellswift_xdh_roundtrip();   printf("\n");
     test_functional_bip32_derive();             printf("\n");
+    test_functional_seckey_tweak();             printf("\n");
 
     printf("[regression_shim_seckey_erase] %d/%d checks passed\n",
            g_pass, g_pass + g_fail);
