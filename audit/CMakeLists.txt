@@ -4506,6 +4506,13 @@ if(Python3_FOUND)
         # Windows: ctypes DLL loading + Defender scan on first load adds 3-5min overhead.
         # 360s was insufficient on CI (timed out). Raise to 600s.
         set(_py_diff_timeout 600)
+    elseif(APPLE)
+        # macOS CI runners are slower and also run the Metal build in the same job;
+        # the 500-count differential cross-impl hit exactly 180.07s (timeout) on
+        # macos-Release while Linux finished comfortably under 180s. Give macOS the
+        # same headroom as Windows. (Not a hang — the test passes on Linux; macOS is
+        # just slower.)
+        set(_py_diff_timeout 600)
     else()
         set(_py_diff_timeout 180)
     endif()
