@@ -522,6 +522,9 @@ public:
         if (count == 0) { clear_error(); return GpuError::Ok; }
         if (!privkeys32 || !peer_pubkeys33 || !out_secrets32)
             return set_error(GpuError::NullArg, "NULL buffer");
+#if !SECP256K1_GPU_HAS_ECDH
+        return set_error(GpuError::Unsupported, "GPU ECDH module disabled at build time");
+#endif
 
         auto err = ensure_library();
         if (err != GpuError::Ok) return err;
@@ -586,6 +589,9 @@ public:
         if (count == 0) { clear_error(); return GpuError::Ok; }
         if (!pubkeys33 || !out_hash160)
             return set_error(GpuError::NullArg, "NULL buffer");
+#if !SECP256K1_GPU_HAS_HASH160
+        return set_error(GpuError::Unsupported, "GPU HASH160 module disabled at build time");
+#endif
 
         auto err = ensure_library();
         if (err != GpuError::Ok) return err;
@@ -693,6 +699,9 @@ public:
         if (count == 0) { clear_error(); return GpuError::Ok; }
         if (!msg_hashes32 || !sigs64 || !recids || !out_pubkeys33 || !out_valid)
             return set_error(GpuError::NullArg, "NULL buffer");
+#if !SECP256K1_GPU_HAS_ECRECOVER
+        return set_error(GpuError::Unsupported, "GPU ECRECOVER module disabled at build time");
+#endif
 
         auto err = ensure_library();
         if (err != GpuError::Ok) return err;
@@ -744,6 +753,9 @@ public:
         if (n == 0) { clear_error(); return GpuError::Ok; }
         if (!scalars32 || !points33 || !out_result33)
             return set_error(GpuError::NullArg, "NULL buffer");
+#if !SECP256K1_GPU_HAS_MSM
+        return set_error(GpuError::Unsupported, "GPU MSM module disabled at build time");
+#endif
 
         auto err = ensure_library();
         if (err != GpuError::Ok) return err;

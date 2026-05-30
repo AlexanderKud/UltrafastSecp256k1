@@ -503,6 +503,9 @@ public:
         if (count == 0) { clear_error(); return GpuError::Ok; }
         if (!privkeys32 || !peer_pubkeys33 || !out_secrets32)
             return set_error(GpuError::NullArg, "NULL buffer");
+#if !SECP256K1_GPU_HAS_ECDH
+        return set_error(GpuError::Unsupported, "GPU ECDH module disabled at build time");
+#endif
 
         /* Validate all peer pubkeys BEFORE loading any private key material.
            This ensures no early-return path leaves h_scalars populated
@@ -557,6 +560,9 @@ public:
         if (count == 0) { clear_error(); return GpuError::Ok; }
         if (!pubkeys33 || !out_hash160)
             return set_error(GpuError::NullArg, "NULL buffer");
+#if !SECP256K1_GPU_HAS_HASH160
+        return set_error(GpuError::Unsupported, "GPU HASH160 module disabled at build time");
+#endif
 
         /* CPU-side SIMD-accelerated Hash160 */
         for (size_t i = 0; i < count; ++i) {
@@ -745,6 +751,9 @@ public:
         if (count == 0) { clear_error(); return GpuError::Ok; }
         if (!msg_hashes32 || !sigs64 || !recids || !out_pubkeys33 || !out_valid)
             return set_error(GpuError::NullArg, "NULL buffer");
+#if !SECP256K1_GPU_HAS_ECRECOVER
+        return set_error(GpuError::Unsupported, "GPU ECRECOVER module disabled at build time");
+#endif
 
         auto err = ensure_extended_kernels();
         if (err != GpuError::Ok) return err;
@@ -855,6 +864,9 @@ public:
         if (n == 0) { clear_error(); return GpuError::Ok; }
         if (!scalars32 || !points33 || !out_result33)
             return set_error(GpuError::NullArg, "NULL buffer");
+#if !SECP256K1_GPU_HAS_MSM
+        return set_error(GpuError::Unsupported, "GPU MSM module disabled at build time");
+#endif
 
         auto* cl_ctx       = static_cast<cl_context>(ctx_->native_context());
         auto* queue        = static_cast<cl_command_queue>(ctx_->native_queue());

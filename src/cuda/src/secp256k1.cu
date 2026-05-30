@@ -113,6 +113,7 @@ void point_dbl_kernel(const JacobianPoint* a, JacobianPoint* r, int count) {
     }
 }
 
+#if SECP256K1_GPU_HAS_HASH160
 __global__ __launch_bounds__(256, 4)
 void hash160_pubkey_kernel(const uint8_t* pubkeys, int pubkey_len, uint8_t* out_hashes, int count) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -122,6 +123,7 @@ void hash160_pubkey_kernel(const uint8_t* pubkeys, int pubkey_len, uint8_t* out_
         hash160_pubkey(pk, static_cast<size_t>(pubkey_len), out);
     }
 }
+#endif  // SECP256K1_GPU_HAS_HASH160
 
 // ============================================================================
 // ECDSA / Schnorr batch kernels (64-bit limb mode only)
@@ -256,6 +258,7 @@ void ecdsa_sign_recoverable_batch_kernel(
     }
 }
 
+#if SECP256K1_GPU_HAS_ECRECOVER
 // ECDSA Recover batch
 __global__ __launch_bounds__(128, 2)
 void ecdsa_recover_batch_kernel(
@@ -272,6 +275,7 @@ void ecdsa_recover_batch_kernel(
         results[idx] = ecdsa_recover(msg, &sigs[idx], recids[idx], &recovered_keys[idx]);
     }
 }
+#endif  // SECP256K1_GPU_HAS_ECRECOVER
 
 #endif // !SECP256K1_CUDA_LIMBS_32
 

@@ -228,6 +228,13 @@ verification with everything else removed:
 | `SECP256K1_GPU_BUILD_BIP324` | BIP-324 AEAD encrypt/decrypt kernels + dispatch |
 | `SECP256K1_GPU_BUILD_FROST`  | FROST partial-verify kernel + dispatch |
 | `SECP256K1_GPU_BUILD_BIP352` | BIP-352 silent-payment scan kernel + dispatch |
+| `SECP256K1_GPU_BUILD_ECDH`   | ECDH batch kernel + dispatch |
+| `SECP256K1_GPU_BUILD_MSM`    | multi-scalar-multiplication kernels + dispatch |
+| `SECP256K1_GPU_BUILD_HASH160`| Hash160(pubkey) kernel + dispatch |
+| `SECP256K1_GPU_BUILD_ECRECOVER` | ECDSA recovery kernel + dispatch |
+
+Turning **all** of the above OFF yields the minimal node GPU build — only
+generator-mul + ECDSA/Schnorr batch verification remain.
 
 When a module is OFF, its kernels are not compiled into any GPU backend
 (CUDA/OpenCL/Metal) and the stable C ABI entry point returns
@@ -243,5 +250,9 @@ optional modules stripped.
 # Minimal GPU node build: only ECDSA/Schnorr batch verify on the GPU.
 cmake --preset cpu-release -DSECP256K1_BUILD_CUDA=ON \
     -DSECP256K1_GPU_BUILD_ZK=OFF -DSECP256K1_GPU_BUILD_BIP324=OFF \
-    -DSECP256K1_GPU_BUILD_FROST=OFF -DSECP256K1_GPU_BUILD_BIP352=OFF
+    -DSECP256K1_GPU_BUILD_FROST=OFF -DSECP256K1_GPU_BUILD_BIP352=OFF \
+    -DSECP256K1_GPU_BUILD_ECDH=OFF -DSECP256K1_GPU_BUILD_MSM=OFF \
+    -DSECP256K1_GPU_BUILD_HASH160=OFF -DSECP256K1_GPU_BUILD_ECRECOVER=OFF
+# Verified (RTX 5060 Ti): all eight OFF builds; every optional kernel stripped;
+# ECDSA + Schnorr batch verify still pass.
 ```

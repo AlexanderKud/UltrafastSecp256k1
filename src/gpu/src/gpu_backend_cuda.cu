@@ -262,6 +262,7 @@ __global__ void batch_compressed_to_jac_kernel(
     ok[idx] = point_from_compressed(pubs33 + idx * 33, &out[idx]);
 }
 
+#if SECP256K1_GPU_HAS_MSM
 /** MSM block reduction: each block reduces BLOCK_SZ partials → 1 result
  *  via shared-memory tree.  Shared mem = blockDim.x * sizeof(JacobianPoint).
  *  Output: one JacobianPoint per block written to block_results[blockIdx.x]. */
@@ -328,7 +329,9 @@ __global__ void msm_reduce_and_compress_kernel(
         *ok = true;
     }
 }
+#endif  // SECP256K1_GPU_HAS_MSM
 
+#if SECP256K1_GPU_HAS_ECDH
 /** ECDH batch kernel: each thread computes SHA-256(0x02 || x) where
  *  x = x-coordinate of privkey[i] * pubkey[i]. */
 __global__ void ecdh_batch_kernel(
@@ -344,6 +347,7 @@ __global__ void ecdh_batch_kernel(
     out_ok[idx] = secp256k1::cuda::ecdh_compute(
         &privkeys[idx], &peer_pubs[idx], out_secrets + idx * 32);
 }
+#endif  // SECP256K1_GPU_HAS_ECDH
 
 /* ============================================================================
  * CudaBackend implementation
@@ -613,6 +617,7 @@ gmb_cleanup:
         if (!privkeys32 || !peer_pubkeys33 || !out_secrets32)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_ECDH
         // Rule 10: h_keys erased on all exit paths via destructor + secure_erase.
         // The SecureVector wrapper zeroes on destruction — CUDA_TRY early returns
         // are safe because h_keys goes out of scope before the function returns.
@@ -674,6 +679,9 @@ gmb_cleanup:
         cudaFree(d_pubs33);
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU ECDH module disabled at build time");
+#endif
     }
 
     GpuError hash160_pubkey_batch(
@@ -685,6 +693,7 @@ gmb_cleanup:
         if (!pubkeys33 || !out_hash160)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_HASH160
         uint8_t* d_pubs = nullptr;
         uint8_t* d_hash = nullptr;
 
@@ -705,6 +714,9 @@ gmb_cleanup:
         cudaFree(d_pubs);
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU HASH160 module disabled at build time");
+#endif
     }
 
     GpuError msm(
@@ -716,6 +728,7 @@ gmb_cleanup:
         if (!scalars32 || !points33 || !out_result33)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_MSM
         /* Convert scalars on host (just byte reinterpretation, no field ops) */
         std::vector<Scalar> h_scalars(n);
         for (size_t i = 0; i < n; ++i) {
@@ -782,6 +795,9 @@ gmb_cleanup:
 
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU MSM module disabled at build time");
+#endif
     }
 
     GpuError frost_verify_partial_batch(
@@ -851,6 +867,7 @@ gmb_cleanup:
         if (!msg_hashes32 || !sigs64 || !recids || !out_pubkeys33 || !out_valid)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_ECRECOVER
         /* Host-side: parse compact sigs into ECDSASignatureGPU structs */
         std::vector<ECDSASignatureGPU> h_sigs(count);
         for (size_t i = 0; i < count; ++i)
@@ -904,6 +921,9 @@ gmb_cleanup:
         cudaFree(d_recids); cudaFree(d_sigs);  cudaFree(d_msgs);
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU ECRECOVER module disabled at build time");
+#endif
     }
 
     /* -- ZK batch ops ------------------------------------------------------ */

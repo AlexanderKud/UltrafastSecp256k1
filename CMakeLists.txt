@@ -74,11 +74,17 @@ option(SECP256K1_BUILD_METAL "Build Apple Metal GPU support" OFF)
 # Default ON (full GPU op surface, no behaviour change). Turning one OFF removes
 # its kernels + backend dispatch from every GPU backend (CUDA/OpenCL/Metal); the
 # stable C ABI entry point remains and returns UFSECP_ERR_GPU_UNSUPPORTED.
-option(SECP256K1_GPU_BUILD_ZK     "GPU ZK ops (knowledge / DLEQ / bulletproof / SNARK witness)" ON)
-option(SECP256K1_GPU_BUILD_BIP324 "GPU BIP-324 AEAD encrypt/decrypt ops"                        ON)
-option(SECP256K1_GPU_BUILD_FROST  "GPU FROST partial-signature verify op"                       ON)
-option(SECP256K1_GPU_BUILD_BIP352 "GPU BIP-352 silent-payment scan op"                          ON)
-foreach(_gpu_mod ZK BIP324 FROST BIP352)
+option(SECP256K1_GPU_BUILD_ZK        "GPU ZK ops (knowledge / DLEQ / bulletproof / SNARK witness)" ON)
+option(SECP256K1_GPU_BUILD_BIP324    "GPU BIP-324 AEAD encrypt/decrypt ops"                        ON)
+option(SECP256K1_GPU_BUILD_FROST     "GPU FROST partial-signature verify op"                       ON)
+option(SECP256K1_GPU_BUILD_BIP352    "GPU BIP-352 silent-payment scan op"                          ON)
+option(SECP256K1_GPU_BUILD_ECDH      "GPU ECDH batch op (secret-bearing)"                          ON)
+option(SECP256K1_GPU_BUILD_MSM       "GPU multi-scalar multiplication op"                          ON)
+option(SECP256K1_GPU_BUILD_HASH160   "GPU Hash160(pubkey) batch op"                                ON)
+option(SECP256K1_GPU_BUILD_ECRECOVER "GPU ECDSA public-key recovery batch op"                      ON)
+# A minimal node GPU build (script-signature verification only) can turn ALL of
+# the above OFF — only generator-mul + ECDSA/Schnorr batch verify remain.
+foreach(_gpu_mod ZK BIP324 FROST BIP352 ECDH MSM HASH160 ECRECOVER)
     if(SECP256K1_GPU_BUILD_${_gpu_mod})
         add_compile_definitions(SECP256K1_GPU_HAS_${_gpu_mod}=1)
     else()
