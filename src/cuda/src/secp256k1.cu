@@ -163,6 +163,7 @@ void ecdsa_verify_batch_kernel(
     }
 }
 
+#if SECP256K1_GPU_HAS_ZK
 // ECDSA SNARK witness batch (eprint 2025/695) -- each thread fills one witness
 __global__ __launch_bounds__(128, 2)
 void ecdsa_snark_witness_batch_kernel(
@@ -200,6 +201,7 @@ void schnorr_snark_witness_batch_kernel(
             &out[idx]);
     }
 }
+#endif  // SECP256K1_GPU_HAS_ZK
 
 // GPU Guardrail 8: CT signing mandatory — variable-time schnorr_sign() banned on secret nonces.
 // Schnorr Sign batch -- each thread signs one message

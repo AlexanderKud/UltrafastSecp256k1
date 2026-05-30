@@ -25,8 +25,12 @@
 #include "ecdh.cuh"
 #include "msm.cuh"
 #include "schnorr.cuh"
+#if SECP256K1_GPU_HAS_ZK
 #include "zk.cuh"
+#endif
+#if SECP256K1_GPU_HAS_BIP324
 #include "bip324.cuh"
+#endif
 #include "gpu_compat.h"
 /* CT variable-base scalar mul for BIP-352 scan kernel (Rule 8) */
 #include "ct/ct_point.cuh"
@@ -117,6 +121,7 @@ namespace gpu {
  * ============================================================================ */
 
 namespace {
+#if SECP256K1_GPU_HAS_BIP352
 
 /** BIP0352/SharedSecret tagged SHA-256 midstate (precomputed):
  *  SHA256("BIP0352/SharedSecret") || SHA256("BIP0352/SharedSecret")
@@ -205,6 +210,7 @@ static __global__ void bip352_scan_batch_kernel(
     for (int i = 0; i < 8; ++i) pref = (pref << 8) | xb[i];
     prefixes[idx] = pref;
 }
+#endif  // SECP256K1_GPU_HAS_BIP352
 
 } // anonymous namespace
 
@@ -912,6 +918,7 @@ gmb_cleanup:
         if (!proofs64 || !pubkeys65 || !messages32 || !out_results)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_ZK
         /* Convert proofs: 64-byte flat → KnowledgeProofGPU (rx[32] + Scalar) */
         std::vector<KnowledgeProofGPU> h_proofs(count);
         for (size_t i = 0; i < count; ++i) {
@@ -957,6 +964,9 @@ gmb_cleanup:
         cudaFree(d_res); cudaFree(d_msgs); cudaFree(d_pubs); cudaFree(d_proofs);
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU ZK module disabled at build time");
+#endif
     }
 
     GpuError zk_dleq_verify_batch(
@@ -970,6 +980,7 @@ gmb_cleanup:
         if (!proofs64 || !G_pts65 || !H_pts65 || !P_pts65 || !Q_pts65 || !out_results)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_ZK
         std::vector<DLEQProofGPU> h_proofs(count);
         std::vector<AffinePoint> h_G(count), h_H(count), h_P(count), h_Q(count);
         for (size_t i = 0; i < count; ++i) {
@@ -1025,6 +1036,9 @@ gmb_cleanup:
         cudaFree(d_proofs);
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU ZK module disabled at build time");
+#endif
     }
 
     GpuError bulletproof_verify_batch(
@@ -1040,6 +1054,7 @@ gmb_cleanup:
         /* Parse proofs: 4 affine points (A,S,T1,T2) + 2 scalars (tau_x, t_hat)
          * Layout per proof (324 bytes): 4 × 65-byte uncompressed points + 2 × 32-byte scalars
          * Point format: 04 || x[32] || y[32] */
+#if SECP256K1_GPU_HAS_ZK
         std::vector<RangeProofPolyGPU> h_proofs(count);
         for (size_t i = 0; i < count; ++i) {
             const uint8_t* p = proofs324 + i * 324;
@@ -1099,6 +1114,9 @@ gmb_cleanup:
         cudaFree(d_res); cudaFree(d_hgen); cudaFree(d_commits); cudaFree(d_proofs);
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU ZK module disabled at build time");
+#endif
     }
 
     /* -- BIP-324 batch ops ------------------------------------------------- */
@@ -1114,6 +1132,7 @@ gmb_cleanup:
         if (!keys32 || !nonces12 || !plaintexts || !sizes || !wire_out)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_BIP324
         const size_t wire_stride = max_payload + 19;
         uint8_t*  d_keys   = nullptr;
         uint8_t*  d_nonces = nullptr;
@@ -1161,6 +1180,9 @@ enc_cleanup:
         if (d_sizes)  cudaFree(d_sizes);
         if (d_wire)   cudaFree(d_wire);
         return ret;
+#else
+        return set_error(GpuError::Unsupported, "GPU BIP-324 module disabled at build time");
+#endif
     }
 
     GpuError bip324_aead_decrypt_batch(
@@ -1174,6 +1196,7 @@ enc_cleanup:
         if (!keys32 || !nonces12 || !wire_in || !sizes || !plaintext_out || !out_valid)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_BIP324
         const size_t wire_stride = max_payload + 19;
         uint8_t*  d_keys   = nullptr;
         uint8_t*  d_nonces = nullptr;
@@ -1233,6 +1256,9 @@ dec_cleanup:
         if (d_wire)   cudaFree(d_wire);
         if (d_nonces) cudaFree(d_nonces);
         return ret;
+#else
+        return set_error(GpuError::Unsupported, "GPU BIP-324 module disabled at build time");
+#endif
     }
 
     GpuError snark_witness_batch(
@@ -1245,6 +1271,7 @@ dec_cleanup:
         if (!msg_hashes32 || !pubkeys33 || !sigs64 || !out_flat)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_ZK
         /* Prepare signatures on host */
         std::vector<ECDSASignatureGPU> h_sigs(count);
         for (size_t i = 0; i < count; ++i)
@@ -1295,6 +1322,9 @@ dec_cleanup:
         cudaFree(d_msgs);
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU ZK module disabled at build time");
+#endif
     }
 
     /* -- BIP-340 Schnorr SNARK witness GPU batch (eprint 2025/695) --------- */
@@ -1309,6 +1339,7 @@ dec_cleanup:
         if (!msgs32 || !pubkeys_x32 || !sigs64 || !out_flat)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_ZK
         uint8_t*                      d_msgs   = nullptr;
         uint8_t*                      d_pubs   = nullptr;
         uint8_t*                      d_sigs   = nullptr;
@@ -1340,6 +1371,9 @@ dec_cleanup:
         cudaFree(d_msgs);
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU ZK module disabled at build time");
+#endif
     }
 
     /* -- BIP-352 Silent Payment GPU batch scan ----------------------------- */
@@ -1356,6 +1390,7 @@ dec_cleanup:
         if (!scan_privkey32 || !spend_pubkey33 || !tweak_pubkeys33 || !prefix64_out)
             return set_error(GpuError::NullArg, "NULL buffer");
 
+#if SECP256K1_GPU_HAS_BIP352
         /* -- 1. Convert scan key to Scalar on CPU -- */
         // Rule 10: RAII wrapper zeroes h_scan_k on all exit paths.
         struct ScanKeyGuard {
@@ -1463,6 +1498,9 @@ dec_cleanup:
         // d_scan_k freed + zeroed by CudaKeyGuard dtor; h_scan_k zeroed by ScanKeyGuard dtor.
         clear_error();
         return GpuError::Ok;
+#else
+        return set_error(GpuError::Unsupported, "GPU BIP-352 module disabled at build time");
+#endif
     }
 
 private:
