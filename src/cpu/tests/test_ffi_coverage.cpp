@@ -68,7 +68,8 @@ static void test_pedersen_switch_commit(ufsecp_ctx* ctx) {
 
     // Same inputs produce same output
     std::uint8_t commitment2[33] = {};
-    ufsecp_pedersen_switch_commit(ctx, value, blinding, switch_blind, commitment2);
+    CHECK(ufsecp_pedersen_switch_commit(ctx, value, blinding, switch_blind, commitment2) == UFSECP_OK,
+          "switch_commit (2nd call) returns OK");
     CHECK(std::memcmp(commitment, commitment2, 33) == 0,
           "deterministic: same inputs → same commitment");
 }

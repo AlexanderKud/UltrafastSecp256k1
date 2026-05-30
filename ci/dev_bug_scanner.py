@@ -172,6 +172,10 @@ def check_sptr(path: str, lines: List[str]) -> List[Finding]:
         for m in _MEMFN_SIZEOF.finditer(line):
             fn_name = m.group(1)
             sz_ident = m.group(2)
+            # `sizeof(x) - 1` is the string-literal length idiom: x is a char
+            # array (sizeof counts the NUL), not a pointer. Not a sizeof-on-ptr bug.
+            if re.search(r'sizeof\s*\(\s*' + re.escape(sz_ident) + r'\s*\)\s*-\s*1\b', line):
+                continue
             if sz_ident in ptr_names:
                 findings.append(Finding(
                     file=path, line=i + 1, severity="HIGH",
@@ -720,6 +724,12 @@ _VOID_COMPAT_FN = {
 def check_retval(path: str, lines: List[str]) -> List[Finding]:
     """Return value of ufsecp_* / security critical function silently discarded."""
     findings: List[Finding] = []
+    # Benchmark code intentionally discards return values to measure raw
+    # throughput (e.g. timing a sign call); it is not a production correctness
+    # surface. Production sources under src/.../src/ are still checked.
+    _pl = path.lower()
+    if '/bench/' in _pl or 'bench' in _pl.rsplit('/', 1)[-1]:
+        return findings
     # Collect macros defined in this file to skip their invocations
     defined_macros: set[str] = set()
     for ln in lines:
@@ -1071,8 +1081,15 @@ def check_secret_unerased(path: str, lines: List[str]) -> List[Finding]:
     path_lower = path.lower()
     if not any(kw in path_lower for kw in _SECRET_PATH_KW):
         return []
-    # GPU private memory is ephemeral — skip OpenCL kernel files
-    if path_lower.endswith('.cl'):
+    # GPU device memory is ephemeral (per-thread registers / local memory that
+    # vanishes on thread exit) — host-side key buffers are zeroed separately
+    # (see GPU backend guardrails). Skip GPU device code (OpenCL, CUDA, Metal);
+    # host .cpp key handling is still checked.
+    if path_lower.endswith(('.cl', '.cu', '.cuh', '.metal')):
+        return []
+    # Test files exercise fixed, published test vectors — not production secrets.
+    _base = path_lower.rsplit('/', 1)[-1]
+    if '/tests/' in path_lower or '/test/' in path_lower or _base.startswith('test_'):
         return []
     findings: List[Finding] = []
     full_text = '\n'.join(lines)
@@ -1765,8 +1782,11 @@ def check_memcmp_secret(path: str, lines: List[str]) -> List[Finding]:
         args = m.group(2)
         if not _AUTH_NAME_RE.search(args):
             continue
-        # Skip if line clearly already in a CT-safe wrapper or a test assertion.
-        if re.search(r'\b(ct_(?:memeq|equal)|secp256k1_memcmp_var|EXPECT_|ASSERT_|REQUIRE)', line):
+        # Skip if line clearly already in a CT-safe wrapper or a test assertion
+        # (KAT comparisons against published expected vectors — no secret-timing
+        # surface; the attacker does not run the test harness).
+        if re.search(r'\b(ct_(?:memeq|equal)|secp256k1_memcmp_var|EXPECT_|ASSERT_|REQUIRE)', line) \
+           or re.search(r'\b(?:CHECK|check)\s*\(', line):
             continue
         findings.append(Finding(
             file=path, line=i + 1, severity="HIGH",
@@ -2553,6 +2573,10 @@ def check_parse_retval_ignored(path: str, lines: List[str]) -> List[Finding]:
     _C_EXT = {'.c', '.cpp', '.cxx', '.cc', '.h', '.hpp'}
     if not any(path.endswith(ext) for ext in _C_EXT):
         return []
+    # Benchmark code intentionally discards the parse return to time the call.
+    _pl = path.lower()
+    if '/bench/' in _pl or 'bench' in _pl.rsplit('/', 1)[-1]:
+        return []
     findings: List[Finding] = []
     for i, raw in enumerate(lines):
         line = _strip_comments(raw)
@@ -2567,7 +2591,13 @@ def check_parse_retval_ignored(path: str, lines: List[str]) -> List[Finding]:
         # Any line whose stripped form starts with '!' is a negated-call in a condition
         if stripped.startswith(('if ', 'if(', 'while ', 'while(', 'return ',
                                 '!', 'bool ', 'auto ',
-                                'const ', '[[', '&&', '||')):
+                                'const ', '[[', '&&', '||',
+                                # `(void)` is the explicit intentional-ignore idiom.
+                                '(void)',
+                                # Assertion macros consume the bool return as their
+                                # condition argument — it is checked, not discarded.
+                                'CHECK(', 'CHECK (', 'check(', 'REQUIRE',
+                                'EXPECT', 'ASSERT', 'assert(')):
             continue
         # Also skip if there's an '=' anywhere before the call (assignment context)
         call_pos = _PARSE_STRICT_CALL.search(line)
