@@ -66,6 +66,26 @@ option(SECP256K1_BUILD_CUDA "Build CUDA GPU support" OFF)
 option(SECP256K1_BUILD_ROCM "Build ROCm/HIP GPU support (AMD)" OFF)
 option(SECP256K1_BUILD_OPENCL "Build OpenCL support" OFF)
 option(SECP256K1_BUILD_METAL "Build Apple Metal GPU support" OFF)
+
+# ── Independent GPU feature modules ───────────────────────────────────────────
+# Toggle individual GPU operations on/off SEPARATELY from the CPU feature
+# modules. The GPU op surface is independent: a consumer may want, for example,
+# BIP-324 compiled on the CPU but stripped from the GPU build (or vice-versa).
+# Default ON (full GPU op surface, no behaviour change). Turning one OFF removes
+# its kernels + backend dispatch from every GPU backend (CUDA/OpenCL/Metal); the
+# stable C ABI entry point remains and returns UFSECP_ERR_GPU_UNSUPPORTED.
+option(SECP256K1_GPU_BUILD_ZK     "GPU ZK ops (knowledge / DLEQ / bulletproof / SNARK witness)" ON)
+option(SECP256K1_GPU_BUILD_BIP324 "GPU BIP-324 AEAD encrypt/decrypt ops"                        ON)
+option(SECP256K1_GPU_BUILD_FROST  "GPU FROST partial-signature verify op"                       ON)
+option(SECP256K1_GPU_BUILD_BIP352 "GPU BIP-352 silent-payment scan op"                          ON)
+foreach(_gpu_mod ZK BIP324 FROST BIP352)
+    if(SECP256K1_GPU_BUILD_${_gpu_mod})
+        add_compile_definitions(SECP256K1_GPU_HAS_${_gpu_mod}=1)
+    else()
+        add_compile_definitions(SECP256K1_GPU_HAS_${_gpu_mod}=0)
+        message(STATUS "secp256k1-fast: GPU module ${_gpu_mod} = OFF (stripped from GPU build)")
+    endif()
+endforeach()
 option(SECP256K1_BUILD_TESTS "Build test suite" ON)
 option(SECP256K1_BUILD_BENCH "Build benchmarks" ON)
 option(SECP256K1_BUILD_EXAMPLES "Build example programs" ON)
