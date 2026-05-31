@@ -55,6 +55,19 @@ if(UFSECP_LBTC_BUILD_TESTS)
     add_executable(test_lbtc_bridge tests/test_lbtc_bridge.cpp)
     target_link_libraries(test_lbtc_bridge PRIVATE ufsecp_lbtc_bridge)
     add_test(NAME lbtc_bridge COMMAND test_lbtc_bridge)
+
+    # GPU-vs-CPU consensus differential for the script-signature batch. The GPU path
+    # is consensus-bearing, so it must agree bit-for-bit with the CPU reference on
+    # every per-row accept/reject verdict (the CPU path is itself gated bit-for-bit
+    # against libsecp256k1, so GPU==CPU here means GPU==libsecp transitively).
+    # Builds STANDALONE_TEST so main() is provided. When no GPU backend is present
+    # the test advisory-skips (exit 77); SKIP_RETURN_CODE makes CTest report that as
+    # "skipped" rather than "failed" (GPU is local-only; absent on CI runners).
+    add_executable(test_lbtc_consensus_diff tests/test_lbtc_consensus_diff.cpp)
+    target_compile_definitions(test_lbtc_consensus_diff PRIVATE STANDALONE_TEST)
+    target_link_libraries(test_lbtc_consensus_diff PRIVATE ufsecp_lbtc_bridge)
+    add_test(NAME lbtc_consensus_diff COMMAND test_lbtc_consensus_diff)
+    set_tests_properties(lbtc_consensus_diff PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 if(UFSECP_LBTC_BUILD_EXAMPLE)
