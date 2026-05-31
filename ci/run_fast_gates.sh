@@ -59,6 +59,7 @@ MANDATORY_GATES=(
     "ci/check_nonce_erase_coverage.py"
     "ci/check_doc_drift.py"
     "ci/check_advisory_skip_ceiling.py"
+    "ci/check_test_assertions.py"        # TEST-001/§12: forbid non-asserting "documented open" probes (MSI-4 anti-pattern)
     "tools/render_repo_map.py"
     "ci/validate_assurance.py"
 )
@@ -158,6 +159,7 @@ run "Profile manifest consistency" ci/profile_manifest.py --quiet
 
 run_sh "Advisory skip returns (Rule 16)" ci/check_advisory_skip_returns.sh
 run "Advisory skip ceiling (TEST-004)"  ci/check_advisory_skip_ceiling.py
+run "Test assertions (non-asserting probe scan)" ci/check_test_assertions.py
 run "Section IDs consistency"        ci/check_section_ids.py
 
 if [[ "${FAILED}" -gt 0 ]]; then

@@ -537,7 +537,16 @@ jobs:
               print("::error::EXTERNAL_AUDIT_BUNDLE.json not found — cannot verify bundle freshness")
               sys.exit(1)
           data = json.loads(bundle_path.read_text())
-          ts = data.get("generated_at") or data.get("timestamp")
+          # CAAS-001: prefer the authoritative `generated_at`. Fall back to the
+          # legacy `timestamp` only for old committed bundles, and make that
+          # fallback NON-silent so a producer regression that drops `generated_at`
+          # is visible instead of silently trusting a stale field.
+          ts = data.get("generated_at")
+          if not ts:
+              ts = data.get("timestamp")
+              if ts:
+                  print("::warning::Bundle has no 'generated_at' — using legacy 'timestamp'. "
+                        "Regenerate with ci/external_audit_bundle.py to restore the authoritative field.")
           if not ts:
               print("::error::Bundle has no timestamp field — cannot verify freshness")
               sys.exit(1)
@@ -632,6 +641,16 @@ jobs:
           if [ ! -f caas_scanner.json ]; then
             echo "::error::caas_scanner.json is missing — Stage 1 (scanner) did not produce its artifact."
             echo "::error::The audit bundle cannot be assembled without scanner evidence."
+            exit 1
+          fi
+          # CAAS-002: existence is not enough — a 0-byte or malformed artifact must
+          # also fail here, not surface (maybe) later during a JSON parse.
+          if [ ! -s caas_scanner.json ]; then
+            echo "::error::caas_scanner.json is empty (0 bytes) — scanner produced no evidence."
+            exit 1
+          fi
+          if ! python3 -c "import json; json.load(open('caas_scanner.json'))" 2>/dev/null; then
+            echo "::error::caas_scanner.json is not valid JSON — scanner evidence is corrupt."
             exit 1
           fi
 
