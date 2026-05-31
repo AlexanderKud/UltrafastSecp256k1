@@ -56,9 +56,12 @@ extern "C" {
 /* Record layouts (signature payload only — excludes any opaque key column).  */
 /* ------------------------------------------------------------------------- */
 
-/* ECDSA row:   32-byte msghash | 33-byte compressed pubkey | 64-byte sig. */
+/* Uniform field order across both kinds — hash/msg first, then pubkey, then
+ * signature (matches the libbitcoin ecdsa::triple / schnorr::triple structs,
+ * so a packed struct array forwards into these calls with zero copy). */
+/* ECDSA row:   32-byte msghash      | 33-byte compressed pubkey | 64-byte sig. */
 #define UFSECP_LBTC_ECDSA_RECORD   129u
-/* Schnorr row: 32-byte x-only pubkey | 32-byte msg | 64-byte sig (R.x|s). */
+/* Schnorr row: 32-byte msg/sighash  | 32-byte x-only pubkey     | 64-byte sig. */
 #define UFSECP_LBTC_SCHNORR_RECORD 128u
 
 /* ------------------------------------------------------------------------- */

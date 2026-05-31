@@ -58,7 +58,7 @@ std::vector<uint8_t> build_corpus(ufsecp_ctx* ctx, Kind k, size_t n) {
             std::memcpy(r, msg, 32); std::memcpy(r+32, pub, 33);
             if (ufsecp_ecdsa_sign(ctx, msg, sk, r+65) != UFSECP_OK) ++g_fail;
         } else {
-            std::memcpy(r, pub+1, 32); std::memcpy(r+32, msg, 32);
+            std::memcpy(r, msg, 32); std::memcpy(r+32, pub+1, 32); /* msg | xonly */
             if (ufsecp_schnorr_sign(ctx, msg, sk, aux, r+64) != UFSECP_OK) ++g_fail;
         }
         /* Inject a rejection class every few rows (deterministic mix). */
@@ -66,12 +66,11 @@ std::vector<uint8_t> build_corpus(ufsecp_ctx* ctx, Kind k, size_t n) {
         switch (i % 7) {
             case 0: break;                                  /* valid                */
             case 1: r[sig_off] ^= 0x01; break;              /* corrupted sig byte   */
-            case 2: r[0] ^= 0x01; break;                    /* tampered msg/xonly   */
+            case 2: r[0] ^= 0x01; break;                    /* tampered msg (off 0) */
             case 3: r[sig_off+31] ^= 0x80; break;           /* high bit of r/R.x    */
             case 4: std::memset(r+sig_off, 0, 32); break;   /* zero r/R.x           */
             case 5: std::memset(r+sig_off+32, 0xff, 32); break; /* s = 0xff..ff (>=n) */
-            case 6: if (k==ECDSA) r[32] ^= 0x01;            /* flip pubkey prefix-adjacent */
-                    else r[31] ^= 0x01; break;
+            case 6: r[32] ^= 0x01; break;                   /* flip pubkey byte: ECDSA prefix / Schnorr x-only (both @32) */
         }
     }
     return rows;

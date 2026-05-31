@@ -66,8 +66,8 @@ std::vector<uint8_t> build_schnorr(ufsecp_ctx* ctx, size_t n, size_t key_size) {
         make_msg(msg, (uint32_t)(i + 101));
         aux[0] = (uint8_t)i;
         if (ufsecp_pubkey_create(ctx, sk, pub) != UFSECP_OK) ++g_fail;
-        std::memcpy(r, pub + 1, 32);          /* 32 xonly (x-coordinate) */
-        std::memcpy(r + 32, msg, 32);         /* 32 msg                  */
+        std::memcpy(r, msg, 32);              /* 32 msg/sighash          */
+        std::memcpy(r + 32, pub + 1, 32);     /* 32 xonly (x-coordinate) */
         if (ufsecp_schnorr_sign(ctx, msg, sk, aux, r + 64) != UFSECP_OK) ++g_fail; /* 64 sig */
         if (key_size) for (size_t k = 0; k < key_size; ++k)
             r[UFSECP_LBTC_SCHNORR_RECORD + k] = (uint8_t)(i >> (8 * k));

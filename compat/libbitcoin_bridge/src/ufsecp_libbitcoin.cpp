@@ -99,23 +99,56 @@ struct Sink {
     }
 };
 
+/* Translate one libbitcoin row into the engine's packed record layout.
+ *   ECDSA   row == engine record:        32 msg | 33 pubkey | 64 sig.
+ *   Schnorr row (uniform with ECDSA):    32 msg | 32 xonly  | 64 sig,
+ *           but the engine record is     32 xonly | 32 msg  | 64 sig — so the
+ *           first two fields are swapped on the way in.
+ * `out` must hold record_size(k) bytes. */
+inline void to_engine_record(Kind k, const uint8_t* row, uint8_t* out) {
+    if (k == Kind::Ecdsa) {
+        std::memcpy(out, row, UFSECP_LBTC_ECDSA_RECORD);   /* identical layout */
+    } else {
+        std::memcpy(out,      row + 32, 32);  /* xonly <- libbitcoin offset 32 */
+        std::memcpy(out + 32, row,      32);  /* msg   <- libbitcoin offset 0  */
+        std::memcpy(out + 64, row + 64, 64);  /* sig                           */
+    }
+}
+
 /* CPU path for one chunk [base, base+cnt). Never aborts: malformed → invalid. */
 void cpu_chunk(ufsecp_ctx* ctx, Kind k, const uint8_t* rows,
                std::size_t base, std::size_t cnt, std::size_t stride,
                Sink& sink) {
     const std::size_t rec = record_size(k);
-    /* Fast all-valid path is only directly applicable when rows are contiguous
-     * records (no opaque key column splitting the stride). */
-    if (stride == rec) {
-        if (cpu_verify_run(ctx, k, rows + base * stride, cnt) == UFSECP_OK) {
+
+    /* ECDSA: the libbitcoin row IS the engine record, so verify in place. The
+     * fast all-valid path applies when rows are contiguous (no opaque key
+     * column splitting the stride). */
+    if (k == Kind::Ecdsa) {
+        if (stride == rec &&
+            cpu_verify_run(ctx, k, rows + base * stride, cnt) == UFSECP_OK) {
             sink.mark_all_valid(base, cnt);
             return;
         }
+        for (std::size_t i = 0; i < cnt; ++i)
+            sink.mark(base + i,
+                      cpu_verify_one(ctx, k, rows + (base + i) * stride) == UFSECP_OK);
+        return;
     }
-    for (std::size_t i = 0; i < cnt; ++i) {
-        const uint8_t* recp = rows + (base + i) * stride;
-        sink.mark(base + i, cpu_verify_one(ctx, k, recp) == UFSECP_OK);
+
+    /* Schnorr: the libbitcoin field order differs from the engine record, so
+     * reorder the chunk into an engine-format contiguous scratch (stride == rec)
+     * and reuse the same fast/per-row engine verify. */
+    std::vector<uint8_t> eng(cnt * rec);
+    for (std::size_t i = 0; i < cnt; ++i)
+        to_engine_record(k, rows + (base + i) * stride, eng.data() + i * rec);
+
+    if (cpu_verify_run(ctx, k, eng.data(), cnt) == UFSECP_OK) {
+        sink.mark_all_valid(base, cnt);
+        return;
     }
+    for (std::size_t i = 0; i < cnt; ++i)
+        sink.mark(base + i, cpu_verify_one(ctx, k, eng.data() + i * rec) == UFSECP_OK);
 }
 
 #ifdef UFSECP_LBTC_WITH_GPU
@@ -135,9 +168,10 @@ bool gpu_chunk(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
             std::memcpy(pub.data() + i * 33, r + 32, 33);
             std::memcpy(sig.data() + i * 64, r + 65, 64);
         } else {
-            /* record: 32 xonly | 32 msg | 64 sig */
-            std::memcpy(pub.data() + i * 32, r, 32);
-            std::memcpy(msg.data() + i * 32, r + 32, 32);
+            /* libbitcoin row: 32 msg | 32 xonly | 64 sig. The engine GPU ABI
+             * takes (msg, pubkey_x, sig) — extract at the libbitcoin offsets. */
+            std::memcpy(msg.data() + i * 32, r, 32);
+            std::memcpy(pub.data() + i * 32, r + 32, 32);
             std::memcpy(sig.data() + i * 64, r + 64, 64);
         }
     }
@@ -169,15 +203,24 @@ ufsecp_error_t verify_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
     const std::size_t stride = record_size(k) + key_size;
     Sink sink{results, invalid_idx, invalid_cap, 0};
 
-    for (std::size_t base = 0; base < n; base += kChunk) {
-        const std::size_t cnt = (n - base) < kChunk ? (n - base) : kChunk;
+    /* The chunk paths allocate scratch / marshalling buffers (the GPU per-field
+     * arrays and the Schnorr CPU reorder). A mid-batch allocation failure is
+     * unrecoverable — never let an exception escape this extern "C" boundary;
+     * surface it as an internal error so the caller fails fast (the libbitcoin
+     * wrapper std::abort()s on a non-OK return). */
+    try {
+        for (std::size_t base = 0; base < n; base += kChunk) {
+            const std::size_t cnt = (n - base) < kChunk ? (n - base) : kChunk;
 #ifdef UFSECP_LBTC_WITH_GPU
-        if (ctrl->gpu) {
-            if (gpu_chunk(ctrl->gpu, k, rows, base, cnt, stride, sink)) continue;
-            /* device-level failure → mandatory CPU fallback for this chunk */
-        }
+            if (ctrl->gpu) {
+                if (gpu_chunk(ctrl->gpu, k, rows, base, cnt, stride, sink)) continue;
+                /* device-level failure → mandatory CPU fallback for this chunk */
+            }
 #endif
-        cpu_chunk(ctrl->cpu, k, rows, base, cnt, stride, sink);
+            cpu_chunk(ctrl->cpu, k, rows, base, cnt, stride, sink);
+        }
+    } catch (...) {
+        return UFSECP_ERR_INTERNAL;
     }
 
     if (invalid_count) *invalid_count = sink.total_invalid;

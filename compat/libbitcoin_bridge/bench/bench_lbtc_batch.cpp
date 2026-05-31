@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
         std::memcpy(er, msg, 32); std::memcpy(er + 32, pub, 33);
         if (ufsecp_ecdsa_sign(sctx, msg, sk, er + 65) != UFSECP_OK) { std::printf("ecdsa sign fail\n"); return 1; }
         uint8_t* sr = s_pool.data() + i * UFSECP_LBTC_SCHNORR_RECORD;
-        std::memcpy(sr, pub + 1, 32); std::memcpy(sr + 32, msg, 32);
+        std::memcpy(sr, msg, 32); std::memcpy(sr + 32, pub + 1, 32); /* msg | xonly */
         if (ufsecp_schnorr_sign(sctx, msg, sk, aux, sr + 64) != UFSECP_OK) { std::printf("schnorr sign fail\n"); return 1; }
     }
 
@@ -101,6 +101,19 @@ int main(int argc, char** argv) {
             ufsecp_lbtc_verify_ecdsa(ctrl, e_rows.data(), BATCH, 0, results.data(), nullptr, 0, &ni2);
             ok = ok && (ni2 >= 1) && (results[0] == 0);
             e_rows[65] = saved;
+        }
+        /* schnorr correctness gate (mirrors ecdsa; sig byte at record offset 64) */
+        {
+            size_t sninv = 0;
+            ufsecp_lbtc_verify_schnorr(ctrl, s_rows.data(), BATCH, 0, results.data(), nullptr, 0, &sninv);
+            bool sok = (sninv == 0);
+            auto saved = s_rows[64]; s_rows[64] ^= 0x01;  // corrupt row 0 sig
+            size_t sni2 = 0;
+            ufsecp_lbtc_verify_schnorr(ctrl, s_rows.data(), BATCH, 0, results.data(), nullptr, 0, &sni2);
+            sok = sok && (sni2 >= 1) && (results[0] == 0);
+            s_rows[64] = saved;
+            ok = ok && sok;
+            std::printf("   schnorr correctness: %s\n", sok ? "PASS" : "FAIL");
         }
         std::printf("   correctness: %s\n", ok ? "PASS (all-valid + corruption detected)" : "FAIL");
         if (!ok) { ufsecp_lbtc_ctrl_destroy(ctrl); continue; }
