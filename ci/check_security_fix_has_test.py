@@ -77,6 +77,9 @@ TEST_PATTERNS = (
     r"^src/cpu/tests/",
     r"^compat/libsecp256k1_shim/tests/",
     r"^compat/libsecp256k1_bchn_shim/tests/",
+    # A change to a CI security tool (a SECURITY_CI_FILE — a Python gate / scanner)
+    # is correctly covered by its paired Python unit test, not a C++ audit test.
+    r"^ci/test_.*\.py$",
 )
 
 
@@ -84,6 +87,16 @@ TEST_PATTERNS = (
 # commit (retroactive coverage). The gate accepts these provided the named
 # test file exists on disk. Format: sha_prefix → [test_file, reason].
 RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
+    "719a9de7db": (
+        ["ci/test_check_test_assertions.py"],
+        "CI-tooling commit: wired the new non-asserting-probe scanner "
+        "(ci/check_test_assertions.py) into ci/run_fast_gates.sh and added CAAS-001/002 "
+        "evidence-integrity hardening to caas.yml. No engine/shim/CT source changed. The "
+        "scanner is validated by ci/test_check_test_assertions.py (added in the immediately-"
+        "following commit), which asserts it flags a non-asserting probe and passes a clean "
+        "asserting test. The GitHub Gate (gate.yml/caas.yml) does not run this check; it is a "
+        "local pre-push gate, and the commit was green on GitHub.",
+    ),
     "beb7385ee5": (
         ["audit/test_exploit_batch_verify_correctness.cpp",
          "audit/test_exploit_batch_verify_poison.cpp"],
@@ -612,7 +625,7 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
 # Frozen count guard (CAAS-006): prevents silent whitelist growth.
 # When adding a new entry above, increment this constant too.
 # Unauthorized bypass (adding an entry without incrementing) → import-time assertion failure.
-RETROACTIVELY_COVERED_FROZEN_COUNT: int = 55
+RETROACTIVELY_COVERED_FROZEN_COUNT: int = 56
 assert len(RETROACTIVELY_COVERED) == RETROACTIVELY_COVERED_FROZEN_COUNT, (
     f"RETROACTIVELY_COVERED has {len(RETROACTIVELY_COVERED)} entries but "
     f"RETROACTIVELY_COVERED_FROZEN_COUNT={RETROACTIVELY_COVERED_FROZEN_COUNT}. "

@@ -392,6 +392,118 @@ int main(int argc, char** argv) {
             std::printf("  schnorr_verify_unique_pubkey_ns=%.2f\n", schnorr_unique_ns);
         }
 
+        // ── §13: Bitcoin-Core-like full paths — pure-verify vs parse+verify ─────
+        // Honest COLD measurement of the script-validation hot path. METHODOLOGY:
+        //  * Pool size N=2048 unique keys exceeds Ultra's verify caches
+        //    (ShimSchnorrCache 64 / lift_x 1024 / GLV) AND L1/L2, so every verify
+        //    is a real cache miss — the ConnectBlock unique-key reality, NOT the
+        //    warm 64-key intra-block-reuse case (which flatters Ultra).
+        //  * The SAME rotating index `ei`/`si` is shared across the pure and the
+        //    parse+verify bench WITHOUT reset, so the two benches touch DISJOINT
+        //    key ranges (≤1704 touches < 2048) and the parse+verify run cannot be
+        //    warmed by the pure run. Both are first-touch cold.
+        //  * Pure-verify uses PRE-PARSED pubkey/sig; parse+verify does the parse
+        //    INSIDE the timed window. delta = parse+verify − pure = the parse cost
+        //    (pubkey decompression / xonly lift_x), the suspected ConnectBlock
+        //    deficit source. bench::DoNotOptimize consumes every result (no DCE).
+        {
+            static const int N = 2048;
+
+            // -- ECDSA P2WPKH-like: 33-byte compressed pubkey + 64-byte compact sig
+            std::vector<uint8_t> ec_pub(static_cast<size_t>(N) * 33);
+            std::vector<std::array<uint8_t, 64>> ec_sig(N);
+            std::vector<std::array<uint8_t, 32>> ec_msg(N);
+            std::vector<secp256k1_pubkey> ec_pk_parsed(N);
+            std::vector<secp256k1_ecdsa_signature> ec_sig_parsed(N);
+            for (int i = 0; i < N; ++i) {
+                uint8_t sk[32] = {};
+                sk[0] = static_cast<uint8_t>(i + 1);
+                sk[1] = static_cast<uint8_t>(i >> 8);
+                sk[31] = static_cast<uint8_t>(i * 7 + 1);
+                ec_msg[static_cast<size_t>(i)][0] = static_cast<uint8_t>(i);
+                ec_msg[static_cast<size_t>(i)][1] = static_cast<uint8_t>(i >> 8);
+                secp256k1_pubkey pk;
+                secp256k1_ec_pubkey_create(shim_ctx, &pk, sk);
+                size_t plen = 33;
+                secp256k1_ec_pubkey_serialize(shim_ctx, ec_pub.data() + static_cast<size_t>(i) * 33,
+                                              &plen, &pk, SECP256K1_EC_COMPRESSED);
+                secp256k1_ecdsa_signature sig;
+                secp256k1_ecdsa_sign(shim_ctx, &sig, ec_msg[static_cast<size_t>(i)].data(), sk, nullptr, nullptr);
+                secp256k1_ecdsa_signature_serialize_compact(shim_ctx, ec_sig[static_cast<size_t>(i)].data(), &sig);
+                ec_pk_parsed[static_cast<size_t>(i)] = pk;
+                ec_sig_parsed[static_cast<size_t>(i)] = sig;
+            }
+            int ei = 0;  // shared, NOT reset between the two benches (disjoint ranges)
+            double const ec_pure = harness.run_and_print(
+                "ecdsa_verify (pure, 2048 unique, pre-parsed)", opts.quick ? 8 : 32,
+                [&]() {
+                    size_t const idx = static_cast<size_t>(ei % N);
+                    int ok = secp256k1_ecdsa_verify(shim_ctx, &ec_sig_parsed[idx],
+                                                    ec_msg[idx].data(), &ec_pk_parsed[idx]);
+                    bench::DoNotOptimize(ok);
+                    ++ei;
+                });
+            double const ec_pv = harness.run_and_print(
+                "ecdsa parse+verify (P2WPKH-like, 2048 unique cold)", opts.quick ? 8 : 32,
+                [&]() {
+                    size_t const idx = static_cast<size_t>(ei % N);
+                    secp256k1_pubkey pk;
+                    secp256k1_ecdsa_signature sig;
+                    int ok = secp256k1_ec_pubkey_parse(shim_ctx, &pk, ec_pub.data() + idx * 33, 33)
+                          && secp256k1_ecdsa_signature_parse_compact(shim_ctx, &sig, ec_sig[idx].data())
+                          && secp256k1_ecdsa_verify(shim_ctx, &sig, ec_msg[idx].data(), &pk);
+                    bench::DoNotOptimize(ok);
+                    ++ei;
+                });
+            std::printf("  ecdsa_p2wpkh_pure_ns=%.2f  parse_verify_ns=%.2f  parse_delta_ns=%.2f\n",
+                        ec_pure, ec_pv, ec_pv - ec_pure);
+
+            // -- Schnorr P2TR key-path: 32-byte x-only pubkey + 64-byte sig --
+            std::vector<uint8_t> sx_pub(static_cast<size_t>(N) * 32);
+            std::vector<std::array<uint8_t, 64>> sx_sig(N);
+            std::vector<std::array<uint8_t, 32>> sx_msg(N);
+            std::vector<secp256k1_xonly_pubkey> sx_pk_parsed(N);
+            for (int i = 0; i < N; ++i) {
+                uint8_t sk[32] = {};
+                sk[0] = static_cast<uint8_t>(i * 3 + 2);
+                sk[1] = static_cast<uint8_t>(i >> 8);
+                sk[31] = static_cast<uint8_t>(i * 13 + 5);
+                sx_msg[static_cast<size_t>(i)][0] = static_cast<uint8_t>(i * 5);
+                sx_msg[static_cast<size_t>(i)][1] = static_cast<uint8_t>(i >> 8);
+                secp256k1_keypair kp;
+                if (secp256k1_keypair_create(shim_ctx, &kp, sk)) {
+                    secp256k1_xonly_pubkey xpk;
+                    secp256k1_keypair_xonly_pub(shim_ctx, &xpk, nullptr, &kp);
+                    secp256k1_xonly_pubkey_serialize(shim_ctx, sx_pub.data() + static_cast<size_t>(i) * 32, &xpk);
+                    secp256k1_schnorrsig_sign32(shim_ctx, sx_sig[static_cast<size_t>(i)].data(),
+                                                sx_msg[static_cast<size_t>(i)].data(), &kp, nullptr);
+                    sx_pk_parsed[static_cast<size_t>(i)] = xpk;
+                }
+            }
+            int si = 0;  // shared, NOT reset between the two benches (disjoint ranges)
+            double const sx_pure = harness.run_and_print(
+                "schnorr_verify (pure, 2048 unique, pre-parsed)", opts.quick ? 8 : 32,
+                [&]() {
+                    size_t const idx = static_cast<size_t>(si % N);
+                    int ok = secp256k1_schnorrsig_verify(shim_ctx, sx_sig[idx].data(),
+                                                         sx_msg[idx].data(), 32, &sx_pk_parsed[idx]);
+                    bench::DoNotOptimize(ok);
+                    ++si;
+                });
+            double const sx_pv = harness.run_and_print(
+                "schnorr xonly-parse+verify (P2TR key-path, 2048 unique cold)", opts.quick ? 8 : 32,
+                [&]() {
+                    size_t const idx = static_cast<size_t>(si % N);
+                    secp256k1_xonly_pubkey xpk;
+                    int ok = secp256k1_xonly_pubkey_parse(shim_ctx, &xpk, sx_pub.data() + idx * 32)
+                          && secp256k1_schnorrsig_verify(shim_ctx, sx_sig[idx].data(), sx_msg[idx].data(), 32, &xpk);
+                    bench::DoNotOptimize(ok);
+                    ++si;
+                });
+            std::printf("  schnorr_p2tr_pure_ns=%.2f  parse_verify_ns=%.2f  parse_delta_ns=%.2f\n",
+                        sx_pure, sx_pv, sx_pv - sx_pure);
+        }
+
         secp256k1_context_destroy(shim_ctx);
     }
 #endif
