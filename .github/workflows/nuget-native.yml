@@ -1,0 +1,263 @@
+name: NuGet Native (MSVC static-lib)
+
+# Builds UltrafastSecp256k1 as a libsecp256k1-ABI **native static-lib NuGet
+# package** in the convention libbitcoin already consumes for `secp256k1_vc143`
+# (see bindings/nuget-native/README.md). Requested by evoskuil to let @pmienk
+# wire UltrafastSecp256k1 in as a secp256k1 backend behind WITH_ULTRAFAST:
+#   "vc145 and vc143 native intel and arm NuGet packages."
+#
+# DESIGN NOTES
+#  * Separate workflow (NOT part of release.yml) — its failure can never block a
+#    release. Manual (workflow_dispatch) only until proven green on a real run.
+#  * No publish to nuget.org. It builds + packs + uploads the .nupkg as a
+#    workflow artifact. Publishing a new public package is an owner decision.
+#  * v143 only on GitHub-hosted windows-2022. v145 (VS2026) is not on hosted
+#    runners — run on a self-hosted runner with the v145 toolset for vc145.
+#  * arm64 builds with -DSECP256K1_USE_ASM=OFF: field_asm_arm64.cpp is GNU inline
+#    asm that MSVC cannot compile, so arm64 uses the portable __int128 path. x64
+#    keeps the MSVC-compatible MASM path.
+#  * The PACK job link-tests a C++ consumer against ONLY the package include dir
+#    + a packaged static lib, so a header-incomplete or symbol-incomplete package
+#    fails loudly and is never shipped. The generator derives `.targets` link
+#    conditions from the libs actually present, so a partial matrix still packs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version/tag to build (e.g. v4.1.0)'
+        required: true
+      toolset:
+        description: 'MSVC package toolset suffix (vc145 needs a self-hosted v145 runner)'
+        required: true
+        default: vc143
+        type: choice
+        options: [vc143, vc145]
+
+permissions:
+  contents: read
+
+env:
+  PKG_TOOLSET: ${{ github.event.inputs.toolset }}
+  RELEASE_TAG: ${{ github.event.inputs.tag }}
+
+jobs:
+  build-lib:
+    name: build ${{ matrix.platform }}/${{ matrix.config }}/${{ matrix.linkage }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x64, arm64]
+        config: [Release, Debug]
+        linkage: [static, ltcg]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.inputs.tag }}
+
+      - name: Compute build vars
+        id: vars
+        shell: bash
+        run: |
+          VER="${RELEASE_TAG#v}"
+          # reject anything that is not 1-4 dotted numeric components
+          [[ "$VER" =~ ^[0-9]+(\.[0-9]+){0,3}$ ]] || { echo "::error::bad version '$VER'"; exit 1; }
+          IFS='.' read -ra P <<< "$VER"
+          VER4="${P[0]:-0}_${P[1]:-0}_${P[2]:-0}_${P[3]:-0}"
+          TOOLSET_V="${PKG_TOOLSET/vc/v}"                       # vc143 -> v143
+          if [ "${{ matrix.config }}" = "Release" ]; then RT="mt-s"; else RT="mt-sgd"; fi
+          if [ "${{ matrix.platform }}" = "arm64" ]; then ARCH="amd64_arm64"; else ARCH="amd64"; fi
+          LIBNAME="ultrafast_secp256k1-${{ matrix.platform }}-${TOOLSET_V}-${RT}-${VER4}.${{ matrix.linkage }}.lib"
+          {
+            echo "ver=${VER}"; echo "arch=${ARCH}"; echo "libname=${LIBNAME}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup MSVC (${{ steps.vars.outputs.arch }})
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: ${{ steps.vars.outputs.arch }}
+          toolset: ${{ env.PKG_TOOLSET == 'vc145' && '14.5' || '14.3' }}
+
+      - name: Install Ninja
+        shell: bash
+        run: choco install ninja -y --no-progress
+
+      - name: Configure + build fastsecp256k1 (shim ABI, static runtime)
+        shell: bash
+        run: |
+          echo "${{ steps.vars.outputs.ver }}" > VERSION.txt
+          RUNTIME="MultiThreaded"
+          [ "${{ matrix.config }}" = "Debug" ] && RUNTIME="MultiThreadedDebug"
+          IPO="OFF"; [ "${{ matrix.linkage }}" = "ltcg" ] && IPO="ON"
+          # arm64 field_asm is GNU inline asm -> MSVC cannot compile it; use the
+          # portable field path on arm64. x64 keeps the MSVC MASM asm path.
+          ASM="ON"; [ "${{ matrix.platform }}" = "arm64" ] && ASM="OFF"
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
+            -DSECP256K1_BUILD_SHIM=ON \
+            -DSECP256K1_USE_ASM=${ASM} \
+            -DSECP256K1_BUILD_TESTS=OFF \
+            -DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
+            -DCMAKE_MSVC_RUNTIME_LIBRARY="${RUNTIME}" \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=${IPO}
+          cmake --build build --target fastsecp256k1 -j
+
+      - name: Stage + rename static lib
+        shell: bash
+        run: |
+          LIB=$(find build -name 'fastsecp256k1.lib' -print -quit)
+          [ -n "$LIB" ] || { echo "::error::fastsecp256k1.lib not found"; exit 1; }
+          mkdir -p stage
+          cp "$LIB" "stage/${{ steps.vars.outputs.libname }}"
+          ls -l stage/
+
+      # Build-tree link-test: prove the static lib links a real libsecp256k1-ABI
+      # consumer. C++ (cl /std:c++17) because the shim header pulls C++ engine
+      # headers under __cplusplus, so include both the shim and engine roots here.
+      # Run on x64; arm64 cross-built exe cannot execute on the x64 runner.
+      - name: Link-test the static lib
+        shell: bash
+        run: |
+          cat > linktest.cpp <<'EOF'
+          #include <secp256k1.h>
+          #include <cstdio>
+          int main() {
+            secp256k1_context* c = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+            unsigned char sk[32]; for (int i = 0; i < 32; ++i) sk[i] = 1;
+            secp256k1_pubkey pk;
+            int ok = secp256k1_ec_pubkey_create(c, &pk, sk);
+            secp256k1_context_destroy(c);
+            std::printf("pubkey_create=%d\n", ok);
+            return ok ? 0 : 1;
+          }
+          EOF
+          RT_FLAG="/MT"; [ "${{ matrix.config }}" = "Debug" ] && RT_FLAG="/MTd"
+          cl /nologo /std:c++17 \
+             -I compat/libsecp256k1_shim/include -I src/cpu/include -I build/include \
+             -D SECP256K1_STATIC $RT_FLAG linktest.cpp \
+             "stage/${{ steps.vars.outputs.libname }}" /Fe:linktest.exe
+          if [ "${{ matrix.platform }}" = "x64" ]; then ./linktest.exe; else echo "arm64: link-only OK"; fi
+
+      - name: Upload lib
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lib-${{ matrix.platform }}-${{ matrix.config }}-${{ matrix.linkage }}
+          path: stage/${{ steps.vars.outputs.libname }}
+          retention-days: 14
+
+      # Once, from a canonical leg: assemble the full package include tree (shim
+      # ABI headers + engine C++ headers pulled under __cplusplus + generated
+      # secp256k1_features.h) and upload it for the pack job.
+      - name: Assemble + upload package headers
+        if: ${{ matrix.platform == 'x64' && matrix.config == 'Release' && matrix.linkage == 'static' }}
+        shell: bash
+        run: |
+          mkdir -p pkginc
+          cp -r src/cpu/include/. pkginc/                          # engine C++ headers (incl. secp256k1/)
+          [ -d build/include ] && cp -r build/include/. pkginc/    # generated headers (secp256k1_features.h)
+          cp compat/libsecp256k1_shim/include/secp256k1*.h pkginc/ # shim ABI headers (flat, authoritative)
+          tar czf pkg-headers.tgz -C pkginc .
+          ls -l pkg-headers.tgz
+
+      - name: Upload package headers
+        if: ${{ matrix.platform == 'x64' && matrix.config == 'Release' && matrix.linkage == 'static' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pkg-headers
+          path: pkg-headers.tgz
+          retention-days: 14
+
+  pack:
+    name: pack ${{ github.event.inputs.toolset }} NuGet
+    needs: build-lib
+    if: ${{ always() && !cancelled() }}
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.inputs.tag }}
+
+      - name: Setup MSVC (x64)
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: amd64
+
+      - name: Prepare staging
+        shell: bash
+        run: |
+          VER="${RELEASE_TAG#v}"
+          PKGID="ultrafast_secp256k1_${PKG_TOOLSET}"
+          ST="out/${PKGID}"
+          mkdir -p "${ST}/build/native/bin" "${ST}/build/native/include"
+          { echo "PKGID=${PKGID}"; echo "PKGVER=${VER}"; echo "STAGE=${ST}"; } >> "$GITHUB_ENV"
+
+      - name: Download built libs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: lib-*
+          merge-multiple: true
+          path: ${{ env.STAGE }}/build/native/bin
+
+      - name: Download package headers
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pkg-headers
+          path: hdr
+
+      - name: Assemble include tree + check libs present
+        shell: bash
+        run: |
+          if ! ls -A "${STAGE}/build/native/bin"/*.lib >/dev/null 2>&1; then
+            echo "::error::no libs built — nothing to pack"; exit 1
+          fi
+          tar xzf hdr/pkg-headers.tgz -C "${STAGE}/build/native/include"
+          echo "=== libs ===";    ls -l "${STAGE}/build/native/bin"
+          echo "=== include ==="; ls    "${STAGE}/build/native/include"
+
+      - name: Generate nuspec + targets + package.xml
+        shell: bash
+        run: |
+          python bindings/nuget-native/gen_nuget_native.py \
+            --staging "${STAGE}" --toolset "${PKG_TOOLSET}" --version "${PKGVER}"
+
+      # Authoritative gate: compile + link a C++ consumer against ONLY the package
+      # include dir + a packaged x64 static lib. Proves the SHIPPED package is
+      # self-contained (headers complete, ABI symbols resolve) before it is packed.
+      - name: Package link-test (consumer view)
+        shell: bash
+        run: |
+          LIB=$(ls "${STAGE}/build/native/bin"/ultrafast_secp256k1-x64-*-mt-s-*.static.lib 2>/dev/null | head -1)
+          if [ -z "$LIB" ]; then echo "no x64 static Release lib — skipping consumer link-test"; exit 0; fi
+          cat > consumer.cpp <<'EOF'
+          #include <secp256k1.h>
+          #include <secp256k1_schnorrsig.h>
+          #include <secp256k1_recovery.h>
+          #include <cstdio>
+          int main() {
+            secp256k1_context* c = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+            unsigned char sk[32]; for (int i=0;i<32;++i) sk[i]=1;
+            secp256k1_pubkey pk;
+            int ok = secp256k1_ec_pubkey_create(c, &pk, sk);
+            secp256k1_context_destroy(c);
+            std::printf("consumer pubkey_create=%d\n", ok);
+            return ok ? 0 : 1;
+          }
+          EOF
+          cl /nologo /std:c++17 -I "${STAGE}/build/native/include" -D SECP256K1_STATIC \
+             /MT consumer.cpp "$LIB" /Fe:consumer.exe
+          ./consumer.exe
+
+      - name: nuget pack
+        shell: bash
+        run: |
+          mkdir -p nupkgs
+          nuget pack "${STAGE}/${PKGID}.nuspec" -BasePath "${STAGE}" -OutputDirectory nupkgs -NonInteractive
+          ls -l nupkgs/
+
+      - name: Upload .nupkg
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.PKGID }}-nupkg
+          path: nupkgs/*.nupkg
+          retention-days: 30
