@@ -85,16 +85,18 @@ else()
 
 endif() # SECP256K1_BUILD_SHIM
 
-# -- Optional: self-contained shared secp256k1 (DLL / .so / .dylib) ------------
-# Builds ONE shared library that exports the libsecp256k1 C ABI, for shipping as
-# secp256k1.dll / libsecp256k1.so / libsecp256k1.dylib (+ import lib on Windows).
+# -- Optional: self-contained shared ultrafast_secp256k1 (DLL / .so / .dylib) --
+# Builds ONE shared library that exports the libsecp256k1 C ABI (the secp256k1_*
+# symbols + <secp256k1.h>), but under OUR OWN file name so it never silently
+# substitutes the system libsecp256k1: ultrafast_secp256k1.dll /
+# libultrafast_secp256k1.so / .dylib (+ import lib on Windows). A consumer opts in
+# explicitly by linking ultrafast_secp256k1 (e.g. under WITH_ULTRAFAST); the ABI
+# (headers + symbols) is unchanged, so no source changes are needed.
 # The ABI symbols are compiled into fastsecp256k1 (the shim sources are part of
 # the engine under SECP256K1_BUILD_SHIM=ON), so the shared lib whole-archives
 # fastsecp256k1 to pull every object in, and on MSVC auto-exports all symbols.
-# Target is named secp256k1_shared (OUTPUT_NAME secp256k1) to avoid colliding
-# with the `secp256k1 ALIAS secp256k1_shim` used by the Bitcoin Core backend.
 option(SECP256K1_SHIM_BUILD_SHARED
-    "Also build a self-contained shared secp256k1 (DLL/.so) exporting the libsecp256k1 ABI" OFF)
+    "Also build a self-contained shared ultrafast_secp256k1 (DLL/.so) exporting the libsecp256k1 ABI" OFF)
 if(SECP256K1_SHIM_BUILD_SHARED)
     if(NOT SECP256K1_BUILD_SHIM)
         message(FATAL_ERROR
@@ -104,20 +106,20 @@ if(SECP256K1_SHIM_BUILD_SHARED)
     if(NOT TARGET fastsecp256k1)
         message(FATAL_ERROR "SECP256K1_SHIM_BUILD_SHARED: fastsecp256k1 target not found.")
     endif()
-    set(_SHARED_STUB "${CMAKE_CURRENT_BINARY_DIR}/_secp256k1_shared_stub.cpp")
+    set(_SHARED_STUB "${CMAKE_CURRENT_BINARY_DIR}/_ultrafast_secp256k1_shared_stub.cpp")
     file(WRITE "${_SHARED_STUB}"
-        "/* secp256k1 shared: ABI symbols pulled from fastsecp256k1 via whole-archive */\n")
-    add_library(secp256k1_shared SHARED "${_SHARED_STUB}")
-    set_target_properties(secp256k1_shared PROPERTIES
-        OUTPUT_NAME secp256k1
+        "/* ultrafast_secp256k1 shared: libsecp256k1 ABI pulled from fastsecp256k1 via whole-archive */\n")
+    add_library(ultrafast_secp256k1_shared SHARED "${_SHARED_STUB}")
+    set_target_properties(ultrafast_secp256k1_shared PROPERTIES
+        OUTPUT_NAME ultrafast_secp256k1
         WINDOWS_EXPORT_ALL_SYMBOLS ON)
-    target_include_directories(secp256k1_shared PUBLIC
+    target_include_directories(ultrafast_secp256k1_shared PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
     # WHOLE_ARCHIVE (CMake >= 3.24) forces every fastsecp256k1 object into the
     # shared lib so the secp256k1_* ABI is present (and thus exported).
-    target_link_libraries(secp256k1_shared PRIVATE
+    target_link_libraries(ultrafast_secp256k1_shared PRIVATE
         "$<LINK_LIBRARY:WHOLE_ARCHIVE,fastsecp256k1>")
-    message(STATUS "  secp256k1 shared (libsecp256k1 ABI DLL/.so): ON")
+    message(STATUS "  ultrafast_secp256k1 shared (libsecp256k1 ABI, our file name): ON")
 endif()
 
 # -- Optional: RFC 6979 libsecp-compatible nonce mode -------------------------

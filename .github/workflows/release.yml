@@ -391,25 +391,31 @@ jobs:
           done
 
           # fastsecp256k1 IS the self-contained static libsecp256k1-ABI archive
-          # (the shim is compiled into the engine) — name it secp256k1 for users.
+          # (the shim is compiled into the engine). Give it OUR name so it never
+          # silently substitutes the system libsecp256k1 — the ABI (headers +
+          # secp256k1_* symbols) is unchanged; only the file name is ours.
           for d in lib/static; do
-            [ -f "${PKG_NAME}/${d}/fastsecp256k1.lib" ]    && mv "${PKG_NAME}/${d}/fastsecp256k1.lib"    "${PKG_NAME}/${d}/secp256k1.lib"
-            [ -f "${PKG_NAME}/${d}/libfastsecp256k1.a" ]   && mv "${PKG_NAME}/${d}/libfastsecp256k1.a"   "${PKG_NAME}/${d}/libsecp256k1.a"
+            [ -f "${PKG_NAME}/${d}/fastsecp256k1.lib" ]  && mv "${PKG_NAME}/${d}/fastsecp256k1.lib"  "${PKG_NAME}/${d}/ultrafast_secp256k1.lib"
+            [ -f "${PKG_NAME}/${d}/libfastsecp256k1.a" ] && mv "${PKG_NAME}/${d}/libfastsecp256k1.a" "${PKG_NAME}/${d}/libultrafast_secp256k1.a"
           done || true
 
           # -- Layout manifest --
           cat > "${PKG_NAME}/lib/LIBRARIES.md" <<'EOF'
           # Library layout
 
-          | dir      | library            | ABI                         | notes |
-          |----------|--------------------|-----------------------------|-------|
-          | static/  | secp256k1.*        | libsecp256k1 C ABI          | self-contained static archive (engine + shim) |
-          | static/  | ufsecp_s.lib / libufsecp.a | ufsecp stable C ABI | static archive |
-          | shared/  | secp256k1.dll/.so  | libsecp256k1 C ABI          | + import .lib on Windows |
-          | shared/  | ufsecp.dll/.so     | ufsecp stable C ABI         | + import .lib on Windows |
+          All libraries carry OUR file name; the `ultrafast_secp256k1` libraries
+          export the libsecp256k1 C ABI (same `<secp256k1.h>` headers + `secp256k1_*`
+          symbols), so they are an opt-in drop-in (link `ultrafast_secp256k1`) that
+          never silently replaces the system libsecp256k1.
 
-          The `secp256k1` libraries are a drop-in for libsecp256k1 (same headers).
-          `Linkage-secp256k1`-style static vs shared is your choice of subdir.
+          | dir      | library                       | ABI                  | notes |
+          |----------|-------------------------------|----------------------|-------|
+          | static/  | ultrafast_secp256k1.*         | libsecp256k1 C ABI   | self-contained static archive (engine + shim) |
+          | static/  | ufsecp_s.lib / libufsecp.a    | ufsecp stable C ABI  | static archive |
+          | shared/  | ultrafast_secp256k1.dll/.so   | libsecp256k1 C ABI   | + import .lib on Windows |
+          | shared/  | ufsecp.dll/.so                | ufsecp stable C ABI  | + import .lib on Windows |
+
+          Static vs shared is your choice of subdir.
           EOF
 
           # -- Docs --
