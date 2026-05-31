@@ -66,6 +66,14 @@ if(UFSECP_LBTC_BUILD_TESTS)
     add_executable(test_lbtc_consensus_diff tests/test_lbtc_consensus_diff.cpp)
     target_compile_definitions(test_lbtc_consensus_diff PRIVATE STANDALONE_TEST)
     target_link_libraries(test_lbtc_consensus_diff PRIVATE ufsecp_lbtc_bridge)
+    # Direct libsecp256k1 leg (optional): proves GPU==CPU==libsecp directly rather
+    # than transitively. Falls back to GPU==CPU when the shim target is absent.
+    if(TARGET secp256k1_shim)
+        target_link_libraries(test_lbtc_consensus_diff PRIVATE secp256k1_shim)
+        target_include_directories(test_lbtc_consensus_diff PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../libsecp256k1_shim/include)
+        target_compile_definitions(test_lbtc_consensus_diff PRIVATE UFSECP_LBTC_HAVE_LIBSECP)
+    endif()
     add_test(NAME lbtc_consensus_diff COMMAND test_lbtc_consensus_diff)
     set_tests_properties(lbtc_consensus_diff PROPERTIES SKIP_RETURN_CODE 77)
 endif()

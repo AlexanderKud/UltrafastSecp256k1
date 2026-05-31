@@ -20,6 +20,16 @@
 #include "ufsecp_libbitcoin.h"
 #include "ufsecp.h"
 
+#ifdef UFSECP_LBTC_HAVE_LIBSECP
+/* Direct libsecp256k1 leg: the same corpus is verified through the reference
+ * library so the gate proves GPU==CPU==libsecp256k1 directly, not just GPU==CPU
+ * with CPU==libsecp transitive. Defined by the build when the secp256k1_shim
+ * target is on the test's link line. */
+#include <secp256k1.h>
+#include <secp256k1_schnorrsig.h>
+#include <secp256k1_extrakeys.h>
+#endif
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -76,7 +86,28 @@ std::vector<uint8_t> build_corpus(ufsecp_ctx* ctx, Kind k, size_t n) {
     return rows;
 }
 
-bool diff_kind(ufsecp_lbtc_ctrl* gpu, ufsecp_lbtc_ctrl* cpu, Kind k, size_t n) {
+#ifdef UFSECP_LBTC_HAVE_LIBSECP
+/* Per-row libsecp256k1 verdict on a packed bridge record: 1 = accept, 0 = reject.
+ * A parse failure on a malformed row counts as reject (consensus: invalid). The
+ * record layout matches the bridge: ECDSA [msg32|pub33|sig64], Schnorr
+ * [msg32|xonly32|sig64]; the 64-byte sig is compact r||s (ECDSA) / R.x||s (Schnorr). */
+int libsecp_verify_row(const secp256k1_context* ls, Kind k, const uint8_t* r) {
+    if (k == ECDSA) {
+        secp256k1_pubkey pk;
+        if (!secp256k1_ec_pubkey_parse(ls, &pk, r + 32, 33)) return 0;
+        secp256k1_ecdsa_signature sig;
+        if (!secp256k1_ecdsa_signature_parse_compact(ls, &sig, r + 65)) return 0;
+        return secp256k1_ecdsa_verify(ls, &sig, r + 0, &pk) == 1 ? 1 : 0;
+    }
+    secp256k1_xonly_pubkey xpk;
+    if (!secp256k1_xonly_pubkey_parse(ls, &xpk, r + 32)) return 0;
+    return secp256k1_schnorrsig_verify(ls, r + 64, r + 0, 32, &xpk) == 1 ? 1 : 0;
+}
+#endif
+
+bool diff_kind(ufsecp_lbtc_ctrl* gpu, ufsecp_lbtc_ctrl* cpu, const void* ls_opaque,
+               Kind k, size_t n) {
+    const size_t rec = (k==ECDSA) ? UFSECP_LBTC_ECDSA_RECORD : UFSECP_LBTC_SCHNORR_RECORD;
     ufsecp_ctx* sctx=nullptr;
     if (ufsecp_ctx_create(&sctx)!=UFSECP_OK) return false;
     auto rows = build_corpus(sctx, k, n);
@@ -96,18 +127,50 @@ bool diff_kind(ufsecp_lbtc_ctrl* gpu, ufsecp_lbtc_ctrl* cpu, Kind k, size_t n) {
         std::printf("  ERROR: verify call failed (gpu rc=%d, cpu rc=%d)\n", gp, cp);
         return false;
     }
-    /* Bit-for-bit per-row agreement is the consensus property. */
-    size_t mismatch = 0, first = (size_t)-1;
-    for (size_t i=0;i<n;++i)
-        if (g_res[i]!=c_res[i]) { if (first==(size_t)-1) first=i; ++mismatch; }
     const char* name = (k==ECDSA)?"ECDSA":"Schnorr";
+
+    /* Per-row agreement across GPU, CPU and (when linked) libsecp256k1 is the
+     * consensus property. The GPU path is consensus-bearing for block validation:
+     * its accept/reject verdict for every signature must match the CPU reference
+     * AND the ecosystem-standard libsecp256k1 bit-for-bit. */
+    bool have_ls = false;
+#ifdef UFSECP_LBTC_HAVE_LIBSECP
+    have_ls = (ls_opaque != nullptr);
+#else
+    (void)ls_opaque;
+#endif
+    size_t mismatch = 0, first = (size_t)-1, ls_ninv = 0;
+    for (size_t i=0;i<n;++i) {
+        int gv = g_res[i], cv = c_res[i], lv = c_res[i];
+#ifdef UFSECP_LBTC_HAVE_LIBSECP
+        if (have_ls) {
+            lv = libsecp_verify_row((const secp256k1_context*)ls_opaque, k, rows.data()+i*rec);
+            if (lv == 0) ++ls_ninv;
+        }
+#endif
+        if (gv != cv || gv != lv) { if (first==(size_t)-1) first=i; ++mismatch; }
+    }
     if (mismatch) {
-        std::printf("  CONSENSUS DIVERGENCE [%s]: %zu/%zu rows differ (first @%zu: gpu=%d cpu=%d)\n",
-                    name, mismatch, n, first, g_res[first], c_res[first]);
+        int lf = -1;
+#ifdef UFSECP_LBTC_HAVE_LIBSECP
+        if (have_ls) lf = libsecp_verify_row((const secp256k1_context*)ls_opaque, k, rows.data()+first*rec);
+#endif
+        std::printf("  CONSENSUS DIVERGENCE [%s]: %zu/%zu rows differ (first @%zu: gpu=%d cpu=%d libsecp=%d)\n",
+                    name, mismatch, n, first, g_res[first], c_res[first], lf);
         return false;
     }
-    std::printf("  %s: GPU==CPU bit-for-bit on %zu rows (%zu rejected); counts %zu==%zu\n",
-                name, n, c_ninv, g_ninv, c_ninv);
+    if (have_ls) {
+        if (ls_ninv != c_ninv) {
+            std::printf("  CONSENSUS DIVERGENCE [%s]: libsecp invalid-count %zu != CPU %zu\n",
+                        name, ls_ninv, c_ninv);
+            return false;
+        }
+        std::printf("  %s: GPU==CPU==libsecp256k1 bit-for-bit on %zu rows (%zu rejected); counts %zu==%zu==%zu\n",
+                    name, n, c_ninv, g_ninv, c_ninv, ls_ninv);
+    } else {
+        std::printf("  %s: GPU==CPU bit-for-bit on %zu rows (%zu rejected); counts %zu==%zu  [libsecp leg not linked]\n",
+                    name, n, c_ninv, g_ninv, c_ninv);
+    }
     return (g_ninv==c_ninv);
 }
 
@@ -127,10 +190,22 @@ int test_lbtc_consensus_diff_run() {
     std::printf("GPU-vs-CPU consensus differential (gpu=%s, cpu=%s)\n",
                 names[ufsecp_lbtc_ctrl_backend(gpu)], names[ufsecp_lbtc_ctrl_backend(cpu)]);
 
-    const size_t N = 20000;
-    CHECK(diff_kind(gpu, cpu, ECDSA,   N), "ECDSA  GPU==CPU consensus (mixed corpus)");
-    CHECK(diff_kind(gpu, cpu, SCHNORR, N), "Schnorr GPU==CPU consensus (mixed corpus)");
+    const void* ls = nullptr;
+#ifdef UFSECP_LBTC_HAVE_LIBSECP
+    secp256k1_context* lsctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+    ls = lsctx;
+    std::printf("  direct libsecp256k1 leg: ENABLED (3-way GPU==CPU==libsecp)\n");
+#else
+    std::printf("  direct libsecp256k1 leg: not linked — GPU==CPU only (libsecp transitive)\n");
+#endif
 
+    const size_t N = 20000;
+    CHECK(diff_kind(gpu, cpu, ls, ECDSA,   N), "ECDSA  GPU==CPU==libsecp consensus (mixed corpus)");
+    CHECK(diff_kind(gpu, cpu, ls, SCHNORR, N), "Schnorr GPU==CPU==libsecp consensus (mixed corpus)");
+
+#ifdef UFSECP_LBTC_HAVE_LIBSECP
+    secp256k1_context_destroy(lsctx);
+#endif
     ufsecp_lbtc_ctrl_destroy(cpu);
     ufsecp_lbtc_ctrl_destroy(gpu);
     std::printf("\n%s\n", g_fail==0 ? "CONSENSUS OK (GPU == CPU bit-for-bit)" : "CONSENSUS FAILURES");

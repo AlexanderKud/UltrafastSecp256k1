@@ -230,6 +230,18 @@ if(SECP256K1_BUILD_LIBBITCOIN AND SECP256K1_BUILD_LIBBITCOIN_TESTS)
         target_include_directories(test_lbtc_consensus_diff PRIVATE ${ULTRAFAST_ROOT}/src/gpu/include)
         target_compile_definitions(test_lbtc_consensus_diff PRIVATE UFSECP_LBTC_WITH_GPU)
     endif()
+    # Direct libsecp256k1 leg: link the drop-in shim so the gate proves
+    # GPU==CPU==libsecp256k1 directly, not just transitively. Gate on the build
+    # flags (not if(TARGET ...)) because compat/libsecp256k1_shim is added AFTER
+    # this subdirectory, so the target does not exist yet at configure time here;
+    # target_link_libraries resolves the dependency at generate time. The libbitcoin
+    # profile turns SECP256K1_BUILD_SHIM on, so the shim is always present here.
+    if(SECP256K1_BUILD_SHIM AND SECP256K1_BUILD_CPU)
+        target_link_libraries(test_lbtc_consensus_diff PRIVATE secp256k1_shim)
+        target_include_directories(test_lbtc_consensus_diff PRIVATE
+            ${ULTRAFAST_ROOT}/compat/libsecp256k1_shim/include)
+        target_compile_definitions(test_lbtc_consensus_diff PRIVATE UFSECP_LBTC_HAVE_LIBSECP)
+    endif()
     # Registered as a CTest so local CI (which has a GPU) gates on it. A 77 exit
     # (no GPU) is treated as "skipped", not a failure.
     include(CTest)
