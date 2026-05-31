@@ -17,7 +17,11 @@ permissions:
 env:
   CMAKE_BUILD_TYPE: Release
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-  RELEASE_VERSION: ${{ startsWith(github.event.inputs.tag || github.ref_name, 'v') && format('{0}', github.event.inputs.tag || github.ref_name) || github.ref_name }}
+  # RELEASE_VERSION is always the tag itself; every consumer strips the leading 'v'
+  # via ${RELEASE_VERSION#v}. The old `startsWith(...) || github.ref_name` form fell
+  # back to the BRANCH name on a non-'v' workflow_dispatch tag (e.g. input "4.1.0"),
+  # which would version every package as "dev"/"main". Just use the tag directly.
+  RELEASE_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
 
 # ----------------------------------------------------------------------------
 # Global: version is always derived from the git tag (the leading 'v' is stripped).
@@ -205,7 +209,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git add -A
           git commit -m "chore(release): stamp CHANGELOG [Unreleased] → ${RELEASE_VERSION#v} [skip ci]"
-          git push origin dev
+          # checkout was `ref: <tag>` so HEAD is detached — there is no local `dev`
+          # branch. Push the new (stamp) commit to dev explicitly via HEAD:dev;
+          # `git push origin dev` would fail with "src refspec dev does not match any".
+          git push origin HEAD:dev
           # Move the tag to the new stamped commit so the tagged tree is correct.
           NEW_SHA=$(git rev-parse HEAD)
           git tag -f "${RELEASE_TAG}" "$NEW_SHA"
@@ -639,6 +646,20 @@ jobs:
           cd build/wasm/dist
           # NOTE: No WASM functional/correctness tests exist yet — bench-only (TODO: add test_wasm.mjs)
           node ../../../bindings/wasm/bench_wasm.mjs
+
+      - name: Stamp wasm package.json version
+        # The wasm dist package.json ships inside the release tarball (not npm-published),
+        # but it must carry the release version, not the 0.0.0-dev build placeholder.
+        # Fully guarded (if -f + || true) so a missing/version-less file can never fail the job.
+        run: |
+          VERSION="${RELEASE_VERSION#v}"
+          if [ -f build/wasm/dist/package.json ]; then
+            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" build/wasm/dist/package.json || true
+            echo "stamped wasm package.json -> ${VERSION}"
+          else
+            echo "(no build/wasm/dist/package.json — nothing to stamp)"
+          fi
+        shell: bash
 
       - name: Collect release artifacts
         run: |
