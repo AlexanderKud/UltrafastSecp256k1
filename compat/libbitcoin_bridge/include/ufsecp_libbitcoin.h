@@ -177,6 +177,36 @@ ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
 namespace ufsecp {
 namespace lbtc {
 
+// ---------------------------------------------------------------------------
+// Canonical packed record structs — the single source of truth for the on-wire
+// byte layout, so a node's DB / mmap layout and the engine agree on the exact
+// bytes. Verified fields are FIRST, in on-wire order; any correlation id is the
+// caller's own trailing bytes on a wrapping struct (pass key_size on the call).
+// A bare std::span<const EcdsaRecord> with key_size == 0 forwards zero-copy and
+// results[i] maps back to record i by index — no second side table needed.
+//
+// FIELD ORDER — IMPORTANT: the message / sighash is FIRST for BOTH kinds. Schnorr
+// is UNIFORM with ECDSA (hash, then key, then sig); it is NOT x-only-key-first at
+// this public boundary. (The engine's internal Schnorr record is xonly-first; the
+// bridge re-marshals it for you, so callers never see that order.)
+// ---------------------------------------------------------------------------
+#pragma pack(push, 1)
+struct EcdsaRecord {     // == UFSECP_LBTC_ECDSA_RECORD (129) bytes
+    uint8_t hash[32];    // message hash (sighash)
+    uint8_t point[33];   // compressed public key
+    uint8_t sig[64];     // compact signature: r || s
+};
+struct SchnorrRecord {   // == UFSECP_LBTC_SCHNORR_RECORD (128) bytes
+    uint8_t hash[32];    // message / sighash  (FIRST — uniform with ECDSA)
+    uint8_t xonly[32];   // x-only public key (BIP-340)
+    uint8_t sig[64];     // BIP-340 signature: R.x || s
+};
+#pragma pack(pop)
+static_assert(sizeof(EcdsaRecord) == UFSECP_LBTC_ECDSA_RECORD,
+              "EcdsaRecord must be exactly 129 bytes, tightly packed");
+static_assert(sizeof(SchnorrRecord) == UFSECP_LBTC_SCHNORR_RECORD,
+              "SchnorrRecord must be exactly 128 bytes, tightly packed");
+
 class Controller {
 public:
     explicit Controller(ufsecp_lbtc_backend backend = UFSECP_LBTC_AUTO) {
