@@ -202,14 +202,14 @@ def targets_xml(pkg_id: str, libs: list[dict]) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--staging", required=True, type=Path,
-                    help="staging dir containing build/native/bin + build/native/include")
-    ap.add_argument("--toolset", required=True, choices=["vc143", "vc145"],
-                    help="package-id toolset suffix (vc143/vc145); the MSBuild "
-                         "$(PlatformToolset) and lib-name token is the same without "
-                         "the 'c' (v143/v145), matching the secp256k1_vc143 convention")
+    toolset_help = ("package-id toolset suffix (vc143/vc145); the MSBuild "
+                    "$(PlatformToolset) and lib-name token is the same without the "
+                    "'c' (v143/v145), matching the secp256k1_vc143 convention")
+    ap.add_argument("--staging", required=True, type=Path, metavar="DIR",
+                    help="staging dir with build/native/{bin,include}")
+    ap.add_argument("--toolset", required=True, choices=["vc143", "vc145"], help=toolset_help)
     ap.add_argument("--version", required=True, help="package version, e.g. 4.1.0")
-    ap.add_argument("--id", default=None,
+    ap.add_argument("--id", default=None, metavar="ID",
                     help="override package id (default ultrafast_secp256k1_<toolset>)")
     args = ap.parse_args()
 
