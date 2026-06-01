@@ -3684,9 +3684,14 @@ int main(int argc, char** argv) {
         });
 
         printf("======================================================================\n");
-        printf("  CONNECTBLOCK: 2000-UNIQUE-PUBKEY BLOCK VALIDATION (measured)\n");
+        printf("  CONNECTBLOCK: 2000-UNIQUE-PUBKEY BLOCK VALIDATION  [DIAGNOSTIC]\n");
         printf("  Ultra = native C++ API (no shim/cache overhead)\n");
         printf("  libsecp = secp256k1_ecdsa_verify API (ge in pubkey struct)\n");
+        printf("  benchmark-methodology-001: DIAGNOSTIC ONLY — light warmup (5x),\n");
+        printf("  native-API cold-cache micro-bench; it may show Ultra SLOWER here and\n");
+        printf("  must NOT be cited as the headline. Authoritative release-grade\n");
+        printf("  ConnectBlock numbers (bench_bitcoin, Release+LTO, GCC 14) live in\n");
+        printf("  docs/BITCOIN_CORE_BENCH_RESULTS.json.\n");
         printf("======================================================================\n");
         printf("\n");
         auto print_blk_row = [](const char* name, double u_ns, double ls_ns) {
