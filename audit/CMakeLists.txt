@@ -3235,6 +3235,16 @@ add_test(NAME regression_negate_inplace_generator_flag
 set_tests_properties(regression_negate_inplace_generator_flag PROPERTIES
     TIMEOUT 60 LABELS "audit;regression;point;scalar_mul;correctness")
 
+# -- bbhunt-001: ECDSA recover must reject r >= (p-n) in the recid&2 branch --
+add_executable(test_regression_recover_rplus_n_overflow_standalone
+    test_regression_recover_rplus_n_overflow.cpp)
+audit_target_defaults(test_regression_recover_rplus_n_overflow_standalone)
+target_compile_definitions(test_regression_recover_rplus_n_overflow_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_recover_rplus_n_overflow
+    COMMAND test_regression_recover_rplus_n_overflow_standalone)
+set_tests_properties(regression_recover_rplus_n_overflow PROPERTIES
+    TIMEOUT 60 LABELS "audit;regression;recovery;ecdsa;correctness")
+
 # -- 2026-05-06 Perf review: FROST DKG non-CT secret share gen mul (SEC-01) --
 add_executable(test_exploit_frost_secret_share_ct_standalone
     test_exploit_frost_secret_share_ct.cpp)
@@ -3981,6 +3991,8 @@ add_executable(unified_audit_runner
     test_regression_pippenger_stale_used.cpp
     # B1: negate_inplace must clear is_generator_ (negated-generator correctness)
     test_regression_negate_inplace_generator_flag.cpp
+    # bbhunt-001: ECDSA recover must reject r >= (p-n) in recid&2 (consensus parity)
+    test_regression_recover_rplus_n_overflow.cpp
     # SEC-01: FROST DKG non-CT generator mul on secret share
     $<$<BOOL:${SECP256K1_BUILD_FROST}>:test_exploit_frost_secret_share_ct.cpp>
     # CRIT-01: comb_gen_mul lock-free after once_flag init

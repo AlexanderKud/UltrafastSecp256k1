@@ -169,8 +169,38 @@ std::pair<Point, bool> ecdsa_recover(
     FieldElement rx_fe;
 
     if (recid & 2) {
-        // R.x = r + n -- need to add order to r as field element
-        // This is extremely rare (~2^-128 probability)
+        // R.x = r + n -- need to add order to r as field element.
+        //
+        // bbhunt-001 fix: reject any r >= (p - n). For such r the sum r + n
+        // would overflow the field prime p and FieldElement::operator+ would
+        // silently reduce it mod p to (r + n - p) -- a DIFFERENT x-coordinate.
+        // A wrapped x that happens to lift to a valid point would then be
+        // returned as a bogus "success", whereas upstream libsecp256k1
+        // (secp256k1_ecdsa_sig_recover) returns 0 in exactly this case. This is
+        // attacker-craftable (recid&2 + r in [p-n, n) -- not the ~2^-128 honest
+        // case) and a cross-backend consensus divergence; we must match upstream.
+        //
+        // p - n = 0x...01 45512319 50B75FC4 402DA172 2FC9BAEE (low 129 bits set),
+        // i.e. upstream's secp256k1_ecdsa_const_p_minus_order, big-endian:
+        static const std::array<uint8_t, 32> SECP256K1_P_MINUS_ORDER_BYTES = {
+            0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x01,
+            0x45,0x51,0x23,0x19, 0x50,0xB7,0x5F,0xC4,
+            0x40,0x2D,0xA1,0x72, 0x2F,0xC9,0xBA,0xEE
+        };
+        // Branchless big-endian compare on public data (sig.r, recid): is r < p-n?
+        unsigned lt = 0u, eq_run = 1u;
+        for (int oi = 0; oi < 32; ++oi) {
+            unsigned const rb = static_cast<unsigned>(r_bytes[static_cast<unsigned>(oi)]);
+            unsigned const pb = static_cast<unsigned>(SECP256K1_P_MINUS_ORDER_BYTES[static_cast<unsigned>(oi)]);
+            unsigned const byte_lt = ((rb - pb) >> 31) & 1u; // rb < pb
+            unsigned const byte_gt = ((pb - rb) >> 31) & 1u; // rb > pb
+            lt     = lt | (eq_run & byte_lt);
+            eq_run = eq_run & (1u - byte_lt) & (1u - byte_gt);
+        }
+        // r >= (p - n) (including equality) -> reject, matching upstream's `>= 0`.
+        if (lt == 0u) return {Point::infinity(), false};
+
         auto n_fe = FieldElement::from_bytes(SECP256K1_ORDER_BYTES);
         auto r_fe_val = FieldElement::from_bytes(r_bytes);
         rx_fe = r_fe_val + n_fe;

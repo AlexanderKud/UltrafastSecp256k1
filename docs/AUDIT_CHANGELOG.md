@@ -1,5 +1,25 @@
 # Audit Changelog
 
+## 2026-06-01 — bbhunt-001: ECDSA recover must reject `r >= (p - n)` in the recid&2 branch
+
+- **Root cause** (`src/cpu/src/recovery.cpp` `ecdsa_recover`): when recid bit 1 is
+  set the function reconstructs `R.x = r + n` as a field element. `FieldElement::operator+`
+  reduces mod `p`, so for any `r >= (p - n)` the sum silently wraps to `(r + n - p)` —
+  a **different** x-coordinate — instead of being rejected. A wrapped x that lifts to a
+  valid point was then returned as a **bogus pubkey with success**, whereas upstream
+  libsecp256k1 (`secp256k1_ecdsa_sig_recover`) returns 0. Cross-backend consensus
+  divergence; attacker-craftable (recid&2 + r in `[p-n, n)` ≈ the whole scalar range —
+  not the ~2⁻¹²⁸ honest case).
+- **Fix:** branchless `r < (p - n)` guard before `r + n` (constant `p - n` =
+  upstream's `secp256k1_ecdsa_const_p_minus_order`). Mirrored in the CUDA
+  (`cuda/include/recovery.cuh`) and OpenCL (`src/opencl/kernels/secp256k1_extended.cl`,
+  `secp256k1_recovery.cl`) recovery kernels. Shim (`secp256k1_ecdsa_recover`) and native
+  ABI (`ufsecp_ecdsa_recover`) both route through `secp256k1::ecdsa_recover`, so the CPU
+  guard covers CPU + shim + ABI.
+- **Test:** `audit/test_regression_recover_rplus_n_overflow.cpp` (REC-1..4, `math_invariants`,
+  advisory=false). REC-2 uses `r = Gx + (p-n)` whose wrapped x = Gx is liftable, so it
+  recovered ±G as a bogus success before the fix and is rejected after. 8/8 pass.
+
 ## 2026-06-01 — CAAS-FG-01: shim security PoCs were registered in no blocking job (false-green) — fixed
 
 - **Root cause:** root `CMakeLists.txt` runs `add_subdirectory(audit)` (L489) BEFORE

@@ -222,6 +222,23 @@ __device__ inline bool ecdsa_recover(
         }
 
         if (recid & 2) {
+            // bbhunt-001: reject r >= (p - n). Otherwise r + n overflows the field
+            // prime and field_add reduces it mod p to (r + n - p) -- a DIFFERENT
+            // x-coordinate -- which could lift to a bogus pubkey reported as success
+            // where upstream libsecp256k1 returns 0. Match upstream for cross-backend
+            // consensus parity (recid/sig are public -> data-dependent branch is fine).
+            // p - n little-endian 64-bit limbs:
+            const uint64_t PMN0 = 0x402DA1722FC9BAEEULL;
+            const uint64_t PMN1 = 0x4551231950B75FC4ULL;
+            const uint64_t PMN2 = 0x0000000000000001ULL;
+            const uint64_t PMN3 = 0x0000000000000000ULL;
+            bool r_ge_pmn;
+            if      (rx_fe.limbs[3] != PMN3) r_ge_pmn = (rx_fe.limbs[3] > PMN3);
+            else if (rx_fe.limbs[2] != PMN2) r_ge_pmn = (rx_fe.limbs[2] > PMN2);
+            else if (rx_fe.limbs[1] != PMN1) r_ge_pmn = (rx_fe.limbs[1] > PMN1);
+            else                             r_ge_pmn = (rx_fe.limbs[0] >= PMN0);
+            if (r_ge_pmn) return false;
+
             // Add n to rx_fe (field addition -- n as field element)
             FieldElement n_fe;
             n_fe.limbs[0] = ORDER[0];

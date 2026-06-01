@@ -218,6 +218,20 @@ inline int ecdsa_recover_impl(const uchar msg_hash[32],
             rx_fe.limbs[i] = limb;
         }
         if (recid & 2) {
+            // bbhunt-001: reject r >= (p - n), else r+n wraps mod p to a wrong x
+            // and could yield a bogus pubkey as success where upstream returns 0.
+            // p - n little-endian 64-bit limbs (recid/sig are public data):
+            const ulong PMN0 = 0x402DA1722FC9BAEEUL;
+            const ulong PMN1 = 0x4551231950B75FC4UL;
+            const ulong PMN2 = 0x0000000000000001UL;
+            const ulong PMN3 = 0x0000000000000000UL;
+            int r_ge_pmn;
+            if      (rx_fe.limbs[3] != PMN3) r_ge_pmn = (rx_fe.limbs[3] > PMN3);
+            else if (rx_fe.limbs[2] != PMN2) r_ge_pmn = (rx_fe.limbs[2] > PMN2);
+            else if (rx_fe.limbs[1] != PMN1) r_ge_pmn = (rx_fe.limbs[1] > PMN1);
+            else                             r_ge_pmn = (rx_fe.limbs[0] >= PMN0);
+            if (r_ge_pmn) return 0;
+
             FieldElement n_fe;
             n_fe.limbs[0] = SECP256K1_N0;
             n_fe.limbs[1] = SECP256K1_N1;
