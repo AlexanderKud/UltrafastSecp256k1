@@ -528,10 +528,7 @@ int test_exploit_shim_recovery_null_arg_run(); // SHIM-005: NULL arg fail-closed
 // ============================================================================
 // Forward declarations -- 2026-05-01 Red Team Audit Fixes
 // ============================================================================
-int test_exploit_legacy_capi_key_parsing_run();
-int test_exploit_legacy_capi_degenerate_sig_run();
 int test_exploit_musig_unknown_signer_run();
-int test_exploit_bchn_schnorr_strict_parsing_run();
 int test_exploit_context_flag_bypass_run();
 int test_exploit_metal_schnorr_aux_rand_run();
 int test_exploit_metal_batch_failclosed_run();
@@ -1252,10 +1249,7 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_shim_musig_ka_cap",      "RED-TEAM-009: ka_put DoS-cap fail-closed — pubkey_agg returns 0 at session limit",            "exploit_poc", test_exploit_shim_musig_ka_cap_run,    true  },
     { "exploit_shim_recovery_null_arg", "SHIM-005: secp256k1_ecdsa_sign_recoverable NULL arg fail-closed (REC-NULL-1..4)",                "exploit_poc", test_exploit_shim_recovery_null_arg_run, true },
     // === 2026-05-01 Red Team Audit Fixes — advisory=true: shim not linked in unified runner ===
-    { "test_exploit_legacy_capi_key_parsing",    "Legacy C API invalid private key rejection (KP-1..14) — 2026-05-01",                          "exploit_poc", test_exploit_legacy_capi_key_parsing_run,    true },
-    { "test_exploit_legacy_capi_degenerate_sig", "Legacy C API degenerate zero-sig output guard (DSG-1..7) — 2026-05-01",                       "exploit_poc", test_exploit_legacy_capi_degenerate_sig_run, true },
     { "test_exploit_musig_unknown_signer",       "MuSig2 partial_sign with unknown signer key (MUS-1..5) — 2026-05-01",                         "exploit_poc", test_exploit_musig_unknown_signer_run,       true },
-    { "test_exploit_bchn_schnorr_strict_parsing","BCHN Schnorr shim strict private key parsing (BCH-1..9) — 2026-05-01",                        "exploit_poc", test_exploit_bchn_schnorr_strict_parsing_run, true },
     // advisory=true: the test uses #ifndef STANDALONE_TEST to gate shim-header-dependent code;
     // inside unified_audit_runner (where STANDALONE_TEST is never defined) it always returns
     // ADVISORY_SKIP_CODE(77). Run the standalone CTest target for functional CFB coverage.

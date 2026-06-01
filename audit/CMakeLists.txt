@@ -3963,10 +3963,7 @@ add_executable(unified_audit_runner
     test_exploit_shim_der_bip66.cpp
     test_exploit_shim_musig_secnonce.cpp
     # 2026-05-01 Red Team Audit Fixes
-    test_exploit_legacy_capi_key_parsing.cpp
-    test_exploit_legacy_capi_degenerate_sig.cpp
     test_exploit_musig_unknown_signer.cpp
-    test_exploit_bchn_schnorr_strict_parsing.cpp
     test_exploit_context_flag_bypass.cpp
     test_exploit_metal_schnorr_aux_rand.cpp
     test_exploit_metal_batch_failclosed.cpp
@@ -4889,7 +4886,7 @@ endif()
 # mandatory blocking CTest cases whenever the shim is available.
 # ===========================================================================
 
-if(TARGET secp256k1_shim)
+if(TARGET secp256k1_shim OR SECP256K1_BUILD_SHIM)
     # Helper: build a shim-linked standalone exploit test
     macro(shim_exploit_test _name _src _label _timeout)
         set(_target test_${_name}_shim_standalone)
@@ -4910,32 +4907,26 @@ if(TARGET secp256k1_shim)
         )
     endmacro()
 
-    shim_exploit_test(
-        exploit_legacy_capi_key_parsing
-        test_exploit_legacy_capi_key_parsing.cpp
-        "key_parsing" 60)
-
-    shim_exploit_test(
-        exploit_legacy_capi_degenerate_sig
-        test_exploit_legacy_capi_degenerate_sig.cpp
-        "degenerate_sig" 60)
-
+    # NOTE (CAAS-FG-01 cleanup): three former entries were RETIRED — they tested
+    # APIs that no longer exist, so they could never compile as standalones (and the
+    # order-dependent guard had silently dropped them so the rot went unnoticed):
+    #   - exploit_legacy_capi_key_parsing / _degenerate_sig: used the removed legacy
+    #     `c_api/ultrafast_secp256k1.h` C API (secp256k1_init / secp256k1_schnorr_sign).
+    #   - exploit_bchn_schnorr_strict_parsing: used the removed BCH `secp256k1_schnorr_*`
+    #     (non-BIP340) API.
+    # Their security properties (strict key/sig parsing, BIP-340 lift_x strictness) are
+    # already covered by current-API tests — see docs/REVIEW_VALIDATED_FINDINGS.md.
     shim_exploit_test(
         exploit_musig_unknown_signer
         test_exploit_musig_unknown_signer.cpp
         "musig2" 60)
 
     shim_exploit_test(
-        exploit_bchn_schnorr_strict_parsing
-        test_exploit_bchn_schnorr_strict_parsing.cpp
-        "bchn;schnorr" 60)
-
-    shim_exploit_test(
         exploit_context_flag_bypass
         test_exploit_context_flag_bypass.cpp
         "context_flags" 60)
 
-    message(STATUS "  Shim security standalone tests: 5 targets built with secp256k1_shim")
+    message(STATUS "  Shim security standalone tests: 2 targets built with secp256k1_shim")
 else()
     message(STATUS "  Shim security standalone tests: SKIPPED (secp256k1_shim target not available; build with SECP256K1_BUILD_SHIM=OFF)")
 endif()

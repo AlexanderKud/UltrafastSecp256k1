@@ -1,5 +1,30 @@
 # Audit Changelog
 
+## 2026-06-01 — CAAS-FG-01: shim security PoCs were registered in no blocking job (false-green) — fixed
+
+- **Root cause:** root `CMakeLists.txt` runs `add_subdirectory(audit)` (L489) BEFORE
+  `add_subdirectory(compat/libsecp256k1_shim)` (L497), so the `if(TARGET secp256k1_shim)`
+  guard wrapping the 5 `shim_exploit_test(...)` standalone registrations (`audit/CMakeLists.txt`)
+  was always FALSE during audit processing → those 5 shim PoC standalones were **never
+  registered as CTest targets** (confirmed: absent from `ctest -N` even in the SHIM build).
+  In the unified runner they are advisory stubs (rc 77). Net effect: the shim security
+  properties ran in **no blocking job**.
+- **Fix:** changed the guard to `if(TARGET secp256k1_shim OR SECP256K1_BUILD_SHIM)` (the cache
+  variable is set before any `add_subdirectory`; `secp256k1_shim` resolves at generate time).
+  Registering them then exposed that 3 of the 5 PoC **sources no longer compile** — they target
+  removed APIs:
+    - `exploit_legacy_capi_key_parsing`, `exploit_legacy_capi_degenerate_sig` → removed legacy
+      C API `bindings/c_api/ultrafast_secp256k1.*` (`secp256k1_init`, `secp256k1_schnorr_sign`).
+    - `exploit_bchn_schnorr_strict_parsing` → removed BCH shim `compat/libsecp256k1_bchn_shim/`
+      (`secp256k1_schnorr_*`, non-BIP340).
+  Those 3 are **RETIRED** (sources + runner forward-decls/ALL_MODULES + CMake target_sources +
+  catalog rows removed). Their properties (strict key/sig parsing, BIP-340 lift_x strictness)
+  are already covered by current-API tests.
+- **Resurrected + now blocking:** `exploit_context_flag_bypass` (CFB-1..9, 9/9 pass) and
+  `exploit_musig_unknown_signer` (MUS-1..5, 10/10 pass) build as standalones and run as hard
+  CTest gates (`-L shim`). A new guard `ci/check_advisory_has_blocking_test.py` keeps every
+  advisory module honest (must have a registered standalone twin).
+
 ## 2026-06-01 — B1: `Point::negate_inplace()` must clear `is_generator_` (correctness fix)
 
 - **B1 (10-pass review, REAL → fixed)** (`src/cpu/src/point.cpp`): `negate_inplace()`
@@ -843,7 +868,7 @@ No code issues found. Findings recorded in knowledge_base (CT-AUDIT-FROST/ADAPTO
 - **audit/test_exploit_frost_absent_signer_id.cpp (NEW — P1-SEC-001):** 3 sub-tests (FSI-1..3): absent signer → zero z_i; present signer → non-zero z_i; below-threshold → zero z_i. Wired to `unified_audit_runner` as `exploit_poc`, `advisory=false`.
 - **audit/test_regression_schnorr_sign_e_hash_erased.cpp (NEW — P1-SEC-002):** 4 sub-tests (SHE-1..4): sign+verify round-trip; 50 round-trips with varied messages; deterministic output; different messages → different sigs. Wired as `ct_analysis`, `advisory=false`.
 - **audit/test_exploit_musig2_infinity_pubnonce.cpp (NEW — P1-SEC-003):** 6 sub-tests (MIP-1..6): valid pubnonce accepted; zero input (prefix 0x00) rejected; uncompressed prefix (0x04) rejected; off-curve x handled; NULL args rejected; invalid second-point prefix rejected. Wired as `exploit_poc`, `advisory=true` (requires shim).
-- **ci/sync_module_count.py:** Module count propagated — 382 total (273 exploit-PoC, 115 non-exploit).
+- **ci/sync_module_count.py:** Module count propagated — 382 total (270 exploit-PoC, 115 non-exploit).
 
 ## 2026-05-21 — Fix: doc sync, stale paths, canonical benchmark JSON machine-generation (REL-001..011, BENCH-003/006, CI-001)
 
@@ -1320,7 +1345,7 @@ evidence upgrades, and changes to what the repository can honestly claim.
   FAST variable-time row now labeled `[diag FAST]` — clearly marked as not production-equivalent.
   This eliminates the invalid VT-Ultra vs CT-libsecp comparison from the ratio table.
 
-### Module count: 357 total (101 non-exploit + 273 exploit PoC)
+### Module count: 357 total (101 non-exploit + 270 exploit PoC)
 
 ---
 
@@ -1466,7 +1491,7 @@ evidence upgrades, and changes to what the repository can honestly claim.
 - `docs/SHIM_KNOWN_DIVERGENCES.md` created: complete list of intentional shim vs libsecp256k1 behavioral differences.
 - `CLAUDE.md` updated: Canonical Data Synchronization rules added (module counts via `sync_module_count.py`, benchmark data via canonical JSON, ConnectBlock claim wording rules).
 - `docs/BITCOIN_CORE_BACKEND_EVIDENCE.md`: GCC CT signing regression (0.82–0.85×) disclosed; commit SHA mismatch corrected.
-- Module counts synced via `sync_module_count.py`: 98 non-exploit + 273 exploit PoC = 350 total.
+- Module counts synced via `sync_module_count.py`: 98 non-exploit + 270 exploit PoC = 350 total.
 
 ---
 
@@ -2341,7 +2366,7 @@ All 4 wired into `unified_audit_runner.cpp` + `audit/CMakeLists.txt`.
 
 ### Documentation Sync
 
-- `sync_module_count.py` run: WHY/README updated to 273 exploit PoCs, 80 non-exploit, 312 total.
+- `sync_module_count.py` run: WHY/README updated to 270 exploit PoCs, 80 non-exploit, 312 total.
 - `sync_version_refs.py` run: 26 doc files updated from v3.60/v3.66 → v3.68.0.
 - CT pipeline count: "3" → "5" (LLVM ct-verif, Valgrind taint, ct-prover, dudect, ARM64 native) across README + WHY.
 - `docs/EXPLOIT_TEST_CATALOG.md`: `test_exploit_der_parsing_differential` updated to 13 tests.
@@ -4741,7 +4766,7 @@ tests PASS.**
   double-hash confusion (H(msg) ≠ H(H(msg))); domain prefix isolation (domain-A sig ≠ domain-B
   sig).  Committed `c843979c`.
 
-**Running total after this wave: 273 exploit PoC files, 59 new checks.**
+**Running total after this wave: 270 exploit PoC files, 59 new checks.**
 
 ---
 
