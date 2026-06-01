@@ -3245,6 +3245,16 @@ add_test(NAME regression_recover_rplus_n_overflow
 set_tests_properties(regression_recover_rplus_n_overflow PROPERTIES
     TIMEOUT 60 LABELS "audit;regression;recovery;ecdsa;correctness")
 
+# -- CT-CRYPTO-001: branchless ct_glv_make_v in ct::scalar_mul --
+add_executable(test_regression_ct_glv_make_v_branchless_standalone
+    test_regression_ct_glv_make_v_branchless.cpp)
+audit_target_defaults(test_regression_ct_glv_make_v_branchless_standalone)
+target_compile_definitions(test_regression_ct_glv_make_v_branchless_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_ct_glv_make_v_branchless
+    COMMAND test_regression_ct_glv_make_v_branchless_standalone)
+set_tests_properties(regression_ct_glv_make_v_branchless PROPERTIES
+    TIMEOUT 60 LABELS "audit;regression;ct;scalar_mul;correctness")
+
 # -- 2026-05-06 Perf review: FROST DKG non-CT secret share gen mul (SEC-01) --
 add_executable(test_exploit_frost_secret_share_ct_standalone
     test_exploit_frost_secret_share_ct.cpp)
@@ -3993,6 +4003,8 @@ add_executable(unified_audit_runner
     test_regression_negate_inplace_generator_flag.cpp
     # bbhunt-001: ECDSA recover must reject r >= (p-n) in recid&2 (consensus parity)
     test_regression_recover_rplus_n_overflow.cpp
+    # CT-CRYPTO-001: ct::scalar_mul branchless make_v (no secret if(k_neg) branch)
+    test_regression_ct_glv_make_v_branchless.cpp
     # SEC-01: FROST DKG non-CT generator mul on secret share
     $<$<BOOL:${SECP256K1_BUILD_FROST}>:test_exploit_frost_secret_share_ct.cpp>
     # CRIT-01: comb_gen_mul lock-free after once_flag init

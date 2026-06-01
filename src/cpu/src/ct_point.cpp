@@ -3017,24 +3017,14 @@ Point scalar_mul(const Point& p, const Scalar& k) noexcept {
     // Compute v = k_abs + 2^128 (positive) or 2^128 - k_abs (negative)
     // using NON-MODULAR integer ops. Modular scalar_cneg+scalar_add wraps
     // around n when |ki| marginally exceeds 2^128.
-    auto make_v = [](const Scalar& k_abs, std::uint64_t k_neg) noexcept -> Scalar {
-        auto L = k_abs.limbs();
-        if (k_neg) {
-            std::uint64_t borrow = 0, diff;
-            diff = 0 - L[0]; borrow = (L[0] != 0) ? 1 : 0; L[0] = diff;
-            diff = 0 - L[1] - borrow; borrow = (L[1] | borrow) ? 1 : 0; L[1] = diff;
-            diff = 1 - L[2] - borrow; borrow = (L[2] + borrow > 1) ? 1 : 0; L[2] = diff;
-            L[3] = 0 - borrow;
-        } else {
-            std::uint64_t carry = 0, sum = L[2] + 1;
-            carry = static_cast<std::uint64_t>(sum < L[2]);
-            L[2] = sum; L[3] += carry;
-        }
-        return Scalar::from_limbs(L);
-    };
-
-    Scalar v1 = make_v(k1_abs, k1_neg);
-    Scalar v2 = make_v(k2_abs, k2_neg);
+    // CT-CRYPTO-001: use the branchless ct_glv_make_v helper (identical math,
+    // masked select) instead of a local if(k_neg){...}else{...} lambda. k_neg is
+    // the SECRET GLV sign bit (ct_scalar_is_high of the secret half-scalar), and
+    // this variable-base scalar_mul is reached from ECDH/ellswift/seckey_tweak_mul
+    // with a secret scalar — so the branch was a CT-hygiene gap. The four
+    // scalar_mul_* siblings already use this helper; this completes the migration.
+    Scalar v1 = ct_glv_make_v(k1_abs, k1_neg);
+    Scalar v2 = ct_glv_make_v(k2_abs, k2_neg);
 
     // 2. Build odd-multiples table via effective-affine + Z-ratio normalization
     CTAffinePoint pre_a[TABLE_SIZE];

@@ -1,5 +1,25 @@
 # Audit Changelog
 
+## 2026-06-01 — CT-CRYPTO-001: ct::scalar_mul made branchless on the secret GLV sign bit
+
+- **Root cause** (`src/cpu/src/ct_point.cpp` `scalar_mul(const Point&, const Scalar&)`):
+  the public variable-base CT scalar multiply built its GLV "v" half-scalars with a
+  local `make_v` lambda that branched `if (k_neg) {...} else {...}` on the **secret**
+  GLV sign bit (`k_neg = ct_scalar_is_high(secret half-scalar)`). This path is reached
+  from ECDH (`ct::scalar_mul(pubkey, privkey)`), ellswift XDH, and `ec_seckey_tweak_mul`
+  with a secret scalar — a constant-time hygiene gap (CT-CRYPTO-001). The four
+  `scalar_mul_*` siblings already used the branchless masked helper `ct_glv_make_v`
+  (ct_point.cpp:1274); the public `scalar_mul` had not been migrated.
+- **Fix:** replaced the branchy lambda + its two call sites with `ct_glv_make_v`
+  (identical arithmetic, masked select — computes both arms, selects via `neg_mask`/
+  `pos_mask`). Pure migration to an already-trusted helper; no math change.
+- **Test:** `audit/test_regression_ct_glv_make_v_branchless.cpp` (CT-GLV-1..3,
+  `ct_analysis`, advisory=false) proves `ct::scalar_mul(P,k) == P.scalar_mul(k)`
+  (variable-time reference) for k=1, k=2, and 256 random scalars (both GLV sign
+  polarities). 4/4 pass standalone + in the runner. (CT property: the helper is the
+  codebase's accepted CT form; `ci/ctgrind_validate.sh` + valgrind are available for
+  a belt-and-suspenders ctgrind run.)
+
 ## 2026-06-01 — bbhunt-001: ECDSA recover must reject `r >= (p - n)` in the recid&2 branch
 
 - **Root cause** (`src/cpu/src/recovery.cpp` `ecdsa_recover`): when recid bit 1 is

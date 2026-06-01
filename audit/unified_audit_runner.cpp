@@ -601,6 +601,7 @@ int test_regression_schnorr_r_zero_ct_run();                // SEC-006 // SEC-00
 int test_regression_pippenger_stale_used_run();  // BUG-01: Pippenger used[] stale across windows
 int test_regression_negate_inplace_generator_flag_run();  // B1: negate_inplace must clear is_generator_
 int test_regression_recover_rplus_n_overflow_run();  // bbhunt-001: ECDSA recover must reject r >= p-n in recid&2
+int test_regression_ct_glv_make_v_branchless_run();  // CT-CRYPTO-001: branchless make_v in ct::scalar_mul
 int test_exploit_frost_secret_share_ct_run();    // SEC-01: FROST DKG non-CT generator mul on secret share
 int test_regression_comb_gen_lockfree_run();     // CRIT-01: comb_gen_mul lock-free thread safety
 // GPU RAII test requires GPU symbols; stub returns advisory-skip when GPU not built.
@@ -1297,6 +1298,7 @@ static const AuditModule ALL_MODULES[] = {
     { "regression_pippenger_stale_used", "Pippenger used[] not cleared per-window — stale bits corrupt MSM for n>=48 (BUG-01, PIP-R1..R7)", "math_invariants", test_regression_pippenger_stale_used_run, false },
     { "regression_negate_inplace_generator_flag", "negate_inplace must clear is_generator_ — (-G).scalar_mul(k) == -(k*G), not k*G via the fixed-base path (B1, NEG-1..5)", "math_invariants", test_regression_negate_inplace_generator_flag_run, false },
     { "regression_recover_rplus_n_overflow", "ECDSA recover rejects r >= (p-n) in the recid&2 branch — else r+n wraps mod p to a different x and returns a bogus pubkey as success vs upstream's 0 (bbhunt-001, REC-1..4)", "math_invariants", test_regression_recover_rplus_n_overflow_run, false },
+    { "regression_ct_glv_make_v_branchless", "ct::scalar_mul uses branchless ct_glv_make_v (no secret if(k_neg) branch on the ECDH/ellswift/tweak_mul path) and stays numerically identical to the variable-time reference (CT-CRYPTO-001, CT-GLV-1..3)", "ct_analysis", test_regression_ct_glv_make_v_branchless_run, false },
 #if SECP256K1_HAS_FROST
     { "exploit_frost_secret_share_ct",   "FROST DKG share.value processed with ct::generator_mul not variable-time scalar_mul (SEC-01, FROST-CT1..5)", "ct_analysis",    test_exploit_frost_secret_share_ct_run,    false },
 #endif // SECP256K1_HAS_FROST
