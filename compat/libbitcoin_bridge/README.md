@@ -59,30 +59,27 @@ The trailing **opaque key** is the caller's own tag (e.g. 3-byte block id,
 4-byte tx id). The bridge **never interprets** it — it is carried only so an
 invalid row can be mapped back to its block/tx **without a second side table**.
 
-- `key_size` is passed on the call and is **variable**. `key_size == 0` disables
-  the column entirely (fastest; row stride == record size).
-- **Sizing contract (record count + key size, no buffer size).** The call passes
-  exactly two of `{record count, key size, buffer size}` — the **record count**
-  and the **key size**. The buffer size is *implied*, always
-  `count * (RECORD + key_size)`. There is deliberately **no buffer-size argument**,
-  so there is no buffer/stride mismatch and **no corresponding error condition**.
-  **Keyed rows (the usual node case)** — each on-wire row is
-  `[ record | key_size bytes ]`. In C++ you append your correlation key to the
-  record as a packed struct and hand the controller a `std::span` of it; the
-  wrapper **derives both sizes from the array** — the count from `span.size()` and
-  the key size from `sizeof(Row) - sizeof(record)` — so you never pass a size by
-  hand:
+- Each on-wire row is `[ record | key_size bytes ]` (`key_size` may be `0`).
+- **Sizing contract — the C++ caller never passes `key_size`.** As evoskuil put it,
+  *"key_size is redundant with rows.size() and count."* You hand the controller the
+  whole row buffer as a `std::span` (it carries its own byte size) plus the record
+  **count**; the wrapper derives `key_size = rows.size() / count - RECORD`:
 
   ```cpp
-  #pragma pack(push,1)
-  struct Row { ufsecp::lbtc::EcdsaRecord rec; uint8_t txid[4]; };  // 129 + 4
-  #pragma pack(pop)
-  ctrl.verify_ecdsa(std::span<const Row>(rows, n), results);       // zero-copy
+  // rows = the contiguous [record | key] buffer; n = number of records
+  ctrl.verify_ecdsa(std::span<const uint8_t>(rows, rows_bytes), n, results);
   ```
 
-  (A `std::span<const EcdsaRecord>` is just the `key_size == 0` special case of
-  the same template.) The low-level `verify_ecdsa(rows_ptr, count, key_size)` and
-  the C ABI take the same two values explicitly.
+  **Integration notes for the consumer:**
+  - The buffer must be **exactly** `count * (RECORD + key_size)` bytes. A size that
+    is not a clean multiple of `count`, or a stride below `RECORD`, fails closed
+    with `UFSECP_ERR_BAD_INPUT` — there is no partial/garbage path.
+  - `RECORD` is `129` for ECDSA, `128` for Schnorr; the message/sighash is the
+    **first** field for both kinds (Schnorr is uniform with ECDSA, not xonly-first).
+  - The correlation key is opaque to the bridge: it is carried, never interpreted,
+    so `results[i]` / the invalid-index list map straight back to your row `i`.
+  - C and C++17 consumers that prefer to pass the two values explicitly call the C
+    ABI `ufsecp_lbtc_verify_ecdsa(ctx, rows, count, key_size, …)` directly.
 - The caller builds **one unified table**; the controller internally splits each
   row into the signature payload (→ verify) and the opaque tail (→ carried).
 

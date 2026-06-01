@@ -149,9 +149,9 @@ int main() {
         CHECK(ninv == 1 && inv[0] == 7, "schnorr: invalid index == 7 after corruption");
     }
 
-    /* --- C++ wrapper: zero-copy via a packed KEYED-row struct. The wrapper
-     *     derives COUNT (span.size()) and KEY SIZE (sizeof(Row)-sizeof(record))
-     *     from the array — the caller never passes a size by hand. --- */
+    /* --- C++ wrapper: pass the keyed-row BUFFER as a span + the record COUNT;
+     *     the wrapper derives key_size = rows.size()/count - RECORD. No key_size
+     *     is passed by hand. (C++17 falls back to the C ABI which takes key_size.) */
     {
         const size_t N = 16, KS = 4;
         auto rows = build_ecdsa(sctx, N, KS); /* rows of [EcdsaRecord | 4-byte key] */
@@ -160,25 +160,20 @@ int main() {
         const size_t stride = UFSECP_LBTC_ECDSA_RECORD + KS;
         size_t ninv = 0;
 #if __cplusplus >= 202002L
-#pragma pack(push, 1)
-        struct KeyedRow { ufsecp::lbtc::EcdsaRecord rec; uint8_t key[KS]; };
-#pragma pack(pop)
-        static_assert(sizeof(KeyedRow) == UFSECP_LBTC_ECDSA_RECORD + KS, "packed keyed row");
-        auto rc = wrap.verify_ecdsa(
-            std::span<const KeyedRow>(reinterpret_cast<const KeyedRow*>(rows.data()), N),
-            res.data(), nullptr, 0, &ninv);
+        auto rc = wrap.verify_ecdsa(std::span<const uint8_t>(rows.data(), rows.size()), N,
+                                    res.data(), nullptr, 0, &ninv);
 #else
-        auto rc = wrap.verify_ecdsa(rows.data(), N, KS, res.data(), nullptr, 0, &ninv);
+        auto rc = ufsecp_lbtc_verify_ecdsa(wrap.get(), rows.data(), N, KS,
+                                           res.data(), nullptr, 0, &ninv);
 #endif
-        CHECK(rc == UFSECP_OK && ninv == 0, "wrapper: keyed span derives count + key_size");
+        CHECK(rc == UFSECP_OK && ninv == 0, "wrapper: key_size derived from rows.size()/count");
         rows[3 * stride + 65] ^= 0x04; /* flip a sig byte in row 3 */
         ninv = 0;
 #if __cplusplus >= 202002L
-        wrap.verify_ecdsa(
-            std::span<const KeyedRow>(reinterpret_cast<const KeyedRow*>(rows.data()), N),
-            res.data(), nullptr, 0, &ninv);
+        wrap.verify_ecdsa(std::span<const uint8_t>(rows.data(), rows.size()), N,
+                          res.data(), nullptr, 0, &ninv);
 #else
-        wrap.verify_ecdsa(rows.data(), N, KS, res.data(), nullptr, 0, &ninv);
+        ufsecp_lbtc_verify_ecdsa(wrap.get(), rows.data(), N, KS, res.data(), nullptr, 0, &ninv);
 #endif
         CHECK(ninv == 1 && res[3] == 0, "wrapper: corruption detected, row 3 marked");
     }
