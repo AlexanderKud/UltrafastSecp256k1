@@ -118,6 +118,18 @@ static void test_adaptor_blinded_nonce_source_scan() {
     } else {
         CHECK(has_blinded, "adaptor.cpp: generator_mul_blinded(k) present (SEC-NEW-001)");
     }
+
+    // bbhunt-002: ufsecp_schnorr_adaptor_sign must scrub aux_rand (the BIP-340
+    // nonce-derivation entropy) after use, on the success AND early-return paths.
+    printf("[2] bbhunt-002: ufsecp_zk.cpp — aux_rand entropy erased after use\n");
+    std::string zk = read_source_file("src/cpu/src/impl/ufsecp_zk.cpp");
+    if (zk.empty()) zk = read_source_file("ufsecp_zk.cpp");
+    CHECK(!zk.empty(), "ufsecp_zk.cpp must be readable (in-tree source always exists)");
+    if (!zk.empty()) {
+        // The adaptor-sign aux buffer is aux_arr; require a secure_erase mentioning it.
+        bool aux_erased = (zk.find("secure_erase(aux_arr.data()") != std::string::npos);
+        CHECK(aux_erased, "ufsecp_zk.cpp: secure_erase(aux_arr.data(), ...) present (bbhunt-002)");
+    }
 }
 
 // ── SEC-NEW-001 functional: schnorr adaptor sign + adapt + verify round-trip ─

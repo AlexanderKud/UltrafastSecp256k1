@@ -25,10 +25,17 @@ ufsecp_error_t ufsecp_schnorr_adaptor_sign(
     std::memcpy(aux_arr.data(), aux_rand, 32);
     auto ap = point_from_compressed(adaptor_point33);
     if (ap.is_infinity()) {
+        // bbhunt-002: erase secrets on the early-return path too — sk is parsed
+        // and aux_arr (BIP-340 nonce-derivation entropy) is copied above.
+        secp256k1::detail::secure_erase(&sk, sizeof(sk));
+        secp256k1::detail::secure_erase(aux_arr.data(), aux_arr.size());
         return ctx_set_err(ctx, UFSECP_ERR_BAD_PUBKEY, "invalid adaptor point");
     }
     auto pre = secp256k1::schnorr_adaptor_sign(sk, msg_arr, ap, aux_arr);
     secp256k1::detail::secure_erase(&sk, sizeof(sk));
+    // bbhunt-002: aux_rand is nonce-derivation entropy — scrub it after use
+    // (mirrors the recoverable-sign path which erases its aux buffer).
+    secp256k1::detail::secure_erase(aux_arr.data(), aux_arr.size());
     auto rhat = pre.R_hat.to_compressed();
     auto shat = pre.s_hat.to_bytes();
     std::memcpy(pre_sig_out, rhat.data(), 33);
