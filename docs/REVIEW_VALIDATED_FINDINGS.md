@@ -46,3 +46,30 @@ All dismissed with documented reasons (GitHub code-scanning, 2026-05-31):
 - **`cpp/unused-local-variable` point.cpp**: variable is already `[[maybe_unused]]`. `false positive`.
 - **`cpp/unused-local-variable` taproot.cpp / adaptor.cpp**: structured binding — the parity element *is* used; the first element is an unavoidable binding artifact. `false positive`.
 - **`cpp/unused-local-variable` address.cpp**: `s_base_state` *is* used — captured by-reference in the `compress_to_scalar` lambda (`s_base_state.data()` memcpy). CodeQL missed the lambda capture. `false positive`. (A naive "remove the dead variable" fix would break the build.)
+
+---
+
+## 2026-06-01 — 10-Pass Multi-Agent Review (commit d3313068)
+
+| ID | Claim | Verdict | Why | KB id |
+|----|-------|---------|-----|-------|
+| SHIM-001 | `secp256k1_schnorrsig_sign_custom` rejects `msglen != 32` while header/tests/upstream expect varlen | **REAL → fixed** (2026-06-01) | Confirmed against code: `shim_schnorr.cpp` did `if (msglen != 32) return 0;` (AUDIT-003 left-over), while upstream `secp256k1_schnorrsig_sign_custom` → `sign_internal(…, msg, msglen, …)` accepts any length, the shim header point 3 promised varlen, and `test_regression_schnorr_varlen_ct_fixes` (VCS-1..5) + `test_shim_security_edge_cases:265` asserted success. The rejection was added only because shim *verify* was 32-only at the time; verify is now varlen (SHIM-004), so the asymmetry is gone. Restored varlen signing via a new `ct::schnorr_sign(kp,msg,msglen,aux)` overload (mirror of the fixed-32 CT path); header comments corrected; VCS-7 round-trip added. | `SHIM-SCHNORR-VARLEN-RESTORED` |
+| TEST-003 | `valgrind_ct_check.sh` verdict ignores `UNINIT_ERRORS`/`VG_EXIT` (CT false-green) | **OPEN (real, not yet fixed)** | Separate finding from the same review; tracked in `workingdocs/REVIEW_2026-05-31_coder_report.md` §3 (P1-2). Not addressed in the SHIM-001 commit. | — |
+
+> Note: a separate observation surfaced while verifying SHIM-001 — the shim-linked
+> `test_shim_security_edge_cases_standalone` has **pre-existing** failures unrelated to this
+> fix: `secp256k1_schnorrsig_verify_batch` returns 0 for a valid `sign32` signature (PERF-003,
+> line 465; batch-varlen, line 276) and the 4 `*_precomp` calls return 0 with a valid ctx
+> (SHIM-004-PRECOMP, lines 400-412). These reproduce with the untouched `sign32` path, so they
+> are not caused by the varlen change. Filed for the owner; out of scope for SHIM-001.
+
+> **Update 2026-06-01 (SHIM-001 test now actually executes):** `test_regression_schnorr_varlen_ct_fixes`
+> used **wrong libsecp context-flag constants** (`CTX_SIGN=0x0101`, `CTX_VERIFY=0x0102`); `0x0102`
+> sets the COMPRESSION type bit, so `secp256k1_context_create(SIGN|VERIFY=0x0103)` fired the
+> illegal callback and **aborted before any VCS assertion ran** — and in the unified runner the
+> module advisory-skips because the shim weak symbols are not linked into the audit binary. So the
+> varlen path had **never been functionally validated**. Corrected to the real values
+> (`VERIFY=0x0101`, `SIGN=0x0201` → `SIGN|VERIFY=0x0301`). With the fix, a standalone build linked
+> against the shim runs **VCS-1..7 ALL PASS** (64/33/256/300-byte msgs, determinism, 32-byte
+> fast-path delegation, sign/verify round-trip) — the varlen `ct::schnorr_sign` is now genuinely
+> verified, not just asserted-on-paper.

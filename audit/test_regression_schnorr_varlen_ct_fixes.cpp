@@ -12,16 +12,25 @@
 // The 32-byte fast path delegates to secp256k1_schnorrsig_sign32 which routes
 // through ct::schnorr_sign — that path was already correct.
 //
-// This test guards correctness of the varlen path after the CT fixes.
+// REGRESSION GUARD (SHIM-001, restored 2026-06-01): the varlen *signing* path was
+// removed (AUDIT-003) when shim verify was 32-byte-only, replaced by a
+// `if (msglen != 32) return 0;` rejection — a divergence from upstream
+// libsecp256k1, whose secp256k1_schnorrsig_sign_custom accepts any msglen. Verify
+// is now varlen, so signing was restored via secp256k1::ct::schnorr_sign(kp, msg,
+// msglen, aux). These tests lock in that sign_custom MUST NOT reject msglen != 32
+// and MUST round-trip through verify, so the rejection cannot silently return.
+//
 // CT properties themselves (blinding, is_zero_ct) are validated by the
 // Valgrind/MSAN CT pipeline; this test guards functional correctness only.
 //
-// VCS-1: sign_custom varlen 64-byte round-trip via shim verify
+// VCS-1: sign_custom varlen 64-byte returns 1 (NOT rejected)
 // VCS-2: sign_custom varlen 33-byte (smallest varlen)
 // VCS-3: sign_custom varlen 256-byte (stack buffer boundary)
 // VCS-4: sign_custom varlen 300-byte (heap buffer path)
 // VCS-5: sign_custom varlen determinism (same inputs -> same sig)
-// VCS-6: 32-byte fast path still works (regression guard)
+// VCS-6: 32-byte fast path still delegates to sign32 (byte-identical)
+// VCS-7: sign_custom + schnorrsig_verify varlen round-trip (accept valid,
+//        reject tampered) across multiple lengths — the sign/verify symmetry guard
 // ============================================================================
 
 #ifndef UNIFIED_AUDIT_RUNNER
@@ -52,8 +61,12 @@ extern "C" {
     typedef struct secp256k1_context_struct secp256k1_context;
     typedef struct { unsigned char data[64]; } secp256k1_xonly_pubkey;
 
-    static constexpr unsigned int CTX_SIGN   = 0x0101u;
-    static constexpr unsigned int CTX_VERIFY = 0x0102u;
+    // Real libsecp256k1 context flags (secp256k1.h): TYPE_CONTEXT(1<<0) |
+    // {VERIFY(1<<8), SIGN(1<<9)}. SIGN|VERIFY == 0x301. (The earlier 0x0101/0x0102
+    // were wrong — 0x0102 set the COMPRESSION type bit, so context_create fired the
+    // illegal callback and aborted before any varlen assertion ran.)
+    static constexpr unsigned int CTX_VERIFY = 0x0101u; // CONTEXT | VERIFY
+    static constexpr unsigned int CTX_SIGN   = 0x0201u; // CONTEXT | SIGN
 
     SHIM_WEAK secp256k1_context* secp256k1_context_create(unsigned int flags);
     SHIM_WEAK void secp256k1_context_destroy(secp256k1_context* ctx);
@@ -61,8 +74,9 @@ extern "C" {
     SHIM_WEAK int secp256k1_schnorrsig_sign_custom(const secp256k1_context*, unsigned char*, const unsigned char*, size_t, const secp256k1_keypair*, void*);
     SHIM_WEAK int secp256k1_schnorrsig_sign32(const secp256k1_context*, unsigned char*, const unsigned char*, const secp256k1_keypair*, const unsigned char*);
     SHIM_WEAK int secp256k1_keypair_xonly_pub(const secp256k1_context*, secp256k1_xonly_pubkey*, int*, const secp256k1_keypair*);
-    // Note: schnorrsig_verify only accepts msglen==32 per BIP-340 shim profile.
-    // We verify round-trip correctness by re-signing with the same inputs.
+    // schnorrsig_verify accepts any msglen (matches upstream libsecp256k1), so the
+    // varlen sign path is round-tripped directly through verify (VCS-7).
+    SHIM_WEAK int secp256k1_schnorrsig_verify(const secp256k1_context*, const unsigned char*, const unsigned char*, size_t, const secp256k1_xonly_pubkey*);
 }
 
 static const unsigned char kPrivkey[32] = {
@@ -185,12 +199,47 @@ static void test_32byte_fast_path(secp256k1_context* ctx) {
                 "VCS-6: sign_custom(32) == sign32 (fast path delegation correct)");
 }
 
+// VCS-7: full sign+verify symmetry — sign_custom(msg,len) must produce a
+// signature that schnorrsig_verify(msg,len) accepts, and a tampered message must
+// be rejected, across several lengths. This is the strongest guard against the
+// AUDIT-003 regression (sign_custom rejecting msglen != 32) silently returning:
+// if sign rejected varlen, rc would be 0; if verify were 32-only, verify would
+// be 0 for varlen. Both must be 1 here.
+static void test_varlen_sign_verify_roundtrip(secp256k1_context* ctx) {
+    std::printf("  [VCS-7] sign_custom + schnorrsig_verify varlen round-trip\n");
+    secp256k1_keypair kp{};
+    ASSERT_TRUE(secp256k1_keypair_create(ctx, &kp, kPrivkey) == 1, "VCS-7: keypair_create");
+
+    secp256k1_xonly_pubkey xpk{};
+    ASSERT_TRUE(secp256k1_keypair_xonly_pub(ctx, &xpk, nullptr, &kp) == 1, "VCS-7: keypair_xonly_pub");
+
+    const size_t lens[] = {1, 31, 33, 64, 100, 256, 300};
+    for (size_t li = 0; li < sizeof(lens) / sizeof(lens[0]); ++li) {
+        const size_t mlen = lens[li];
+        unsigned char msg[300];
+        for (size_t i = 0; i < mlen; ++i) msg[i] = (unsigned char)((i * 7u + 3u) ^ 0x5Au);
+        unsigned char sig[64] = {};
+
+        int rc = secp256k1_schnorrsig_sign_custom(ctx, sig, msg, mlen, &kp, nullptr);
+        ASSERT_TRUE(rc == 1, "VCS-7: sign_custom varlen returns 1 (NOT rejected)");
+
+        int v = secp256k1_schnorrsig_verify(ctx, sig, msg, mlen, &xpk);
+        ASSERT_TRUE(v == 1, "VCS-7: verify accepts the varlen signature (sign/verify symmetric)");
+
+        // Tamper one message byte -> verify MUST reject (proves verify binds msg, len).
+        msg[mlen / 2] ^= 0x01;
+        int vt = secp256k1_schnorrsig_verify(ctx, sig, msg, mlen, &xpk);
+        ASSERT_TRUE(vt == 0, "VCS-7: verify rejects a tampered varlen message");
+    }
+}
+
 int test_regression_schnorr_varlen_ct_fixes_run() {
     g_fail = 0;
 
     if (!secp256k1_context_create || !secp256k1_context_destroy ||
         !secp256k1_keypair_create || !secp256k1_schnorrsig_sign_custom ||
-        !secp256k1_schnorrsig_sign32) {
+        !secp256k1_schnorrsig_sign32 || !secp256k1_keypair_xonly_pub ||
+        !secp256k1_schnorrsig_verify) {
         std::printf("  SKIP VCS: shim not linked\n");
         return ADVISORY_SKIP_CODE;
     }
@@ -207,13 +256,14 @@ int test_regression_schnorr_varlen_ct_fixes_run() {
     test_varlen_300byte_heap(ctx);
     test_varlen_determinism(ctx);
     test_32byte_fast_path(ctx);
+    test_varlen_sign_verify_roundtrip(ctx);
 
     secp256k1_context_destroy(ctx);
 
     if (g_fail == 0)
-        std::printf("  PASS VCS-1..6: sign_custom varlen CT fixes correctness\n");
+        std::printf("  PASS VCS-1..7: sign_custom varlen restored + sign/verify symmetric\n");
     else
-        std::printf("  FAIL VCS: sign_custom varlen CT fixes: %d failure(s)\n", g_fail);
+        std::printf("  FAIL VCS: sign_custom varlen: %d failure(s)\n", g_fail);
     return g_fail;
 }
 

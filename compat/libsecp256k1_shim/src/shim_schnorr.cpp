@@ -265,18 +265,51 @@ int secp256k1_schnorrsig_sign_custom(
         secp256k1_shim_call_illegal_cb(ctx, "secp256k1_schnorrsig_sign_custom: NULL msg with nonzero msglen");
         return 0;
     }
-    // COMPAT-004: reject msglen != 32 — this shim does not support variable-length Schnorr.
-    // Return 0 (fail-closed) without firing the illegal callback: unsupported msglen is
-    // not a programming error (upstream libsecp v0.4+ accepts any msglen), so callers
-    // that register a no-op callback must not be aborted. Divergence documented in
-    // docs/SHIM_KNOWN_DIVERGENCES.md (sign_custom varlen).
-    if (msglen != 32) {
-        return 0;
+    // msglen == 32: forward to the optimized sign32 fast path. This keeps
+    // sign_custom(msglen=32) byte-identical to sign32 (guarded by VCS-6) and
+    // reuses sign32's keypair-from-stored-pubkey fast reconstruction.
+    // ndata is the aux_rand32 per the libsecp contract.
+    if (msglen == 32) {
+        return secp256k1_schnorrsig_sign32(ctx, sig64, msg, keypair,
+                                           static_cast<const unsigned char*>(ndata));
     }
 
-    // Forward to sign32 — ndata is the aux_rand32 per the libsecp contract.
-    return secp256k1_schnorrsig_sign32(ctx, sig64, msg, keypair,
-                                       static_cast<const unsigned char*>(ndata));
+    // Variable-length path (msglen != 32): full BIP-340 with the message folded
+    // verbatim into H_BIP0340/nonce(t‖P_x‖msg) and H_BIP0340/challenge(R_x‖P_x‖msg),
+    // matching upstream libsecp256k1 secp256k1_schnorrsig_sign_custom. The CT
+    // construction (blinded nonce, branchless conditional negate, secure_erase of
+    // every secret-derived buffer) lives in the audited library overload
+    // secp256k1::ct::schnorr_sign(kp, msg, msglen, aux). secp256k1_schnorrsig_verify
+    // accepts any msglen (SHIM-004), so the sign/verify pair is symmetric again —
+    // the asymmetry that motivated removing this path (AUDIT-003) no longer exists.
+    Scalar sk;
+    if (!Scalar::parse_bytes_strict_nonzero(keypair->data, sk)) return 0;
+
+    // Reconstruct the BIP-340 keypair from the strict-parsed secret key. Using
+    // ct::schnorr_keypair_create (one ct::generator_mul) rather than the stored
+    // pubkey is intentional on this rarely-hot varlen path: it does not trust the
+    // cached pubkey bytes in keypair->data and matches the historical impl.
+    secp256k1::SchnorrKeypair kp = secp256k1::ct::schnorr_keypair_create(sk);
+    secp256k1::detail::secure_erase(&sk, sizeof(sk));
+
+    std::array<uint8_t, 32> aux{};
+    if (ndata) std::memcpy(aux.data(), ndata, 32);
+
+    auto sig = secp256k1::ct::schnorr_sign(
+        kp, static_cast<const uint8_t*>(msg), msglen, aux);
+    secp256k1::detail::secure_erase(&kp.d, sizeof(kp.d));
+    secp256k1::detail::secure_erase(aux.data(), aux.size());
+
+    if (sig.s.is_zero()) return 0;  // fail-closed: degenerate nonce (≈2^-256)
+    // SEC-006: CT OR accumulator — visit all 32 bytes, no early exit on output.
+    {
+        std::uint32_t r_nonzero = 0;
+        for (int i = 0; i < 32; ++i) r_nonzero |= sig.r[i];
+        if (r_nonzero == 0) return 0;
+    }
+    auto sig_bytes = sig.to_bytes();
+    std::memcpy(sig64, sig_bytes.data(), 64);
+    return 1;
 }
 
 // -- Verify ---------------------------------------------------------------

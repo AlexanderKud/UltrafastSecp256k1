@@ -1,5 +1,40 @@
 # Audit Changelog
 
+## 2026-06-01 — SHIM-001: restore variable-length Schnorr `sign_custom` (match upstream libsecp256k1)
+
+- **SHIM-001 (10-pass review, REAL → fixed)** (`compat/libsecp256k1_shim/src/shim_schnorr.cpp`,
+  `src/cpu/src/ct_sign.cpp`, `src/cpu/include/secp256k1/ct/sign.hpp`,
+  `compat/libsecp256k1_shim/include/secp256k1_schnorrsig.h`):
+  `secp256k1_schnorrsig_sign_custom` rejected `msglen != 32` (`return 0`), diverging from
+  upstream libsecp256k1 whose `sign_custom` accepts any message length. The rejection
+  (AUDIT-003, commit 546b893c) was added only because the shim's *verify* was 32-byte-only
+  at the time. Verify became varlen later (a3b77fde/b0de2135 + SHIM-004), so the asymmetry
+  that motivated the removal no longer exists — the rejection was a left-over divergence,
+  and the header + four wired regression tests asserted varlen *was* supported, contradicting
+  the code.
+- **Fix:** added a variable-length CT signing overload
+  `secp256k1::ct::schnorr_sign(kp, const uint8_t* msg, size_t msglen, aux)` in the audited
+  library — an exact mirror of the fixed-32 CT path (blinded nonce `generator_mul_blinded`,
+  branchless `scalar_cneg`, `secure_erase` of every secret-derived buffer) with an SBO
+  buffer (≤512 B on stack, heap beyond) for the `t‖P_x‖msg` nonce hash and `R_x‖P_x‖msg`
+  challenge hash. The shim's `sign_custom` now forwards `msglen == 32` to `sign32`
+  (byte-identical fast path) and routes `msglen != 32` through the new overload, with the
+  same fail-closed `s == 0` / `r == 0` guards. The fixed-32 hot path is untouched.
+- **Verification:** native micro-test (sign+verify+determinism+tamper across
+  msglen ∈ {0,1,16,31,32,33,64,100,256,300,1000}) all pass; `varlen(32)` output is
+  byte-identical to the fixed-32 overload; shim-linked `test_shim_security_edge_cases`
+  now signs a 16-byte message successfully via the C ABI (previously aborted at the
+  `sign_custom(…,16,…)` assert).
+- **Test** `audit/test_regression_schnorr_varlen_ct_fixes.cpp`: added **VCS-7** — a full
+  `sign_custom` + `schnorrsig_verify` varlen round-trip across 7 lengths (1/31/33/64/100/256/300)
+  that asserts the signature verifies and a tampered message is rejected, and the runner
+  link-guard now also requires `schnorrsig_verify`/`keypair_xonly_pub`. This locks the
+  sign/verify symmetry so the `msglen != 32` rejection cannot silently return.
+- **Docs:** `secp256k1_schnorrsig.h` header comments (point 3 + the verify NOTE) corrected —
+  both sign_custom and verify accept any msglen (were stale/contradictory). No
+  `SHIM_KNOWN_DIVERGENCES.md` entry is needed: sign_custom now matches upstream (the prior
+  code comment falsely claimed a divergence was documented there; it never was).
+
 ## 2026-05-31 — TQ-001: Wycheproof ECDSA/ECDH "no crash = pass" false-greens replaced with assertions
 
 - **TQ-001 (10-pass review)** (`audit/test_wycheproof_ecdsa.cpp`, `audit/test_wycheproof_ecdh.cpp`):

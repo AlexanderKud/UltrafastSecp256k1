@@ -198,6 +198,17 @@ SchnorrSignature schnorr_sign(const SchnorrKeypair& kp,
                               const std::array<std::uint8_t, 32>& msg,
                               const std::array<std::uint8_t, 32>& aux_rand);
 
+// -- CT Schnorr Sign (variable-length message, keypair variant) ----------------
+// BIP-340 signing for an arbitrary-length message, matching upstream
+// libsecp256k1 secp256k1_schnorrsig_sign_custom. The message bytes are folded
+// verbatim into the BIP-340 nonce hash (t || P_x || msg) and challenge hash
+// (R_x || P_x || msg). For msglen == 32 the result is byte-identical to the
+// fixed-length overload above. msg may be nullptr only when msglen == 0.
+// aux_rand: same 32-byte synthetic-nonce entropy contract as the fixed overload.
+SchnorrSignature schnorr_sign(const SchnorrKeypair& kp,
+                              const std::uint8_t* msg, std::size_t msglen,
+                              const std::array<std::uint8_t, 32>& aux_rand);
+
 // -- CT Schnorr Sign + Verify (fault attack countermeasure) --------------------
 // Signs and then verifies (FIPS 186-4 fault countermeasure).
 SchnorrSignature schnorr_sign_verified(const SchnorrKeypair& kp,

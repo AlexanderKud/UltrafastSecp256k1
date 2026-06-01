@@ -1,5 +1,32 @@
 # Constant-Time Verification
 
+### 2026-06-01 ct_sign.cpp — variable-length Schnorr CT sign overload (SHIM-001 restore)
+
+- **`src/cpu/src/ct_sign.cpp`**: added a variable-length overload
+  `secp256k1::ct::schnorr_sign(const SchnorrKeypair& kp, const uint8_t* msg, size_t msglen,
+  const std::array<uint8_t,32>& aux_rand)` to support BIP-340 `sign_custom` for arbitrary
+  message lengths (matching upstream libsecp256k1). It is an **exact mirror of the audited
+  fixed-32 CT path** in the same file — only the message length fed into the two tagged
+  hashes differs:
+  - nonce point uses `ct::generator_mul_blinded(k')` (DPA-blinded), identical to the 32-byte path;
+  - the even-Y conditional negate uses `ct::scalar_cneg(k', bool_to_mask(r_y_odd))` — branchless,
+    no secret-dependent branch on the nonce parity;
+  - `s = ct::scalar_add(k, ct::scalar_mul(e, kp.d))` uses the branchless CT scalar ops
+    (not `fast::` operators), so the secret nonce `k` and key `kp.d` never hit a data-dependent
+    reduction branch (V-01 discipline);
+  - every secret-derived buffer is erased on return: `d_bytes`, `t_hash`, `t`, `nonce_input`,
+    `rand_hash`, `challenge_input`, `e_hash`, `e`, `k_prime`, `k`. The `nonce_input` /
+    `challenge_input` `secure_erase` covers the full `64 + msglen` span (SBO stack buffer for
+    `msglen ≤ 512`, heap allocation beyond), so the message-bearing hash inputs are wiped
+    regardless of length.
+- **CT classification:** secret inputs are `kp.d` (signing key) and the derived nonce `k'/k`;
+  the message and `R.x` are public. No new variable-time primitive is introduced — the overload
+  reuses the same `ct::*` primitives already proven on the fixed-32 path. For `msglen == 32` the
+  output is byte-identical to `schnorr_sign(kp, msg32, aux)` (verified by micro-test), so the CT
+  guarantees of the established path carry over unchanged.
+- The shim `secp256k1_schnorrsig_sign_custom` keeps forwarding `msglen == 32` to `sign32` and
+  routes `msglen != 32` through this overload; the 32-byte hot path is untouched.
+
 ### 2026-05-27 ct_sign.cpp — is_zero_ct on r in ecdsa_sign_verified paths (CT-008/SEC-004)
 
 - **`src/cpu/src/ct_sign.cpp`**: `secp256k1::ct::ecdsa_sign_verified` and

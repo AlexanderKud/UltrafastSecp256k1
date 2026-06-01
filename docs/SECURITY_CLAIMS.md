@@ -2,6 +2,29 @@
 
 **UltrafastSecp256k1 v4.1.0** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-06-01 — SHIM-001: variable-length Schnorr `sign_custom` restored (CT, matches upstream)
+
+`secp256k1_schnorrsig_sign_custom` previously rejected `msglen != 32` (`return 0`), diverging
+from upstream libsecp256k1 (whose `sign_custom` signs any length). The rejection was a left-over
+from a period when the shim's *verify* was 32-byte-only; verify is now variable-length, so the
+asymmetry is gone and varlen signing is restored.
+
+**Claim:** variable-length BIP-340 signing through the shim is **constant-time in the signing key
+and nonce**, with the same guarantees as the 32-byte path. The new
+`secp256k1::ct::schnorr_sign(kp, msg, msglen, aux)` overload (`src/cpu/src/ct_sign.cpp`) is a
+line-for-line mirror of the audited fixed-32 CT path: DPA-blinded `generator_mul_blinded` nonce
+point, branchless `scalar_cneg` parity negate, branchless `ct::scalar_add/scalar_mul` for
+`s = k + e·d`, and `secure_erase` of every secret-derived buffer (including the full
+`64 + msglen` nonce/challenge hash inputs) on every return path. For `msglen == 32` the output is
+byte-identical to the fixed-32 overload.
+
+**Contract:** the shim forwards `msglen == 32` to `sign32` (unchanged fast path) and `msglen != 32`
+to the new overload; `extraparams->ndata` is the 32-byte aux entropy (NULL → 32 zero bytes,
+deterministic). Custom nonce functions remain rejected (fail-closed, unchanged). A signature
+produced for a given message length verifies through `secp256k1_schnorrsig_verify` for the same
+length (sign/verify symmetric). Regression: `audit/test_regression_schnorr_varlen_ct_fixes.cpp`
+VCS-1..7 (round-trip + tamper-rejection across 1/31/33/64/100/256/300-byte messages).
+
 ### 2026-05-28 — defense-in-depth: ecdsa_sign_hedged now erases r (nonce-derived)
 
 `ecdsa_sign_hedged` in `src/cpu/src/ecdsa.cpp` now erases `r = kG.x mod n` via

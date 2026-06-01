@@ -67,12 +67,12 @@ SECP256K1_API int secp256k1_schnorrsig_sign32(
  *    SECURITY: this gives deterministic (but still CT-safe) nonces. Pass a
  *    non-NULL extraparams->ndata through sign32() for randomised nonces.
  *
- * 3. VARIABLE-LENGTH MESSAGES: sign_custom supports msglen != 32 via the full
+ * 3. VARIABLE-LENGTH MESSAGES: sign_custom supports any msglen via the full
  *    BIP-340 H_BIP0340/nonce(t‖P_x‖msg) and H_BIP0340/challenge(R_x‖P_x‖msg)
- *    construction.  secp256k1_schnorrsig_verify ONLY accepts msglen == 32 and
- *    returns 0 for any other length (upstream verify also only supports 32-byte
- *    messages in the default BIP-340 profile). Callers that sign with msglen != 32
- *    must verify externally or with a matching custom verifier.
+ *    construction, matching upstream libsecp256k1. secp256k1_schnorrsig_verify
+ *    ALSO accepts any msglen, so a signature produced here round-trips through
+ *    this shim's verify for the same message length (sign/verify symmetric).
+ *    msg may be NULL only when msglen == 0.
  *
  * Context flag: SECP256K1_CONTEXT_SIGN is required (enforced; returns 0 on mismatch).
  */
@@ -86,10 +86,11 @@ SECP256K1_API int secp256k1_schnorrsig_sign_custom(
 
 /* secp256k1_schnorrsig_verify — BIP-340 Schnorr signature verification.
  *
- * NOTE: only msglen == 32 is accepted; any other length returns 0 immediately.
- * This matches the default BIP-340 32-byte message profile of upstream
- * libsecp256k1.  Signatures produced by sign_custom with msglen != 32 cannot
- * be verified by this function.
+ * Accepts any msglen, matching upstream libsecp256k1: the message bytes are
+ * folded verbatim into the challenge hash H_BIP0340/challenge(R_x‖P_x‖msg).
+ * msglen == 32 uses the optimized cached-pubkey path; other lengths use the
+ * varlen path. msg may be NULL only when msglen == 0. A signature produced by
+ * secp256k1_schnorrsig_sign_custom with the same message length verifies here.
  */
 SECP256K1_API int secp256k1_schnorrsig_verify(
     const secp256k1_context *ctx,

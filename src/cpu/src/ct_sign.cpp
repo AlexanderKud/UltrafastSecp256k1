@@ -17,6 +17,7 @@
 #include "secp256k1/config.hpp"
 #include "secp256k1/detail/secure_erase.hpp"
 #include <cstring>
+#include <memory>
 
 namespace {
 using secp256k1::detail::secure_erase;
@@ -364,6 +365,91 @@ SchnorrSignature schnorr_sign(const SchnorrKeypair& kp,
     secure_erase(e_hash.data(), e_hash.size());
     secure_erase(&e, sizeof(e));
     // Erase secret nonce scalars. Scalar is a POD-like 32-byte struct (4x uint64_t).
+    secure_erase(&k_prime, sizeof(k_prime));
+    secure_erase(&k, sizeof(k));
+
+    return sig;
+}
+
+// ============================================================================
+// CT Schnorr Sign — variable-length message (BIP-340, sign_custom)
+// ============================================================================
+// Identical construction to the fixed-32 overload above, but the message is an
+// arbitrary-length byte string folded verbatim into the BIP-340 nonce and
+// challenge tagged hashes — matching upstream libsecp256k1
+// secp256k1_schnorrsig_sign_custom. For msglen == 32 the output is byte-identical
+// to schnorr_sign(kp, msg32, aux). All secret-bearing buffers are erased on every
+// return path exactly as in the fixed-32 path. msg may be nullptr only when
+// msglen == 0.
+//
+// History: this varlen signing path previously lived inline in the libsecp256k1
+// shim (shim_schnorr.cpp). It was removed (AUDIT-003) only because the shim's
+// verify was 32-byte-only at the time, creating a sign/verify asymmetry. Verify
+// is now varlen (matches upstream), so the symmetric varlen signing path is
+// restored here in the audited CT library rather than re-duplicated in the shim.
+SchnorrSignature schnorr_sign(const SchnorrKeypair& kp,
+                              const uint8_t* msg, std::size_t msglen,
+                              const std::array<uint8_t, 32>& aux_rand) {
+    if (kp.d.is_zero_ct()) return SchnorrSignature{};
+
+    // SBO: avoid heap alloc for messages up to 512 bytes (mirrors
+    // schnorr_challenge_scalar_varlen in schnorr.cpp). Heap only for larger.
+    static constexpr std::size_t kSBOMax = 512;
+    const std::size_t hbuf_len = 64 + msglen;
+
+    // Step 1: t = d XOR tagged_hash("BIP0340/aux", aux_rand)
+    auto t_hash = cached_tagged_hash(g_aux_midstate, aux_rand.data(), 32);
+    auto d_bytes = kp.d.to_bytes();
+    uint8_t t[32];
+    for (std::size_t i = 0; i < 32; ++i) t[i] = d_bytes[i] ^ t_hash[i];
+
+    // Step 2: k' = tagged_hash("BIP0340/nonce", t || pubkey_x || msg)
+    uint8_t nonce_stack[64 + kSBOMax];
+    std::unique_ptr<uint8_t[]> nonce_heap;
+    uint8_t* nonce_input = (msglen <= kSBOMax)
+        ? nonce_stack
+        : (nonce_heap.reset(new uint8_t[hbuf_len]), nonce_heap.get());
+    std::memcpy(nonce_input,      t,            32);
+    std::memcpy(nonce_input + 32, kp.px.data(), 32);
+    if (msglen > 0) std::memcpy(nonce_input + 64, msg, msglen);
+    auto rand_hash = cached_tagged_hash(g_nonce_midstate, nonce_input, hbuf_len);
+    auto k_prime = Scalar::from_bytes(rand_hash);
+
+    // Step 3: R = k' * G -- blinded CT path (DPA defense via context_randomize)
+    auto R = ct::generator_mul_blinded(k_prime);
+    auto [rx, r_y_odd] = R.x_bytes_and_parity();
+
+    // Step 4: k = k' if even_y(R), else n - k'  (branchless; r_y_odd is secret-derived)
+    auto k = ct::scalar_cneg(k_prime, ct::bool_to_mask(r_y_odd));
+
+    // Step 5: e = tagged_hash("BIP0340/challenge", R.x || pubkey_x || msg)
+    uint8_t challenge_stack[64 + kSBOMax];
+    std::unique_ptr<uint8_t[]> challenge_heap;
+    uint8_t* challenge_input = (msglen <= kSBOMax)
+        ? challenge_stack
+        : (challenge_heap.reset(new uint8_t[hbuf_len]), challenge_heap.get());
+    std::memcpy(challenge_input,      rx.data(),    32);
+    std::memcpy(challenge_input + 32, kp.px.data(), 32);
+    if (msglen > 0) std::memcpy(challenge_input + 64, msg, msglen);
+    auto e_hash = cached_tagged_hash(g_challenge_midstate, challenge_input, hbuf_len);
+    auto e = Scalar::from_bytes(e_hash);
+
+    // Step 6: sig = (R.x, k + e * d)  — CT scalar ops on secret k and kp.d
+    SchnorrSignature sig{};
+    sig.r = rx;
+    sig.s = ct::scalar_add(k, ct::scalar_mul(e, kp.d));
+
+    // Erase ALL stack/heap buffers that held secret-derived material. The
+    // nonce_input/challenge_input erasures cover the full 64+msglen span whether
+    // it landed in the SBO stack buffer or the heap allocation.
+    secure_erase(d_bytes.data(), d_bytes.size());
+    secure_erase(t_hash.data(), t_hash.size());
+    secure_erase(t, sizeof(t));
+    secure_erase(nonce_input, hbuf_len);
+    secure_erase(rand_hash.data(), rand_hash.size());
+    secure_erase(challenge_input, hbuf_len);
+    secure_erase(e_hash.data(), e_hash.size());
+    secure_erase(&e, sizeof(e));
     secure_erase(&k_prime, sizeof(k_prime));
     secure_erase(&k, sizeof(k));
 
