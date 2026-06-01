@@ -73,6 +73,7 @@ AUDIT_SCRIPTS = [
     "check_randomize_claim_consistency.py",
     "check_required_checks_match_jobs.py",
     "check_advisory_json_rule16.py",
+    "check_doc_module_counts.py",
     "test_audit_scripts.py",
 ]
 
