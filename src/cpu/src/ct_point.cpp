@@ -3017,14 +3017,38 @@ Point scalar_mul(const Point& p, const Scalar& k) noexcept {
     // Compute v = k_abs + 2^128 (positive) or 2^128 - k_abs (negative)
     // using NON-MODULAR integer ops. Modular scalar_cneg+scalar_add wraps
     // around n when |ki| marginally exceeds 2^128.
-    // CT-CRYPTO-001: use the branchless ct_glv_make_v helper (identical math,
-    // masked select) instead of a local if(k_neg){...}else{...} lambda. k_neg is
-    // the SECRET GLV sign bit (ct_scalar_is_high of the secret half-scalar), and
-    // this variable-base scalar_mul is reached from ECDH/ellswift/seckey_tweak_mul
-    // with a secret scalar — so the branch was a CT-hygiene gap. The four
-    // scalar_mul_* siblings already use this helper; this completes the migration.
-    Scalar v1 = ct_glv_make_v(k1_abs, k1_neg);
-    Scalar v2 = ct_glv_make_v(k2_abs, k2_neg);
+    // CT-CRYPTO-001: branchless make_v — no secret if(k_neg){...}else{...}.
+    // k_neg is the SECRET GLV sign bit (ct_scalar_is_high of the secret half-
+    // scalar), and this variable-base scalar_mul is reached from ECDH/ellswift/
+    // seckey_tweak_mul with a secret scalar, so the old branch was a CT-hygiene
+    // gap. This is the SAME masked computation as the ct_glv_make_v helper, but
+    // inlined here so it compiles on every target (the helper lives in a
+    // platform-guarded block not compiled on wasm/32-bit/MSVC; this public
+    // scalar_mul is compiled everywhere).
+    auto make_v = [](const Scalar& k_abs, std::uint64_t k_neg) noexcept -> Scalar {
+        auto L = k_abs.limbs();
+        std::uint64_t const neg_mask = -static_cast<std::uint64_t>(k_neg != 0);
+        std::uint64_t const pos_mask = ~neg_mask;
+        // negate form: 2^128 - k_abs  (non-modular)
+        std::uint64_t nL[4], borrow = 0, diff;
+        diff = 0 - L[0];          borrow = (L[0] != 0) ? 1 : 0;        nL[0] = diff;
+        diff = 0 - L[1] - borrow; borrow = (L[1] | borrow) ? 1 : 0;    nL[1] = diff;
+        diff = 1 - L[2] - borrow; borrow = (L[2] + borrow > 1) ? 1 : 0; nL[2] = diff;
+        nL[3] = 0 - borrow;
+        // positive form: k_abs + 2^128
+        std::uint64_t pL[4];
+        pL[0] = L[0]; pL[1] = L[1];
+        std::uint64_t const sum = L[2] + 1;
+        pL[2] = sum; pL[3] = L[3] + static_cast<std::uint64_t>(sum < L[2]);
+        // branchless select per limb
+        L[0] = (neg_mask & nL[0]) | (pos_mask & pL[0]);
+        L[1] = (neg_mask & nL[1]) | (pos_mask & pL[1]);
+        L[2] = (neg_mask & nL[2]) | (pos_mask & pL[2]);
+        L[3] = (neg_mask & nL[3]) | (pos_mask & pL[3]);
+        return Scalar::from_limbs(L);
+    };
+    Scalar v1 = make_v(k1_abs, k1_neg);
+    Scalar v2 = make_v(k2_abs, k2_neg);
 
     // 2. Build odd-multiples table via effective-affine + Z-ratio normalization
     CTAffinePoint pre_a[TABLE_SIZE];

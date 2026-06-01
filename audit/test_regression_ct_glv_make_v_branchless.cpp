@@ -10,9 +10,12 @@
 // k_neg = ct_scalar_is_high(secret half-scalar); this path is reached from ECDH
 // (ct::scalar_mul(pubkey, privkey)), ellswift XDH, and ec_seckey_tweak_mul with
 // a SECRET scalar — so a data-dependent branch there is a constant-time hygiene
-// gap (CT-CRYPTO-001). The four scalar_mul_* siblings already used the branchless
-// masked helper ct_glv_make_v (ct_point.cpp:1274); the fix migrates the public
-// scalar_mul to it too.
+// gap (CT-CRYPTO-001). The fix makes the public scalar_mul build "v" with the
+// SAME branchless masked computation as the ct_glv_make_v helper, INLINED into
+// scalar_mul — the helper lives in a platform-guarded block not compiled on
+// wasm/32-bit/MSVC, while this public scalar_mul is compiled everywhere, so it
+// must not reference the helper directly (that broke the wasm/android/windows
+// builds; the inline masked form is the same math and compiles on every target).
 //
 // This test proves the migration is numerically EXACT: for many random scalars
 // (covering both GLV sign polarities ~50/50) and the k=1/k=2 edges,
