@@ -7,16 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.1.0] - 2026-06-02
 
-> **libbitcoin batch acceleration + audit / constant-time hardening + a consensus
-> fix.** Adds the GPU/CPU batch script-signature "collect" verify path requested by
-> the libbitcoin maintainer (with a dedicated CUDA kernel), closes a set of P1
+> **Modular build system + multi-coin support + libbitcoin batch acceleration +
+> audit / constant-time hardening + a consensus fix.** The cycle opens with a
+> feature-module build system — independently toggleable CPU and GPU modules,
+> coin-specific CMake presets, a generated feature header, and OBJECT-library
+> integration — adds BCH / Litecoin / Dogecoin shim modules and a native MSVC NuGet
+> package, lands the GPU/CPU batch script-signature "collect" verify path requested
+> by the libbitcoin maintainer (with a dedicated CUDA kernel), closes a set of P1
 > security-review findings — including a consensus-relevant ECDSA recovery edge case
 > (bbhunt-001) — makes the public constant-time scalar multiply fully branchless on
 > secret data (CT-CRYPTO-001), and lands the audit-hardening / benchmark-methodology
 > work (MED-3 MuSig2 ABI bypass, canonical bench turbo-lock, Rule 16 post-build
-> enforcement). No ABI break — minor bump per SemVer (all new APIs are additive; the
-> only behavior change is fail-closed on a previously deprecated v1 MuSig2 ABI path;
-> v2 callers are unaffected).
+> enforcement). No ABI break — minor bump per SemVer (all new APIs and build flags
+> are additive/opt-in; the only behavior change is fail-closed on a previously
+> deprecated v1 MuSig2 ABI path; v2 callers are unaffected).
+
+### Build system & packaging
+- **Feature-module build system.** CPU feature modules — FROST, ZK, ECIES,
+  BIP-352, Adaptor, Wallet, MuSig2, BIP-324, Pippenger — are now independently
+  toggleable via `SECP256K1_BUILD_<MODULE>` flags, with a generated
+  `secp256k1/secp256k1_features.h` exposing `SECP256K1_HAS_*` macros so consumers
+  can compile against exactly the surface they enabled.
+- **Independent GPU feature-module flags** (`SECP256K1_GPU_BUILD_FROST`, …),
+  separate from the CPU module flags, strip unused kernels from the GPU build
+  (e.g. FROST) and enable a full minimal-node GPU build that isolates
+  ECDH / MSM / HASH160 / ECRECOVER.
+- **Coin-specific CMake presets** (`docs/PRODUCT_PROFILES.md`): `bitcoin-core`,
+  `litecoin`, `dogecoin`, `bch-wallet`, `wallet`, `audit`, `cpu-release` — each
+  enables only the modules that backend needs (e.g. `bitcoin-core` = MuSig2 +
+  BIP-324 + Pippenger, everything else off).
+- **`SECP256K1_BUILD_AS_OBJECT`** — embed the engine as a CMake OBJECT library;
+  `docs/BUILD_INTEGRATION_GUIDE.md` documents the static / unity / LTO / OBJECT
+  integration modes. A unified profile manifest + smoke test is wired into the
+  fast gates.
+- **Per-module CAAS test isolation by build flag** — audit/exploit tests are gated
+  to the modules actually compiled (FROST / ZK / ECIES / BIP-352 / Adaptor /
+  Wallet), so a stripped profile still audits cleanly.
+- **New coin modules:** **BCH** (`SECP256K1_BUILD_BCH`, off by default) — RPA
+  reusable-payment-address scan + CashAddr + hash160, with CUDA and OpenCL grinding
+  kernels; **Litecoin** and **Dogecoin** Core shims + coin parameters.
+- **`SECP256K1_SHIM_RFC6979_COMPAT`** opt-in build flag for libsecp256k1 RFC6979
+  nonce compatibility in the shim.
+- **Packaging:** native MSVC static-lib **NuGet** package (vc143/vc145, x64/arm64)
+  for libbitcoin; the release ships static + DLL builds of both the `ufsecp` and
+  `secp256k1` ABIs.
+- Docs: `docs/BUILDING.md`, `docs/BUILD_INTEGRATION_GUIDE.md`,
+  `docs/PRODUCT_PROFILES.md`.
 
 ### Added — libbitcoin batch acceleration bridge
 - **In-place "collect" batch verify** for ECDSA and BIP-340 Schnorr
