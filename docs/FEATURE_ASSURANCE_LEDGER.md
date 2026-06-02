@@ -603,6 +603,8 @@ Backend-neutral GPU acceleration surface (`ufsecp_gpu.h`). Separate opaque conte
 | `ufsecp_gpu_generator_mul_batch` | Y | Y | Y | Y (1*G == G) | Scalar→compressed pubkey |
 | `ufsecp_gpu_ecdsa_verify_batch` | Y | Y | Y | - | Batch ECDSA verify |
 | `ufsecp_gpu_schnorr_verify_batch` | Y | Y | Y | - | BIP-340 batch verify |
+| `ufsecp_gpu_ecdsa_verify_collect` | fb | Y | fb | Y (GPU==CPU==libsecp) | libbitcoin collect: CUDA native kernel; OpenCL/Metal host-collapse fallback |
+| `ufsecp_gpu_schnorr_verify_collect` | fb | Y | fb | Y (GPU==CPU==libsecp) | libbitcoin collect: CUDA native kernel; OpenCL/Metal host-collapse fallback |
 | `ufsecp_gpu_ecdh_batch` | Y | Y | Y | - | SECRET-BEARING |
 | `ufsecp_gpu_hash160_pubkey_batch` | Y | Y | Y | - | SHA-256+RIPEMD-160 |
 | `ufsecp_gpu_msm` | Y | Y | Y | - | Multi-scalar multiplication |
