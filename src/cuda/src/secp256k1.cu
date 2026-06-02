@@ -242,6 +242,48 @@ void schnorr_verify_batch_kernel(
     }
 }
 
+// ECDSA Verify "collect" batch (libbitcoin bridge) -- verbatim copy of
+// ecdsa_verify_batch_kernel; the ONLY change is the output store: write the
+// verdict into a 1-byte/row cell instead of a bool* results array. The caller
+// pre-seeds key_cells non-zero; a VALID row zeroes its cell, an INVALID row is
+// left untouched (so a tail thread idx>=count or an unwritten row stays non-zero
+// = rejected = fail-closed). The EC verdict is bit-identical to verify_batch.
+__global__ __launch_bounds__(128, 2)
+void ecdsa_verify_collect_kernel(
+    const uint8_t* __restrict__ msg_hashes,
+    const JacobianPoint* __restrict__ public_keys,
+    const ECDSASignatureGPU* __restrict__ sigs,
+    uint8_t*       __restrict__ key_cells,   // count bytes; in = non-zero, out = verdict
+    int count)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        const uint8_t* msg = msg_hashes + static_cast<size_t>(idx) * 32;
+        if (ecdsa_verify(msg, &public_keys[idx], &sigs[idx]))
+            key_cells[idx] = 0u;   // valid -> zero (collect contract)
+        // invalid -> leave key_cells[idx] as seeded (rejected id survives)
+    }
+}
+
+// Schnorr Verify "collect" batch (libbitcoin bridge) -- verbatim copy of
+// schnorr_verify_batch_kernel; same 1-byte/row verdict store as above.
+__global__ __launch_bounds__(128, 2)
+void schnorr_verify_collect_kernel(
+    const uint8_t* __restrict__ pubkeys_x,
+    const uint8_t* __restrict__ msgs,
+    const SchnorrSignatureGPU* __restrict__ sigs,
+    uint8_t*       __restrict__ key_cells,
+    int count)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        const uint8_t* pk  = pubkeys_x + static_cast<size_t>(idx) * 32;
+        const uint8_t* msg = msgs + static_cast<size_t>(idx) * 32;
+        if (schnorr_verify(pk, msg, &sigs[idx]))
+            key_cells[idx] = 0u;
+    }
+}
+
 // ECDSA Sign Recoverable batch
 __global__ __launch_bounds__(128, 2)
 void ecdsa_sign_recoverable_batch_kernel(

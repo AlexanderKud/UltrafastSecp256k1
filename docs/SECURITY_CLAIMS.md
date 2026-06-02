@@ -963,6 +963,22 @@ cryptographic implementations, including libsecp256k1.
 | Scalar cond. swap | N/A (use std::swap) | `ct::scalar_cswap(a, b, mask)` |
 | Scalar cond. negate | `s.negate()` with if | `ct::scalar_cneg(a, mask)` |
 
+### GPU collect-verify ABI (libbitcoin bridge, 2026-06-02 — PUBLIC-DATA)
+
+`ufsecp_gpu_ecdsa_verify_collect` / `ufsecp_gpu_schnorr_verify_collect` are a
+libbitcoin-bridge specialization of batch verification. They are **public-data
+operations**: inputs are messages, public keys and signatures (all on-chain), and
+`key_buffer` carries only opaque caller verdict/correlation markers — **no private
+key, nonce, or secret material is processed**, so the CT-vs-variable-time boundary
+does not apply (variable-time verify is correct, per the project's verify-path
+rule). The verdict is written in place into a 1-byte-per-row cell (valid → 0,
+invalid → left). The dedicated CUDA kernel is a verbatim copy of the audited verify
+kernel with only the output store changed, so its accept/reject verdict is
+bit-identical to `ufsecp_gpu_*_verify_batch` (proven GPU==CPU==libsecp by
+`test_lbtc_consensus_diff`). OpenCL/Metal return `Unsupported` and the bridge falls
+back to the host-collapse path. Hostile-caller quartet: see
+[FFI_HOSTILE_CALLER.md](FFI_HOSTILE_CALLER.md) Section J.
+
 ### GPU (CUDA/OpenCL/Metal) API
 
 All GPU CT functions are in the `secp256k1::cuda::ct::` namespace (CUDA),

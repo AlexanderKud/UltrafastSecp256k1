@@ -204,6 +204,19 @@ identical verify cores, so the collect rejected-set is consensus-identical to th
 on the rejected-set; `tests/test_lbtc_collect.cpp` proves the in-place contract,
 including a `-DUFSECP_LBTC_CHUNK_OVERRIDE=8` multi-chunk variant).
 
+**GPU collect kernel.** On CUDA the collect path uses a *dedicated on-device
+kernel* (`ufsecp_gpu_ecdsa_verify_collect` / `_schnorr_verify_collect`) — a
+verbatim copy of the verify kernel whose only change is the output store (it
+writes a 1-byte verdict into a device buffer instead of a `bool` result array, so
+the host skips the result-scatter pass; the variable-width key-cell zeroing stays
+host-side). OpenCL and Metal do not implement it (the `GpuBackend` default returns
+`Unsupported`); the bridge then falls back automatically to the host-collapse path
+(the existing `*_verify_batch` kernels + a host verdict write) and finally to the
+CPU reference — all consensus-identical. The **results-based** verify ABI's GPU
+path is left byte-for-byte unchanged (only the collect path uses the new kernel,
+gated by `if constexpr`). A test/bench seam `-DUFSECP_LBTC_DISABLE_DEDICATED`
+forces the host-collapse arm for A/B comparison.
+
 ## libbitcoin integration shape
 
 libbitcoin-system wraps libsecp256k1 in

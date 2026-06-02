@@ -242,14 +242,27 @@ shallow batch-verify paths. All gaps are closed by `test_i1_*`–`test_i5_*` in
 
 ## Section J: GPU C ABI (v3.24+)
 
-`test_gpu_host_api_negative.cpp` and `test_gpu_abi_gate.cpp` cover all 18
-`ufsecp_gpu_*` functions without requiring GPU hardware. Both files are integrated
-into the unified audit runner (modules `gpu_api_negative` and `gpu_abi_gate`).
+`test_gpu_host_api_negative.cpp` and `test_gpu_abi_gate.cpp` cover all 20
+`ufsecp_gpu_*` functions without requiring GPU hardware (GPU-only smoke paths run
+when a device is present). Both files are integrated into the unified audit runner
+(modules `gpu_api_negative` and `gpu_abi_gate`).
 
 | Test File | Checks | Coverage |
 |-----------|--------|----------|
 | `test_gpu_host_api_negative` | 38 | NULL ctx for all batch ops; NULL ctx_out / info_out; ctx_create with backend 0/99/255; is_available/device_count for invalid backend; count=0 no-ops; NULL buffers + count>0; invalid device index; GPU error strings (7 codes); backend name edge cases (0, 99, 0xFFFFFFFF) |
-| `test_gpu_abi_gate` | 30 | Backend count/ids/names (CUDA/OpenCL/Metal/none/invalid); device_info null guard + invalid backend + available device; ctx_create null/invalid/valid lifecycle; ctx_destroy(nullptr) no-crash; last_error/last_error_msg(nullptr); NULL buffer batch ops; error_str(OK/UNAVAILABLE/UNSUPPORTED/999); GPU ops if available (1*G smoke, count=0, NULL-scalar failure); `ufsecp_gpu_is_ready` NULL guard (returns 0) + valid ctx succeeds (smoke, returns 1) |
+| `test_gpu_abi_gate` | 39 | Backend count/ids/names (CUDA/OpenCL/Metal/none/invalid); device_info null guard + invalid backend + available device; ctx_create null/invalid/valid lifecycle; ctx_destroy(nullptr) no-crash; last_error/last_error_msg(nullptr); NULL buffer batch ops; error_str(OK/UNAVAILABLE/UNSUPPORTED/999); GPU ops if available (1*G smoke, count=0, NULL-scalar failure); `ufsecp_gpu_is_ready` NULL guard (returns 0) + valid ctx succeeds (smoke, returns 1) |
+
+**J.collect — `ufsecp_gpu_ecdsa_verify_collect` / `ufsecp_gpu_schnorr_verify_collect`**
+(libbitcoin bridge, PUBLIC-DATA; `key_buffer` carries only opaque verdict markers,
+never secret material). Hostile-caller quartet in `test_gpu_abi_gate.cpp`:
+
+| Function | null | zero | invalid | smoke |
+|----------|------|------|---------|-------|
+| `ufsecp_gpu_ecdsa_verify_collect`   | NULL ctx and NULL buffer → `UFSECP_ERR_NULL_ARG` | count=0 → no-op OK (zero-edge) | oversized count > cap → `UFSECP_ERR_BAD_INPUT` (invalid/reject) | valid signature zeroes its 1-byte verdict (success, when GPU present) |
+| `ufsecp_gpu_schnorr_verify_collect` | NULL ctx → `UFSECP_ERR_NULL_ARG` | count=0 → no-op OK (zero-edge) | oversized count > cap → `UFSECP_ERR_BAD_INPUT` (invalid/reject) | valid Schnorr signature zeroes its verdict (success smoke) |
+
+Backends without a native collect kernel (OpenCL/Metal) return `Unsupported`; the
+libbitcoin bridge then falls back to the host-collapse path (consensus-identical).
 
 ---
 

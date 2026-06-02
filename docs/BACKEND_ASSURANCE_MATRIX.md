@@ -20,6 +20,26 @@ Backend trust is measured, not assumed.
 | Metal | **MEDIUM** | ABI-complete, CI validated, hardware-level CT unprotected¹ |
 | ROCm/HIP | **EXPERIMENTAL** | ABI partial, hardware-backed validation pending |
 
+### libbitcoin bridge "collect" verify (Added 2026-06-02)
+
+The in-place collect verify (`ufsecp_lbtc_verify_*_collect`) has a dedicated
+on-device CUDA kernel (`ufsecp_gpu_*_verify_collect`); OpenCL and Metal inherit
+the `GpuBackend` default (`GpuError::Unsupported`) and the bridge falls back to
+the host-collapse path (the existing, audited `ufsecp_gpu_*_verify_batch` kernels
++ a host-side verdict write). All paths route through the identical verify cores,
+so the rejected-set is consensus-identical across them.
+
+| Backend | collect path | Assurance |
+|---------|--------------|-----------|
+| CPU     | reference (per-row verify) | **HIGH** — gated vs libsecp256k1 |
+| CUDA    | dedicated on-device kernel | **HIGH** — `test_lbtc_consensus_diff` proves GPU==CPU==libsecp on the rejected-set (ECDSA+Schnorr, mixed corpus); kernel is a verbatim copy of the audited verify kernel with only the output store changed |
+| OpenCL  | host-collapse fallback (`Unsupported` → `*_verify_batch` + host write) | **MEDIUM** — verify kernel ABI-complete; collect verdict applied host-side (no untested device kernel) |
+| Metal   | host-collapse fallback | **MEDIUM** — same as OpenCL |
+
+A native OpenCL/Metal collect kernel is a documented follow-up, gated on those
+backends gaining local/CI hardware coverage (a consensus-bearing accept/reject
+device kernel must never ship unverified).
+
 ### Non-GPU Product Profile Assurance (Added 2026-05-01)
 
 Full taxonomy: [docs/PRODUCT_PROFILES.md](PRODUCT_PROFILES.md).

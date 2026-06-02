@@ -1,5 +1,41 @@
 # Audit Changelog
 
+## 2026-06-02 — libbitcoin bridge: in-place "collect" verify + dedicated CUDA collect kernel
+
+- **What (additive):** new in-place collect verify for the libbitcoin bridge —
+  `ufsecp_lbtc_verify_ecdsa_collect` / `_schnorr_collect` (C ABI) and
+  `Controller::collect_ecdsa/_schnorr(std::span<Row>)` (C++20, NON-const span). The
+  per-row verdict is collapsed into each row's trailing key cell (valid → zeroed,
+  invalid → caller's id survives), so the caller collects every non-zero key cell =
+  the rejected set; no `results[]`. The existing results-based verify ABI is left
+  **byte-for-byte unchanged**. Implementation: `Sink` → `ResultSink` + `CollectSink`,
+  `cpu_chunk`/`gpu_chunk` templated on the sink, `verify_impl` → `verify_core<Sink>`.
+- **Dedicated CUDA kernel:** new engine ABI `ufsecp_gpu_ecdsa_verify_collect` /
+  `_schnorr_verify_collect` dispatching to new `GpuBackend` virtuals whose **default
+  returns `GpuError::Unsupported`** — only `CudaBackend` overrides them, so OpenCL/Metal
+  inherit the default and the bridge falls back to the host-collapse path (existing
+  `*_verify_batch` kernels + host verdict write) then CPU. The CUDA kernels
+  (`ecdsa_verify_collect_kernel` / `schnorr_verify_collect_kernel`) are **verbatim
+  copies** of the verify kernels; the only change is the output store (write a
+  1-byte/row verdict on device: valid → 0). The bridge's `verify_core` gates the
+  dedicated path with `if constexpr (CollectSink)` so the **results path's GPU kernel
+  is untouched**. Seam `-DUFSECP_LBTC_DISABLE_DEDICATED` forces host-collapse (A/B).
+- **Consensus:** `tests/test_lbtc_consensus_diff.cpp` (`diff_kind_collect`) proves
+  **GPU == CPU == libsecp256k1 bit-for-bit on the rejected-set** for ECDSA and Schnorr
+  collect (20000-row mixed corpus, all 7 rejection classes) on an RTX 5060 Ti. CPU
+  contract proven by `tests/test_lbtc_collect.cpp` (16 checks; single- + multi-chunk
+  via `-DUFSECP_LBTC_CHUNK_OVERRIDE=8`). Regression `test_lbtc_bridge` 14/14.
+- **Perf (measured, RTX 5060 Ti, 1M rows, best-of-6, taskset -c 0; dedicated ×5 /
+  host-collapse ×4 runs):** ECDSA-collect 3.61–3.63 (dedicated) vs 3.60–3.62
+  (host-collapse) M sig/s; Schnorr-collect 4.53–4.54 vs 4.51–4.54 M sig/s. Ranges
+  **OVERLAP → INCONCLUSIVE** (the EC verify dominates; the output-channel change is
+  within noise). **No speedup is claimed.** The kernel ships as a consensus-neutral
+  specialization that removes the host result-scatter pass and is the correct
+  foundation for a future packed-row on-device de-interleave (Option B).
+- **Docs:** `BACKEND_ASSURANCE_MATRIX.md` (collect parity: CUDA native / OpenCL+Metal
+  host-collapse fallback), `API_REFERENCE.md` (two new GPU ABI rows), bridge README.
+  KB: `LBTC-COLLECT-API`, `LBTC-COLLECT-CUDA-KERNEL`.
+
 ## 2026-06-01 — CT-CRYPTO-001: ct::scalar_mul made branchless on the secret GLV sign bit
 
 - **Root cause** (`src/cpu/src/ct_point.cpp` `scalar_mul(const Point&, const Scalar&)`):

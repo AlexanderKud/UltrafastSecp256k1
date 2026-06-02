@@ -131,6 +131,51 @@ int main(int argc, char** argv) {
         };
         bench("ECDSA", ufsecp_lbtc_verify_ecdsa, e_rows);
         bench("Schnorr", ufsecp_lbtc_verify_schnorr, s_rows);
+
+        /* In-place "collect" path (key_size=4 mutable rows). On the GPU this uses
+         * the dedicated on-device collect kernel by default; build with
+         * -DUFSECP_LBTC_DISABLE_DEDICATED for the host-collapse control arm — the
+         * A/B isolates the dedicated kernel + removed host scatter loop. The
+         * collect call re-verifies every row each iteration and the key-cell
+         * zeroing is idempotent, so per-iteration work is identical. */
+        {
+            const size_t KS = 4;
+            const size_t es = UFSECP_LBTC_ECDSA_RECORD + KS;
+            const size_t ss = UFSECP_LBTC_SCHNORR_RECORD + KS;
+            std::vector<uint8_t> ec(BATCH * es), sc(BATCH * ss);
+            for (size_t i = 0; i < BATCH; ++i) {
+                std::memcpy(ec.data() + i * es,
+                            e_rows.data() + i * UFSECP_LBTC_ECDSA_RECORD,
+                            UFSECP_LBTC_ECDSA_RECORD);
+                std::memcpy(sc.data() + i * ss,
+                            s_rows.data() + i * UFSECP_LBTC_SCHNORR_RECORD,
+                            UFSECP_LBTC_SCHNORR_RECORD);
+                const uint64_t id = i + 1; /* non-zero id in the key cell */
+                for (size_t b = 0; b < KS; ++b) {
+                    ec[i * es + UFSECP_LBTC_ECDSA_RECORD + b]   = (uint8_t)(id >> (8 * b));
+                    sc[i * ss + UFSECP_LBTC_SCHNORR_RECORD + b] = (uint8_t)(id >> (8 * b));
+                }
+            }
+            auto bench_collect = [&](const char* kind, auto collect, std::vector<uint8_t>& rows) {
+                collect(ctrl, rows.data(), BATCH, KS); /* warmup */
+                double best = 1e30;
+                for (int it = 0; it < ITERS; ++it) {
+                    auto t0 = clock_t_::now();
+                    collect(ctrl, rows.data(), BATCH, KS);
+                    double dt = secs_since(t0);
+                    if (dt < best) best = dt;
+                }
+                std::printf("   %-14s %8.2f M sig/s   (%.4f s for %zu, best of %d)\n",
+                            kind, (double)BATCH / best / 1e6, best, BATCH, ITERS);
+            };
+#ifdef UFSECP_LBTC_DISABLE_DEDICATED
+            std::printf("   [collect arm: host-collapse control (UFSECP_LBTC_DISABLE_DEDICATED)]\n");
+#else
+            std::printf("   [collect arm: dedicated on-device kernel]\n");
+#endif
+            bench_collect("ECDSA-collect",   ufsecp_lbtc_verify_ecdsa_collect,   ec);
+            bench_collect("Schnorr-collect", ufsecp_lbtc_verify_schnorr_collect, sc);
+        }
         std::printf("\n");
         ufsecp_lbtc_ctrl_destroy(ctrl);
     }

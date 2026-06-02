@@ -77,6 +77,10 @@ TEST_PATTERNS = (
     r"^src/cpu/tests/",
     r"^compat/libsecp256k1_shim/tests/",
     r"^compat/libsecp256k1_bchn_shim/tests/",
+    # libbitcoin bridge differential/correctness tests (consensus-bearing:
+    # test_lbtc_consensus_diff proves GPU==CPU==libsecp, test_lbtc_collect /
+    # test_lbtc_bridge prove the bridge contracts).
+    r"^compat/libbitcoin_bridge/tests/",
     # A change to a CI security tool (a SECURITY_CI_FILE — a Python gate / scanner)
     # is correctly covered by its paired Python unit test, not a C++ audit test.
     r"^ci/test_.*\.py$",

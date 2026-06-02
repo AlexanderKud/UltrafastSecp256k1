@@ -219,6 +219,52 @@ UFSECP_API ufsecp_error_t ufsecp_gpu_schnorr_verify_batch(
     size_t count,
     uint8_t* out_results);
 
+/** Batch ECDSA "collect" verification (libbitcoin bridge specialization).
+ *
+ *  PUBLIC-DATA operation. Identical verdict to ufsecp_gpu_ecdsa_verify_batch,
+ *  but the per-row verdict is collapsed IN PLACE into a 1-byte-per-row buffer
+ *  the caller pre-seeds with a NON-ZERO marker: a VALID row zeroes its byte, an
+ *  INVALID row leaves it untouched. The dedicated kernel writes the verdict on
+ *  device, so the host skips the bool->uint8 result-scatter pass — the bridge
+ *  then applies the variable-width key-cell zeroing host-side. Backends that do
+ *  not implement it return a non-OK code so the caller falls back to
+ *  ufsecp_gpu_ecdsa_verify_batch + a host-side collapse.
+ *
+ *  @param ctx           GPU context.
+ *  @param msg_hashes32  Input: count * 32 bytes (message hashes).
+ *  @param pubkeys33     Input: count * 33 bytes (compressed pubkeys).
+ *  @param sigs64        Input: count * 64 bytes (compact r||s).
+ *  @param count         Number of items.
+ *  @param key_buffer    IN/OUT: count bytes. In = caller's non-zero markers;
+ *                       out = 0 where valid, left non-zero where invalid.
+ *  @return UFSECP_OK if processed; non-OK (e.g. unsupported) -> caller falls back. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_ecdsa_verify_collect(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* msg_hashes32,
+    const uint8_t* pubkeys33,
+    const uint8_t* sigs64,
+    size_t count,
+    uint8_t* key_buffer);
+
+/** Batch BIP-340 Schnorr "collect" verification (libbitcoin bridge specialization).
+ *  Same verdict + in-place 1-byte verdict semantics as
+ *  ufsecp_gpu_ecdsa_verify_collect; see that doc.
+ *
+ *  @param ctx           GPU context.
+ *  @param msg_hashes32  Input: count * 32 bytes (message hashes).
+ *  @param pubkeys_x32   Input: count * 32 bytes (x-only public keys).
+ *  @param sigs64        Input: count * 64 bytes (R.x||s Schnorr signatures).
+ *  @param count         Number of items.
+ *  @param key_buffer    IN/OUT: count bytes (0 where valid, non-zero where invalid).
+ *  @return UFSECP_OK if processed; non-OK -> caller falls back. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_schnorr_verify_collect(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* msg_hashes32,
+    const uint8_t* pubkeys_x32,
+    const uint8_t* sigs64,
+    size_t count,
+    uint8_t* key_buffer);
+
 /** Batch ECDH shared secret computation.
  *
  *  SECRET-BEARING operation. Private keys are uploaded to device memory.

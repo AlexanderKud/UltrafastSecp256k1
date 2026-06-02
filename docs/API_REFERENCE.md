@@ -2326,6 +2326,8 @@ Backend-neutral GPU acceleration surface. All functions use opaque `ufsecp_gpu_c
 | `ufsecp_gpu_generator_mul_batch` | `(ctx, scalars32[], n, pubkeys33_out[]) -> error_t` | k*G for n scalars |
 | `ufsecp_gpu_ecdsa_verify_batch` | `(ctx, msgs32[], pubs33[], sigs64[], n, results_out[]) -> error_t` | ECDSA batch verify |
 | `ufsecp_gpu_schnorr_verify_batch` | `(ctx, msgs32[], pubs_x32[], sigs64[], n, results_out[]) -> error_t` | Schnorr/BIP-340 batch verify |
+| `ufsecp_gpu_ecdsa_verify_collect` | `(ctx, msgs32[], pubs33[], sigs64[], n, key_buffer[]) -> error_t` | ECDSA batch verify, in-place 1-byte/row verdict (valid→0, invalid→left); libbitcoin collect. Non-CUDA backends return Unsupported |
+| `ufsecp_gpu_schnorr_verify_collect` | `(ctx, msgs32[], pubs_x32[], sigs64[], n, key_buffer[]) -> error_t` | Schnorr batch verify, in-place verdict (see ecdsa_verify_collect) |
 | `ufsecp_gpu_ecdh_batch` | `(ctx, privkeys32[], pubs33[], n, secrets32_out[]) -> error_t` | ECDH shared secrets (SECRET-BEARING) |
 | `ufsecp_gpu_hash160_pubkey_batch` | `(ctx, pubs33[], n, hashes20_out[]) -> error_t` | SHA-256 + RIPEMD-160 of pubkeys |
 | `ufsecp_gpu_msm` | `(ctx, scalars32[], points33[], n, result33_out) -> error_t` | Multi-scalar multiplication |

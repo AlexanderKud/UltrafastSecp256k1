@@ -271,6 +271,48 @@ ufsecp_error_t ufsecp_gpu_schnorr_verify_batch(
     } UFSECP_GPU_CATCH
 }
 
+ufsecp_error_t ufsecp_gpu_ecdsa_verify_collect(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* msg_hashes32,
+    const uint8_t* pubkeys33,
+    const uint8_t* sigs64,
+    size_t count,
+    uint8_t* key_buffer)
+{
+    if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (SECP256K1_UNLIKELY(!msg_hashes32 || !pubkeys33 || !sigs64 || !key_buffer)) {
+        return UFSECP_ERR_NULL_ARG;
+    }
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+    return to_abi_error(
+        ctx->backend->ecdsa_verify_collect(
+            msg_hashes32, pubkeys33, sigs64, count, key_buffer));
+    } UFSECP_GPU_CATCH
+}
+
+ufsecp_error_t ufsecp_gpu_schnorr_verify_collect(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* msg_hashes32,
+    const uint8_t* pubkeys_x32,
+    const uint8_t* sigs64,
+    size_t count,
+    uint8_t* key_buffer)
+{
+    if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (SECP256K1_UNLIKELY(!msg_hashes32 || !pubkeys_x32 || !sigs64 || !key_buffer)) {
+        return UFSECP_ERR_NULL_ARG;
+    }
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    try {
+    return to_abi_error(
+        ctx->backend->schnorr_verify_collect(
+            msg_hashes32, pubkeys_x32, sigs64, count, key_buffer));
+    } UFSECP_GPU_CATCH
+}
+
 ufsecp_error_t ufsecp_gpu_ecdh_batch(
     ufsecp_gpu_ctx* ctx,
     const uint8_t* privkeys32,

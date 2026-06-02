@@ -146,6 +146,11 @@ static void test_null_buffer_ops() {
           "ecdsa_verify_batch(NULL ctx)");
     CHECK(ufsecp_gpu_schnorr_verify_batch(nullptr, dummy, dummy, dummy, 1, dummy) == UFSECP_ERR_NULL_ARG,
           "schnorr_verify_batch(NULL ctx)");
+    /* collect verify (libbitcoin): NULL ctx → ERR_NULL_ARG (hostile-caller null rejection) */
+    CHECK(ufsecp_gpu_ecdsa_verify_collect(nullptr, dummy, dummy, dummy, 1, dummy) == UFSECP_ERR_NULL_ARG,
+          "ecdsa_verify_collect(NULL ctx)");
+    CHECK(ufsecp_gpu_schnorr_verify_collect(nullptr, dummy, dummy, dummy, 1, dummy) == UFSECP_ERR_NULL_ARG,
+          "schnorr_verify_collect(NULL ctx)");
     CHECK(ufsecp_gpu_ecdh_batch(nullptr, dummy, dummy, 1, dummy) == UFSECP_ERR_NULL_ARG,
           "ecdh_batch(NULL ctx)");
     CHECK(ufsecp_gpu_hash160_pubkey_batch(nullptr, dummy, 1, dummy) == UFSECP_ERR_NULL_ARG,
@@ -250,6 +255,54 @@ static void test_gpu_ops_if_available() {
         uint8_t out[33] = {};
         err = ufsecp_gpu_generator_mul_batch(ctx, nullptr, 1, out);
         CHECK(err != UFSECP_OK, "generator_mul_batch(NULL scalars) fails");
+    }
+
+    /* collect verify (libbitcoin) hostile-caller quartet: zero-edge, invalid
+     * oversized count, NULL buffer rejection, and a valid smoke. PUBLIC-DATA:
+     * key_buffer carries only opaque verdict markers, never secret material. */
+    {
+        uint8_t kb[2] = {1, 1};
+        /* zero-edge: count == 0 is a no-op returning OK */
+        err = ufsecp_gpu_ecdsa_verify_collect(ctx, nullptr, nullptr, nullptr, 0, nullptr);
+        CHECK(err == UFSECP_OK || err == UFSECP_ERR_GPU_UNSUPPORTED,
+              "ecdsa_verify_collect(count=0) zero-edge is OK or UNSUPPORTED");
+        err = ufsecp_gpu_schnorr_verify_collect(ctx, nullptr, nullptr, nullptr, 0, nullptr);
+        CHECK(err == UFSECP_OK || err == UFSECP_ERR_GPU_UNSUPPORTED,
+              "schnorr_verify_collect(count=0) zero-edge is OK or UNSUPPORTED");
+        /* invalid: oversized count (> kMaxGpuBatchN) must be rejected as bad input */
+        const size_t huge = ((size_t)1 << 26) + 1;
+        err = ufsecp_gpu_ecdsa_verify_collect(ctx, kb, kb, kb, huge, kb);
+        CHECK(err == UFSECP_ERR_BAD_INPUT,
+              "ecdsa_verify_collect(count>cap) rejected as invalid");
+        err = ufsecp_gpu_schnorr_verify_collect(ctx, kb, kb, kb, huge, kb);
+        CHECK(err == UFSECP_ERR_BAD_INPUT,
+              "schnorr_verify_collect(count>cap) rejected as invalid");
+        /* NULL buffer with non-zero count → NULL_ARG */
+        err = ufsecp_gpu_ecdsa_verify_collect(ctx, nullptr, kb, kb, 1, kb);
+        CHECK(err == UFSECP_ERR_NULL_ARG,
+              "ecdsa_verify_collect(NULL buffer) rejected");
+    }
+
+    /* collect verify smoke: one valid ECDSA signature must zero its 1-byte
+     * verdict cell (valid → 0). Runs only when the backend executes the kernel. */
+    {
+        ufsecp_ctx* sc = nullptr;
+        if (ufsecp_ctx_create(&sc) == UFSECP_OK) {
+            uint8_t sk[32] = {0}; sk[31] = 7;
+            uint8_t msg[32]; for (int i = 0; i < 32; ++i) msg[i] = (uint8_t)(i * 7 + 1);
+            uint8_t pub[33], sig[64];
+            if (ufsecp_pubkey_create(sc, sk, pub) == UFSECP_OK &&
+                ufsecp_ecdsa_sign(sc, msg, sk, sig) == UFSECP_OK) {
+                uint8_t kb[1] = {0xAB};
+                err = ufsecp_gpu_ecdsa_verify_collect(ctx, msg, pub, sig, 1, kb);
+                if (err == UFSECP_OK)
+                    CHECK(kb[0] == 0, "ecdsa_verify_collect smoke: valid sig zeroes verdict (success)");
+                else
+                    std::printf("  (ecdsa_verify_collect smoke: backend err %d (%s) — skip)\n",
+                                err, ufsecp_gpu_error_str(err));
+            }
+            ufsecp_ctx_destroy(sc);
+        }
     }
 
     ufsecp_gpu_ctx_destroy(ctx);

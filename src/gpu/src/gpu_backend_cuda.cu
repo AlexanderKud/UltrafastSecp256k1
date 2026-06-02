@@ -89,6 +89,18 @@ extern __global__ void schnorr_verify_batch_kernel(
     const SchnorrSignatureGPU* __restrict__ sigs,
     bool*          __restrict__ results,
     int count);
+extern __global__ void ecdsa_verify_collect_kernel(
+    const uint8_t* __restrict__ msg_hashes,
+    const JacobianPoint* __restrict__ public_keys,
+    const ECDSASignatureGPU* __restrict__ sigs,
+    uint8_t*       __restrict__ key_cells,
+    int count);
+extern __global__ void schnorr_verify_collect_kernel(
+    const uint8_t* __restrict__ pubkeys_x,
+    const uint8_t* __restrict__ msgs,
+    const SchnorrSignatureGPU* __restrict__ sigs,
+    uint8_t*       __restrict__ key_cells,
+    int count);
 extern __global__ void frost_verify_partial_batch_kernel(
     const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
     const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*,
@@ -601,6 +613,118 @@ gmb_cleanup:
             out_results[i] = h_res[i] ? 1 : 0;
 
         cudaFree(d_res);
+        cudaFree(d_sigs);
+        cudaFree(d_msgs);
+        cudaFree(d_pks);
+        clear_error();
+        return GpuError::Ok;
+    }
+
+    /* "Collect" variants (libbitcoin bridge). Copy of *_verify_batch above; the
+     * ONLY changes: the bool* d_res result buffer becomes a 1-byte/row d_keys
+     * verdict buffer that is SEEDED from the caller's key_buffer (non-zero) and
+     * downloaded back into it, and the host result-scatter loop is removed (the
+     * collect kernel writes 0 on valid / leaves on invalid directly). Verdict is
+     * bit-identical to verify_batch (same device verify, same decompress). */
+    GpuError ecdsa_verify_collect(
+        const uint8_t* msg_hashes32, const uint8_t* pubkeys33,
+        const uint8_t* sigs64, size_t count,
+        uint8_t* key_buffer) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (count == 0) { clear_error(); return GpuError::Ok; }
+        if (!msg_hashes32 || !pubkeys33 || !sigs64 || !key_buffer)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        std::vector<ECDSASignatureGPU> h_sigs(count);
+        for (size_t i = 0; i < count; ++i)
+            bytes_to_ecdsa_sig(sigs64 + i * 64, &h_sigs[i]);
+
+        uint8_t*            d_msgs   = nullptr;
+        uint8_t*            d_pubs33 = nullptr;
+        JacobianPoint*      d_pubs   = nullptr;
+        bool*               d_pub_ok = nullptr;
+        ECDSASignatureGPU*  d_sigs   = nullptr;
+        uint8_t*            d_keys   = nullptr;   /* 1 byte/row verdict channel */
+
+        CUDA_TRY(cudaMalloc(&d_msgs, count * 32));
+        CUDA_TRY(cudaMalloc(&d_pubs33, count * 33));
+        CUDA_TRY(cudaMalloc(&d_pubs, count * sizeof(JacobianPoint)));
+        CUDA_TRY(cudaMalloc(&d_pub_ok, count * sizeof(bool)));
+        CUDA_TRY(cudaMalloc(&d_sigs, count * sizeof(ECDSASignatureGPU)));
+        CUDA_TRY(cudaMalloc(&d_keys, count));
+
+        CUDA_TRY(cudaMemcpy(d_msgs, msg_hashes32, count * 32, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_pubs33, pubkeys33, count * 33, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_sigs, h_sigs.data(), count * sizeof(ECDSASignatureGPU), cudaMemcpyHostToDevice));
+        /* seed verdict channel with the caller's non-zero markers: a row the
+         * kernel never zeroes (tail thread, or unreached after a fault) stays
+         * non-zero = rejected = fail-closed. */
+        CUDA_TRY(cudaMemcpy(d_keys, key_buffer, count, cudaMemcpyHostToDevice));
+
+        int threads = 128;
+        int blocks  = (static_cast<int>(count) + threads - 1) / threads;
+        batch_compressed_to_jac_kernel<<<blocks, threads>>>(
+            d_pubs33, d_pubs, d_pub_ok, static_cast<int>(count));
+        CUDA_TRY(cudaGetLastError());
+
+        ecdsa_verify_collect_kernel<<<blocks, threads>>>(
+            d_msgs, d_pubs, d_sigs, d_keys, static_cast<int>(count));
+        CUDA_TRY(cudaGetLastError());
+        CUDA_TRY(cudaDeviceSynchronize());
+
+        /* verdict already collapsed on device; no host scatter loop */
+        CUDA_TRY(cudaMemcpy(key_buffer, d_keys, count, cudaMemcpyDeviceToHost));
+
+        cudaFree(d_keys);
+        cudaFree(d_sigs);
+        cudaFree(d_pub_ok);
+        cudaFree(d_pubs);
+        cudaFree(d_pubs33);
+        cudaFree(d_msgs);
+        clear_error();
+        return GpuError::Ok;
+    }
+
+    GpuError schnorr_verify_collect(
+        const uint8_t* msg_hashes32, const uint8_t* pubkeys_x32,
+        const uint8_t* sigs64, size_t count,
+        uint8_t* key_buffer) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (count == 0) { clear_error(); return GpuError::Ok; }
+        if (!msg_hashes32 || !pubkeys_x32 || !sigs64 || !key_buffer)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        std::vector<SchnorrSignatureGPU> h_sigs(count);
+        for (size_t i = 0; i < count; ++i)
+            bytes_to_schnorr_sig(sigs64 + i * 64, &h_sigs[i]);
+
+        uint8_t*             d_pks  = nullptr;
+        uint8_t*             d_msgs = nullptr;
+        SchnorrSignatureGPU* d_sigs = nullptr;
+        uint8_t*             d_keys = nullptr;
+
+        CUDA_TRY(cudaMalloc(&d_pks, count * 32));
+        CUDA_TRY(cudaMalloc(&d_msgs, count * 32));
+        CUDA_TRY(cudaMalloc(&d_sigs, count * sizeof(SchnorrSignatureGPU)));
+        CUDA_TRY(cudaMalloc(&d_keys, count));
+
+        CUDA_TRY(cudaMemcpy(d_pks, pubkeys_x32, count * 32, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_msgs, msg_hashes32, count * 32, cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_sigs, h_sigs.data(), count * sizeof(SchnorrSignatureGPU), cudaMemcpyHostToDevice));
+        CUDA_TRY(cudaMemcpy(d_keys, key_buffer, count, cudaMemcpyHostToDevice));
+
+        int threads = 128;
+        int blocks  = (static_cast<int>(count) + threads - 1) / threads;
+        schnorr_verify_collect_kernel<<<blocks, threads>>>(
+            d_pks, d_msgs, d_sigs, d_keys, static_cast<int>(count));
+        CUDA_TRY(cudaGetLastError());
+        CUDA_TRY(cudaDeviceSynchronize());
+
+        CUDA_TRY(cudaMemcpy(key_buffer, d_keys, count, cudaMemcpyDeviceToHost));
+
+        cudaFree(d_keys);
         cudaFree(d_sigs);
         cudaFree(d_msgs);
         cudaFree(d_pks);

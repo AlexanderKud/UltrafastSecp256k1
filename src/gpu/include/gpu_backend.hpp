@@ -94,6 +94,32 @@ public:
         const uint8_t* sigs64, size_t count,
         uint8_t* out_results) = 0;
 
+    /* "Collect" verify (libbitcoin bridge specialization): identical verdict to
+     * *_verify_batch, but written in place into a 1-byte-per-row key_buffer the
+     * caller pre-seeds non-zero (valid -> 0, invalid -> left). Non-pure with a
+     * safe default: backends that do not implement it (OpenCL/Metal) return
+     * Unsupported so the caller falls back to *_verify_batch + a host collapse.
+     * PUBLIC-DATA: key_buffer holds only opaque correlation markers, no secret. */
+    virtual GpuError ecdsa_verify_collect(
+        const uint8_t* msg_hashes32, const uint8_t* pubkeys33,
+        const uint8_t* sigs64, size_t count,
+        uint8_t* key_buffer)
+    {
+        (void)msg_hashes32; (void)pubkeys33; (void)sigs64;
+        (void)count; (void)key_buffer;
+        return GpuError::Unsupported;
+    }
+
+    virtual GpuError schnorr_verify_collect(
+        const uint8_t* msg_hashes32, const uint8_t* pubkeys_x32,
+        const uint8_t* sigs64, size_t count,
+        uint8_t* key_buffer)
+    {
+        (void)msg_hashes32; (void)pubkeys_x32; (void)sigs64;
+        (void)count; (void)key_buffer;
+        return GpuError::Unsupported;
+    }
+
     virtual GpuError ecdh_batch(
         const uint8_t* privkeys32, const uint8_t* peer_pubkeys33,
         size_t count, uint8_t* out_secrets32) = 0;

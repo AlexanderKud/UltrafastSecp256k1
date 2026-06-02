@@ -34,6 +34,7 @@
 
 #include <cstring>
 #include <new>
+#include <type_traits>
 #include <vector>
 
 /* UFSECP_ERR_GPU_UNAVAILABLE lives in ufsecp_gpu.h; provide it for CPU-only builds. */
@@ -234,6 +235,52 @@ bool gpu_chunk(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
         sink.mark(base + i, res[i] != 0);
     return true;
 }
+
+/* DEDICATED on-device collect path (libbitcoin specialization). De-interleaves
+ * exactly like gpu_chunk, but calls the dedicated *_verify_collect kernel which
+ * writes a 1-byte/row verdict on device (the kernel zeroes the verdict byte on
+ * VALID and leaves the caller-seeded non-zero byte on INVALID). The host then
+ * applies the SAME sink (so the variable-width real key-cell zeroing — or the
+ * results[] write — stays host-side and byte-identical to every other path).
+ * Returns false if the backend does not implement collect (OpenCL/Metal return
+ * Unsupported) or on device failure → caller falls back to gpu_chunk then CPU.
+ *
+ * Verdict convention here is the INVERSE of gpu_chunk's: the collect kernel sets
+ * keys[i]==0 for VALID (and leaves it non-zero for invalid), whereas verify_batch
+ * returns res[i]==1 for valid. So "valid" is `keys[i] == 0`. */
+template <class Sink>
+bool gpu_chunk_collect(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
+                       std::size_t base, std::size_t cnt, std::size_t stride,
+                       Sink& sink) {
+    std::vector<uint8_t> msg(cnt * 32), sig(cnt * 64);
+    std::vector<uint8_t> pub(cnt * (k == Kind::Ecdsa ? 33u : 32u));
+    std::vector<uint8_t> keys(cnt, 1u); /* seed non-zero → unwritten rows = rejected */
+
+    for (std::size_t i = 0; i < cnt; ++i) {
+        const uint8_t* r = rows + (base + i) * stride;
+        if (k == Kind::Ecdsa) {
+            std::memcpy(msg.data() + i * 32, r, 32);
+            std::memcpy(pub.data() + i * 33, r + 32, 33);
+            std::memcpy(sig.data() + i * 64, r + 65, 64);
+        } else {
+            std::memcpy(msg.data() + i * 32, r, 32);       /* msg   @ 0  */
+            std::memcpy(pub.data() + i * 32, r + 32, 32);  /* xonly @ 32 */
+            std::memcpy(sig.data() + i * 64, r + 64, 64);  /* sig   @ 64 */
+        }
+    }
+
+    const ufsecp_error_t rc =
+        k == Kind::Ecdsa
+            ? ufsecp_gpu_ecdsa_verify_collect(gpu, msg.data(), pub.data(),
+                                              sig.data(), cnt, keys.data())
+            : ufsecp_gpu_schnorr_verify_collect(gpu, msg.data(), pub.data(),
+                                                sig.data(), cnt, keys.data());
+    if (rc != UFSECP_OK) return false; /* Unsupported / device error → fall back */
+
+    for (std::size_t i = 0; i < cnt; ++i)
+        sink.mark(base + i, keys[i] == 0u); /* keys[i]==0 ⇔ valid (see above) */
+    return true;
+}
 #endif /* UFSECP_LBTC_WITH_GPU */
 
 /* The shared chunk loop, generic over the output sink. `rows` is the const view
@@ -255,6 +302,17 @@ void verify_core(ufsecp_lbtc_ctrl* ctrl, Kind k, const uint8_t* rows,
             const std::size_t cnt = (n - base) < kChunk ? (n - base) : kChunk;
 #ifdef UFSECP_LBTC_WITH_GPU
             if (ctrl->gpu) {
+                /* Collect path PREFERS the dedicated on-device kernel; the results
+                 * path (ResultSink) is left byte-for-byte unchanged — it never
+                 * touches the new kernel. Both fall back to the host-collapse
+                 * gpu_chunk, then to CPU. UFSECP_LBTC_DISABLE_DEDICATED is a
+                 * TEST/BENCH seam that forces the host-collapse control arm. */
+                if constexpr (std::is_same_v<Sink, CollectSink>) {
+#ifndef UFSECP_LBTC_DISABLE_DEDICATED
+                    if (gpu_chunk_collect(ctrl->gpu, k, rows, base, cnt, stride, sink))
+                        continue;
+#endif
+                }
                 if (gpu_chunk(ctrl->gpu, k, rows, base, cnt, stride, sink)) continue;
                 /* device-level failure → mandatory CPU fallback for this chunk */
             }

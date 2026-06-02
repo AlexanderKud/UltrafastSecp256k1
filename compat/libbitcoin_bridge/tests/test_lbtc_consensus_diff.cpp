@@ -234,11 +234,20 @@ bool diff_kind_collect(ufsecp_lbtc_ctrl* gpu, ufsecp_lbtc_ctrl* cpu, const void*
                     name, mismatch, n, first);
         return false;
     }
+    /* Stronger than the rejected-set counts: after collect the GPU and CPU row
+     * buffers must be byte-for-byte identical — records are untouched, valid key
+     * cells are zeroed in both, invalid ids are preserved in both. This catches
+     * any in-place-write or per-row divergence the counts alone could miss (e.g.
+     * the GPU zeroing the WRONG rows but the same NUMBER of rows). */
+    if (g_rows != c_rows) {
+        std::printf("  COLLECT DIVERGENCE [%s]: GPU and CPU key buffers differ byte-for-byte\n", name);
+        return false;
+    }
     if (have_ls)
-        std::printf("  %s collect: GPU==CPU==libsecp rejected-set on %zu rows (%zu rejected); %zu==%zu==%zu\n",
+        std::printf("  %s collect: GPU==CPU==libsecp rejected-set on %zu rows (%zu rejected); %zu==%zu==%zu (buffers byte-equal)\n",
                     name, n, c_rej, g_rej, c_rej, ls_rej);
     else
-        std::printf("  %s collect: GPU==CPU rejected-set on %zu rows (%zu rejected); %zu==%zu  [libsecp leg not linked]\n",
+        std::printf("  %s collect: GPU==CPU rejected-set on %zu rows (%zu rejected); %zu==%zu (buffers byte-equal)  [libsecp leg not linked]\n",
                     name, n, c_rej, g_rej, c_rej);
     return (g_rej==c_rej) && (!have_ls || ls_rej==c_rej);
 }
