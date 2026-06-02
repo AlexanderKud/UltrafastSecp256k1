@@ -5,13 +5,36 @@ All notable changes to UltrafastSecp256k1 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.1.0] - 2026-05-23
+## [4.1.0] - 2026-06-02
 
-> **Audit hardening + benchmark methodology release.** Closes 5 P1 review items
-> (MED-3 MuSig2 ABI bypass, canonical bench turbo-lock, CHANGELOG diagnostic
-> drift, .zenodo.json metadata drift, Rule 16 post-build enforcement). No ABI
-> break — minor bump per SemVer (new fail-closed behavior on a previously
-> deprecated v1 ABI path; v2 callers are unaffected).
+> **libbitcoin batch acceleration + audit / constant-time hardening + a consensus
+> fix.** Adds the GPU/CPU batch script-signature "collect" verify path requested by
+> the libbitcoin maintainer (with a dedicated CUDA kernel), closes a set of P1
+> security-review findings — including a consensus-relevant ECDSA recovery edge case
+> (bbhunt-001) — makes the public constant-time scalar multiply fully branchless on
+> secret data (CT-CRYPTO-001), and lands the audit-hardening / benchmark-methodology
+> work (MED-3 MuSig2 ABI bypass, canonical bench turbo-lock, Rule 16 post-build
+> enforcement). No ABI break — minor bump per SemVer (all new APIs are additive; the
+> only behavior change is fail-closed on a previously deprecated v1 MuSig2 ABI path;
+> v2 callers are unaffected).
+
+### Added — libbitcoin batch acceleration bridge
+- **In-place "collect" batch verify** for ECDSA and BIP-340 Schnorr
+  (`ufsecp_lbtc_verify_ecdsa_collect` / `_schnorr_collect`; C++20
+  `Controller::collect_ecdsa/_schnorr(std::span<Row>)`). The per-row verdict is
+  collapsed into the row's trailing key cell (valid → zeroed, invalid → caller id
+  survives), so the caller collects every non-zero key cell as the rejected-id set —
+  no `results[]` array, no second side table. The existing results-based verify API
+  is **byte-for-byte unchanged**; `key_size` must be `> 0`; `n` is unbounded (walked
+  in internal chunks); degenerate calls are fail-closed no-ops.
+- **Dedicated CUDA collect kernel** (`ufsecp_gpu_ecdsa_verify_collect` /
+  `_schnorr_verify_collect`): a verbatim copy of the verify kernel writing the
+  verdict on-device. OpenCL/Metal inherit a safe `Unsupported` default and the
+  bridge falls back to a consensus-identical host-collapse path. Proven **GPU == CPU
+  == libsecp256k1 bit-for-bit** on the rejected set (ECDSA + Schnorr, mixed corpus;
+  `tests/test_lbtc_consensus_diff.cpp`). **No throughput improvement is claimed** for
+  the collect kernel — it measured within noise of host-collapse on the test GPU and
+  ships as a consensus-neutral specialization.
 
 ### Security
 - **P1-SEC-01 / MED-3 closed** (`src/cpu/src/musig2.cpp`,
@@ -24,6 +47,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path through a new helper `musig2_partial_sign_core` after populating
   `individual_pubkeys` from its `pubkeys` parameter.
 - MSI-4 regression test flipped from advisory-skipped (rc=77) to mandatory.
+- **bbhunt-001 — ECDSA recovery `r >= (p − n)` (consensus).** `ecdsa_recover`
+  now rejects a `recid & 2` recovery when `r >= (p − n)` (where adding the curve
+  order overflows the field prime). Applied across the CPU path, the libsecp256k1
+  shim, the C ABI, and the CUDA / OpenCL recovery kernels. Regression test
+  `test_regression_recover_rplus_n_overflow` (8/8).
+- **CT-CRYPTO-001 — branchless `ct::scalar_mul`.** The public variable-base
+  constant-time scalar multiply no longer branches on the secret GLV sign bit; it
+  uses the branchless masked-select helper already used by the sibling
+  `scalar_mul_*` variants. Reached from ECDH, ellswift XDH and secret-scalar
+  tweak-mul. Regression `test_regression_ct_glv_make_v_branchless` (256 random
+  scalars, both polarities, bit-exact vs the variable-time reference).
+- **bbhunt-002 — adaptor entropy erasure.** `aux_rand` (and the secret key on
+  early-return paths) are now securely erased in the zero-knowledge adaptor path.
+- **PASS-COMPAT-001/002/004 — shim fail-closed output zeroing.** The shim seckey
+  operations, `ecdsa_recover`, and `xonly_pubkey_tweak_add` now zero their output
+  buffers on failure, matching upstream libsecp256k1.
+- **4 P1 PR-readiness blockers** resolved: bindings ABI-version expectation
+  corrected to 4; INTEGRATION_PATCH "randomize" no-op claim made truthful; CAAS
+  required-checks list matched to real job names; advisory-JSON Rule 16 enforced —
+  each with a paired CI gate (`check_abi_version_sync`, `check_randomize_claim_
+  consistency`, `check_required_checks_match_jobs`, `check_advisory_json_rule16`).
 
 ### Performance / Benchmark
 - **P1-BENCH-01 closed.** New canonical artifact
@@ -43,6 +87,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shim-linked runner build, and `release.yml` `release-caas-gate` after the
   release build. Previously the script ran only PRE-build where rc=77 ("no
   build dir") made it a no-op.
+- **Audit surface → 419 modules** (270 exploit PoCs + 149 non-exploit). New GPU
+  collect functions covered by the ABI hostile-caller manifest (null/zero/invalid/
+  smoke quartet; misuse-resistance 184/184). External audit evidence bundle
+  regenerated (12/12) over the new modules, claims, hostile-caller contract and
+  assurance ledger.
+- `ci/check_security_fix_has_test.py` now recognizes
+  `compat/libbitcoin_bridge/tests/` as a valid test location (the bridge
+  differential tests are consensus-bearing).
+- Scorecard `Pinned-Dependencies` (#10631): the NuGet-native workflow's chocolatey
+  `ninja` install is now version-pinned.
 
 ### Documentation / Metadata
 - **P1-CHG-01 closed.** CHANGELOG `[4.0.0]` performance table replaced
