@@ -388,28 +388,41 @@ jobs:
           # Exclude CMake internals, language bindings (e.g. the JNI .so), and the
           # mode-B shim STUB archive (libsecp256k1_shim.* — empty; fastsecp256k1 is
           # the real static secp256k1 lib).
-          mapfile -t ALLLIBS < <(find build staging -maxdepth 5 \( \
+          # macOS ships bash 3.2 — no `mapfile`, no `declare -A` (associative
+          # arrays). Use a portable read-loop + a helper scan instead so this
+          # step runs on macOS as well as Linux/Windows.
+          ALLLIBS=()
+          while IFS= read -r _lib; do
+            [ -n "$_lib" ] && ALLLIBS+=("$_lib")
+          done < <(find build staging -maxdepth 5 \( \
             -name '*.dll' -o -name '*.so' -o -name '*.so.*' -o -name '*.dylib' \
             -o -name '*.lib' -o -name '*.a' \) \
             ! -path '*/CMakeFiles/*' ! -path '*/bindings/*' \
             ! -name 'libsecp256k1_shim.*' ! -name 'secp256k1_shim.lib' 2>/dev/null)
-          declare -A DLLSTEM
-          for f in "${ALLLIBS[@]}"; do
-            [ "${f##*.}" = "dll" ] && DLLSTEM["$(basename "$f" .dll)"]=1
-          done
+          # A .lib is a DLL import lib iff a same-stem .dll was also collected
+          # (Windows only). Scan ALLLIBS instead of a bash-4 associative array.
+          _has_dll() {
+            local _stem="$1" _g
+            for _g in "${ALLLIBS[@]}"; do
+              [ "$(basename "$_g")" = "${_stem}.dll" ] && return 0
+            done
+            return 1
+          }
+          if [ "${#ALLLIBS[@]}" -gt 0 ]; then
           for f in "${ALLLIBS[@]}"; do
             case "$f" in
               *.dll|*.dylib|*.so|*.so.*) cp -P "$f" "${PKG_NAME}/lib/shared/" 2>/dev/null || true ;;
               *.a) cp "$f" "${PKG_NAME}/lib/static/" 2>/dev/null || true ;;
               *.lib)
                 stem="$(basename "$f" .lib)"
-                if [ -n "${DLLSTEM[$stem]:-}" ]; then
+                if _has_dll "$stem"; then
                   cp "$f" "${PKG_NAME}/lib/shared/" 2>/dev/null || true   # DLL import lib
                 else
                   cp "$f" "${PKG_NAME}/lib/static/" 2>/dev/null || true   # static archive
                 fi ;;
             esac
           done
+          fi
 
           # fastsecp256k1 IS the self-contained static libsecp256k1-ABI archive
           # (the shim is compiled into the engine). Give it OUR name so it never
