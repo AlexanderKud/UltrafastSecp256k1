@@ -37,6 +37,10 @@ static int g_fail = 0;
 // requires the explicit __attribute__((weak_import)) (alias of weak).
 #if defined(__APPLE__)
 #  define SHIM_WEAK __attribute__((weak_import))
+#elif defined(_MSC_VER)
+   // MSVC has no __attribute__((weak)): declare the shim functions strong and
+   // rely on the shim being linked (SECP256K1_BUILD_SHIM=ON in the desktop build).
+#  define SHIM_WEAK
 #else
 #  define SHIM_WEAK __attribute__((weak))
 #endif
@@ -52,8 +56,11 @@ extern "C" {
     SHIM_WEAK int secp256k1_schnorrsig_sign_custom(const secp256k1_context*, unsigned char*, const unsigned char*, size_t, const secp256k1_keypair*, void*);
 }
 
-static constexpr unsigned int CTX_SIGN = 0x0101;
-static constexpr unsigned int CTX_VERIFY = 0x0102;
+// Modern libsecp256k1: the SIGN/VERIFY flags are deprecated and a context can do
+// everything. SECP256K1_CONTEXT_NONE (1) is the valid, portable flag. The old
+// 0x0101|0x0102 was NOT a valid flag combination and could trip the shim's
+// illegal-argument callback (which abort()s) on some platforms.
+static constexpr unsigned int CTX_NONE = 1;
 
 static void test_sign32_normal(secp256k1_context* ctx) {
     unsigned char sk[32] = {}; sk[31] = 7;
@@ -118,15 +125,19 @@ static void test_sign_custom_64byte(secp256k1_context* ctx) {
 
 int test_regression_schnorr_r_zero_ct_run() {
     g_fail = 0;
+#if !defined(_MSC_VER)
     // When the libsecp256k1 shim is not linked into this binary the weak
     // function pointers resolve to nullptr — guard against that before calling.
+    // (MSVC has no weak symbols: the functions are strong, so this guard is moot
+    // there — the shim is linked in the desktop build; ctx==null is still handled.)
     if (!secp256k1_context_create || !secp256k1_context_destroy ||
         !secp256k1_keypair_create || !secp256k1_schnorrsig_sign32 ||
         !secp256k1_schnorrsig_sign_custom) {
         std::printf("SKIP SEC-006: shim not linked\n");
         return ADVISORY_SKIP_CODE;
     }
-    secp256k1_context* ctx = secp256k1_context_create(CTX_SIGN | CTX_VERIFY);
+#endif
+    secp256k1_context* ctx = secp256k1_context_create(CTX_NONE);
     if (!ctx) {
         std::printf("SKIP SEC-006: shim not linked\n");
         return ADVISORY_SKIP_CODE;
