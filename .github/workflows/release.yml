@@ -269,6 +269,13 @@ jobs:
             ext: zip
             generator: Ninja
             msvc_arch: amd64
+            # The libsecp256k1-ABI *shared* lib (ultrafast_secp256k1.dll) crashes
+            # the MSVC linker (exit 0xC0000005, access violation) on this engine —
+            # a toolchain fault on the very large DLL, not a code error. Build the
+            # ABI static-only so win-x64 still produces a usable archive (static
+            # secp256k1 ABI lib + the ufsecp libs). The Windows shim DLL is
+            # deferred; NuGet already ships the Windows static lib for consumers.
+            extra_cmake: -DSECP256K1_SHIM_BUILD_SHARED=OFF
 
           # NOTE: Windows ARM64 (MSVC) is DEFERRED. The engine is not yet
           # MSVC-ARM64-portable: detail/arith64.hpp uses x64-only intrinsics
@@ -796,6 +803,7 @@ jobs:
   # ==========================================================================
   pack-python:
     needs: [release-caas-gate, build-desktop, build-linux-arm64]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -1109,6 +1117,7 @@ jobs:
   # ==========================================================================
   pack-gem:
     needs: [release-caas-gate, build-desktop, build-linux-arm64]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -1196,6 +1205,7 @@ jobs:
   # ==========================================================================
   pack-java:
     needs: [release-caas-gate, build-desktop, build-linux-arm64, build-android]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -1344,6 +1354,7 @@ jobs:
   # ==========================================================================
   pack-go:
     needs: [release-caas-gate, build-desktop, build-linux-arm64]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -1416,6 +1427,7 @@ jobs:
   # ==========================================================================
   pack-rust:
     needs: [release-caas-gate, build-desktop, build-linux-arm64]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -1491,6 +1503,7 @@ jobs:
   # ==========================================================================
   pack-dart:
     needs: [release-caas-gate, build-desktop, build-linux-arm64, build-android, build-ios]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -1570,6 +1583,7 @@ jobs:
   # ==========================================================================
   pack-php:
     needs: [release-caas-gate, build-desktop, build-linux-arm64]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -1642,6 +1656,7 @@ jobs:
   # ==========================================================================
   pack-react-native:
     needs: [release-caas-gate, build-desktop, build-android, build-ios]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -1747,6 +1762,7 @@ jobs:
   # ==========================================================================
   pack-swift:
     needs: [release-caas-gate, build-desktop, build-ios]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -1821,6 +1837,7 @@ jobs:
   # ==========================================================================
   pack-c-headers:
     needs: [release-caas-gate, build-desktop, build-linux-arm64]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner (Audit all outbound calls)
