@@ -147,6 +147,13 @@ jobs:
       - name: Build
         run: cmake --build out/build --config Release -j $env:NUMBER_OF_PROCESSORS
       - name: Test
+        # PYTHONUTF8=1: the py_* audit scripts print ✓/✗ (U+2713/U+2717) to stdout.
+        # Windows Python defaults to the cp1252 console codec, which cannot encode
+        # them, so the script dies with UnicodeEncodeError *while printing the
+        # success marker* — the assertions themselves pass. UTF-8 mode fixes it
+        # (same fix the release workflow already applies to its Windows test step).
+        env:
+          PYTHONUTF8: '1'
         run: ctest --test-dir out/build --output-on-failure -j $env:NUMBER_OF_PROCESSORS --timeout 300 --build-config Release -E '^ct_sidechannel'
 
   # ===========================================================================
