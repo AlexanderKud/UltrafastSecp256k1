@@ -173,6 +173,12 @@ static void test_bip32_path() {
         auto [pk2, ok_p2] = bip32_derive_path(master, "m/0/1/2");
         CHECK(ok_p2 && pk2.key == pk.key,
               "P2-CT-001: derive_path is deterministic across calls (no scrub-induced corruption)");
+
+        // P2-CT-001 (coverage): hardened derivation from an xpub fails inside the loop,
+        // which exercises the on-failure secure_erase of the working intermediate.
+        auto pub_master = master.to_public();
+        auto [pf, ok_pf] = bip32_derive_path(pub_master, "m/0'");
+        CHECK(!ok_pf, "P2-CT-001: hardened derivation from xpub fails (covers on-failure erase)");
     }
 }
 
