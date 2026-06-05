@@ -5,6 +5,43 @@ All notable changes to UltrafastSecp256k1 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.1] - 2026-06-05
+
+> **Minor bugfix / hardening release.** Constant-time and fail-closed fixes in the
+> BIP-32 and libsecp256k1-shim paths, a batch of audit/CI gate corrections, and
+> release/CI reliability fixes. No ABI break — patch bump per SemVer (ABI version
+> stays 4; every 4.1.0 API and build flag is unchanged).
+
+### Security / constant-time
+
+- **BIP-32 private derivation now scrubs intermediate secrets** in
+  `bip32_derive_path` — intermediate private keys are erased, and the on-failure
+  scrub is now unconditional (P2-CT-001).
+- **libsecp256k1 shim zeroes signature output on every parse failure** — fail-closed,
+  so a failed parse can never leave stale or partial signature bytes in the caller's
+  buffer (PASS3-SHIM-001).
+
+### Fixed — audit / CI integrity
+
+- Closed 6 false-green CAAS/CI gates that could report PASS without actually
+  validating (PASS6 / P7 / P8 review findings).
+- Fixed two tests that passed vacuously (P7-TEST-002, P7-TEST-003).
+- Updated the RT-02 source scan to match the parse-DER zeroing fix.
+
+### Fixed — release / CI reliability
+
+- `pack-go` release job now checks out the release tag (`ref: RELEASE_TAG`),
+  fixing a checkout race when the `sync-docs` job moves the tag mid-run.
+- CI-Advisory Windows job sets `PYTHONUTF8=1` so the Python audit tests no longer
+  crash on cp1252 console-encoding of the ✓/✗ status markers.
+
+### Documentation
+
+- Refreshed `API_SECURITY_CONTRACTS`; documented two shim divergences and corrected
+  claim/benchmark drift; recorded the BIP-32 secret-lifecycle guarantees.
+- Donations: replaced the Stacker News entry with a Bitcoin Silent Payment
+  (BIP-352) address.
+
 ## [4.1.0] - 2026-06-02
 
 > **Modular build system + multi-coin support + libbitcoin batch acceleration +

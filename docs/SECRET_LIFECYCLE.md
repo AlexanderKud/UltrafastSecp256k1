@@ -1,6 +1,6 @@
 # Secret Lifecycle Review
 
-**Last updated**: 2026-06-04 | **Version**: 4.1.0
+**Last updated**: 2026-06-04 | **Version**: 4.1.1
 
 ### 2026-06-04 — P2-CT-001: bip32_derive_path erases intermediate child keys
 

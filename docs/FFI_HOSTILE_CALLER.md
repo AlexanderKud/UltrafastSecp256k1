@@ -1,6 +1,6 @@
 # FFI Hostile-Caller Coverage
 
-**Last updated**: 2026-06-02 | **Version**: 4.1.0
+**Last updated**: 2026-06-02 | **Version**: 4.1.1
 
 ### 2026-06-02 — failure-path output zeroing + recover overflow guard (review fixes)
 
