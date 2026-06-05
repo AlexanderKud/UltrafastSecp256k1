@@ -213,11 +213,47 @@ static void test_ellswift_encode_decode_roundtrip() {
     secp256k1_context_destroy(ctx);
 }
 
+// ── ECP-8: lazy-sqrt deferral regression ───────────────────────────────────
+// ellswift_try_u defers the x3 (s = x-u) field sqrt so it is computed only when
+// the x1/x2 branch fails (skipped on ~half of all attempts → ~+9% faster create).
+// s_x3/w_x3 are used only in the x3 branch, so the deferral is behavior-preserving.
+// This test guards that: create->decode must recover the exact pubkey for many
+// keys, exercising BOTH the x1/x2 and x3 branches of the inverse map.
+static void test_ellswift_create_lazy_sqrt_roundtrip() {
+    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    int recovered = 0;
+    for (int i = 1; i <= 80; ++i) {
+        unsigned char sk[32] = {0};
+        sk[31] = static_cast<unsigned char>(i);
+        sk[0]  = static_cast<unsigned char>(i * 7 + 3);
+        sk[15] = static_cast<unsigned char>(i * 13 + 1);
+        secp256k1_pubkey pub;
+        if (secp256k1_ec_pubkey_create(ctx, &pub, sk) != 1) continue;
+        unsigned char ser[33]; size_t serlen = sizeof(ser);
+        secp256k1_ec_pubkey_serialize(ctx, ser, &serlen, &pub, SECP256K1_EC_COMPRESSED);
+
+        unsigned char enc[64];
+        check(secp256k1_ellswift_create(ctx, enc, sk, nullptr) == 1,
+              "[ECP-8a] ellswift_create succeeds");
+        secp256k1_pubkey dec;
+        check(secp256k1_ellswift_decode(ctx, &dec, enc) == 1,
+              "[ECP-8b] decode of created encoding succeeds");
+        unsigned char ser2[33]; size_t ser2len = sizeof(ser2);
+        secp256k1_ec_pubkey_serialize(ctx, ser2, &ser2len, &dec, SECP256K1_EC_COMPRESSED);
+        check(memcmp(ser, ser2, 33) == 0,
+              "[ECP-8c] create->decode recovers the exact pubkey (lazy-sqrt branches)");
+        ++recovered;
+    }
+    check(recovered >= 40, "[ECP-8d] enough distinct keys exercised both branches");
+    secp256k1_context_destroy(ctx);
+}
+
 // ── _run() ─────────────────────────────────────────────────────────────────
 int test_regression_ellswift_ct_path_run() {
     g_pass = 0; g_fail = 0;
     std::printf("[regression_ellswift_ct_path] ellswift_create CT path + XDH round-trip\n");
 
+    test_ellswift_create_lazy_sqrt_roundtrip();
     test_ellswift_deterministic();
     test_ellswift_distinct_keys();
     test_ellswift_xdh_roundtrip();

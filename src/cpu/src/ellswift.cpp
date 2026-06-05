@@ -333,11 +333,6 @@ static bool ellswift_try_u(
     const auto neg_ux  = ux.negate();
     const bool rej_x12 = fe_is_square(neg_ux * neg_ux * neg_ux + FE_SEVEN);
 
-    // x3: s = x-u. sqrt(s) shared for c={2,3,6,7}: 1 sqrt total, not 4.
-    const auto s_x3          = x - u;
-    const auto [s_x3sq, w_x3] = sqrt_check(s_x3);
-    const bool s_x3ok         = s_x3sq && s_x3 != FE_ZERO;
-
     // --- x1/x2 case: sqrt(sp*g) shared across c={0,1,4,5} — 1 sqrt ---
     if (!rej_x12) {
         const auto sp            = ux.square().negate() + u * x;
@@ -358,7 +353,14 @@ static bool ellswift_try_u(
     }
 
     // --- x3 case: sqrt(r2) shared across c={2,3,6,7} — 1 sqrt ---
-    if (s_x3ok) {
+    // PERF: compute s_x3 and its sqrt lazily HERE instead of hoisting it above.
+    // When the x1/x2 branch succeeds it returns early, so this field sqrt is
+    // skipped on ~half of all attempts. s_x3 / w_x3 are used only in this branch,
+    // so deferring is behavior-preserving. (sqrt(s_x3) is still shared across
+    // c={2,3,6,7} — 1 sqrt total, not 4.)
+    const auto s_x3           = x - u;
+    const auto [s_x3sq, w_x3] = sqrt_check(s_x3);
+    if (s_x3sq && s_x3 != FE_ZERO) {
         const auto g4  = g * FE_FOUR;
         const auto r2  = (FE_THREE * u2 * s_x3 + g4).negate() * s_x3;
         const auto [rsq, r] = sqrt_check(r2);              // 1 sqrt (was 4)
