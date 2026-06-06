@@ -1826,6 +1826,14 @@ static void bip352_glv_wnaf5(const uint8_t* scalar_be32, int8_t wnaf[130]) {
         static_assert(sizeof(Bip352ScanPlan) == 264, "scan plan size mismatch");
 
         Bip352ScanPlan plan{};
+        struct HostPlanGuard {
+            Bip352ScanPlan* plan;
+            ~HostPlanGuard() {
+                if (plan) {
+                    secp256k1::detail::secure_erase(plan, sizeof(*plan));
+                }
+            }
+        } host_plan_guard{&plan};
         {
             using namespace secp256k1::fast;
             // SEC-002 (Rule 11): parse_bytes_strict_nonzero rejects scan keys >= n or == 0.
@@ -1871,11 +1879,24 @@ static void bip352_glv_wnaf5(const uint8_t* scalar_be32, int8_t wnaf[130]) {
         cl_mem d_plan = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                        sizeof(Bip352ScanPlan), &plan, &clerr);
         if (clerr != CL_SUCCESS) return set_error(GpuError::Memory, "scan plan alloc");
+        struct DevicePlanGuard {
+            cl_command_queue queue;
+            cl_mem mem;
+            size_t bytes;
+            ~DevicePlanGuard() {
+                if (mem) {
+                    static const cl_uchar zero = 0;
+                    clEnqueueFillBuffer(queue, mem, &zero, sizeof(zero), 0,
+                                        bytes, 0, nullptr, nullptr);
+                    clFinish(queue);
+                    clReleaseMemObject(mem);
+                }
+            }
+        } d_plan_guard{queue, d_plan, sizeof(Bip352ScanPlan)};
 
         cl_mem d_spend = clCreateBuffer(cl_ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                         sizeof(secp256k1::opencl::AffinePoint), &ocl_spend, &clerr);
         if (clerr != CL_SUCCESS) {
-            clReleaseMemObject(d_plan);
             return set_error(GpuError::Memory, "spend point alloc");
         }
 
@@ -1884,7 +1905,6 @@ static void bip352_glv_wnaf5(const uint8_t* scalar_be32, int8_t wnaf[130]) {
                                          ocl_tweaks.data(), &clerr);
         if (clerr != CL_SUCCESS) {
             clReleaseMemObject(d_spend);
-            clReleaseMemObject(d_plan);
             return set_error(GpuError::Memory, "tweak buffer alloc");
         }
 
@@ -1893,7 +1913,6 @@ static void bip352_glv_wnaf5(const uint8_t* scalar_be32, int8_t wnaf[130]) {
         if (clerr != CL_SUCCESS) {
             clReleaseMemObject(d_tweaks);
             clReleaseMemObject(d_spend);
-            clReleaseMemObject(d_plan);
             return set_error(GpuError::Memory, "prefix output alloc");
         }
 
@@ -1929,7 +1948,6 @@ static void bip352_glv_wnaf5(const uint8_t* scalar_be32, int8_t wnaf[130]) {
             clReleaseMemObject(d_prefixes);
             clReleaseMemObject(d_tweaks);
             clReleaseMemObject(d_spend);
-            clReleaseMemObject(d_plan);
             return set_error(GpuError::Launch, "bip352_pipeline_kernel launch failed");
         }
         clFinish(queue);
@@ -1938,23 +1956,9 @@ static void bip352_glv_wnaf5(const uint8_t* scalar_be32, int8_t wnaf[130]) {
         clEnqueueReadBuffer(queue, d_prefixes, CL_TRUE, 0,
                             sizeof(uint64_t) * n_tweaks, prefix64_out, 0, nullptr, nullptr);
 
-        /* HIGH-3: Zero the wNAF scan plan buffer on the device before releasing
-         * it. The plan contains derived key material (GLV sub-scalars + wNAF
-         * window digits) that could otherwise persist in GPU memory. */
-        {
-            static const cl_uchar zero = 0;
-            clEnqueueFillBuffer(queue, d_plan, &zero, sizeof(zero), 0,
-                                sizeof(Bip352ScanPlan), 0, nullptr, nullptr);
-            clFinish(queue);
-        }
-
-        /* Also zero the host-side plan struct. */
-        secp256k1::detail::secure_erase(&plan, sizeof(plan));
-
         clReleaseMemObject(d_prefixes);
         clReleaseMemObject(d_tweaks);
         clReleaseMemObject(d_spend);
-        clReleaseMemObject(d_plan);
         clear_error();
         return GpuError::Ok;
     }

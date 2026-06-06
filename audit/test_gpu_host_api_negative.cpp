@@ -63,6 +63,14 @@ static inline bool host_rejected_input(int err) {
            err == UFSECP_ERR_BAD_KEY;
 }
 
+static bool all_zero(const void* ptr, size_t len) {
+    const auto* p = static_cast<const uint8_t*>(ptr);
+    for (size_t i = 0; i < len; ++i) {
+        if (p[i] != 0) return false;
+    }
+    return true;
+}
+
 /* ============================================================================
  * 1. NULL pointer tests (no context needed)
  * ============================================================================ */
@@ -238,6 +246,10 @@ static void test_invalid_content_core_ops(ufsecp_gpu_ctx* ctx) {
 
     out_result[0] = 1;
     auto e2 = ufsecp_gpu_ecdsa_verify_batch(ctx, msg32, invalid_pub33, ecdsa_sig64, 1, out_result);
+    if (e2 != UFSECP_OK) {
+        CHECK(out_result[0] == 0,
+              "ecdsa_verify_batch non-OK return clears out_results");
+    }
     CHECK(gpu_runtime_unusable(e2) || host_rejected_input(e2)
               || (e2 == UFSECP_OK && out_result[0] == 0),
           "ecdsa_verify_batch invalid pubkey: UNSUPPORTED, ERR_BAD_INPUT, or marks result 0");
@@ -245,16 +257,30 @@ static void test_invalid_content_core_ops(ufsecp_gpu_ctx* ctx) {
     schnorr_sig64[0] ^= 0x80;
     out_result[0] = 1;
     auto e3 = ufsecp_gpu_schnorr_verify_batch(ctx, msg32, xonly_pub32, schnorr_sig64, 1, out_result);
+    if (e3 != UFSECP_OK) {
+        CHECK(out_result[0] == 0,
+              "schnorr_verify_batch non-OK return clears out_results");
+    }
     CHECK(gpu_runtime_unusable(e3) || host_rejected_input(e3)
               || (e3 == UFSECP_OK && out_result[0] == 0),
           "schnorr_verify_batch invalid signature: UNSUPPORTED, ERR_BAD_INPUT, or marks result 0");
     schnorr_sig64[0] ^= 0x80;
 
+    std::memset(out_secret32, 0xA5, sizeof(out_secret32));
     auto e4 = ufsecp_gpu_ecdh_batch(ctx, seckey32, invalid_pub33, 1, out_secret32);
+    if (e4 != UFSECP_OK) {
+        CHECK(all_zero(out_secret32, sizeof(out_secret32)),
+              "ecdh_batch non-OK return clears out_secret32");
+    }
     CHECK(gpu_runtime_unusable(e4) || e4 != UFSECP_OK,
           "ecdh_batch invalid peer pubkey rejects malformed input");
 
+    std::memset(out_hash20, 0xA5, sizeof(out_hash20));
     auto e5 = ufsecp_gpu_hash160_pubkey_batch(ctx, invalid_pub33, 1, out_hash20);
+    if (e5 != UFSECP_OK) {
+        CHECK(all_zero(out_hash20, sizeof(out_hash20)),
+              "hash160_pubkey_batch non-OK return clears out_hash160");
+    }
     CHECK(gpu_runtime_unusable(e5) || e5 != UFSECP_OK,
           "hash160_pubkey_batch invalid compressed pubkey rejects malformed input");
 

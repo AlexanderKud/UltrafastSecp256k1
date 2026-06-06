@@ -13,8 +13,8 @@
  *   5. Thread safety: each gpu_ctx is single-thread. Create one per thread or
  *      protect externally.
  *   6. On the stable public GPU C ABI declared in this header, most operations
- *      are PUBLIC-DATA ONLY. ECDH and BIP-324 AEAD encrypt/decrypt are
- *      secret-bearing and documented as such.
+ *      are PUBLIC-DATA ONLY. ECDH, BIP-352 scan, and BIP-324 AEAD
+ *      encrypt/decrypt are secret-bearing and documented as such.
  *
  * ## Feature maturity
  *
@@ -37,7 +37,8 @@
  *   Guarantees:
  *     - Discovery + lifecycle functions work on all compiled backends.
  *     - Per-item results for batch ops are well-defined even on partial failure.
- *     - ECDH is the only secret-bearing GPU operation. All others are public-data.
+ *     - Secret-bearing GPU operations are explicitly marked and erase
+ *       uploaded key buffers before release.
  *     - ABI layout (function signatures, strides, error codes) is stable.
  *     - Backend additions do not break existing calling code.
  *
@@ -45,6 +46,10 @@
  *
  *   Caller owns all input/output buffers. Library manages device memory
  *   internally and copies results back on return.
+ *   Result-bearing public GPU C ABI calls clear output buffers to zero/invalid
+ *   defaults before processing and after backend non-OK returns. The in-place
+ *   collect APIs are excluded because their key_buffer is caller-owned marker
+ *   state used for fallback.
  *
  * ## Batch layout
  *

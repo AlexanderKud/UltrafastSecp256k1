@@ -2307,6 +2307,20 @@ Backend-neutral GPU acceleration surface. All functions use opaque `ufsecp_gpu_c
 
 **GPU Error Codes** (100--106): `UFSECP_ERR_GPU_UNAVAILABLE` (100), `UFSECP_ERR_GPU_DEVICE` (101), `UFSECP_ERR_GPU_LAUNCH` (102), `UFSECP_ERR_GPU_MEMORY` (103), `UFSECP_ERR_GPU_UNSUPPORTED` (104), `UFSECP_ERR_GPU_BACKEND` (105), `UFSECP_ERR_GPU_QUEUE` (106).
 
+Current GPU C ABI failure semantics:
+
+- output buffers are cleared to their invalid/zero default before processing for
+  result-bearing batch operations, and cleared again if backend dispatch returns
+  non-OK
+- `ufsecp_bip352_prepare_scan_plan` and `ufsecp_gpu_bip352_scan_batch` reject
+  `scan_privkey32 == 0` and `scan_privkey32 >= n`; rejected scan keys leave
+  `plan264_out` / `prefix64_out` zeroed
+- secret-bearing GPU backends erase uploaded ECDH, BIP-352, and BIP-324 key
+  buffers before releasing host/shared/device storage
+- `ufsecp_gpu_*_verify_collect` is excluded from output pre-clearing because
+  its `key_buffer` is intentionally an in/out marker buffer used by fallback
+  callers
+
 #### Discovery
 
 | Function | Signature | Description |
@@ -2344,7 +2358,7 @@ Backend-neutral GPU acceleration surface. All functions use opaque `ufsecp_gpu_c
 | `ufsecp_gpu_zk_knowledge_verify_batch` | `(ctx, proofs64[], pubkeys65[], msgs32[], n, results[]) -> error_t` | Batch ZK knowledge proof verification (PUBLIC) |
 | `ufsecp_gpu_zk_dleq_verify_batch` | `(ctx, proofs64[], G65[], H65[], P65[], Q65[], n, results[]) -> error_t` | Batch DLEQ proof verification (PUBLIC) |
 | `ufsecp_gpu_bulletproof_verify_batch` | `(ctx, proofs324[], commits65[], H65, n, results[]) -> error_t` | Batch Bulletproof range proof verification (PUBLIC) |
-| `ufsecp_gpu_bip324_aead_encrypt_batch` | `(ctx, keys32[], nonces12[], plain[], sizes[], max_payload, n, wire_out[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD encrypt (PUBLIC) |
+| `ufsecp_gpu_bip324_aead_encrypt_batch` | `(ctx, keys32[], nonces12[], plain[], sizes[], max_payload, n, wire_out[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD encrypt (SECRET: keys sent to GPU) |
 | `ufsecp_gpu_bip324_aead_decrypt_batch` | `(ctx, keys32[], nonces12[], wire[], sizes[], max_payload, n, plain_out[], valid[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD decrypt (SECRET) |
 | `ufsecp_gpu_zk_ecdsa_snark_witness_batch` | `(ctx, msgs32[], pubs33[], sigs64[], n, witnesses760_out[]) -> error_t` | Batch ECDSA SNARK witness generation — eprint 2025/695 (PUBLIC inputs) |
 | `ufsecp_gpu_zk_schnorr_snark_witness_batch` | `(ctx, msgs32[], pubkeys_x32[], sigs64[], n, witnesses472_out[]) -> error_t` | Batch BIP-340 Schnorr SNARK witness generation (PUBLIC inputs). GPU kernels pending — CPU fallback returns `Unsupported` via virtual dispatch. |
@@ -2354,7 +2368,7 @@ Backend-neutral GPU acceleration surface. All functions use opaque `ufsecp_gpu_c
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `ufsecp_bip352_prepare_scan_plan` | `(scan_privkey32, plan264_out) -> error_t` | Precompute 264-byte BIP-352 GLV wNAF scan plan for repeated GPU batch scans |
+| `ufsecp_bip352_prepare_scan_plan` | `(scan_privkey32, plan264_out) -> error_t` | Precompute 264-byte BIP-352 GLV wNAF scan plan for repeated GPU batch scans; rejects zero/order-or-larger scan keys and zeroes the plan on error |
 
 ---
 

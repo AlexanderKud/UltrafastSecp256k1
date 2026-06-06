@@ -47,10 +47,13 @@ are stricter but never less safe. Callers using well-formed inputs are unaffecte
   outside the API contract; many failure paths leave the caller-provided output or
   in-place target unchanged.
 - **Shim behavior:** serialization and mutation paths validate strict field range
-  and curve membership before trusting opaque bytes. Failed signing calls zero the
-  output signature, failed pubkey/xonly serialization returns 0 without serializing
-  invalid bytes, and failed in-place pubkey/keypair mutation clears the target
-  struct.
+  and curve membership before trusting opaque bytes. Failed signing calls that
+  enter signing dispatch zero the output signature, failed pubkey/xonly
+  serialization returns 0 without serializing invalid bytes, and failed in-place
+  pubkey/keypair mutation clears the target struct. Unsupported custom nonce
+  callbacks are rejected before signing dispatch and leave the output signature
+  untouched, matching the shim noncefp fail-closed PoC and upstream-style
+  pre-dispatch argument rejection.
 - **Reason:** The shim is used across FFI boundaries where hostile callers can
   construct raw opaque structs. Fail-closed zeroization prevents stale keys or
   signatures from being reused after an error and avoids silently reducing

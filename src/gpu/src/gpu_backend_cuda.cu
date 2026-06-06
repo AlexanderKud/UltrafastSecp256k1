@@ -16,6 +16,7 @@
 
 /* -- Secure erase for private key zeroization ------------------------------ */
 #include "secp256k1/detail/secure_erase.hpp"
+#include "secp256k1/scalar.hpp"
 
 /* -- CUDA runtime ---------------------------------------------------------- */
 #include <cuda_runtime.h>
@@ -1536,6 +1537,17 @@ dec_cleanup:
 
 #if SECP256K1_GPU_HAS_BIP352
         /* -- 1. Convert scan key to Scalar on CPU -- */
+        {
+            secp256k1::fast::Scalar scan_check;
+            if (!secp256k1::fast::Scalar::parse_bytes_strict_nonzero(
+                    scan_privkey32, scan_check)) {
+                secp256k1::detail::secure_erase(&scan_check, sizeof(scan_check));
+                return set_error(GpuError::BadKey,
+                                 "invalid scan key (zero or >= group order)");
+            }
+            secp256k1::detail::secure_erase(&scan_check, sizeof(scan_check));
+        }
+
         // Rule 10: RAII wrapper zeroes h_scan_k on all exit paths.
         struct ScanKeyGuard {
             cuda::Scalar k{};
@@ -1556,8 +1568,11 @@ dec_cleanup:
             cuda::JacobianPoint* d_pubs_tmp = nullptr;
             bool* d_ok_tmp = nullptr;
             CUDA_TRY(cudaMalloc(&d_pubs33_tmp, n_tweaks * 33));
+            CudaKeyGuard d_pubs33_tmp_guard(d_pubs33_tmp, n_tweaks * 33);
             CUDA_TRY(cudaMalloc(&d_pubs_tmp,   n_tweaks * sizeof(cuda::JacobianPoint)));
+            CudaKeyGuard d_pubs_tmp_guard(d_pubs_tmp, n_tweaks * sizeof(cuda::JacobianPoint));
             CUDA_TRY(cudaMalloc(&d_ok_tmp,     n_tweaks * sizeof(bool)));
+            CudaKeyGuard d_ok_tmp_guard(d_ok_tmp, n_tweaks * sizeof(bool));
             CUDA_TRY(cudaMemcpy(d_pubs33_tmp, tweak_pubkeys33, n_tweaks * 33, cudaMemcpyHostToDevice));
 
             int threads = 128;
@@ -1566,12 +1581,18 @@ dec_cleanup:
                 d_pubs33_tmp, d_pubs_tmp, d_ok_tmp, static_cast<int>(n_tweaks));
             CUDA_TRY(cudaGetLastError());
             CUDA_TRY(cudaDeviceSynchronize());
+            std::vector<uint8_t> h_ok_tmp(n_tweaks);
+            CUDA_TRY(cudaMemcpy(h_ok_tmp.data(), d_ok_tmp,
+                                n_tweaks * sizeof(bool),
+                                cudaMemcpyDeviceToHost));
+            for (size_t i = 0; i < n_tweaks; ++i) {
+                if (!h_ok_tmp[i]) {
+                    return set_error(GpuError::BadKey, "invalid tweak pubkey");
+                }
+            }
             CUDA_TRY(cudaMemcpy(h_tweaks.data(), d_pubs_tmp,
                                 n_tweaks * sizeof(cuda::JacobianPoint),
                                 cudaMemcpyDeviceToHost));
-            cudaFree(d_ok_tmp);
-            cudaFree(d_pubs_tmp);
-            cudaFree(d_pubs33_tmp);
         }
 
         /* -- 3. Decompress spend pubkey on GPU -> AffinePoint -- */
@@ -1581,17 +1602,22 @@ dec_cleanup:
             cuda::JacobianPoint* d_spend_jac = nullptr;
             bool* d_ok2 = nullptr;
             CUDA_TRY(cudaMalloc(&d_spend33,   33));
+            CudaKeyGuard d_spend33_guard(d_spend33, 33);
             CUDA_TRY(cudaMalloc(&d_spend_jac, sizeof(cuda::JacobianPoint)));
+            CudaKeyGuard d_spend_jac_guard(d_spend_jac, sizeof(cuda::JacobianPoint));
             CUDA_TRY(cudaMalloc(&d_ok2,       sizeof(bool)));
+            CudaKeyGuard d_ok2_guard(d_ok2, sizeof(bool));
             CUDA_TRY(cudaMemcpy(d_spend33, spend_pubkey33, 33, cudaMemcpyHostToDevice));
             batch_compressed_to_jac_kernel<<<1, 1>>>(d_spend33, d_spend_jac, d_ok2, 1);
             CUDA_TRY(cudaGetLastError());
             CUDA_TRY(cudaDeviceSynchronize());
             cuda::JacobianPoint h_jac{};
+            bool h_spend_ok = false;
+            CUDA_TRY(cudaMemcpy(&h_spend_ok, d_ok2, sizeof(bool), cudaMemcpyDeviceToHost));
+            if (!h_spend_ok) {
+                return set_error(GpuError::BadKey, "invalid spend pubkey");
+            }
             CUDA_TRY(cudaMemcpy(&h_jac, d_spend_jac, sizeof(cuda::JacobianPoint), cudaMemcpyDeviceToHost));
-            cudaFree(d_ok2);
-            cudaFree(d_spend_jac);
-            cudaFree(d_spend33);
             h_spend_aff.x = h_jac.x;
             h_spend_aff.y = h_jac.y;
         }
@@ -1602,6 +1628,7 @@ dec_cleanup:
         uint64_t*            d_prefixes = nullptr;
 
         CUDA_TRY(cudaMalloc(&d_tweaks,   n_tweaks * sizeof(cuda::JacobianPoint)));
+        CudaKeyGuard d_tweaks_guard(d_tweaks, n_tweaks * sizeof(cuda::JacobianPoint));
         // HIGH-3: scan private key must not remain in device memory after the operation completes.
         // CudaKeyGuard RAII wrapper calls cudaMemset(d_scan_k, 0, ...) + cudaFree on all exit paths.
         cuda::Scalar* d_scan_k = nullptr;
@@ -1609,7 +1636,9 @@ dec_cleanup:
         CudaKeyGuard d_scan_k_guard(d_scan_k, sizeof(cuda::Scalar));
 
         CUDA_TRY(cudaMalloc(&d_spend,    sizeof(cuda::AffinePoint)));
+        CudaKeyGuard d_spend_guard(d_spend, sizeof(cuda::AffinePoint));
         CUDA_TRY(cudaMalloc(&d_prefixes, n_tweaks * sizeof(uint64_t)));
+        CudaKeyGuard d_prefixes_guard(d_prefixes, n_tweaks * sizeof(uint64_t));
 
         CUDA_TRY(cudaMemcpy(d_tweaks, h_tweaks.data(),
                             n_tweaks * sizeof(cuda::JacobianPoint), cudaMemcpyHostToDevice));
@@ -1636,9 +1665,6 @@ dec_cleanup:
         // HIGH-3: zero host copy of scan private key (also done by ScanKeyGuard dtor).
         secp256k1::detail::secure_erase(&h_scan_k, sizeof(h_scan_k));
 
-        cudaFree(d_prefixes);
-        cudaFree(d_spend);
-        cudaFree(d_tweaks);
         // d_scan_k freed + zeroed by CudaKeyGuard dtor; h_scan_k zeroed by ScanKeyGuard dtor.
         clear_error();
         return GpuError::Ok;

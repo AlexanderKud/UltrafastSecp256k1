@@ -1,5 +1,28 @@
 # Audit Changelog
 
+## 2026-06-06 — GPU ABI fail-closed outputs and secret-buffer erasure parity
+
+- **GPU C ABI output clearing:** result-bearing `ufsecp_gpu_*` wrappers now clear
+  output buffers before processing and clear them again on backend non-OK returns.
+  This covers generator-mul, verify result arrays, ECDH secrets, Hash160, MSM,
+  FROST/ZK/Bulletproof results, ecrecover pubkeys/valid flags, BIP-324
+  plaintext/wire outputs, SNARK witness buffers, and BIP-352 prefix outputs.
+  The in-place collect APIs are intentionally excluded because their `key_buffer`
+  is an input marker buffer for caller fallback.
+- **BIP-352 strict scan-key handling:** `ufsecp_bip352_prepare_scan_plan` and
+  `ufsecp_gpu_bip352_scan_batch` now reject zero and order-or-larger scan keys
+  with zeroed outputs. CUDA and Metal BIP-352 backends now match OpenCL's strict
+  scan-key parsing, and CUDA now checks device decompression `ok` flags before
+  dispatching the scan kernel.
+- **Secret-buffer erasure parity:** OpenCL BIP-352 host/device scan plans are
+  zeroed on every error and success path. Metal ECDH, BIP-352, and BIP-324 shared
+  key buffers now use RAII erasure guards, matching the existing CUDA/OpenCL key
+  cleanup discipline.
+- **Tests:** extended `audit/test_gpu_bip352_scan.cpp` for zero/order scan-key
+  rejection plus prefix/plan zeroing, and extended
+  `audit/test_gpu_host_api_negative.cpp` for GPU wrapper fail-closed output
+  assertions on invalid ECDSA/Schnorr/ECDH/Hash160 calls.
+
 ## 2026-06-06 — CPU ABI fail-closed signing, strict Taproot/BIP144 parsing, and shim opaque-key hardening
 
 - **Fail-closed C ABI outputs:** `ufsecp_btc_message_sign`, `ufsecp_eth_sign`,

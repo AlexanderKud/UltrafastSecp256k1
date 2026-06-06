@@ -101,6 +101,15 @@ pipeline without losing throughput. Callers must accept the implied security pos
 of sending keys to the GPU driver and must ensure a trusted single-tenant
 environment. See *Secret-Use Policy* below.
 
+As of 2026-06-06, all public GPU C ABI result-bearing operations clear their
+outputs to zero/invalid defaults before processing and after backend non-OK
+returns, except the in-place collect APIs whose marker buffer is intentionally
+caller-owned input/output state. CUDA, OpenCL, and Metal BIP-352 scan paths now
+strict-reject zero or order-or-larger scan keys, clear prefix/plan outputs on
+failure, and erase host/shared/device scan-key material before releasing buffers.
+Metal BIP-324 key buffers now use the same erase-before-release discipline as
+CUDA/OpenCL.
+
 ### CPU-only operations (no GPU public API)
 
 | Feature | CPU (fast) | CPU (CT) | GPU note |

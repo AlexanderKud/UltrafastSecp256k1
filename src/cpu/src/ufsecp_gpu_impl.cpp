@@ -56,6 +56,47 @@ static inline ufsecp_error_t to_abi_error(GpuError e) {
     return static_cast<ufsecp_error_t>(static_cast<int>(e));
 }
 
+static bool checked_add_size(std::size_t a, std::size_t b, std::size_t& out) {
+    if (a > std::numeric_limits<std::size_t>::max() - b) {
+        return false;
+    }
+    out = a + b;
+    return true;
+}
+
+static bool checked_mul_size(std::size_t a, std::size_t b, std::size_t& out) {
+    if (a != 0 && b > std::numeric_limits<std::size_t>::max() / a) {
+        return false;
+    }
+    out = a * b;
+    return true;
+}
+
+static bool clear_output_bytes(void* out, std::size_t count, std::size_t stride) {
+    if (!out || count == 0 || stride == 0) {
+        return true;
+    }
+    std::size_t bytes = 0;
+    if (!checked_mul_size(count, stride, bytes)) {
+        return false;
+    }
+    std::memset(out, 0, bytes);
+    return true;
+}
+
+static ufsecp_error_t to_abi_error_clear_on_fail(
+    GpuError err,
+    void* out,
+    std::size_t count,
+    std::size_t stride)
+{
+    const ufsecp_error_t abi_err = to_abi_error(err);
+    if (abi_err != UFSECP_OK) {
+        (void)clear_output_bytes(out, count, stride);
+    }
+    return abi_err;
+}
+
 static bool has_valid_compressed_pubkeys(const uint8_t* pubkeys33, size_t count) {
     for (size_t index = 0; index < count; ++index) {
         const uint8_t prefix = pubkeys33[index * 33];
@@ -221,11 +262,13 @@ ufsecp_error_t ufsecp_gpu_generator_mul_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
-    if (SECP256K1_UNLIKELY(!scalars32 || !out_pubkeys33)) return UFSECP_ERR_NULL_ARG;
     if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_pubkeys33, count, 33)) return UFSECP_ERR_BAD_INPUT;
+    if (SECP256K1_UNLIKELY(!scalars32 || !out_pubkeys33)) return UFSECP_ERR_NULL_ARG;
     try {
-    return to_abi_error(
-        ctx->backend->generator_mul_batch(scalars32, count, out_pubkeys33));
+    return to_abi_error_clear_on_fail(
+        ctx->backend->generator_mul_batch(scalars32, count, out_pubkeys33),
+        out_pubkeys33, count, 33);
     } UFSECP_GPU_CATCH
 }
 
@@ -239,14 +282,16 @@ ufsecp_error_t ufsecp_gpu_ecdsa_verify_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_results, count, 1)) return UFSECP_ERR_BAD_INPUT;
     if (SECP256K1_UNLIKELY(!msg_hashes32 || !pubkeys33 || !sigs64 || !out_results)) {
         return UFSECP_ERR_NULL_ARG;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
+    return to_abi_error_clear_on_fail(
         ctx->backend->ecdsa_verify_batch(
-            msg_hashes32, pubkeys33, sigs64, count, out_results));
+            msg_hashes32, pubkeys33, sigs64, count, out_results),
+        out_results, count, 1);
     } UFSECP_GPU_CATCH
 }
 
@@ -260,14 +305,16 @@ ufsecp_error_t ufsecp_gpu_schnorr_verify_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_results, count, 1)) return UFSECP_ERR_BAD_INPUT;
     if (SECP256K1_UNLIKELY(!msg_hashes32 || !pubkeys_x32 || !sigs64 || !out_results)) {
         return UFSECP_ERR_NULL_ARG;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
+    return to_abi_error_clear_on_fail(
         ctx->backend->schnorr_verify_batch(
-            msg_hashes32, pubkeys_x32, sigs64, count, out_results));
+            msg_hashes32, pubkeys_x32, sigs64, count, out_results),
+        out_results, count, 1);
     } UFSECP_GPU_CATCH
 }
 
@@ -322,17 +369,19 @@ ufsecp_error_t ufsecp_gpu_ecdh_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_secrets32, count, 32)) return UFSECP_ERR_BAD_INPUT;
     if (SECP256K1_UNLIKELY(!privkeys32 || !peer_pubkeys33 || !out_secrets32)) {
         return UFSECP_ERR_NULL_ARG;
     }
     if (!has_valid_compressed_pubkeys(peer_pubkeys33, count)) {
         return UFSECP_ERR_BAD_PUBKEY;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
+    return to_abi_error_clear_on_fail(
         ctx->backend->ecdh_batch(
-            privkeys32, peer_pubkeys33, count, out_secrets32));
+            privkeys32, peer_pubkeys33, count, out_secrets32),
+        out_secrets32, count, 32);
     } UFSECP_GPU_CATCH
 }
 
@@ -344,14 +393,16 @@ ufsecp_error_t ufsecp_gpu_hash160_pubkey_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_hash160, count, 20)) return UFSECP_ERR_BAD_INPUT;
     if (SECP256K1_UNLIKELY(!pubkeys33 || !out_hash160)) return UFSECP_ERR_NULL_ARG;
     if (!has_valid_compressed_pubkeys(pubkeys33, count)) {
         return UFSECP_ERR_BAD_PUBKEY;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
-        ctx->backend->hash160_pubkey_batch(pubkeys33, count, out_hash160));
+    return to_abi_error_clear_on_fail(
+        ctx->backend->hash160_pubkey_batch(pubkeys33, count, out_hash160),
+        out_hash160, count, 20);
     } UFSECP_GPU_CATCH
 }
 
@@ -364,11 +415,13 @@ ufsecp_error_t ufsecp_gpu_msm(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (n == 0) return UFSECP_OK;
-    if (SECP256K1_UNLIKELY(!scalars32 || !points33 || !out_result33)) return UFSECP_ERR_NULL_ARG;
     if (n > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_result33, 1, 33)) return UFSECP_ERR_BAD_INPUT;
+    if (SECP256K1_UNLIKELY(!scalars32 || !points33 || !out_result33)) return UFSECP_ERR_NULL_ARG;
     try {
-    return to_abi_error(
-        ctx->backend->msm(scalars32, points33, n, out_result33));
+    return to_abi_error_clear_on_fail(
+        ctx->backend->msm(scalars32, points33, n, out_result33),
+        out_result33, 1, 33);
     } UFSECP_GPU_CATCH
 }
 
@@ -387,6 +440,8 @@ ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_results, count, 1)) return UFSECP_ERR_BAD_INPUT;
     if (SECP256K1_UNLIKELY(!z_i32 || !D_i33 || !E_i33 || !Y_i33 || !rho_i32 ||
         !lambda_ie32 || !negate_R || !negate_key || !out_results)) {
         return UFSECP_ERR_NULL_ARG;
@@ -396,12 +451,12 @@ ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
         !has_valid_compressed_pubkeys(Y_i33, count)) {
         return UFSECP_ERR_BAD_PUBKEY;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
+    return to_abi_error_clear_on_fail(
         ctx->backend->frost_verify_partial_batch(
             z_i32, D_i33, E_i33, Y_i33, rho_i32, lambda_ie32,
-            negate_R, negate_key, count, out_results));
+            negate_R, negate_key, count, out_results),
+        out_results, count, 1);
     } UFSECP_GPU_CATCH
 }
 
@@ -416,17 +471,24 @@ ufsecp_error_t ufsecp_gpu_ecrecover_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_pubkeys33, count, 33)) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_valid, count, 1)) return UFSECP_ERR_BAD_INPUT;
     if (SECP256K1_UNLIKELY(!msg_hashes32 || !sigs64 || !recids || !out_pubkeys33 || !out_valid)) {
         return UFSECP_ERR_NULL_ARG;
     }
     if (!has_valid_recovery_ids(recids, count)) {
         return UFSECP_ERR_BAD_INPUT;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
-        ctx->backend->ecrecover_batch(
-            msg_hashes32, sigs64, recids, count, out_pubkeys33, out_valid));
+    const auto err = ctx->backend->ecrecover_batch(
+        msg_hashes32, sigs64, recids, count, out_pubkeys33, out_valid);
+    const ufsecp_error_t abi_err = to_abi_error(err);
+    if (abi_err != UFSECP_OK) {
+        (void)clear_output_bytes(out_pubkeys33, count, 33);
+        (void)clear_output_bytes(out_valid, count, 1);
+    }
+    return abi_err;
     } UFSECP_GPU_CATCH
 }
 
@@ -444,16 +506,18 @@ ufsecp_error_t ufsecp_gpu_zk_knowledge_verify_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_results, count, 1)) return UFSECP_ERR_BAD_INPUT;
     if (!proofs64 || !pubkeys65 || !messages32 || !out_results)
         return UFSECP_ERR_NULL_ARG;
     if (!has_valid_uncompressed_pubkeys(pubkeys65, count)) {
         return UFSECP_ERR_BAD_PUBKEY;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
+    return to_abi_error_clear_on_fail(
         ctx->backend->zk_knowledge_verify_batch(
-            proofs64, pubkeys65, messages32, count, out_results));
+            proofs64, pubkeys65, messages32, count, out_results),
+        out_results, count, 1);
     } UFSECP_GPU_CATCH
 }
 
@@ -469,6 +533,8 @@ ufsecp_error_t ufsecp_gpu_zk_dleq_verify_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_results, count, 1)) return UFSECP_ERR_BAD_INPUT;
     if (!proofs64 || !G_pts65 || !H_pts65 || !P_pts65 || !Q_pts65 || !out_results)
         return UFSECP_ERR_NULL_ARG;
     if (!has_valid_uncompressed_pubkeys(G_pts65, count) ||
@@ -477,11 +543,11 @@ ufsecp_error_t ufsecp_gpu_zk_dleq_verify_batch(
         !has_valid_uncompressed_pubkeys(Q_pts65, count)) {
         return UFSECP_ERR_BAD_PUBKEY;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
+    return to_abi_error_clear_on_fail(
         ctx->backend->zk_dleq_verify_batch(
-            proofs64, G_pts65, H_pts65, P_pts65, Q_pts65, count, out_results));
+            proofs64, G_pts65, H_pts65, P_pts65, Q_pts65, count, out_results),
+        out_results, count, 1);
     } UFSECP_GPU_CATCH
 }
 
@@ -495,6 +561,8 @@ ufsecp_error_t ufsecp_gpu_bulletproof_verify_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_results, count, 1)) return UFSECP_ERR_BAD_INPUT;
     if (!proofs324 || !commitments65 || !H_generator65 || !out_results)
         return UFSECP_ERR_NULL_ARG;
     if (!has_valid_bulletproof_prefixes(proofs324, count) ||
@@ -502,11 +570,11 @@ ufsecp_error_t ufsecp_gpu_bulletproof_verify_batch(
         !has_valid_uncompressed_pubkeys(H_generator65, 1)) {
         return UFSECP_ERR_BAD_PUBKEY;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
+    return to_abi_error_clear_on_fail(
         ctx->backend->bulletproof_verify_batch(
-            proofs324, commitments65, H_generator65, count, out_results));
+            proofs324, commitments65, H_generator65, count, out_results),
+        out_results, count, 1);
     } UFSECP_GPU_CATCH
 }
 
@@ -526,16 +594,22 @@ ufsecp_error_t ufsecp_gpu_bip324_aead_encrypt_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    std::size_t wire_stride = 0;
+    if (!checked_add_size(static_cast<std::size_t>(max_payload), 19u, wire_stride)) {
+        return UFSECP_ERR_BAD_INPUT;
+    }
+    if (!clear_output_bytes(wire_out, count, wire_stride)) return UFSECP_ERR_BAD_INPUT;
     if (!keys32 || !nonces12 || !plaintexts || !sizes || !wire_out)
         return UFSECP_ERR_NULL_ARG;
     if (!has_valid_bip324_sizes(sizes, count, max_payload)) {
         return UFSECP_ERR_BAD_INPUT;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
+    return to_abi_error_clear_on_fail(
         ctx->backend->bip324_aead_encrypt_batch(
-            keys32, nonces12, plaintexts, sizes, max_payload, count, wire_out));
+            keys32, nonces12, plaintexts, sizes, max_payload, count, wire_out),
+        wire_out, count, wire_stride);
     } UFSECP_GPU_CATCH
 }
 
@@ -552,17 +626,26 @@ ufsecp_error_t ufsecp_gpu_bip324_aead_decrypt_batch(
 {
     if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(plaintext_out, count, static_cast<std::size_t>(max_payload))) {
+        return UFSECP_ERR_BAD_INPUT;
+    }
+    if (!clear_output_bytes(out_valid, count, 1)) return UFSECP_ERR_BAD_INPUT;
     if (!keys32 || !nonces12 || !wire_in || !sizes || !plaintext_out || !out_valid)
         return UFSECP_ERR_NULL_ARG;
     if (!has_valid_bip324_sizes(sizes, count, max_payload)) {
         return UFSECP_ERR_BAD_INPUT;
     }
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-    return to_abi_error(
-        ctx->backend->bip324_aead_decrypt_batch(
-            keys32, nonces12, wire_in, sizes, max_payload, count,
-            plaintext_out, out_valid));
+    const auto err = ctx->backend->bip324_aead_decrypt_batch(
+        keys32, nonces12, wire_in, sizes, max_payload, count,
+        plaintext_out, out_valid);
+    const ufsecp_error_t abi_err = to_abi_error(err);
+    if (abi_err != UFSECP_OK) {
+        (void)clear_output_bytes(plaintext_out, count, static_cast<std::size_t>(max_payload));
+        (void)clear_output_bytes(out_valid, count, 1);
+    }
+    return abi_err;
     } UFSECP_GPU_CATCH
 }
 
@@ -579,12 +662,17 @@ ufsecp_error_t ufsecp_gpu_zk_ecdsa_snark_witness_batch(
     uint8_t*        out_witnesses)
 {
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_witnesses, count, UFSECP_ECDSA_SNARK_WITNESS_BYTES)) {
+        return UFSECP_ERR_BAD_INPUT;
+    }
     if (!ctx || !msg_hashes32 || !pubkeys33 || !sigs64 || !out_witnesses)
         return UFSECP_ERR_NULL_ARG;
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-        return to_abi_error(ctx->backend->snark_witness_batch(
-            msg_hashes32, pubkeys33, sigs64, count, out_witnesses));
+        return to_abi_error_clear_on_fail(
+            ctx->backend->snark_witness_batch(
+                msg_hashes32, pubkeys33, sigs64, count, out_witnesses),
+            out_witnesses, count, UFSECP_ECDSA_SNARK_WITNESS_BYTES);
     } UFSECP_GPU_CATCH
 }
 
@@ -597,12 +685,17 @@ ufsecp_error_t ufsecp_gpu_zk_schnorr_snark_witness_batch(
     uint8_t*        out_witnesses)
 {
     if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out_witnesses, count, UFSECP_SCHNORR_SNARK_WITNESS_BYTES)) {
+        return UFSECP_ERR_BAD_INPUT;
+    }
     if (!ctx || !msgs32 || !pubkeys_x32 || !sigs64 || !out_witnesses)
         return UFSECP_ERR_NULL_ARG;
-    if (count > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
     try {
-        return to_abi_error(ctx->backend->schnorr_snark_witness_batch(
-            msgs32, pubkeys_x32, sigs64, count, out_witnesses));
+        return to_abi_error_clear_on_fail(
+            ctx->backend->schnorr_snark_witness_batch(
+                msgs32, pubkeys_x32, sigs64, count, out_witnesses),
+            out_witnesses, count, UFSECP_SCHNORR_SNARK_WITNESS_BYTES);
     } UFSECP_GPU_CATCH
 }
 
@@ -618,8 +711,9 @@ ufsecp_error_t ufsecp_bip352_prepare_scan_plan(
 
     using namespace secp256k1::fast;
 
-    Scalar k = Scalar::from_bytes(scan_privkey32);
-    if (k.is_zero()) {
+    std::memset(plan264_out, 0, 264);
+    Scalar k;
+    if (!Scalar::parse_bytes_strict_nonzero(scan_privkey32, k)) {
         secp256k1::detail::secure_erase(&k, sizeof(k));
         return UFSECP_ERR_BAD_KEY;
     }
@@ -698,6 +792,17 @@ ufsecp_error_t ufsecp_gpu_bip352_scan_batch(
     if (!ctx || !scan_privkey32 || !spend_pubkey33 || !tweak_pubkeys33 || !prefix64_out)
         return UFSECP_ERR_NULL_ARG;
     if (n_tweaks > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(prefix64_out, n_tweaks, sizeof(uint64_t))) {
+        return UFSECP_ERR_BAD_INPUT;
+    }
+    {
+        secp256k1::fast::Scalar scan_k;
+        if (!secp256k1::fast::Scalar::parse_bytes_strict_nonzero(scan_privkey32, scan_k)) {
+            secp256k1::detail::secure_erase(&scan_k, sizeof(scan_k));
+            return UFSECP_ERR_BAD_KEY;
+        }
+        secp256k1::detail::secure_erase(&scan_k, sizeof(scan_k));
+    }
     // Validate compressed pubkey prefixes (must be 0x02 or 0x03) for spend_pubkey
     // and every tweak pubkey. Reject invalid input before it reaches the GPU kernel.
     if (spend_pubkey33[0] != 0x02 && spend_pubkey33[0] != 0x03)
@@ -708,8 +813,10 @@ ufsecp_error_t ufsecp_gpu_bip352_scan_batch(
             return UFSECP_ERR_BAD_INPUT;
     }
     try {
-        return to_abi_error(ctx->backend->bip352_scan_batch(
-            scan_privkey32, spend_pubkey33, tweak_pubkeys33, n_tweaks, prefix64_out));
+        return to_abi_error_clear_on_fail(
+            ctx->backend->bip352_scan_batch(
+                scan_privkey32, spend_pubkey33, tweak_pubkeys33, n_tweaks, prefix64_out),
+            prefix64_out, n_tweaks, sizeof(uint64_t));
     } UFSECP_GPU_CATCH
 }
 
