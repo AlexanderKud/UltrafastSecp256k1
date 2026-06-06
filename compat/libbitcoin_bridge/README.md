@@ -163,6 +163,44 @@ whole chunk in one `*_batch_verify` call; if that reports the chunk has an
 invalid row, it re-runs each row as a single-entry verify to locate the exact
 failures (honest IBD failures are rare, so the per-row pass is seldom taken).
 
+## 4-table batching model (single + m-of-n)
+
+libbitcoin accumulates signature tuples into **four** homogeneous tables so each
+stacks independently at a uniform row size:
+
+| table       | record (verified)        | tail (opaque)              | row size |
+|-------------|--------------------------|----------------------------|---------:|
+| `ecdsa`     | `EcdsaRecord` (129)      | `block-fk` (3)             | 132 |
+| `schnorr`   | `SchnorrRecord` (128)    | `block-fk` (3)             | 131 |
+| `multisig`  | `EcdsaRecord` (129)      | `m\|n`(1)+`group`(2)+`block-fk`(3) | 135 |
+| `threshold` | `SchnorrRecord` (128)    | `m\|n`(1)+`group`(2)+`block-fk`(3) | 134 |
+
+At the verify boundary the four tables collapse to **two verify kinds**: a
+`multisig` row is one ECDSA signature, a `threshold` (tapscript CHECKSIG /
+CHECKSIGADD) row is one Schnorr signature. The `m|n` + `group` bytes are
+libbitcoin accounting metadata, carried in the opaque correlation tail and
+**never interpreted** by the bridge — m-of-n satisfaction is the node's job,
+downstream of the per-row verdict. So `multisig` verifies through the ECDSA path
+and `threshold` through the Schnorr path, both with `key_size == 6`.
+
+The canonical packed rows `ufsecp::lbtc::MultisigRow` (135) and `ThresholdRow`
+(134) are the on-wire source of truth so a node's table forwards zero-copy:
+
+```cpp
+std::span<const MultisigRow> batch = ...;     // EcdsaRecord + m|n + group + block-fk
+std::vector<uint8_t> results(batch.size());
+ctrl.verify_multisig(batch, results.data());  // == verify_ecdsa, key_size=6
+// or the rejected-id-list shape:
+ctrl.collect_multisig(std::span<MultisigRow>(rows, n));  // valid tail zeroed
+```
+
+`verify_multisig` / `verify_threshold` (and the `collect_*` twins) are
+intent-revealing aliases of the ECDSA / Schnorr calls — identical, gated
+verification. Because the verify core reads only the leading record and walks
+`stride = record + key_size`, the verdict is **independent of the tail width**:
+the single (3-byte) and m-of-n (6-byte) tables verify the same signatures
+identically (`tests/test_lbtc_multisig_threshold.cpp`).
+
 ## Collect (in-place) verify — `*_collect`
 
 A second output shape, requested by evoskuil for the rejected-id-list use case.
@@ -261,6 +299,7 @@ compat/libbitcoin_bridge/
   src/ufsecp_libbitcoin.cpp     ← controller (CPU fallback + GPU dispatch)
   tests/test_lbtc_bridge.cpp    ← correctness test (CPU path verified)
   tests/test_lbtc_collect.cpp   ← in-place collect contract (+ smallchunk variant)
+  tests/test_lbtc_multisig_threshold.cpp ← 4-table model: multisig/threshold verify+collect
   tests/test_lbtc_consensus_diff.cpp ← GPU==CPU==libsecp differential (results + collect)
   example/lbtc_batch_demo.cpp   ← skeleton harness for libbitcoin
   CMakeLists.txt                ← standalone dev/test build

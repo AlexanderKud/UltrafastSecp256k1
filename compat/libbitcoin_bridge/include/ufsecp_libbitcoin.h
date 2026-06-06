@@ -265,6 +265,54 @@ static_assert(sizeof(EcdsaRecord) == UFSECP_LBTC_ECDSA_RECORD,
 static_assert(sizeof(SchnorrRecord) == UFSECP_LBTC_SCHNORR_RECORD,
               "SchnorrRecord must be exactly 128 bytes, tightly packed");
 
+// ---------------------------------------------------------------------------
+// Multisig / threshold table rows — libbitcoin's 4-table batching model.
+//
+// libbitcoin accumulates signature tuples into FOUR homogeneous tables so each
+// stacks independently at a uniform row size:
+//
+//     ecdsa     [ EcdsaRecord(129)   ][ block-fk(3) ]                       single
+//     schnorr   [ SchnorrRecord(128) ][ block-fk(3) ]                       single
+//     multisig  [ EcdsaRecord(129)   ][ m|n(1) ][ group(2) ][ block-fk(3) ] m-of-n
+//     threshold [ SchnorrRecord(128) ][ m|n(1) ][ group(2) ][ block-fk(3) ] m-of-n
+//
+// At THIS verification boundary the four tables collapse to TWO verify kinds:
+// each multisig row is one ECDSA signature over (hash, point, sig); each
+// threshold row (tapscript CHECKSIG / CHECKSIGADD) is one Schnorr signature over
+// (hash, xonly, sig). The m|n + group + block-fk bytes are libbitcoin accounting
+// metadata, carried in the opaque correlation tail and NEVER interpreted by the
+// bridge — m-of-n satisfaction is the node's job, downstream of per-row verify.
+//
+// So multisig verifies through the ECDSA path and threshold through the Schnorr
+// path, both with key_size == 6 (the m|n + group + block-fk tail). The structs
+// below are the canonical on-wire rows so a node's packed table forwards
+// zero-copy through verify_multisig / verify_threshold (and the collect twins).
+//
+// COLLECT note: collect zeroes the ENTIRE key tail on a VALID row and leaves it
+// intact on INVALID. A rejected row therefore retains m|n, group AND block-fk
+// for mapping; a valid row's accounting bytes are cleared (valid rows are purged
+// per window, so this is intended). A caller that must keep the accounting bytes
+// for valid rows uses the results[] variant, which never writes the row.
+// ---------------------------------------------------------------------------
+#pragma pack(push, 1)
+struct MultisigRow {            // 135 bytes: ECDSA record + m|n + group + block-fk
+    EcdsaRecord record;         // 129: hash | point | sig    (the verified bytes)
+    uint8_t     mn;             //   1: packed m|n            (accounting; opaque)
+    uint8_t     group[2];       //   2: multisig group id     (accounting; opaque)
+    uint8_t     block_fk[3];    //   3: block correlation id  (opaque)
+};
+struct ThresholdRow {           // 134 bytes: Schnorr record + m|n + group + block-fk
+    SchnorrRecord record;       // 128: hash | xonly | sig    (the verified bytes)
+    uint8_t       mn;           //   1: packed m|n            (accounting; opaque)
+    uint8_t       group[2];     //   2: threshold group id    (accounting; opaque)
+    uint8_t       block_fk[3];  //   3: block correlation id  (opaque)
+};
+#pragma pack(pop)
+static_assert(sizeof(MultisigRow) == UFSECP_LBTC_ECDSA_RECORD + 6,
+              "MultisigRow must be exactly 135 bytes (129 record + 6 tag), packed");
+static_assert(sizeof(ThresholdRow) == UFSECP_LBTC_SCHNORR_RECORD + 6,
+              "ThresholdRow must be exactly 134 bytes (128 record + 6 tag), packed");
+
 class Controller {
 public:
     explicit Controller(ufsecp_lbtc_backend backend = UFSECP_LBTC_AUTO) {
@@ -296,6 +344,20 @@ public:
         ufsecp_lbtc_verify_schnorr(ctrl_, rows, count, key_size, results);
     }
 
+    // Multisig (ECDSA m-of-n) and threshold (Schnorr / tapscript m-of-n) tables.
+    // Intent-revealing aliases for verify_ecdsa / verify_schnorr — identical
+    // verification, named for the libbitcoin table they consume. The m|n+group
+    // bytes ride in the opaque key tail; key_size is its width (6 for the
+    // canonical MultisigRow / ThresholdRow: m|n + group + block-fk).
+    void verify_multisig(const uint8_t* rows, size_t count, size_t key_size,
+                         uint8_t* results) const {
+        ufsecp_lbtc_verify_ecdsa(ctrl_, rows, count, key_size, results);
+    }
+    void verify_threshold(const uint8_t* rows, size_t count, size_t key_size,
+                          uint8_t* results) const {
+        ufsecp_lbtc_verify_schnorr(ctrl_, rows, count, key_size, results);
+    }
+
     // --- Collect (in-place) verify ------------------------------------------
     // No results buffer: the verdict is written into each row's trailing key
     // cell (key_size MUST be > 0) — zeroed on valid, left intact on invalid. The
@@ -305,6 +367,16 @@ public:
         ufsecp_lbtc_verify_ecdsa_collect(ctrl_, rows, count, key_size);
     }
     void collect_schnorr(uint8_t* rows, size_t count, size_t key_size) const {
+        ufsecp_lbtc_verify_schnorr_collect(ctrl_, rows, count, key_size);
+    }
+
+    // Collect twins for the multisig / threshold tables (see verify_multisig).
+    // key_size MUST be > 0 (the whole tail is the verdict cell: zeroed on valid,
+    // intact on invalid). For the canonical rows that is 6 (m|n + group + block-fk).
+    void collect_multisig(uint8_t* rows, size_t count, size_t key_size) const {
+        ufsecp_lbtc_verify_ecdsa_collect(ctrl_, rows, count, key_size);
+    }
+    void collect_threshold(uint8_t* rows, size_t count, size_t key_size) const {
         ufsecp_lbtc_verify_schnorr_collect(ctrl_, rows, count, key_size);
     }
 
@@ -394,6 +466,28 @@ public:
         ufsecp_lbtc_verify_schnorr_collect(
             ctrl_, reinterpret_cast<uint8_t*>(batch.data()), batch.size(),
             sizeof(Row) - UFSECP_LBTC_SCHNORR_RECORD);
+    }
+
+    // --- Typed-span multisig / threshold overloads (C++20) ------------------
+    // Pass the canonical MultisigRow / ThresholdRow span (or any packed Row whose
+    // first RECORD bytes are the ECDSA / Schnorr record). key_size = sizeof(Row) -
+    // RECORD is recovered from the type (6 for the canonical rows). These forward
+    // to the ECDSA / Schnorr verify+collect cores — same crypto, named for intent.
+    template <class Row>
+    void verify_multisig(std::span<const Row> batch, uint8_t* results) const {
+        verify_ecdsa<Row>(batch, results);
+    }
+    template <class Row>
+    void verify_threshold(std::span<const Row> batch, uint8_t* results) const {
+        verify_schnorr<Row>(batch, results);
+    }
+    template <class Row>
+    void collect_multisig(std::span<Row> batch) const {
+        collect_ecdsa<Row>(batch);
+    }
+    template <class Row>
+    void collect_threshold(std::span<Row> batch) const {
+        collect_schnorr<Row>(batch);
     }
 #endif /* C++20 std::span */
 
