@@ -63,6 +63,11 @@ ignore:
   # GPU kernels — cannot be instrumented on CPU-only CI runners.
   - "src/cuda/**"
   - "src/opencl/**"
+  - "src/gpu/**"
+  # GPU host ABI depends on backend/device availability; fail-closed behavior
+  # is covered by audit GPU negative tests and CAAS security gates instead of
+  # the CPU-only coverage runner.
+  - "src/cpu/src/ufsecp_gpu_impl.cpp"
 
 comment:
   layout: "reach,diff,flags,files"

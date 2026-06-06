@@ -504,6 +504,75 @@ static void test_zk_schnorr_snark_witness(ufsecp_ctx* ctx) {
 }
 
 // ============================================================================
+// Caller-reachable ABI error branches
+// ============================================================================
+
+static void test_btc_message_sign_small_buffer(ufsecp_ctx* ctx) {
+    std::printf("\n=== FFI: ufsecp_btc_message_sign small buffer ===\n");
+
+    const std::uint8_t msg[] = "coverage";
+    std::uint8_t privkey[32] = {};
+    privkey[31] = 1;
+
+    char out[1] = {'X'};
+    std::size_t out_len = sizeof(out);
+    auto err = ufsecp_btc_message_sign(ctx, msg, sizeof(msg) - 1, privkey, out, &out_len);
+    CHECK(err == UFSECP_ERR_BUF_TOO_SMALL, "btc_message_sign: small buffer rejected");
+    CHECK(out_len == 0, "btc_message_sign: small buffer clears length");
+    CHECK(out[0] == '\0', "btc_message_sign: initializes output to empty string");
+}
+
+static void test_bip144_nonminimal_compact_size(ufsecp_ctx* ctx) {
+    std::printf("\n=== FFI: ufsecp_bip144_txid non-minimal CompactSize ===\n");
+
+    std::uint8_t txid[32] = {};
+
+    std::uint8_t tx_fd[] = {
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0xFD, 0xFC, 0x00,
+        0x00
+    };
+    CHECK(ufsecp_bip144_txid(ctx, tx_fd, sizeof(tx_fd), txid) == UFSECP_ERR_BAD_INPUT,
+          "bip144_txid: rejects non-minimal 0xFD CompactSize");
+
+    std::uint8_t tx_fe[] = {
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0xFE, 0xFD, 0x00, 0x00, 0x00
+    };
+    CHECK(ufsecp_bip144_txid(ctx, tx_fe, sizeof(tx_fe), txid) == UFSECP_ERR_BAD_INPUT,
+          "bip144_txid: rejects non-minimal 0xFE CompactSize");
+
+    std::uint8_t tx_ff[] = {
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0xFF, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    CHECK(ufsecp_bip144_txid(ctx, tx_ff, sizeof(tx_ff), txid) == UFSECP_ERR_BAD_INPUT,
+          "bip144_txid: rejects non-minimal 0xFF CompactSize");
+}
+
+static void test_frost_aggregate_zero_partial_sig(ufsecp_ctx* ctx) {
+    std::printf("\n=== FFI: ufsecp_frost_aggregate zero partial sig ===\n");
+
+    std::uint8_t partial_sig[36] = {};
+    partial_sig[0] = 1;  // little-endian signer id = 1, z_i remains zero
+
+    std::uint8_t nonce_commit[UFSECP_FROST_NONCE_COMMIT_LEN] = {};
+    nonce_commit[0] = 1;
+
+    std::uint8_t group_pubkey33[33] = {0x02};
+    std::uint8_t msg32[32] = {};
+    std::uint8_t sig64[64];
+    std::memset(sig64, 0xA5, sizeof(sig64));
+
+    auto err = ufsecp_frost_aggregate(
+        ctx, partial_sig, 1, nonce_commit, 1, group_pubkey33, msg32, sig64);
+    CHECK(err == UFSECP_ERR_BAD_SIG, "frost_aggregate: zero partial scalar rejected");
+    std::array<std::uint8_t, 64> zero_sig{};
+    CHECK(std::memcmp(sig64, zero_sig.data(), zero_sig.size()) == 0,
+          "frost_aggregate: clears output before rejecting zero partial scalar");
+}
+
+// ============================================================================
 // Entry point
 // ============================================================================
 
@@ -519,6 +588,9 @@ int test_ffi_coverage_run() {
     test_zk_range(ctx);
     test_zk_ecdsa_snark_witness(ctx);
     test_zk_schnorr_snark_witness(ctx);
+    test_btc_message_sign_small_buffer(ctx);
+    test_bip144_nonminimal_compact_size(ctx);
+    test_frost_aggregate_zero_partial_sig(ctx);
 
 #ifdef SECP256K1_BIP324
     test_aead_roundtrip();

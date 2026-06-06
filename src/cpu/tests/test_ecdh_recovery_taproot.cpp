@@ -20,6 +20,7 @@
 #include "secp256k1/point.hpp"
 #include "secp256k1/scalar.hpp"
 #include "secp256k1/field.hpp"
+#include "secp256k1/musig2.hpp"
 
 using namespace secp256k1;
 using fast::Scalar;
@@ -440,6 +441,41 @@ static void test_taproot_full_flow() {
     check(tweaked_pk_x == output_x, "Full flow: tweaked key matches output");
 }
 
+static void test_taproot_invalid_inputs() {
+    (void)std::printf("[Taproot] Invalid input guards...\n");
+
+    auto sk = Scalar::from_hex(
+        "0000000000000000000000000000000000000000000000000000000000000001");
+    auto pk_x = schnorr_pubkey(sk);
+
+    auto [bad_output_x, bad_parity] = taproot_output_key(pk_x, nullptr, 32);
+    check(secp256k1::ct::ct_is_zero(bad_output_x) && bad_parity == 0,
+          "Taproot: output_key rejects null merkle root with non-zero length");
+
+    auto zero_tweak = taproot_tweak_privkey(Scalar::zero());
+    check(zero_tweak.is_zero(), "Taproot: tweak_privkey rejects zero secret");
+
+    auto bad_tweak = taproot_tweak_privkey(sk, nullptr, 32);
+    check(bad_tweak.is_zero(), "Taproot: tweak_privkey rejects null merkle root with non-zero length");
+}
+
+static void test_musig2_invalid_nonce_aggregation() {
+    (void)std::printf("[MuSig2] Invalid nonce aggregation guards...\n");
+
+    MuSig2PubNonce bad_nonce{};
+    bad_nonce.R1[0] = 0x05;
+    bad_nonce.R2[0] = 0x02;
+    auto agg = musig2_nonce_agg({bad_nonce});
+    check(agg.R1.is_infinity() && agg.R2.is_infinity(),
+          "MuSig2: nonce_agg rejects invalid compressed nonce");
+
+    auto agg_points = musig2_nonce_agg_points({
+        {Point::infinity(), Point::generator()}
+    });
+    check(agg_points.R1.is_infinity() && agg_points.R2.is_infinity(),
+          "MuSig2: nonce_agg_points rejects infinity nonce");
+}
+
 // ===============================================================================
 // CT Utils Tests
 // ===============================================================================
@@ -718,6 +754,8 @@ int test_ecdh_recovery_taproot_run() {
     test_taproot_merkle_tree();
     test_taproot_merkle_proof();
     test_taproot_full_flow();
+    test_taproot_invalid_inputs();
+    test_musig2_invalid_nonce_aggregation();
 
     (void)std::printf("\n");
 
