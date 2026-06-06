@@ -1,5 +1,17 @@
 # Audit Changelog
 
+## 2026-06-06 — Minerva CVE timing regression macOS CI stability
+
+- **Minerva MC-3c timing gate:** `audit/test_exploit_minerva_cve_2024_23342.cpp`
+  now records all 64 repeated RFC6979 timings and gates on p95/p5 central spread
+  instead of `max/first`. This preserves the hard sign-success and deterministic
+  signature assertions while avoiding a false failure from a single macOS Release
+  scheduler/cold-cache outlier observed in push CI run 27074680522.
+- **Source graph context fallback:** `tools/source_graph_kit/source_graph.py context`
+  now prints matching `files` rows even when a Markdown/JSON/config file has no
+  function summary, so graph-first docs scoping can identify indexed documentation
+  files directly.
+
 ## 2026-06-06 — GPU ABI fail-closed outputs and secret-buffer erasure parity
 
 - **GPU C ABI output clearing:** result-bearing `ufsecp_gpu_*` wrappers now clear
