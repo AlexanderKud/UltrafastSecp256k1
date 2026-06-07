@@ -224,14 +224,24 @@ thread pool (≈ core-count speedup over the per-call path; ~7× on a 6P+4E box)
 `tests/test_lbtc_commitment.cpp` cross-checks every verdict against the shim's
 native `secp256k1_xonly_pubkey_tweak_add_check`.
 
-Two GPU follow-ups (measured / scoped, not yet shipped here):
-- **RLC fast-check** — collapse the batch to two device MSMs (`ufsecp_gpu_msm`):
-  `Σrᵢ·Pᵢ + (Σrᵢ·tᵢ)·G == Σrᵢ·Qᵢ`. Measured ceiling ~2.5 M checks/s. Gives an
-  *aggregate* verdict, so the rare failure falls back to the CPU per-row path to
-  locate it. **Consensus caveat:** the weights `rᵢ` MUST be Fiat-Shamir-derived
-  from the batch data, or a crafted block could force the aggregate to pass.
-- **Per-item GPU kernel** — one thread per check (lift + tweak·G + add + compare):
-  per-row GPU verdicts at a higher ceiling (~Schnorr-class, ~5 M/s).
+**GPU version — `ufsecp_lbtc_commitment_batch_ok` (shipped).** Collapses the batch
+to two device MSMs (`ufsecp_gpu_msm`): `Σrᵢ·Pᵢ + (Σrᵢ·tᵢ)·G == Σrᵢ·Qᵢ`. Returns a
+single aggregate verdict — `1` all valid / `0` some invalid / `-1` no GPU — so the
+rare failure falls back to the per-row `verify_commitment` to locate it. Measured
+~2.5 M checks/s (RTX-class). The weights `rᵢ` are **Fiat-Shamir-derived from a
+SHA-256 over the whole batch** (`e = H(rows)`, `rᵢ = H(e‖i) mod n`), so a crafted
+block cannot force a false cancellation (a constant `r` would be forgeable — the
+`test_lbtc_commitment.cpp` GPU cases assert corrupted batches return `0`).
+
+```c
+int ok = ufsecp_lbtc_commitment_batch_ok(ctrl, internal_x, tweak, tweaked_x, parity, n);
+if (ok == 1)      accept_all();              // GPU fast-path: whole batch valid
+else if (ok == 0) verify_commitment(...);    // locate the failure(s) per-row
+else /* -1 */     verify_commitment(...);     // no GPU -> CPU per-row
+```
+
+Remaining follow-up: a **per-item GPU kernel** (one thread per check) for per-row
+GPU verdicts at a higher ceiling (~Schnorr-class, ~5 M/s).
 
 ## Collect (in-place) verify — `*_collect`
 

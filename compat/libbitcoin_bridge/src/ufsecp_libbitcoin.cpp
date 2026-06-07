@@ -31,7 +31,8 @@
 #include "ufsecp.h"     /* ufsecp_ctx, ufsecp_ctx_create/destroy,
                            ufsecp_ecdsa_batch_verify, ufsecp_schnorr_batch_verify */
 #ifdef UFSECP_LBTC_WITH_GPU
-#include "ufsecp_gpu.h" /* GPU C ABI + UFSECP_GPU_BACKEND_*, UFSECP_ERR_GPU_* */
+#include "ufsecp_gpu.h"          /* GPU C ABI + UFSECP_GPU_BACKEND_*, UFSECP_ERR_GPU_* */
+#include "secp256k1/scalar.hpp"  /* Scalar — Fiat-Shamir g_coeff for the commitment RLC */
 #endif
 
 #include <cstring>
@@ -712,6 +713,77 @@ void ufsecp_lbtc_verify_commitment(ufsecp_lbtc_ctrl* ctrl,
         });
     }
     for (auto& th : ths) th.join();
+}
+
+/*
+ * GPU random-linear-combination fast-check for the commitment batch.
+ *   returns  1 = all commitments valid,
+ *            0 = at least one invalid,
+ *           -1 = GPU unavailable / device error (caller falls back to the per-row
+ *                ufsecp_lbtc_verify_commitment, which is exact and locates failures).
+ *
+ * Aggregate identity: with weights r_i,
+ *     Sum r_i*P_i + (Sum r_i*t_i)*G  ==  Sum r_i*Q_i   iff   every P_i+t_i*G == Q_i.
+ * Evaluated as two device MSMs (ufsecp_gpu_msm). The weights r_i are FIAT-SHAMIR
+ * derived from a SHA-256 over the ENTIRE batch — e = H(internal_x||tweak||tweaked_x
+ * ||parity), r_i = H(e || i) mod n — so a crafted block cannot choose data that
+ * forces a false cancellation (that would require grinding SHA-256 into a fixed
+ * group relation). A constant r would be forgeable; the per-row CPU path stays the
+ * exact consensus reference. PUBLIC data only -> variable-time.
+ */
+int ufsecp_lbtc_commitment_batch_ok(ufsecp_lbtc_ctrl* ctrl,
+                                    const uint8_t* internal_x32,
+                                    const uint8_t* tweak32,
+                                    const uint8_t* tweaked_x32,
+                                    const uint8_t* parity,
+                                    size_t n) {
+    if (!ctrl || n == 0 || !internal_x32 || !tweak32 || !tweaked_x32 || !parity) return -1;
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (!ctrl->gpu) return -1;
+    using secp256k1::fast::Scalar;
+    try {
+        /* Fiat-Shamir batch digest e = SHA256(internal_x || tweak || tweaked_x || parity). */
+        std::vector<uint8_t> tr;
+        tr.reserve(n*32*3 + n);
+        tr.insert(tr.end(), internal_x32, internal_x32 + n*32);
+        tr.insert(tr.end(), tweak32,      tweak32      + n*32);
+        tr.insert(tr.end(), tweaked_x32,  tweaked_x32  + n*32);
+        tr.insert(tr.end(), parity,       parity       + n);
+        uint8_t e[32];
+        if (ufsecp_sha256(tr.data(), tr.size(), e) != UFSECP_OK) return -1;
+
+        /* Generator (compressed), once. */
+        uint8_t Gc[33]; { uint8_t one[32]={0}; one[31]=1; ufsecp_ctx* g=nullptr;
+            if (ufsecp_ctx_create(&g)!=UFSECP_OK || !g) return -1;
+            const ufsecp_error_t ge = ufsecp_pubkey_create(g, one, Gc);
+            ufsecp_ctx_destroy(g);
+            if (ge != UFSECP_OK) return -1; }
+
+        std::vector<uint8_t> lp((n+1)*33), ls((n+1)*32), qp(n*33);
+        Scalar g_coeff = Scalar::zero();
+        for (size_t i = 0; i < n; ++i) {
+            uint8_t seed[36]; std::memcpy(seed, e, 32);
+            seed[32]=(uint8_t)i; seed[33]=(uint8_t)(i>>8);
+            seed[34]=(uint8_t)(i>>16); seed[35]=(uint8_t)(i>>24);
+            uint8_t rb[32]; if (ufsecp_sha256(seed, 36, rb) != UFSECP_OK) return -1;
+            const Scalar r = Scalar::from_bytes(rb);           /* reduced mod n */
+            const auto ra = r.to_bytes();
+            std::memcpy(ls.data() + i*32, ra.data(), 32);
+            lp[i*33] = 0x02; std::memcpy(lp.data()+i*33+1, internal_x32+i*32, 32); /* even-y P_i */
+            qp[i*33] = parity[i] ? 0x03 : 0x02; std::memcpy(qp.data()+i*33+1, tweaked_x32+i*32, 32); /* Q_i */
+            g_coeff = g_coeff + r * Scalar::from_bytes(tweak32 + i*32);
+        }
+        std::memcpy(lp.data() + n*33, Gc, 33);
+        { const auto ga = g_coeff.to_bytes(); std::memcpy(ls.data() + n*32, ga.data(), 32); }
+
+        uint8_t lhs[33], rhs[33];
+        if (ufsecp_gpu_msm(ctrl->gpu, ls.data(), lp.data(), n+1, lhs) != UFSECP_OK) return -1;
+        if (ufsecp_gpu_msm(ctrl->gpu, ls.data(), qp.data(), n,   rhs) != UFSECP_OK) return -1;
+        return std::memcmp(lhs, rhs, 33) == 0 ? 1 : 0;
+    } catch (...) { return -1; }
+#else
+    return -1;  /* no GPU build — caller uses ufsecp_lbtc_verify_commitment */
+#endif
 }
 
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,

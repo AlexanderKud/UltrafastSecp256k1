@@ -96,6 +96,25 @@ int main() {
     for (uint8_t b : z2) if (b != 0) null_all_zeroed = false;  /* every byte zeroed = no row accepted */
     CHECK(null_all_zeroed, "NULL input zeroes every result byte (no row left accepted)");
 
+    /* (5) GPU RLC aggregate fast-check (commitment_batch_ok). Skips when no GPU. */
+    {
+        int ok = ufsecp_lbtc_commitment_batch_ok(ctrl, ix.data(), tw.data(), tx.data(), par.data(), N);
+        if (ok < 0) {
+            std::printf("  skip: commitment_batch_ok — no GPU build/device (returned -1)\n");
+        } else {
+            CHECK(ok == 1, "GPU RLC: all-valid batch returns 1");
+            uint8_t saved = tx[11*32]; tx[11*32] ^= 0x01;     /* one invalid row */
+            int bad = ufsecp_lbtc_commitment_batch_ok(ctrl, ix.data(), tw.data(), tx.data(), par.data(), N);
+            tx[11*32] = saved;
+            CHECK(bad == 0, "GPU RLC: one corrupted row returns 0 (Fiat-Shamir catches it)");
+            /* a second, different corrupted position also rejects */
+            uint8_t s2 = tx[800*32]; tx[800*32] ^= 0x80;
+            int bad2 = ufsecp_lbtc_commitment_batch_ok(ctrl, ix.data(), tw.data(), tx.data(), par.data(), N);
+            tx[800*32] = s2;
+            CHECK(bad2 == 0, "GPU RLC: a different corrupted row also returns 0");
+        }
+    }
+
     ufsecp_lbtc_ctrl_destroy(ctrl);
     ufsecp_ctx_destroy(uctx);
     secp256k1_context_destroy(sctx);

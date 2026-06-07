@@ -303,6 +303,25 @@ void ufsecp_lbtc_verify_commitment(ufsecp_lbtc_ctrl* ctrl,
                                    const uint8_t* parity,
                                    size_t n, uint8_t* results);
 
+/*
+ * GPU random-linear-combination fast-check (the "GPU version" of the commitment
+ * batch). Collapses the whole batch to two device multi-scalar-mults and returns
+ * a single aggregate verdict:
+ *     1 = ALL commitments valid,
+ *     0 = at least one invalid,
+ *    -1 = no usable GPU / device error  → use ufsecp_lbtc_verify_commitment instead.
+ * On 0 (or -1), call ufsecp_lbtc_verify_commitment to get per-row results[] and
+ * locate the failure(s). The weights are Fiat-Shamir-derived from a SHA-256 over
+ * the entire batch, so the aggregate is not forgeable (a constant weight would be).
+ * All inputs PUBLIC -> variable-time. Measured ceiling ~2.5 M checks/s (RTX-class).
+ */
+int ufsecp_lbtc_commitment_batch_ok(ufsecp_lbtc_ctrl* ctrl,
+                                    const uint8_t* internal_x32,
+                                    const uint8_t* tweak32,
+                                    const uint8_t* tweaked_x32,
+                                    const uint8_t* parity,
+                                    size_t n);
+
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
                                    const uint8_t scan_privkey32[32],
                                    const uint8_t spend_pubkey33[33],
@@ -518,6 +537,13 @@ public:
                            size_t n, uint8_t* results) const {
         ufsecp_lbtc_verify_commitment(ctrl_, internal_x32, tweak32, tweaked_x32,
                                       parity, n, results);
+    }
+    // GPU RLC aggregate fast-check: 1 all-valid / 0 some-invalid / -1 no GPU.
+    int commitment_batch_ok(const uint8_t* internal_x32, const uint8_t* tweak32,
+                            const uint8_t* tweaked_x32, const uint8_t* parity,
+                            size_t n) const {
+        return ufsecp_lbtc_commitment_batch_ok(ctrl_, internal_x32, tweak32,
+                                               tweaked_x32, parity, n);
     }
     void collect_multisig_columns(const uint8_t* msg_hashes32, const uint8_t* pubkeys33,
                                   const uint8_t* sigs64, size_t count,
