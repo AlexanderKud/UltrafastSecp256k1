@@ -201,6 +201,38 @@ verification. Because the verify core reads only the leading record and walks
 the single (3-byte) and m-of-n (6-byte) tables verify the same signatures
 identically (`tests/test_lbtc_multisig_threshold.cpp`).
 
+## BIP-341 Taproot commitment batch — `verify_commitment`
+
+Batches the key-path commitment check (`secp256k1_xonly_pubkey_tweak_add_check`):
+for each item, accept iff `Q = lift_x(internal_x, even-y) + tweak*G` has
+`x(Q) == tweaked_x` and `y-parity(Q) == parity`. Columns / SoA input:
+
+```c
+void ufsecp_lbtc_verify_commitment(ufsecp_lbtc_ctrl* ctrl,
+    const uint8_t* internal_x32,  // n*32 x-only internal keys
+    const uint8_t* tweak32,       // n*32 BIP-341 tweaks (each in [1, n))
+    const uint8_t* tweaked_x32,   // n*32 claimed tweaked output keys
+    const uint8_t* parity,        // n    claimed y-parity (0 even / 1 odd)
+    size_t n, uint8_t* results);  // OUT n bytes, 1 valid / 0 invalid
+```
+
+All inputs are PUBLIC → variable-time. Each row is computed engine-native as one
+2-term MSM (`Q = 1*P + tweak*G`, the compressed-point parse does the even-y lift),
+so it is **per-row and EXACT** — no random-linear-combination, hence consensus-safe
+with no aggregate randomness. The CPU path fans the independent rows across a
+thread pool (≈ core-count speedup over the per-call path; ~7× on a 6P+4E box).
+`tests/test_lbtc_commitment.cpp` cross-checks every verdict against the shim's
+native `secp256k1_xonly_pubkey_tweak_add_check`.
+
+Two GPU follow-ups (measured / scoped, not yet shipped here):
+- **RLC fast-check** — collapse the batch to two device MSMs (`ufsecp_gpu_msm`):
+  `Σrᵢ·Pᵢ + (Σrᵢ·tᵢ)·G == Σrᵢ·Qᵢ`. Measured ceiling ~2.5 M checks/s. Gives an
+  *aggregate* verdict, so the rare failure falls back to the CPU per-row path to
+  locate it. **Consensus caveat:** the weights `rᵢ` MUST be Fiat-Shamir-derived
+  from the batch data, or a crafted block could force the aggregate to pass.
+- **Per-item GPU kernel** — one thread per check (lift + tweak·G + add + compare):
+  per-row GPU verdicts at a higher ceiling (~Schnorr-class, ~5 M/s).
+
 ## Collect (in-place) verify — `*_collect`
 
 A second output shape, requested by evoskuil for the rejected-id-list use case.
@@ -300,6 +332,7 @@ compat/libbitcoin_bridge/
   tests/test_lbtc_bridge.cpp    ← correctness test (CPU path verified)
   tests/test_lbtc_collect.cpp   ← in-place collect contract (+ smallchunk variant)
   tests/test_lbtc_multisig_threshold.cpp ← 4-table model: multisig/threshold verify+collect
+  tests/test_lbtc_commitment.cpp ← BIP-341 Taproot commitment batch (vs shim tweak_add_check)
   tests/test_lbtc_consensus_diff.cpp ← GPU==CPU==libsecp differential (results + collect)
   example/lbtc_batch_demo.cpp   ← skeleton harness for libbitcoin
   CMakeLists.txt                ← standalone dev/test build

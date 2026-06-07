@@ -268,6 +268,41 @@ void ufsecp_lbtc_verify_schnorr_columns_collect(ufsecp_lbtc_ctrl* ctrl,
  *   n               number of tweaks.
  *   prefix64_out    OUT, n * uint64_t output prefixes for matching.
  */
+/* ------------------------------------------------------------------------- */
+/* 1c. BIP-341 Taproot commitment batch (x-only tweak-add-check).             */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Batch the BIP-341 key-path commitment check
+ * (secp256k1_xonly_pubkey_tweak_add_check): for each item, accept iff
+ *     Q = lift_x(internal_x, even-y) + tweak*G   has   x(Q) == tweaked_x
+ *     and the y-parity of Q equals `parity`.
+ * All inputs are PUBLIC (variable-time correct). Columns / struct-of-arrays:
+ *
+ *   internal_x32  n*32  x-only internal keys.
+ *   tweak32       n*32  BIP-341 tweaks (each must be in [1, n)).
+ *   tweaked_x32   n*32  claimed tweaked output x-only keys.
+ *   parity        n     claimed y-parity of each tweaked key (0 even / 1 odd).
+ *   n             rows.
+ *   results       OUT, n bytes. results[i] == 1 if the commitment holds, else 0.
+ *                 A malformed row (internal_x off-curve, tweak >= n, Q at
+ *                 infinity) verifies to 0 — never aborts the batch.
+ *
+ * Each row is INDEPENDENT and EXACT (no random-linear-combination), so the batch
+ * is per-row and consensus-safe with no aggregate randomness; the CPU path runs
+ * the rows across a thread pool. (A GPU random-linear-combination fast-check and
+ * a per-item GPU kernel are follow-ups — see the .cpp note. `ctrl` is accepted
+ * for ABI stability / future GPU dispatch.) Returns void; a degenerate call
+ * (NULL args, n == 0) leaves results as the caller initialized it — zero-init for
+ * a fail-closed "all invalid".
+ */
+void ufsecp_lbtc_verify_commitment(ufsecp_lbtc_ctrl* ctrl,
+                                   const uint8_t* internal_x32,
+                                   const uint8_t* tweak32,
+                                   const uint8_t* tweaked_x32,
+                                   const uint8_t* parity,
+                                   size_t n, uint8_t* results);
+
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
                                    const uint8_t scan_privkey32[32],
                                    const uint8_t spend_pubkey33[33],
@@ -473,6 +508,16 @@ public:
     }
     void collect_threshold(uint8_t* rows, size_t count, size_t key_size) const {
         ufsecp_lbtc_verify_schnorr_collect(ctrl_, rows, count, key_size);
+    }
+
+    // --- BIP-341 Taproot commitment batch (x-only tweak-add-check) -----------
+    // Columns/SoA: internal_x[n*32], tweak[n*32], tweaked_x[n*32], parity[n].
+    // results[i] == 1 if lift_x(internal)+tweak*G matches (tweaked_x, parity).
+    void verify_commitment(const uint8_t* internal_x32, const uint8_t* tweak32,
+                           const uint8_t* tweaked_x32, const uint8_t* parity,
+                           size_t n, uint8_t* results) const {
+        ufsecp_lbtc_verify_commitment(ctrl_, internal_x32, tweak32, tweaked_x32,
+                                      parity, n, results);
     }
     void collect_multisig_columns(const uint8_t* msg_hashes32, const uint8_t* pubkeys33,
                                   const uint8_t* sigs64, size_t count,

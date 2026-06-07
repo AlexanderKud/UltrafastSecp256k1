@@ -38,6 +38,8 @@
 #include <new>
 #include <type_traits>
 #include <vector>
+#include <thread>
+#include <algorithm>
 
 /* UFSECP_ERR_GPU_UNAVAILABLE lives in ufsecp_gpu.h; provide it for CPU-only builds. */
 #ifndef UFSECP_ERR_GPU_UNAVAILABLE
@@ -642,6 +644,74 @@ void ufsecp_lbtc_verify_schnorr_columns_collect(ufsecp_lbtc_ctrl* ctrl,
                                                 size_t key_size) {
     verify_columns_collect_impl(ctrl, Kind::Schnorr, msg_hashes32, pubkeys_x32,
                                 sigs64, n, key_cells, key_size);
+}
+
+/* ---------------------------------------------------------------------------
+ * BIP-341 Taproot commitment batch (x-only tweak-add-check).
+ *
+ * Per item: Q = lift_x(internal, even-y) + tweak*G; accept iff x(Q)==tweaked_x
+ * and the y-parity of Q equals the claimed parity. ALL inputs are PUBLIC
+ * (variable-time correct). Each check is computed engine-native as one 2-term
+ * MSM — Q = 1*P + tweak*G, where P is the compressed even-y point 0x02||internal_x
+ * (the MSM's compressed-point parse performs the lift). It is INDEPENDENT and
+ * EXACT per row (no random-linear-combination), so it is consensus-safe with no
+ * aggregate randomness, and the CPU path fans the rows across a thread pool.
+ *
+ * (A GPU random-linear-combination fast-check — collapsing the batch to two
+ * device MSMs via ufsecp_gpu_msm — is a measured follow-up. For a consensus path
+ * its per-row weights r_i MUST be Fiat-Shamir-derived from the batch data, else a
+ * crafted block could force the aggregate to pass; that is deliberately not shipped
+ * here. A dedicated per-item GPU kernel gives per-row GPU verdicts at a higher
+ * ceiling — also a follow-up.)
+ * ------------------------------------------------------------------------- */
+static inline bool lbtc_commit_one(ufsecp_ctx* ctx, const uint8_t Gc[33],
+                                   const uint8_t* internal_x32, const uint8_t* tweak32,
+                                   const uint8_t* tweaked_x32, uint8_t parity) {
+    uint8_t pts[66], scl[64], Q[33], exp[33];
+    pts[0] = 0x02; std::memcpy(pts + 1, internal_x32, 32);  /* lift(internal, even-y) */
+    std::memcpy(pts + 33, Gc, 33);                          /* generator             */
+    std::memset(scl, 0, 64); scl[31] = 1;                   /* scalar 1 * P          */
+    std::memcpy(scl + 32, tweak32, 32);                     /* scalar tweak * G      */
+    if (ufsecp_multi_scalar_mul(ctx, scl, pts, 2, Q) != UFSECP_OK) return false;
+    exp[0] = parity ? 0x03 : 0x02; std::memcpy(exp + 1, tweaked_x32, 32);
+    return std::memcmp(Q, exp, 33) == 0;
+}
+
+void ufsecp_lbtc_verify_commitment(ufsecp_lbtc_ctrl* ctrl,
+                                   const uint8_t* internal_x32,
+                                   const uint8_t* tweak32,
+                                   const uint8_t* tweaked_x32,
+                                   const uint8_t* parity,
+                                   size_t n, uint8_t* results) {
+    if (!results || n == 0) return;
+    std::memset(results, 0, n);  /* fail-closed default: any early return = all invalid */
+    if (!ctrl || !internal_x32 || !tweak32 || !tweaked_x32 || !parity) return;
+
+    /* Hoisted invariant: G (compressed) computed ONCE for the whole batch. */
+    uint8_t Gc[33]; { uint8_t one[32] = {0}; one[31] = 1;
+        ufsecp_ctx* gctx = nullptr;
+        if (ufsecp_ctx_create(&gctx) != UFSECP_OK || !gctx) return;
+        const ufsecp_error_t ge = ufsecp_pubkey_create(gctx, one, Gc);
+        ufsecp_ctx_destroy(gctx);
+        if (ge != UFSECP_OK) return;
+    }
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;  /* small batches: thread setup is not worth it */
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            ufsecp_ctx* c = nullptr;                 /* per-thread ctx (ctx is not shared-safe) */
+            if (ufsecp_ctx_create(&c) != UFSECP_OK || !c) return;  /* results stay 0 = fail-closed */
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i)
+                results[i] = lbtc_commit_one(c, Gc, internal_x32 + i*32, tweak32 + i*32,
+                                             tweaked_x32 + i*32, parity[i]) ? 1u : 0u;
+            ufsecp_ctx_destroy(c);
+        });
+    }
+    for (auto& th : ths) th.join();
 }
 
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,

@@ -101,6 +101,19 @@ if(UFSECP_LBTC_BUILD_TESTS)
     target_link_libraries(test_lbtc_multisig_threshold PRIVATE ufsecp_lbtc_bridge)
     add_test(NAME lbtc_multisig_threshold COMMAND test_lbtc_multisig_threshold)
 
+    # BIP-341 Taproot commitment batch (ufsecp_lbtc_verify_commitment). Generates
+    # ground truth with, and cross-checks against, the shim's native
+    # secp256k1_xonly_pubkey_tweak_add(_check), so it only builds when the shim
+    # target is present (libsecp parity build).
+    if(TARGET secp256k1_shim)
+        add_executable(test_lbtc_commitment tests/test_lbtc_commitment.cpp)
+        target_compile_features(test_lbtc_commitment PRIVATE cxx_std_20)
+        target_link_libraries(test_lbtc_commitment PRIVATE ufsecp_lbtc_bridge secp256k1_shim)
+        target_include_directories(test_lbtc_commitment PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../libsecp256k1_shim/include)
+        add_test(NAME lbtc_commitment COMMAND test_lbtc_commitment)
+    endif()
+
     # Same source, but the bridge is RECOMPILED with a tiny kChunk so the corpus
     # straddles chunk boundaries — exercises CollectSink's (base+i)*stride global
     # indexing across chunks deterministically (no 262k-row corpus needed).
