@@ -319,7 +319,9 @@ void ufsecp_lbtc_verify_commitment(ufsecp_lbtc_ctrl* ctrl,
  * On 0 (or -1), call ufsecp_lbtc_verify_commitment to get per-row results[] and
  * locate the failure(s). The weights are Fiat-Shamir-derived from a SHA-256 over
  * the entire batch, so the aggregate is not forgeable (a constant weight would be).
- * All inputs PUBLIC -> variable-time. Measured ceiling ~2.5 M checks/s (RTX-class).
+ * All inputs PUBLIC -> variable-time. Backend-agnostic: rides ufsecp_gpu_msm, which
+ * has full Pippenger MSM on CUDA, OpenCL and Metal, so it runs on whichever GPU the
+ * controller binds. Measured ceiling ~2.5 M checks/s (CUDA, RTX-class).
  */
 int ufsecp_lbtc_commitment_batch_ok(ufsecp_lbtc_ctrl* ctrl,
                                     const uint8_t* internal_x32,

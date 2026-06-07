@@ -228,7 +228,11 @@ native `secp256k1_xonly_pubkey_tweak_add_check`.
 to two device MSMs (`ufsecp_gpu_msm`): `Σrᵢ·Pᵢ + (Σrᵢ·tᵢ)·G == Σrᵢ·Qᵢ`. Returns a
 single aggregate verdict — `1` all valid / `0` some invalid / `-1` no GPU — so the
 rare failure falls back to the per-row `verify_commitment` to locate it. Measured
-~2.5 M checks/s (RTX-class). The weights `rᵢ` are **Fiat-Shamir-derived from a
+~2.5 M checks/s (CUDA, RTX-class). **Backend-agnostic: it rides `ufsecp_gpu_msm`,
+which has full Pippenger MSM on CUDA, OpenCL *and* Metal** — so the fast-check runs
+on whichever GPU the controller binds, no backend-specific code (per-backend
+throughput varies; CUDA measured here, OpenCL/Metal device-dependent). The CPU
+per-row path is platform-independent. The weights `rᵢ` are **Fiat-Shamir-derived from a
 SHA-256 over the whole batch** (`e = H(rows)`, `rᵢ = H(e‖i) mod n`), so a crafted
 block cannot force a false cancellation (a constant `r` would be forgeable — the
 `test_lbtc_commitment.cpp` GPU cases assert corrupted batches return `0`).
