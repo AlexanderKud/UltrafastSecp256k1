@@ -385,6 +385,61 @@ UFSECP_API ufsecp_error_t ufsecp_gpu_tagged_hash(
     size_t n,
     uint8_t* out32);
 
+/** Batch full compressed-pubkey validation: prefix 0x02/0x03, x < p, on-curve.
+ *
+ *  PUBLIC-DATA operation.
+ *
+ *  @param ctx       GPU context.
+ *  @param pubkeys33 Input: n * 33 bytes (compressed pubkeys).
+ *  @param n         Number of pubkeys.
+ *  @param results   Output: n bytes (1 = valid, 0 = invalid).
+ *  @return UFSECP_OK on success. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_pubkey_validate(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* pubkeys33,
+    size_t n,
+    uint8_t* results);
+
+/** Batch Taproot tagged hash with PER-ITEM message length (e.g. TapLeaf scripts):
+ *  out_i = SHA256(tag_hash || tag_hash || msg_i), msg_i = msgs[i*stride .. +lens[i]].
+ *
+ *  PUBLIC-DATA operation.
+ *
+ *  @param ctx        GPU context.
+ *  @param tag_hash32 Input: 32 bytes (SHA256 of the BIP-340 tag).
+ *  @param msgs       Input: n * stride bytes (each message at i*stride).
+ *  @param msg_lens   Input: n lengths (each 1..256).
+ *  @param stride     Per-item stride in bytes (>= max length).
+ *  @param n          Number of messages.
+ *  @param out32      Output: n * 32 bytes.
+ *  @return UFSECP_OK on success. UFSECP_ERR_BAD_INPUT if a length is out of range. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_tagged_hash_var(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* tag_hash32,
+    const uint8_t* msgs,
+    const uint32_t* msg_lens,
+    size_t stride,
+    size_t n,
+    uint8_t* out32);
+
+/** Batch HASH256 (double SHA-256) of fixed-length inputs — e.g. merkle-tree
+ *  node hashing (input_len = 64 for a left||right pair).
+ *
+ *  PUBLIC-DATA operation.
+ *
+ *  @param ctx       GPU context.
+ *  @param inputs    Input: n * input_len bytes.
+ *  @param input_len Per-item input length in bytes (1..320).
+ *  @param n         Number of inputs.
+ *  @param out32     Output: n * 32 bytes (SHA256(SHA256(input_i))).
+ *  @return UFSECP_OK on success. UFSECP_ERR_BAD_INPUT if input_len out of range. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_hash256(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* inputs,
+    size_t input_len,
+    size_t n,
+    uint8_t* out32);
+
 /* ============================================================================
  * GPU error string extension
  * ============================================================================ */

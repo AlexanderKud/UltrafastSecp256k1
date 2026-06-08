@@ -166,6 +166,34 @@ public:
         return GpuError::Unsupported;
     }
 
+    /** libbitcoin-bridge: batch full compressed-pubkey validation (prefix + x<p +
+     *  on-curve). PUBLIC data. Default Unsupported (CUDA-only). */
+    virtual GpuError pubkey_validate(
+        const uint8_t* pubkeys33, size_t n, uint8_t* results)
+    {
+        (void)pubkeys33; (void)n; (void)results;
+        return GpuError::Unsupported;
+    }
+
+    /** libbitcoin-bridge: Taproot tagged hash with per-item message length
+     *  (TapLeaf scripts). PUBLIC data. Default Unsupported (CUDA-only). */
+    virtual GpuError tagged_hash_var(
+        const uint8_t* tag_hash32, const uint8_t* msgs, const uint32_t* msg_lens,
+        size_t stride, size_t n, uint8_t* out32)
+    {
+        (void)tag_hash32; (void)msgs; (void)msg_lens; (void)stride; (void)n; (void)out32;
+        return GpuError::Unsupported;
+    }
+
+    /** libbitcoin-bridge: batch HASH256 (double SHA-256) of fixed-length inputs
+     *  (merkle node hashing). PUBLIC data. Default Unsupported (CUDA-only). */
+    virtual GpuError hash256(
+        const uint8_t* inputs, size_t input_len, size_t n, uint8_t* out32)
+    {
+        (void)inputs; (void)input_len; (void)n; (void)out32;
+        return GpuError::Unsupported;
+    }
+
     /** Batch FROST partial signature verification.
      *  Each item verifies: R_i = D_i + rho_i*E_i, lhs = z_i*G, rhs = R_i + lambda_ie*Y_i
      *  result[i] = (lhs == rhs). */

@@ -305,6 +305,9 @@ quartet cross-checked against the libsecp shim in `tests/test_lbtc_commitment.cp
 | `ufsecp_gpu_xonly_validate`    | NULL ctx / NULL buffer → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | x ≥ p / off-curve key → result 0 (invalid/reject), matches shim xonly_parse | valid x-only key succeeds (smoke, GPU present) |
 | `ufsecp_gpu_commitment_verify` | NULL ctx / any NULL column → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | corrupted tweaked_x / wrong parity / internal x ≥ p → result 0 (invalid/reject) | valid BIP-341 commitment succeeds (smoke); matches shim tweak_add_check |
 | `ufsecp_gpu_tagged_hash`       | NULL ctx / NULL msgs → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | msg_len 0 or > 256 → `UFSECP_ERR_BAD_INPUT` (invalid/reject) | valid TapBranch digest succeeds (smoke); matches shim tagged_sha256 |
+| `ufsecp_gpu_pubkey_validate`   | NULL ctx / NULL buffer → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | bad prefix / x ≥ p / off-curve → result 0 (invalid/reject), matches shim ec_pubkey_parse | valid compressed pubkey succeeds (smoke, GPU present) |
+| `ufsecp_gpu_tagged_hash_var`   | NULL ctx / NULL msgs / NULL lens → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | stride 0 or > 256 → `UFSECP_ERR_BAD_INPUT` (invalid/reject) | valid TapLeaf per-item digest succeeds (smoke); matches shim tagged_sha256 |
+| `ufsecp_gpu_hash256`           | NULL ctx / NULL inputs → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | input_len 0 or > 320 → `UFSECP_ERR_BAD_INPUT` (invalid/reject) | valid SHA256d digest succeeds (smoke); matches SHA256d reference |
 
 ---
 

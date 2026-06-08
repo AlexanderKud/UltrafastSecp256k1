@@ -258,6 +258,54 @@ int main() {
         }
     }
 
+    /* (10) full compressed-pubkey validation vs shim ec_pubkey_parse */
+    {
+        const size_t M = 256, STR = 33;
+        std::vector<uint8_t> keys(M*STR, 0);
+        for (size_t i = 0; i < M; ++i) {
+            if (i & 1) { keys[i*STR] = 0x02; std::memset(keys.data()+i*STR+1, 0xFF, 32); } /* x>=p */
+            else { uint8_t sk[32]={0}; sk[24]=(uint8_t)(i>>8); sk[31]=(uint8_t)(i|1u);
+                   if (ufsecp_pubkey_create(uctx, sk, keys.data()+i*STR) != UFSECP_OK) ++g_fail; } /* valid */
+        }
+        std::vector<uint8_t> res(M, 0xAA);
+        ufsecp_lbtc_validate_pubkeys(ctrl, keys.data(), M, STR, res.data());
+        bool ok = true;
+        for (size_t i = 0; i < M; ++i) {
+            secp256k1_pubkey pk;
+            bool shim = secp256k1_ec_pubkey_parse(sctx, &pk, keys.data()+i*STR, 33) == 1;
+            if ((res[i]==1) != shim) ok = false;
+        }
+        CHECK(ok, "validate_pubkeys: valid accept, bad reject, matches shim ec_pubkey_parse");
+    }
+
+    /* (11) per-item-length tagged hash (TapLeaf) vs shim tagged_sha256 */
+    {
+        const size_t M = 1000, STR = 256;
+        std::vector<uint8_t> msgs(M*STR), out(M*32); std::vector<uint32_t> lens(M);
+        for (size_t i = 0; i < M; ++i) { lens[i] = 32u + (uint32_t)(i % 200);
+            for (uint32_t b = 0; b < lens[i]; ++b) msgs[i*STR+b] = (uint8_t)((i*131u+b*7u)>>(b%19)); }
+        ufsecp_lbtc_tagged_hash_var(ctrl, "TapLeaf", msgs.data(), lens.data(), STR, M, out.data());
+        bool ok = true;
+        for (size_t i = 0; i < M; ++i) { uint8_t ref[32];
+            secp256k1_tagged_sha256(sctx, ref, (const unsigned char*)"TapLeaf", 7, msgs.data()+i*STR, lens[i]);
+            if (std::memcmp(out.data()+i*32, ref, 32) != 0) ok = false; }
+        CHECK(ok, "tagged_hash_var TapLeaf (per-item len) == shim tagged_sha256");
+    }
+
+    /* (12) batch HASH256 of 64-byte pairs (merkle) vs SHA256d reference */
+    {
+        const size_t M = 1024, IL = 64;
+        std::vector<uint8_t> in(M*IL), out(M*32);
+        for (size_t i = 0; i < M*IL; ++i) in[i] = (uint8_t)((i*40503u)>>(i%19));
+        ufsecp_lbtc_hash256(ctrl, in.data(), IL, M, out.data());
+        bool ok = true;
+        for (size_t i = 0; i < M; ++i) { uint8_t h1[32], h2[32];
+            if (ufsecp_sha256(in.data()+i*IL, IL, h1) != UFSECP_OK ||
+                ufsecp_sha256(h1, 32, h2) != UFSECP_OK) { ok = false; break; }
+            if (std::memcmp(out.data()+i*32, h2, 32) != 0) ok = false; }
+        CHECK(ok, "hash256 (merkle 64B) == SHA256d reference");
+    }
+
     ufsecp_lbtc_ctrl_destroy(ctrl);
     ufsecp_ctx_destroy(uctx);
     secp256k1_context_destroy(sctx);

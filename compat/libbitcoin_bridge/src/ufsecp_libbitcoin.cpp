@@ -1053,6 +1053,126 @@ void ufsecp_lbtc_tagged_hash_batch(ufsecp_lbtc_ctrl* ctrl, const char* tag,
     for (auto& th : ths) th.join();
 }
 
+/* ---------------------------------------------------------------------------
+ * Batch full compressed-pubkey validation (prefix 0x02/0x03 + x<p + on-curve).
+ * For CHECKSIG bulk pre-validation. PUBLIC data, variable-time, CPU-threaded;
+ * GPU per-key kernel when the controller is GPU-bound (ufsecp_gpu_pubkey_validate).
+ * ------------------------------------------------------------------------- */
+static inline bool lbtc_validate_pubkey_one(ufsecp_ctx* ctx, const uint8_t* pk33) {
+    uint8_t out[33];
+    return ufsecp_pubkey_parse(ctx, pk33, 33, out) == UFSECP_OK;
+}
+
+void ufsecp_lbtc_validate_pubkeys(ufsecp_lbtc_ctrl* ctrl,
+                                  const uint8_t* keys, size_t n,
+                                  size_t stride, uint8_t* results) {
+    if (!results || n == 0) return;
+    std::memset(results, 0, n);
+    if (!ctrl || !keys || stride < 33) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (ctrl->gpu) {
+        const uint8_t* contig = keys;
+        std::vector<uint8_t> packed;
+        if (stride != 33) {
+            packed.resize(n * 33);
+            for (size_t i = 0; i < n; ++i) std::memcpy(packed.data() + i*33, keys + i*stride, 33);
+            contig = packed.data();
+        }
+        if (ufsecp_gpu_pubkey_validate(ctrl->gpu, contig, n, results) == UFSECP_OK) return;
+        std::memset(results, 0, n);
+    }
+#endif
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            ufsecp_ctx* c = nullptr;
+            if (ufsecp_ctx_create(&c) != UFSECP_OK || !c) return;
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i)
+                results[i] = lbtc_validate_pubkey_one(c, keys + i * stride) ? 1u : 0u;
+            ufsecp_ctx_destroy(c);
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
+/* ---------------------------------------------------------------------------
+ * Batch Taproot tagged hash with PER-ITEM length (TapLeaf scripts). PUBLIC data,
+ * CPU-threaded; GPU when bound (ufsecp_gpu_tagged_hash_var). lens[i] in 1..256.
+ * ------------------------------------------------------------------------- */
+void ufsecp_lbtc_tagged_hash_var(ufsecp_lbtc_ctrl* ctrl, const char* tag,
+                                 const uint8_t* msgs, const uint32_t* lens,
+                                 size_t stride, size_t n, uint8_t* out32) {
+    if (!out32 || n == 0) return;
+    if (!tag || !msgs || !lens || stride == 0 || stride > 256) return;
+
+    uint8_t warm[32];                                   /* serialize lazy tag-midstate init */
+    const uint8_t one = 0;
+    if (ufsecp_tagged_hash(tag, &one, 1, warm) != UFSECP_OK) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (ctrl && ctrl->gpu) {
+        uint8_t th[32];
+        if (ufsecp_sha256(reinterpret_cast<const uint8_t*>(tag), std::strlen(tag), th) == UFSECP_OK) {
+            if (ufsecp_gpu_tagged_hash_var(ctrl->gpu, th, msgs, lens, stride, n, out32) == UFSECP_OK) return;
+        }
+    }
+#endif
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i) {
+                size_t L = lens[i]; if (L > 256) L = 256;
+                ufsecp_tagged_hash(tag, msgs + i * stride, L, out32 + i * 32);
+            }
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
+/* ---------------------------------------------------------------------------
+ * Batch HASH256 (double SHA-256) of fixed-length inputs — merkle node hashing.
+ * out32[i*32..] = SHA256(SHA256(inputs[i*input_len..])). PUBLIC, CPU-threaded;
+ * GPU when bound (ufsecp_gpu_hash256).
+ * ------------------------------------------------------------------------- */
+void ufsecp_lbtc_hash256(ufsecp_lbtc_ctrl* ctrl, const uint8_t* inputs,
+                         size_t input_len, size_t n, uint8_t* out32) {
+    if (!out32 || n == 0) return;
+    if (!inputs || input_len == 0) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (ctrl && ctrl->gpu && input_len <= 320) {
+        if (ufsecp_gpu_hash256(ctrl->gpu, inputs, input_len, n, out32) == UFSECP_OK) return;
+    }
+#endif
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i) {
+                uint8_t h1[32];
+                ufsecp_sha256(inputs + i * input_len, input_len, h1);
+                ufsecp_sha256(h1, 32, out32 + i * 32);
+            }
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
                                    const uint8_t scan_privkey32[32],
                                    const uint8_t spend_pubkey33[33],

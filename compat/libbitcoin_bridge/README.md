@@ -314,19 +314,54 @@ caps at ~119-byte inputs (2 blocks), so the kernel carries its own multi-block
 SHA-256 for the 128-byte TapBranch preimage (`SHA256(tag)‖SHA256(tag)‖64-byte msg`);
 OpenCL/Metal fall back to the threaded CPU path.
 
+## More batch ops — `validate_pubkeys` / `tagged_hash_var` / `hash256`
+
+Three further node-validation batches, same model (CPU-threaded; CUDA per-item kernel
+when the controller is GPU-bound; OpenCL/Metal → CPU fallback; fail-closed):
+
+- `ufsecp_lbtc_validate_pubkeys(ctrl, keys, n, stride, results)` — full compressed
+  (33-byte) pubkey on-curve validation (prefix 0x02/0x03, `x < p`, lifts). For CHECKSIG
+  bulk pre-validation; complements `validate_xonly` (x-only). Matches the shim
+  `secp256k1_ec_pubkey_parse` per key.
+- `ufsecp_lbtc_tagged_hash_var(ctrl, tag, msgs, lens, stride, n, out32)` — Taproot
+  tagged hash with PER-ITEM length (`lens[i]` in 1..256), for variable-size TapLeaf
+  scripts. Matches the shim `secp256k1_tagged_sha256`.
+- `ufsecp_lbtc_hash256(ctrl, inputs, input_len, n, out32)` — batch HASH256 (double
+  SHA-256) of fixed-length inputs, e.g. merkle-tree node hashing (`input_len = 64`).
+
+`tests/test_lbtc_commitment.cpp` (sections 10–12) cross-checks all three against the
+shim / SHA256d reference. **Note on HASH256:** CPU SHA-NI is fast — measure the GPU
+path against your parallel CPU before routing merkle hashing to the GPU (the win is
+scale-dependent, like any hashing offload).
+
+### Aggregate Schnorr — measured, not shipped as an endpoint
+
+A random-linear-combination aggregate Schnorr verify (one MSM over 2N points) was
+measured at **7.36 M sigs/s** vs the per-sig batch verify at **5.24 M sigs/s** (valid
+sigs, RTX 5060 Ti, incl. H2D) — ~1.4× for the all-valid case, but it yields only one
+aggregate accept/reject (a failure needs a per-sig fallback to locate). Given the
+modest margin and the per-row locality the per-sig path already provides, it is left
+as a measured candidate rather than a shipped endpoint for now.
+
 ## Measured GPU throughput (per-item kernels, RTX 5060 Ti)
 
-The three Taproot/auxiliary batches were benchmarked as one-thread-per-item CUDA
+The libbitcoin-bridge batches were benchmarked as one-thread-per-item CUDA
 kernels on an RTX 5060 Ti (CUDA 12, `compute_90` PTX, `cudaEvent` best-of-25,
-**kernel-only** timing, 2M and 8M items, run-to-run variance <1%). Every GPU
-verdict was cross-checked against the CPU/shim reference (all 2M commitment and
-lift_x verdicts valid; tagged-hash bit-for-bit equal to `ufsecp_tagged_hash`).
+**kernel-only** timing, run-to-run variance <1%). Every GPU verdict was
+cross-checked against the CPU/shim reference (commitment/lift_x/pubkey verdicts
+match the shim; tagged-hash and HASH256 bit-for-bit equal to the reference).
 
 | Op | CPU 1-thread | CPU 16-thread | GPU per-item | GPU vs CPU-16t |
 |----|-------------:|--------------:|-------------:|---------------:|
 | `validate_xonly` (lift_x)          | 0.17 M/s | 1.85 M/s | **111 M/s** | ~60× |
 | `verify_commitment` (tweak-add)    | 0.17 M/s | ~1.2 M/s | **7.07 M/s** | ~5.9× |
 | `tagged_hash_batch` (TapBranch 64B)| 5.45 M/s | 52.2 M/s | **505 M/s** | ~9.7× |
+| `validate_pubkeys` (full 33B lift) | — | — | **112 M/s** | — |
+| `tagged_hash_var` (TapLeaf var-len)| — | — | **256 M/s** | — |
+| `hash256` (merkle 64B pairs)       | — | — | **189 M/s** | — |
+
+(CPU columns for the last three not separately benchmarked yet; the CPU paths are the
+same primitives as their siblings above.)
 
 Notes for the integrator:
 - **`verify_commitment` per-item (7.07 M/s) beats the shipped RLC aggregate
@@ -378,6 +413,9 @@ Plain C ABI (no C++20 spans) is identical, passing `(ptr, n, stride)` explicitly
 ufsecp_lbtc_verify_commitment_rows(ctrl, rows, n, sizeof(CommitmentRow), results);
 ufsecp_lbtc_validate_xonly        (ctrl, keys, n, /*stride=*/32, results);
 ufsecp_lbtc_tagged_hash_batch     (ctrl, "TapBranch", msgs, /*msg_len=*/64, n, /*stride=*/64, out32);
+ufsecp_lbtc_validate_pubkeys      (ctrl, pubkeys33, n, /*stride=*/33, results);
+ufsecp_lbtc_tagged_hash_var       (ctrl, "TapLeaf", scripts, lens, /*stride=*/256, n, out32);
+ufsecp_lbtc_hash256               (ctrl, pairs, /*input_len=*/64, n, out32);   // merkle level
 ```
 
 ## Collect (in-place) verify — `*_collect`

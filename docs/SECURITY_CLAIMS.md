@@ -1078,6 +1078,14 @@ the libsecp shim: `ufsecp_gpu_xonly_validate` == `secp256k1_xonly_pubkey_parse`
 (section 9). Outputs are fail-closed (cleared on any error). Hostile-caller quartet:
 see [FFI_HOSTILE_CALLER.md](FFI_HOSTILE_CALLER.md) Section J (J.lbtc-batch).
 
+Three further libbitcoin-bridge batch kernels follow the same model (CUDA-native,
+OpenCL/Metal `Unsupported` → threaded CPU fallback, fail-closed, all PUBLIC-DATA):
+`ufsecp_gpu_pubkey_validate` (full compressed-pubkey on-curve check, == shim
+`ec_pubkey_parse`), `ufsecp_gpu_tagged_hash_var` (TapLeaf per-item-length tagged
+hash, == shim `tagged_sha256`), and `ufsecp_gpu_hash256` (double-SHA-256 / merkle
+node hashing, == SHA256d reference) — all proven per item in
+`tests/test_lbtc_commitment.cpp` (sections 10–12).
+
 ### GPU (CUDA/OpenCL/Metal) API
 
 All GPU CT functions are in the `secp256k1::cuda::ct::` namespace (CUDA),

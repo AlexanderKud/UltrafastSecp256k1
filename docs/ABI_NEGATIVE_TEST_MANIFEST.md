@@ -6,12 +6,12 @@ Machine-generated hostile-caller coverage manifest for the public `ufsecp_*` ABI
 
 ## Summary
 
-- Exported functions scanned: 187
+- Exported functions scanned: 190
 - Blocking functions: 0
-- Null rejection evidence: 186
-- Zero-edge evidence: 175
-- Invalid-content evidence: 182
-- Success-smoke evidence: 187
+- Null rejection evidence: 189
+- Zero-edge evidence: 178
+- Invalid-content evidence: 185
+- Success-smoke evidence: 190
 
 ## Blocking Functions
 

@@ -389,6 +389,34 @@ void ufsecp_lbtc_tagged_hash_batch(ufsecp_lbtc_ctrl* ctrl, const char* tag,
                                    const uint8_t* msgs, size_t msg_len,
                                    size_t n, size_t stride, uint8_t* out32);
 
+/*
+ * Batch FULL compressed-pubkey validation (CHECKSIG pre-validation pass).
+ * results[i] = 1 iff keys[i*stride..] is a valid compressed pubkey (prefix
+ * 0x02/0x03, x < p, on-curve). PUBLIC data, variable-time; stride >= 33 may carry
+ * a tail the bridge ignores. Complements validate_xonly (which is x-only / 32B).
+ */
+void ufsecp_lbtc_validate_pubkeys(ufsecp_lbtc_ctrl* ctrl,
+                                  const uint8_t* keys, size_t n,
+                                  size_t stride, uint8_t* results);
+
+/*
+ * Batch Taproot tagged hash with PER-ITEM length (TapLeaf scripts of varying size).
+ * out32[i*32..] = tagged_hash(tag, msgs[i*stride .. +lens[i]]). Each lens[i] in
+ * 1..256. PUBLIC data, CPU-threaded (GPU when bound). The fixed-length
+ * ufsecp_lbtc_tagged_hash_batch stays for the uniform TapBranch case.
+ */
+void ufsecp_lbtc_tagged_hash_var(ufsecp_lbtc_ctrl* ctrl, const char* tag,
+                                 const uint8_t* msgs, const uint32_t* lens,
+                                 size_t stride, size_t n, uint8_t* out32);
+
+/*
+ * Batch HASH256 (double SHA-256) of fixed-length inputs — e.g. merkle-tree node
+ * hashing (input_len = 64 for a left||right pair). out32[i*32..] =
+ * SHA256(SHA256(inputs[i*input_len..])). PUBLIC data, CPU-threaded (GPU when bound).
+ */
+void ufsecp_lbtc_hash256(ufsecp_lbtc_ctrl* ctrl, const uint8_t* inputs,
+                         size_t input_len, size_t n, uint8_t* out32);
+
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
                                    const uint8_t scan_privkey32[32],
                                    const uint8_t spend_pubkey33[33],
@@ -650,6 +678,23 @@ public:
     void tagged_hash_batch(const char* tag, const uint8_t* msgs, size_t msg_len,
                            size_t n, size_t stride, uint8_t* out32) const {
         ufsecp_lbtc_tagged_hash_batch(ctrl_, tag, msgs, msg_len, n, stride, out32);
+    }
+
+    // Batch full compressed-pubkey validation (prefix 0x02/0x03 + x<p + on-curve).
+    // keys: n × stride (33-byte pubkey first; stride >= 33).
+    void validate_pubkeys(const uint8_t* keys, size_t n, size_t stride,
+                          uint8_t* results) const {
+        ufsecp_lbtc_validate_pubkeys(ctrl_, keys, n, stride, results);
+    }
+    // Batch Taproot tagged hash with per-item length (TapLeaf). lens[i] in 1..256.
+    void tagged_hash_var(const char* tag, const uint8_t* msgs, const uint32_t* lens,
+                         size_t stride, size_t n, uint8_t* out32) const {
+        ufsecp_lbtc_tagged_hash_var(ctrl_, tag, msgs, lens, stride, n, out32);
+    }
+    // Batch HASH256 (double SHA-256) of fixed-length inputs (merkle-tree nodes).
+    void hash256(const uint8_t* inputs, size_t input_len, size_t n,
+                 uint8_t* out32) const {
+        ufsecp_lbtc_hash256(ctrl_, inputs, input_len, n, out32);
     }
 #if __cplusplus >= 202002L
     // Typed-span over the canonical CommitmentRow (stride = sizeof(Row) recovers

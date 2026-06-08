@@ -1,12 +1,12 @@
 {
   "generated_at": "2026-04-28T08:16:31.261078+00:00",
-  "header_count": 187,
+  "header_count": 190,
   "blocking_function_count": 0,
   "coverage_counts": {
-    "null_rejection": 186,
-    "zero_edge": 175,
-    "invalid_content": 182,
-    "success_smoke": 187
+    "null_rejection": 189,
+    "zero_edge": 178,
+    "invalid_content": 185,
+    "success_smoke": 190
   },
   "functions": [
     {
@@ -6140,6 +6140,35 @@
       "blocking": false
     },
     {
+      "function": "ufsecp_gpu_hash256",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_hash256( ufsecp_gpu_ctx* ctx, const uint8_t* inputs, size_t input_len, size_t n, uint8_t* out32)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)",
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ],
+        "success_smoke": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
       "function": "ufsecp_gpu_is_available",
       "category": "gpu",
       "header": "include/ufsecp/ufsecp_gpu.h",
@@ -6306,6 +6335,35 @@
       "blocking": false
     },
     {
+      "function": "ufsecp_gpu_pubkey_validate",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_pubkey_validate( ufsecp_gpu_ctx* ctx, const uint8_t* pubkeys33, size_t n, uint8_t* results)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)",
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ],
+        "success_smoke": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
       "function": "ufsecp_gpu_schnorr_verify_batch",
       "category": "gpu",
       "header": "include/ufsecp/ufsecp_gpu.h",
@@ -6413,6 +6471,34 @@
           "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
         ],
         "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gpu_tagged_hash_var",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_tagged_hash_var( ufsecp_gpu_ctx* ctx, const uint8_t* tag_hash32, const uint8_t* msgs, const uint32_t* msg_lens, size_t stride, size_t n, uint8_t* out32)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)",
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ],
+        "success_smoke": [
           "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
         ]
       },

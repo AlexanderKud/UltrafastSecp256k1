@@ -486,6 +486,66 @@ ufsecp_error_t ufsecp_gpu_tagged_hash(
     } UFSECP_GPU_CATCH
 }
 
+ufsecp_error_t ufsecp_gpu_pubkey_validate(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* pubkeys33,
+    size_t n,
+    uint8_t* results)
+{
+    if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
+    if (n == 0) return UFSECP_OK;
+    if (n > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(results, n, 1)) return UFSECP_ERR_BAD_INPUT;
+    if (SECP256K1_UNLIKELY(!pubkeys33 || !results)) return UFSECP_ERR_NULL_ARG;
+    try {
+    return to_abi_error_clear_on_fail(
+        ctx->backend->pubkey_validate(pubkeys33, n, results),
+        results, n, 1);
+    } UFSECP_GPU_CATCH
+}
+
+ufsecp_error_t ufsecp_gpu_tagged_hash_var(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* tag_hash32,
+    const uint8_t* msgs,
+    const uint32_t* msg_lens,
+    size_t stride,
+    size_t n,
+    uint8_t* out32)
+{
+    if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
+    if (n == 0) return UFSECP_OK;
+    if (n > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (stride == 0 || stride > 256) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out32, n, 32)) return UFSECP_ERR_BAD_INPUT;
+    if (SECP256K1_UNLIKELY(!tag_hash32 || !msgs || !msg_lens || !out32)) return UFSECP_ERR_NULL_ARG;
+    try {
+    return to_abi_error_clear_on_fail(
+        ctx->backend->tagged_hash_var(tag_hash32, msgs, msg_lens, stride, n, out32),
+        out32, n, 32);
+    } UFSECP_GPU_CATCH
+}
+
+ufsecp_error_t ufsecp_gpu_hash256(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* inputs,
+    size_t input_len,
+    size_t n,
+    uint8_t* out32)
+{
+    if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
+    if (n == 0) return UFSECP_OK;
+    if (n > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (input_len == 0 || input_len > 320) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out32, n, 32)) return UFSECP_ERR_BAD_INPUT;
+    if (SECP256K1_UNLIKELY(!inputs || !out32)) return UFSECP_ERR_NULL_ARG;
+    try {
+    return to_abi_error_clear_on_fail(
+        ctx->backend->hash256(inputs, input_len, n, out32),
+        out32, n, 32);
+    } UFSECP_GPU_CATCH
+}
+
 ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
     ufsecp_gpu_ctx* ctx,
     const uint8_t* z_i32,
