@@ -1,5 +1,20 @@
 # Audit Changelog
 
+## 2026-06-08 — CAAS: backend-parity gate is now fail-closed (was silent-skip-on-absent)
+
+- **P2 fix — the backend-parity gate read only 3 of 7 declared files and still PASSED.**
+  `ci/check_backend_parity.py` declared the OpenCL signing/ECDH kernels with stale paths
+  (`kernels/secp256k1_*.cl`) that did not resolve on disk (real:
+  `src/opencl/kernels/...`), so 4 files were silently absent and the gate passed having
+  inspected only the CUDA/Metal files — manufacturing false confidence for exactly the
+  GPU OpenCL kernels the Bulletproof-tag bug shipped in. Corrected the three OpenCL paths
+  and made the gate **fail-closed**: a declared backend file that cannot be read is now a
+  hard FAIL (`files_absent` must be 0), not a silent skip. Now reads all 7 files; 0
+  copy-paste divergences. Regression guard: `ci/test_check_backend_parity.py` (asserts
+  7/7 read + fail-closed when a declared path is absent).
+- Found by the CAAS bastion review — the canonical "silent-skip-on-absent" failure mode
+  (a gate that passes when its inputs are missing is worse than no gate).
+
 ## 2026-06-08 — CAAS: in-process differential vs libsecp256k1 now gates CI
 
 - **Trust anchor activated.** `test_cross_libsecp256k1` links BOTH this engine and
