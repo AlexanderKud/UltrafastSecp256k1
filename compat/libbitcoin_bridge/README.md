@@ -278,6 +278,24 @@ ECDSA/Schnorr/commitment verify batches already lift their keys internally, so u
 this only for *separate* bulk validation, not a redundant second lift. (A GPU
 `lift_x` kernel is a follow-up — no MSM reuse here, unlike the commitment RLC.)
 
+Measured (i5-14400F, 16 threads, 1M keys): baseline 0.17 M/s (1 thread) →
+**1.85 M/s threaded (10.7×)**.
+
+## Batch Taproot tagged hash — `tagged_hash_batch`
+
+`ufsecp_lbtc_tagged_hash_batch(ctrl, tag, msgs, msg_len, n, stride, out32)` —
+`out[i] = tagged_hash(tag, msg_i) = SHA256(SHA256(tag)‖SHA256(tag)‖msg_i)` for n
+fixed-length messages. For a node hashing a block's Taproot script-tree nodes in
+bulk (parallel pre-validation). **TapBranch:** `tag="TapBranch"`, `msg_len=64` —
+caller supplies the two child hashes already ordered `min‖max` (BIP-341).
+**TapLeaf:** `tag="TapLeaf"` for fixed-size leaves (variable scripts need a
+lengths[] variant — follow-up). Public data, CPU-threaded; `ufsecp_tagged_hash`
+is stateless. This is SHA-256 (not EC) — included for the script-tree path.
+
+Measured (i5-14400F, 16 threads, 2M × 64-byte TapBranch): baseline 5.45 M/s
+(1 thread) → **52.2 M/s threaded (9.6×)**. Verdict matches the shim
+`secp256k1_tagged_sha256` bit-for-bit.
+
 ## Collect (in-place) verify — `*_collect`
 
 A second output shape, requested by evoskuil for the rejected-id-list use case.

@@ -173,6 +173,22 @@ int main() {
         CHECK(ok, "validate_xonly: valid accept, >=p reject, matches shim xonly_parse");
     }
 
+    /* (8) tagged-hash batch (TapBranch, 64-byte inputs) vs shim tagged_sha256 */
+    {
+        const size_t M = 128, ML = 64, STR = ML;
+        std::vector<uint8_t> msgs(M*STR), out(M*32);
+        for (size_t i = 0; i < M*STR; ++i) msgs[i] = (uint8_t)((i*2654435761u) >> (i%24));
+        ufsecp_lbtc_tagged_hash_batch(ctrl, "TapBranch", msgs.data(), ML, M, STR, out.data());
+        bool ok = true;
+        for (size_t i = 0; i < M; ++i) {
+            uint8_t ref[32];
+            secp256k1_tagged_sha256(sctx, ref, (const unsigned char*)"TapBranch", 9,
+                                    msgs.data()+i*STR, ML);
+            if (std::memcmp(out.data()+i*32, ref, 32) != 0) ok = false;
+        }
+        CHECK(ok, "tagged_hash_batch TapBranch == shim secp256k1_tagged_sha256 per item");
+    }
+
     ufsecp_lbtc_ctrl_destroy(ctrl);
     ufsecp_ctx_destroy(uctx);
     secp256k1_context_destroy(sctx);

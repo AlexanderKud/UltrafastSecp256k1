@@ -374,6 +374,21 @@ void ufsecp_lbtc_validate_xonly(ufsecp_lbtc_ctrl* ctrl,
                                 const uint8_t* keys, size_t n,
                                 size_t stride, uint8_t* results);
 
+/*
+ * Batch BIP-340 tagged hash — Taproot script-tree (leaf / branch) hashing.
+ * out32[i*32..] = tagged_hash(tag, msg_i) for n fixed-length messages (AoS,
+ * stride >= msg_len; trailing bytes ignored). PUBLIC data, CPU-threaded.
+ *   TapBranch: tag="TapBranch", msg_len=64 (caller supplies child hashes already
+ *              ordered min||max per BIP-341).
+ *   TapLeaf  : tag="TapLeaf" for fixed-size leaves.
+ *   msgs     n messages of `stride` bytes each (first msg_len bytes hashed).
+ *   out32    OUT n*32 bytes. Degenerate call (NULL/n==0/msg_len==0/stride<msg_len)
+ *            -> no-op. `ctrl` accepted for API uniformity (CPU-threaded today).
+ */
+void ufsecp_lbtc_tagged_hash_batch(ufsecp_lbtc_ctrl* ctrl, const char* tag,
+                                   const uint8_t* msgs, size_t msg_len,
+                                   size_t n, size_t stride, uint8_t* out32);
+
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
                                    const uint8_t scan_privkey32[32],
                                    const uint8_t spend_pubkey33[33],
@@ -627,6 +642,13 @@ public:
     void validate_xonly(const uint8_t* keys, size_t n, size_t stride,
                         uint8_t* results) const {
         ufsecp_lbtc_validate_xonly(ctrl_, keys, n, stride, results);
+    }
+
+    // Batch BIP-340 tagged hash (Taproot leaf/branch). TapBranch: tag="TapBranch",
+    // msg_len=64 (children pre-ordered min||max). out32 = n*32.
+    void tagged_hash_batch(const char* tag, const uint8_t* msgs, size_t msg_len,
+                           size_t n, size_t stride, uint8_t* out32) const {
+        ufsecp_lbtc_tagged_hash_batch(ctrl_, tag, msgs, msg_len, n, stride, out32);
     }
 #if __cplusplus >= 202002L
     // Typed-span over the canonical CommitmentRow (stride = sizeof(Row) recovers

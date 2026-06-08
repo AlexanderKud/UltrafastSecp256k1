@@ -944,6 +944,44 @@ void ufsecp_lbtc_validate_xonly(ufsecp_lbtc_ctrl* ctrl,
     for (auto& th : ths) th.join();
 }
 
+/* ---------------------------------------------------------------------------
+ * Batch BIP-340 tagged hash — Taproot script-tree (leaf / branch) hashing.
+ *
+ * out_i = tagged_hash(tag, msg_i) = SHA256( SHA256(tag) || SHA256(tag) || msg_i ),
+ * for n messages of fixed msg_len (AoS, stride >= msg_len; tail ignored).
+ *   TapBranch: tag="TapBranch", msg_len=64 — the caller supplies the two child
+ *              hashes ALREADY ordered (min||max) per BIP-341.
+ *   TapLeaf  : tag="TapLeaf"  — for fixed-size leaves (variable scripts need a
+ *              lengths[] variant; not provided here).
+ * PUBLIC data, CPU-threaded. ufsecp_tagged_hash is stateless (no ctx); one warmup
+ * call first absorbs any lazily-built tag midstate before the pool starts. A node
+ * uses this to hash a block's merkle-tree internal nodes in bulk during parallel
+ * pre-validation. `ctrl` is accepted for API uniformity / future GPU SHA dispatch.
+ * ------------------------------------------------------------------------- */
+void ufsecp_lbtc_tagged_hash_batch(ufsecp_lbtc_ctrl* ctrl, const char* tag,
+                                   const uint8_t* msgs, size_t msg_len,
+                                   size_t n, size_t stride, uint8_t* out32) {
+    (void)ctrl;
+    if (!out32 || n == 0) return;
+    if (!tag || !msgs || msg_len == 0 || stride < msg_len) return;
+
+    uint8_t warm[32];                                   /* serialize any lazy tag-midstate init */
+    if (ufsecp_tagged_hash(tag, msgs, msg_len, warm) != UFSECP_OK) return;
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i)
+                ufsecp_tagged_hash(tag, msgs + i * stride, msg_len, out32 + i * 32);
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
                                    const uint8_t scan_privkey32[32],
                                    const uint8_t spend_pubkey33[33],
