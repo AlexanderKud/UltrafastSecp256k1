@@ -64,9 +64,15 @@ def scan_file(path: Path) -> list[tuple[int, str]]:
 
 def collect_test_files() -> list[Path]:
     files: list[Path] = []
-    for d in (ROOT / "audit", ROOT / "tests"):
+    for d in (ROOT / "audit", ROOT / "tests", ROOT / "src" / "cpu" / "tests"):
         if d.exists():
             files.extend(sorted(d.glob("test_*.cpp")))
+    # compat/*/tests/ (shim + bridge conformance tests) were previously unscanned, so a
+    # non-asserting probe there could pass undetected. Mirror TEST-006 in
+    # audit_test_quality_scanner.py.
+    compat = ROOT / "compat"
+    if compat.exists():
+        files.extend(sorted(compat.glob("*/tests/test_*.cpp")))
     return files
 
 

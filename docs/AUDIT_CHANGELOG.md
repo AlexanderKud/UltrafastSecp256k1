@@ -1,5 +1,17 @@
 # Audit Changelog
 
+## 2026-06-08 — CAAS: close two silent-pass gaps (test-assertion scope, G-12 corrupt DB)
+
+- **`check_test_assertions.py` scanned only `audit/` + `tests/`.** The shim/bridge
+  conformance tests under `compat/*/tests/` and `src/cpu/tests/` were unscanned, so a
+  non-asserting "documented open" probe there could pass undetected. Now scans all four
+  roots (449 test files, 0 non-asserting probes).
+- **`audit_gate.py` G-12 downgraded a corrupt-but-present source-graph DB to WARN.** The
+  DB file's mtime is stat'd just above the query, so a connect/query exception means the
+  DB exists but is unqueryable — a real problem that silently bypassed the row-count
+  completeness FAIL. Now it FAILs ("present but unqueryable").
+- Both found by the CAAS bastion review (silent-pass / assurance-theater class).
+
 ## 2026-06-08 — CAAS: advisory-skip ceiling re-tightened + frozen (meta-gate)
 
 - **P3 fix — the advisory-module ceiling had 4 slots of unreviewed slack.** Advisory
