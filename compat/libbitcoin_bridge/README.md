@@ -267,6 +267,17 @@ Remaining follow-up: a **per-item GPU kernel** (one thread per check) reading th
 strided 97-byte records on-device (no host de-interleave) for per-row GPU verdicts
 at a higher ceiling (~Schnorr-class, ~5 M/s).
 
+## Batch x-only pubkey validation — `validate_xonly`
+
+`ufsecp_lbtc_validate_xonly(ctrl, keys, n, stride, results)` — for each 32-byte
+x-only key, `results[i] = 1` iff it is a valid pubkey x-coordinate (`x < p` and
+`x³+7` is a quadratic residue, i.e. a point lifts). One `lift_x` per key (field
+sqrt + QR), public data, variable-time, CPU-threaded; `stride >= 32` may carry a
+tail the bridge ignores. For a node's **parallel pre-validation** pass. Note: the
+ECDSA/Schnorr/commitment verify batches already lift their keys internally, so use
+this only for *separate* bulk validation, not a redundant second lift. (A GPU
+`lift_x` kernel is a follow-up — no MSM reuse here, unlike the commitment RLC.)
+
 ## Collect (in-place) verify — `*_collect`
 
 A second output shape, requested by evoskuil for the rejected-id-list use case.

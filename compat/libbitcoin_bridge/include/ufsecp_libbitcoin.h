@@ -356,6 +356,24 @@ void ufsecp_lbtc_verify_commitment_rows(ufsecp_lbtc_ctrl* ctrl,
 int ufsecp_lbtc_commitment_batch_ok_rows(ufsecp_lbtc_ctrl* ctrl,
                                          const uint8_t* rows, size_t n, size_t stride);
 
+/*
+ * Batch x-only pubkey validation (lift_x on-curve check), AoS single-buffer.
+ * For each 32-byte x-only key, results[i] = 1 if it is a valid pubkey x-coordinate
+ * (x < p and x^3+7 is a quadratic residue, i.e. a point lifts), else 0. One lift_x
+ * per key (field sqrt + QR), PUBLIC data, variable-time, CPU-threaded.
+ *
+ *   keys     n keys of `stride` bytes (the 32-byte x first; stride >= 32 may carry
+ *            a caller tail the bridge ignores). Pass your mmap'd column verbatim.
+ *   results  OUT n bytes, 1 valid / 0 invalid. Degenerate call -> fail-closed.
+ *
+ * For a node's PARALLEL pre-validation. The verify batches already lift internally,
+ * so use this only for SEPARATE bulk validation. (A GPU lift_x kernel is a follow-up
+ * — there is no MSM reuse here, unlike the commitment RLC.)
+ */
+void ufsecp_lbtc_validate_xonly(ufsecp_lbtc_ctrl* ctrl,
+                                const uint8_t* keys, size_t n,
+                                size_t stride, uint8_t* results);
+
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
                                    const uint8_t scan_privkey32[32],
                                    const uint8_t spend_pubkey33[33],
@@ -602,6 +620,13 @@ public:
     }
     int commitment_batch_ok_rows(const uint8_t* rows, size_t n, size_t stride) const {
         return ufsecp_lbtc_commitment_batch_ok_rows(ctrl_, rows, n, stride);
+    }
+
+    // Batch x-only pubkey validation (lift_x on-curve check). keys: n × stride
+    // (32-byte x first; stride >= 32). results[i] == 1 if a valid x-only pubkey.
+    void validate_xonly(const uint8_t* keys, size_t n, size_t stride,
+                        uint8_t* results) const {
+        ufsecp_lbtc_validate_xonly(ctrl_, keys, n, stride, results);
     }
 #if __cplusplus >= 202002L
     // Typed-span over the canonical CommitmentRow (stride = sizeof(Row) recovers

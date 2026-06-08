@@ -899,6 +899,51 @@ int ufsecp_lbtc_commitment_batch_ok_rows(ufsecp_lbtc_ctrl* ctrl,
 #endif
 }
 
+/* ---------------------------------------------------------------------------
+ * Batch x-only pubkey validation (lift_x on-curve check), AoS single-buffer.
+ *
+ * For each 32-byte x-only key, decide whether it is a valid pubkey x-coordinate
+ * (x < p AND x^3+7 is a quadratic residue, i.e. a point lifts). One lift_x per
+ * key — a field sqrt + QR test; PUBLIC data, variable-time. results[i] = 1 valid.
+ * Engine-native: validate via ufsecp_pubkey_parse(0x02||x). CPU-threaded.
+ *
+ * Use case: a node's PARALLEL pre-validation pass (validate a block's x-only keys
+ * in bulk before sequential script eval). NOTE: the ECDSA/Schnorr/commitment
+ * verify batches already lift their keys internally, so this is for a SEPARATE
+ * bulk validation — not a redundant second lift on keys you already verify.
+ * (A dedicated GPU lift_x kernel — no MSM reuse here, unlike the commitment RLC —
+ * is a follow-up; this ships the threaded CPU path.)
+ * ------------------------------------------------------------------------- */
+static inline bool lbtc_validate_xonly_one(ufsecp_ctx* ctx, const uint8_t* x32) {
+    uint8_t comp[33], out[33];
+    comp[0] = 0x02; std::memcpy(comp + 1, x32, 32);  /* even-y compressed candidate */
+    return ufsecp_pubkey_parse(ctx, comp, 33, out) == UFSECP_OK;
+}
+
+void ufsecp_lbtc_validate_xonly(ufsecp_lbtc_ctrl* ctrl,
+                                const uint8_t* keys, size_t n,
+                                size_t stride, uint8_t* results) {
+    if (!results || n == 0) return;
+    std::memset(results, 0, n);  /* fail-closed default */
+    if (!ctrl || !keys || stride < 32) return;
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            ufsecp_ctx* c = nullptr;
+            if (ufsecp_ctx_create(&c) != UFSECP_OK || !c) return;  /* results stay 0 */
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i)
+                results[i] = lbtc_validate_xonly_one(c, keys + i * stride) ? 1u : 0u;
+            ufsecp_ctx_destroy(c);
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
                                    const uint8_t scan_privkey32[32],
                                    const uint8_t spend_pubkey33[33],

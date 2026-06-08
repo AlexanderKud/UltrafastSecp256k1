@@ -152,6 +152,27 @@ int main() {
         }
     }
 
+    /* (7) batch x-only pubkey validation (lift_x on-curve check) */
+    {
+        const size_t M = 64, STR = 32;
+        std::vector<uint8_t> keys(M*STR, 0);
+        for (size_t i = 0; i < M; ++i) {
+            if (i & 1) std::memset(keys.data()+i*STR, 0xFF, 32);        /* >= p -> invalid */
+            else       std::memcpy(keys.data()+i*STR, ix.data()+(i%N)*32, 32); /* valid */
+        }
+        std::vector<uint8_t> res(M, 0xAA);
+        ufsecp_lbtc_validate_xonly(ctrl, keys.data(), M, STR, res.data());
+        bool ok = true;
+        for (size_t i = 0; i < M; ++i) {
+            bool want = !(i & 1);
+            secp256k1_xonly_pubkey xp;                                  /* shim ground truth */
+            bool shim = secp256k1_xonly_pubkey_parse(sctx, &xp, keys.data()+i*STR) == 1;
+            if ((res[i]==1) != want) ok = false;
+            if ((res[i]==1) != shim) ok = false;
+        }
+        CHECK(ok, "validate_xonly: valid accept, >=p reject, matches shim xonly_parse");
+    }
+
     ufsecp_lbtc_ctrl_destroy(ctrl);
     ufsecp_ctx_destroy(uctx);
     secp256k1_context_destroy(sctx);
