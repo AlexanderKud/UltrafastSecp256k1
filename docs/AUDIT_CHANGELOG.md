@@ -1,5 +1,23 @@
 # Audit Changelog
 
+## 2026-06-08 — CAAS: in-process differential vs libsecp256k1 now gates CI
+
+- **Trust anchor activated.** `test_cross_libsecp256k1` links BOTH this engine and
+  bitcoin-core/secp256k1 v0.6.0 in one process (via `SECP256K1_BUILD_CROSS_TESTS`
+  FetchContent) and asserts byte-identical outputs for the same inputs across
+  `ec_pubkey_create`, `ecdsa_sign`+`verify`, `schnorrsig_sign`+`verify`, and
+  `xonly_pubkey`. It is the gold-standard correctness check — if both libraries agree
+  on every input they implement the same math — but it was OFF by default
+  (`SECP256K1_BUILD_CROSS_TESTS=OFF`) and ran in no CI workflow.
+- **Fix:** added a `differential-libsecp` job to
+  `.github/workflows/conformance-vectors.yml` that configures with
+  `-DSECP256K1_BUILD_CROSS_TESTS=ON`, builds `test_cross_libsecp256k1` (which pulls and
+  builds libsecp256k1 v0.6.0 with schnorrsig/extrakeys/recovery/ecdh), and runs it as a
+  hard gate on every push/PR. No new workflow file (a second job in the conformance
+  workflow), so the canonical workflow count is unchanged.
+- **Verified:** the cross-library differential builds and passes locally — engine ==
+  libsecp256k1 v0.6.0, 100% (1.7s).
+
 ## 2026-06-08 — CAAS: official shim conformance vectors now run in CI
 
 - **Gap fixed — the shim conformance tests were unreachable by the build system.**
