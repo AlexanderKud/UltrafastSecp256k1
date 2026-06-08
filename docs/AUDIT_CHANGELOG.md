@@ -1,5 +1,18 @@
 # Audit Changelog
 
+## 2026-06-08 — CAAS: advisory-skip ceiling re-tightened + frozen (meta-gate)
+
+- **P3 fix — the advisory-module ceiling had 4 slots of unreviewed slack.** Advisory
+  (`advisory=true`) audit modules skip silently in CI when their dependency (GPU, shim,
+  Python, …) is absent, so a growing advisory count is a growing silent-coverage gap.
+  `ci/check_advisory_skip_ceiling.py` allowed `count <= 62` while the actual count was
+  58 — four advisory modules could be added with zero review. Re-tightened the ceiling to
+  58 (== actual), added a frozen twin `ADVISORY_CEILING_FROZEN` with an import-time assert
+  (bumping the ceiling now requires touching both constants — a diff-visible, deliberate
+  change), added the gate to `SECURITY_CI_FILES` (so loosening it requires a test), and a
+  regression guard `ci/test_check_advisory_skip_ceiling.py` (ceiling tight + frozen-twin).
+  Found by the CAAS bastion review (meta-gate slack).
+
 ## 2026-06-08 — CAAS: backend-parity gate is now fail-closed (was silent-skip-on-absent)
 
 - **P2 fix — the backend-parity gate read only 3 of 7 declared files and still PASSED.**

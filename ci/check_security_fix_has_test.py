@@ -51,6 +51,9 @@ SECURITY_CI_FILES = frozenset({
     "ci/check_security_fix_has_test.py",
     "ci/run_fast_gates.sh",
     ".github/workflows/gate.yml",
+    # Meta-gate: loosening the advisory-skip ceiling silently grows CI coverage gaps,
+    # so a change here must come with a test (its paired ci/test_check_advisory_skip_ceiling.py).
+    "ci/check_advisory_skip_ceiling.py",
 })
 
 # If a commit touches only these directories/files, no test is required.

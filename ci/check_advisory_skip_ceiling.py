@@ -30,11 +30,22 @@ import sys
 from pathlib import Path
 
 # Ceiling: maximum allowed advisory=true entries in ALL_MODULES[].
-# Counted from unified_audit_runner.cpp on 2026-05-28.
-# Increment this when adding a new advisory module (with documentation).
-# +1: regression_shim_tweak_recover_null_cb (shim-dependent, TRNC-1..4, 2026-05-28)
-# +1: regression_musig2_signer_index (MSI-4 open behavior, advisory=true, 2026-05-28)
-ADVISORY_CEILING: int = 62
+# Kept TIGHT (== the actual count) so a new advisory module — which skips silently in CI
+# when its dependency (GPU/shim/etc.) is absent, i.e. a silent coverage gap — cannot be
+# added without a deliberate, reviewed ceiling bump in the same commit.
+# Re-tightened 2026-06-08 from 62 -> 58 (the prior 4-slot slack let 4 advisory modules
+# be added unreviewed). Counted from unified_audit_runner.cpp.
+ADVISORY_CEILING: int = 58
+
+# Frozen twin (CAAS meta-gate): bumping the ceiling requires updating BOTH constants,
+# turning a silent loosening into a deliberate, diff-visible change. Mirrors
+# RETROACTIVELY_COVERED_FROZEN_COUNT in ci/check_security_fix_has_test.py.
+ADVISORY_CEILING_FROZEN: int = 58
+assert ADVISORY_CEILING == ADVISORY_CEILING_FROZEN, (
+    f"ADVISORY_CEILING ({ADVISORY_CEILING}) != ADVISORY_CEILING_FROZEN "
+    f"({ADVISORY_CEILING_FROZEN}). Bump BOTH (and add advisory module(s) + docs) "
+    "in the same commit — see ci/test_check_advisory_skip_ceiling.py."
+)
 
 RUNNER_PATH = Path("audit/unified_audit_runner.cpp")
 
