@@ -119,14 +119,19 @@ ufsecp_error_t ufsecp_musig2_start_sign_session(
     if (SECP256K1_UNLIKELY(!ctx || !aggnonce || !keyagg || !msg32 || !session_out)) return UFSECP_ERR_NULL_ARG;
     std::memset(session_out, 0, UFSECP_MUSIG2_SESSION_LEN);
     ctx_clear_err(ctx);
-    /* Deserialize agg nonce */
+    /* Deserialize agg nonce.
+       BIP-327 cpoint_ext: a 33-zero aggnonce half is the point at infinity and is VALID
+       (participant nonces cancelled). Reject only a half that is non-zero yet fails to
+       decompress (invalid contribution). The combined-nonce-infinity case is handled by
+       musig2_start_sign_session (R = G), matching libsecp256k1. */
     secp256k1::MuSig2AggNonce an;
+    static const uint8_t kZeroNonce33[33] = {0};
     an.R1 = point_from_compressed(aggnonce);
-    if (an.R1.is_infinity()) {
+    if (an.R1.is_infinity() && std::memcmp(aggnonce, kZeroNonce33, 33) != 0) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid agg nonce R1");
     }
     an.R2 = point_from_compressed(aggnonce + 33);
-    if (an.R2.is_infinity()) {
+    if (an.R2.is_infinity() && std::memcmp(aggnonce + 33, kZeroNonce33, 33) != 0) {
         return ctx_set_err(ctx, UFSECP_ERR_BAD_INPUT, "invalid agg nonce R2");
     }
     /* Deserialize key agg context */

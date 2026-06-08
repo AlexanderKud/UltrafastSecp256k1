@@ -2,6 +2,15 @@
 
 **Last updated**: 2026-06-08 | **Version**: 4.1.1
 
+### 2026-06-08 - MuSig2 infinity aggregate-nonce conformance — secret handling unchanged
+
+`musig2_start_sign_session` now accepts an infinity aggregate-nonce half and substitutes
+`R = G` when the effective nonce is infinity (BIP-327 conformance). All affected values are
+PUBLIC: the aggregate nonce, the binding factor `b`, the session nonce `R`, and the
+challenge `e` are computed from public inputs only. No secret material enters this path and
+no `secure_erase`/lifecycle behavior changes — `musig2_partial_sign`'s signing-key and
+nonce erasure are untouched.
+
 ### 2026-06-08 - MuSig2 binding-factor tag fix — secret handling unchanged
 
 `musig2_start_sign_session` now derives the nonce binding factor `b` with the BIP-327

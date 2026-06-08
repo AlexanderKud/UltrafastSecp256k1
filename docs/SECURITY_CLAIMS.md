@@ -2,6 +2,23 @@
 
 **UltrafastSecp256k1 v4.1.1** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-06-08 - MuSig2 infinity aggregate-nonce BIP-327 conformance (R=G)
+
+`musig2_start_sign_session` now handles an infinity aggregate nonce per BIP-327
+§GetSessionValues: a 33-zero ("ext") aggregate-nonce half is the point at infinity and is
+accepted, and when the effective nonce `R = R1 + b·R2` is infinity the session nonce is set
+to the generator `G`. Previously the engine rejected infinity halves (a non-conformant
+divergence based on a BIP-327 misreading), so the official `sign_verify_vectors.json`
+"both halves at infinity" valid case could not be processed. The shim
+(`secp256k1_musig_nonce_process`) and native ABI (`ufsecp_musig2_start_sign_session`) now
+accept a 33-zero half while still rejecting a non-zero half that fails to decompress;
+individual pubnonces are still rejected at `pubnonce_parse` (BIP-327 `cpoint`). All affected
+values are PUBLIC; no secret handling changes. Verified against `reference.py` and
+libsecp256k1.
+
+**Claim:** MuSig2 aggregate-nonce processing (including the infinity / `R=G` case) is now
+interoperable with BIP-327 / libsecp256k1. The `SHIM-MUSIG-INF` divergence is removed.
+
 ### 2026-06-08 - MuSig2 BIP-327 binding-factor tag (interoperability)
 
 Fixed a P1 interoperability bug: the MuSig2 nonce binding factor `b` in

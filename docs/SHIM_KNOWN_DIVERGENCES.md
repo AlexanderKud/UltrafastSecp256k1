@@ -503,29 +503,19 @@ unsupported API.
   medium-priority improvement but not a security regression for the primary use case.
 - **Test:** No differential test currently exists for this path.
 
-### secp256k1_musig_nonce_process — infinity aggregate nonce rejected (SHIM-MUSIG-INF)
+<!-- SHIM-MUSIG-INF removed 2026-06-08: the infinity aggregate-nonce path now CONFORMS to
+     BIP-327 (parses infinity "ext" halves, substitutes R = G when the effective nonce is
+     infinity) — matching reference.py and libsecp256k1. It is no longer a divergence. See
+     docs/AUDIT_CHANGELOG.md (2026-06-08 — MuSig2 infinity aggregate-nonce BIP-327 conformance). -->
 
-- **Upstream behavior:** BIP-327 §GetSessionValues accepts an aggregate nonce whose
-  halves are the point at infinity (serialized as 33 zero bytes via the "ext" encoding).
-  After computing `R' = R1 + b·R2`, if `R'` is infinity it substitutes `R = G` and
-  proceeds; the session is valid. libsecp256k1 follows this (see `secp256k1_musig_ge_serialize_ext`).
-  The official `sign_verify_vectors.json` includes a `valid_test_case` for this
-  ("Both halves of aggregate nonce correspond to point at infinity").
-- **Shim behavior:** `musig2_start_sign_session` rejects an aggregate nonce whose R1 or
-  R2 half is infinity and returns an invalid (default-constructed) session, so
-  `secp256k1_musig_nonce_process` fails fail-closed. The infinity-aggregate `valid` case
-  is therefore not accepted.
-- **Reason:** Fail-closed hardening — an infinity aggregate nonce means the participant
-  nonces canceled (empty input, nonce cancellation, or an adversarially crafted set);
-  the substituted `R = G` is a publicly-known nonce. Rejecting such a degenerate session
-  is stricter than the spec but safer. This behavior pre-dates and is independent of the
-  `MuSig/noncecoef` binding-tag fix.
-- **Impact:** Only the degenerate infinity-aggregate-nonce path; honest signing never
-  produces it. A peer that deliberately constructs canceling nonces cannot drive this
-  engine into an `R = G` session.
-- **Fix scope:** Owner decision pending — keep the fail-closed rejection, or conform to
-  BIP-327 (parse infinity halves, substitute `R = G`). Conforming would touch the
-  existing infinity-nonce hardening tests.
+### secp256k1_musig_nonce_process — infinity aggregate nonce (CONFORMANT, not a divergence)
+
+- **Behavior:** Matches BIP-327 / libsecp256k1 exactly. A 33-zero aggregate-nonce half is
+  the point at infinity (valid "ext" encoding); the engine computes the effective nonce
+  `R = R1 + b·R2` and, only when that combined nonce is infinity, substitutes `R = G`.
+  Individual aggregate-nonce halves at infinity are NOT rejected. (Individual *pubnonces*
+  are still rejected at `pubnonce_parse` per the BIP-327 `cpoint` rule — that is correct.)
 - **Test:** `compat/libsecp256k1_shim/tests/test_bip327_sign_verify_vectors.cpp`
-  (`bip327_sign_verify_vectors`) asserts the documented rejection for the official
-  infinity-aggregate `valid` case.
+  (`bip327_sign_verify_vectors`) verifies the official infinity-aggregate `valid` case;
+  `audit/test_regression_musig2_infinity_nonce.cpp` covers the R=b·G / R=G unit cases.
+  Listed here only to record that the earlier fail-closed rejection was corrected.

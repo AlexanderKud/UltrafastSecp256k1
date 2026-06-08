@@ -635,12 +635,23 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "gate.yml workflow structure / CAAS gate integrity is exercised by "
         "ci/test_caas_integrity.py. Same class as the 7d094c7c09 retention-change entry.",
     ),
+    "8f5915c5b6": (
+        ["ci/check_zk_tag_conformance.py"],
+        "fix(zk): GPU CT range-prove Fiat-Shamir tags corrected to Bulletproof/* (Metal "
+        "src/metal/shaders/secp256k1_ct_zk.h + OpenCL src/opencl/kernels/secp256k1_ct_zk.cl) "
+        "plus wiring the new gate into ci/run_fast_gates.sh. Flagged SOLELY because "
+        "ci/run_fast_gates.sh ∈ SECURITY_CI_FILES. The Metal/OpenCL shader tag fix is not "
+        "runnable on the CUDA-only dev box, so its regression guard IS the new "
+        "ci/check_zk_tag_conformance.py gate (added in the SAME commit), which bans the "
+        "abbreviated BP/<chal> tag across all backends. Same class as the gate.yml "
+        "SECURITY_CI_FILES entries (7d094c7c09 / f0ea17663a).",
+    ),
 }
 
 # Frozen count guard (CAAS-006): prevents silent whitelist growth.
 # When adding a new entry above, increment this constant too.
 # Unauthorized bypass (adding an entry without incrementing) → import-time assertion failure.
-RETROACTIVELY_COVERED_FROZEN_COUNT: int = 57
+RETROACTIVELY_COVERED_FROZEN_COUNT: int = 58
 assert len(RETROACTIVELY_COVERED) == RETROACTIVELY_COVERED_FROZEN_COUNT, (
     f"RETROACTIVELY_COVERED has {len(RETROACTIVELY_COVERED)} entries but "
     f"RETROACTIVELY_COVERED_FROZEN_COUNT={RETROACTIVELY_COVERED_FROZEN_COUNT}. "

@@ -16,12 +16,13 @@
 //   * every valid partial signature must verify against its signer
 //   * verify_fail cases must be rejected (well-formed but invalid)
 //   * verify_error cases must be rejected at the invalid contribution (parse/agg)
-// Skipped (documented divergences, not failures):
+// The official infinity-aggregate-nonce valid case (both halves the point at
+// infinity) is verified like any other: the engine substitutes R=G per BIP-327
+// §GetSessionValues, so the external partial signature verifies.
+//
+// Skipped (documented divergence, not a failure):
 //   * variable-length messages (empty / 38-byte): the C API is msg32-only,
 //     matching upstream libsecp256k1.
-//   * infinity aggregate-nonce case: the engine rejects an aggnonce whose halves
-//     are the point at infinity (fail-closed hardening) instead of substituting
-//     R=G per BIP-327. See docs/SHIM_KNOWN_DIVERGENCES.md.
 //
 // Standalone:
 //   g++ -std=c++17 -I ../compat/libsecp256k1_shim/include -I ../src/cpu/include \\
@@ -108,10 +109,8 @@ int main(){
     for(int i=0;i<N_VALID;++i){ const VCase& c=VALID[i];
         secp256k1_musig_keyagg_cache cache; secp256k1_musig_session sess; char msg[110];
         bool oks=build_session(ctx,c.ki,c.ni,c.n,m.data(),&cache,&sess);
-        if(c.inf){ // BIP-327 infinity aggnonce: engine fail-closed rejects (documented divergence)
-            std::snprintf(msg,sizeof msg,"valid[%d] infinity-aggnonce: engine rejects (documented divergence)",i);
-            CHECK(!oks,msg); ++n_inf; continue; }
-        std::snprintf(msg,sizeof msg,"valid[%d] session builds",i); CHECK(oks,msg); if(!oks) continue;
+        if(c.inf) ++n_inf; // BIP-327 infinity aggnonce (R=G) — now accepted + must verify like any case
+        std::snprintf(msg,sizeof msg,"valid[%d] session builds%s",i,c.inf?" (infinity aggnonce -> R=G)":""); CHECK(oks,msg); if(!oks) continue;
         secp256k1_musig_partial_sig ps; auto sb=hx(c.sig);
         bool okp=secp256k1_musig_partial_sig_parse(ctx,&ps,sb.data())==1;
         std::snprintf(msg,sizeof msg,"valid[%d] partial_sig parses",i); CHECK(okp,msg); if(!okp) continue;
@@ -150,7 +149,7 @@ int main(){
     }
 
     std::printf("  note: %d variable-length-message valid case(s) skipped (C API is msg32-only)\n",N_SKIP_VARMSG);
-    std::printf("  note: %d infinity-aggnonce case(s) handled as documented divergence\n",n_inf);
+    std::printf("  note: %d infinity-aggnonce valid case(s) verified (BIP-327 R=G conformant)\n",n_inf);
     secp256k1_context_destroy(ctx);
     std::printf("\n%s\n", g_fail==0?"ALL PASS":"FAILURES PRESENT");
     return g_fail==0?0:1;

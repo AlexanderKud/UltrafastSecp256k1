@@ -353,22 +353,22 @@ MuSig2Session musig2_start_sign_session(
 
     MuSig2Session session{};
 
-    // SEC-005: BIP-327 §GetSessionValues step 2 — abort if either aggregated nonce
-    // component is infinity (indicates empty input, nonce cancellation, or invalid input).
-    // A zero Scalar for session.b and session.e signals an invalid session to the caller
-    // (musig2_partial_sign checks: if session.e.is_zero() the session is degenerate).
-    // Returning a default-constructed session (all-zero scalars, infinity R) is the
-    // agreed invalid-session convention used throughout this codebase.
-    if (agg_nonce.R1.is_infinity() || agg_nonce.R2.is_infinity()) {
-        return session;  // default-constructed: R=infinity, b=0, e=0, R_negated=false
-    }
+    // BIP-327 §GetSessionValues: an aggregate-nonce half may legitimately be the point
+    // at infinity (cpoint_ext / 33-zero "ext" encoding) when participant nonces cancel.
+    // It is NOT rejected here — the effective nonce R = R1 + b·R2 is computed and only the
+    // *combined* nonce being infinity triggers the R = G substitution (below). This matches
+    // reference.py and libsecp256k1 (secp256k1_musig_nonce_process: fin_nonce → G if inf).
+    // Individual pubnonces are still rejected upstream in pubnonce_parse (BIP-327 cpoint).
 
     // b = tagged_hash("MuSig/noncecoef", cbytes_ext(R1)||cbytes_ext(R2)||xbytes(Q)||msg)
     // BIP-327 §GetSessionValues: tag is "MuSig/noncecoef" (matches reference.py and
     // libsecp256k1). Any other tag stays self-consistent for a pure-engine session but
     // breaks cross-implementation interop — partial sigs become mutually unverifiable.
-    auto R1_comp = agg_nonce.R1.to_compressed();
-    auto R2_comp = agg_nonce.R2.to_compressed();
+    // cbytes_ext(infinity) is 33 zero bytes — match that for the hash input.
+    std::array<uint8_t, 33> R1_comp = agg_nonce.R1.is_infinity()
+        ? std::array<uint8_t, 33>{} : agg_nonce.R1.to_compressed();
+    std::array<uint8_t, 33> R2_comp = agg_nonce.R2.is_infinity()
+        ? std::array<uint8_t, 33>{} : agg_nonce.R2.to_compressed();
 
     uint8_t b_input[130]; // 33 + 33 + 32 + 32
     std::memcpy(b_input, R1_comp.data(), 33);
@@ -378,9 +378,23 @@ MuSig2Session musig2_start_sign_session(
     auto b_hash = cached_tagged_hash(g_musig_noncecoef_midstate, b_input, 130);
     session.b = Scalar::from_bytes(b_hash);
 
-    // R = R1 + b * R2
-    auto bR2 = agg_nonce.R2.scalar_mul(session.b);  // nosemgrep: secret-scalar-variable-time-mul
-    session.R = agg_nonce.R1.add(bR2);
+    // R = R1 + b * R2  (effective nonce). Infinity halves are the group identity, handled
+    // explicitly so we never feed an infinity point into the incomplete add/scalar_mul.
+    Point bR2 = agg_nonce.R2.is_infinity()
+        ? Point::infinity()
+        : agg_nonce.R2.scalar_mul(session.b);  // nosemgrep: secret-scalar-variable-time-mul
+    if (agg_nonce.R1.is_infinity()) {
+        session.R = bR2;                 // 0 + b*R2
+    } else if (bR2.is_infinity()) {
+        session.R = agg_nonce.R1;        // R1 + 0
+    } else {
+        session.R = agg_nonce.R1.add(bR2);
+    }
+
+    // BIP-327 §GetSessionValues: if the effective nonce R is infinity, use the generator G.
+    if (session.R.is_infinity()) {
+        session.R = Point::generator();
+    }
 
     // Negate R if needed for even Y
     session.R_negated = !has_even_y(session.R);

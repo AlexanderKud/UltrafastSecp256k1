@@ -1,5 +1,30 @@
 # Audit Changelog
 
+## 2026-06-08 — MuSig2 infinity aggregate-nonce BIP-327 conformance (R=G)
+
+- **Conformance fix — infinity aggregate nonce.** `musig2_start_sign_session` previously
+  rejected an aggregate nonce whose R1 or R2 half was the point at infinity (returning a
+  degenerate session; the shim/ABI wrappers then failed `nonce_process`). That was a
+  misreading of BIP-327 (the same class as the binding-tag bug): BIP-327 §GetSessionValues
+  **accepts** infinity halves (`cpoint_ext` / 33-zero encoding), computes the effective
+  nonce `R = R1 + b·R2`, and substitutes **`R = G`** only when that combined nonce is
+  infinity. libsecp256k1 does exactly this (`if is_infinity(fin_nonce): fin_nonce = G`).
+  Now conformant: `musig2_start_sign_session` no longer rejects infinity halves and applies
+  the `R = G` substitution; the shim (`secp256k1_musig_nonce_process`) and native ABI
+  (`ufsecp_musig2_start_sign_session`) accept a 33-zero ("ext") half as infinity while
+  still rejecting a non-zero half that fails to decompress.
+- **Scope note.** Individual *pubnonces* are still rejected at `pubnonce_parse` (BIP-327
+  `cpoint`) — that layer is correct and unchanged. Only the *aggregate*-nonce layer changed.
+- **Verification.** Confirmed against the bip-0327 `reference.py` oracle and libsecp256k1:
+  the official `sign_verify_vectors.json` "both halves at infinity" valid case now verifies,
+  and reference-generated infinity-aggregate sessions (both-inf → R=G, R1-inf → R=b·G) have
+  their partial signatures verified by the engine. Tests updated to assert the conformant
+  behavior: `audit/test_regression_musig2_infinity_nonce.cpp` (MIN-2/3/4 now assert
+  acceptance + R=b·G / R=G), `audit/test_exploit_shim_musig_secnonce.cpp` (MSN-7 now asserts
+  all-zero aggnonce accepted), and `compat/libsecp256k1_shim/tests/test_bip327_sign_verify_vectors.cpp`.
+  Full MuSig2 + FROST sweep: 28/28, no regression. The prior `SHIM-MUSIG-INF` entry in
+  `docs/SHIM_KNOWN_DIVERGENCES.md` is removed (no longer a divergence).
+
 ## 2026-06-08 — GPU Bulletproof Fiat-Shamir tag conformance (range-prove interop)
 
 - **P2 fix — GPU CT range-prove used abbreviated Fiat-Shamir tags.** The Metal CT

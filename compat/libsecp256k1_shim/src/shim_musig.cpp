@@ -637,14 +637,21 @@ int secp256k1_musig_nonce_process(
     KAEntry* e = ka_get(keyagg_cache);
     if (!e) return 0;
     secp256k1::MuSig2AggNonce an;
+    // BIP-327 cpoint_ext: a 33-zero aggnonce half is the point at infinity and is VALID
+    // (participant nonces cancelled). Reject only a half that is non-zero yet fails to
+    // decompress (an invalid contribution). The combined-nonce-infinity case is handled
+    // by musig2_start_sign_session (R = G), matching libsecp256k1.
+    static const unsigned char kZero33[33] = {0};
+    const bool r1_is_zero = std::memcmp(aggnonce->data, kZero33, 33) == 0;
     an.R1 = decompress(aggnonce->data);
-    if (an.R1.is_infinity()) return 0;
+    if (an.R1.is_infinity() && !r1_is_zero) return 0;
+    const bool r2_is_zero = std::memcmp(aggnonce->data + 33, kZero33, 33) == 0;
     an.R2 = decompress(aggnonce->data + 33);
-    if (an.R2.is_infinity()) return 0;
+    if (an.R2.is_infinity() && !r2_is_zero) return 0;
     std::array<unsigned char, 32> msg;
     std::memcpy(msg.data(), msg32, 32);
     auto s = secp256k1::musig2_start_sign_session(an, e->ctx, msg);
-    if (s.e.is_zero()) return 0;  // SEC-006: combined R = R1 + b*R2 was infinity
+    if (s.e.is_zero()) return 0;  // defensive: degenerate session (challenge e == 0)
     sess_pack(session, s);
     sess_stash_cache_token(session, keyagg_cache);
     return 1;
