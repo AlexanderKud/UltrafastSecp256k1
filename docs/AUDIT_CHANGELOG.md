@@ -1,5 +1,32 @@
 # Audit Changelog
 
+## 2026-06-08 — GPU Bulletproof Fiat-Shamir tag conformance (range-prove interop)
+
+- **P2 fix — GPU CT range-prove used abbreviated Fiat-Shamir tags.** The Metal CT
+  range-prove (`src/metal/shaders/secp256k1_ct_zk.h`) derived its y/z/x/inner-product
+  challenges with the tags `"BP/y"`,`"BP/z"`,`"BP/x"`,`"BP/ip"`, and the OpenCL CT
+  range-prove (`src/opencl/kernels/secp256k1_ct_zk.cl`) used `"BP/ip"`, while every
+  verifier (CPU, CUDA, OpenCL, Metal) and the CPU/CUDA provers recompute these
+  challenges with the canonical `"Bulletproof/y"`,`"Bulletproof/z"`,`"Bulletproof/x"`,
+  `"Bulletproof/ip"`. Because `sha256("BP/y") != sha256("Bulletproof/y")`, proofs
+  produced by the Metal/OpenCL CT range-prove paths derived different challenges than
+  any verifier and failed verification everywhere (the Metal prover did not even match
+  the Metal verifier — not self-consistent). All five sites corrected to the canonical
+  `"Bulletproof/<chal>"` tags.
+- **Discovery:** exhaustive tagged-hash conformance audit (multi-agent workflow) run
+  after the MuSig2 binding-tag fix. Every CUDA/OpenCL/Metal hardcoded BIP-340 /
+  BIP-352 / Bulletproof *verify* midstate was recomputed and all MATCH — only the
+  Metal/OpenCL CT *prove* tag literals diverged. CPU BIP-340/341/327/322/352/324 tags
+  all verified byte-identical to libsecp256k1 / reference.py.
+- **Regression guard:** new CI gate `ci/check_zk_tag_conformance.py` (wired into
+  `run_fast_gates` as "ZK Fiat-Shamir tag conformance") bans the abbreviated
+  `"BP/<chal>"` tag form across all backends.
+- **Testing caveat:** CUDA CT range-prove already used the canonical tags and is
+  unaffected. Metal and OpenCL are not runnable on the dev machine (CUDA-only); this
+  fix is verified by source conformance (prover tag == verifier tag, the verifier tags
+  validated against CPU/CUDA and recomputed midstates) plus the new CI guard — not by a
+  Metal/OpenCL hardware run.
+
 ## 2026-06-08 — MuSig2 binding-factor tag (BIP-327 interop fix)
 
 - **P1 fix — MuSig2 nonce binding-factor tag.** `musig2_start_sign_session` computed the

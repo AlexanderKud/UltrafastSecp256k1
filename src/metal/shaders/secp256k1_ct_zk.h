@@ -412,10 +412,10 @@ inline CTRangeProofMetal ct_range_prove_metal(
 
     uchar y_hash[32], z_hash[32];
     {
-        uchar y_tag[] = {'B','P','/','y'};
-        zk_tagged_hash(y_tag, 4, fs_buf, 99, y_hash);
-        uchar z_tag[] = {'B','P','/','z'};
-        zk_tagged_hash(z_tag, 4, fs_buf, 99, z_hash);
+        uchar y_tag[] = {'B','u','l','l','e','t','p','r','o','o','f','/','y'};
+        zk_tagged_hash(y_tag, 13, fs_buf, 99, y_hash);
+        uchar z_tag[] = {'B','u','l','l','e','t','p','r','o','o','f','/','z'};
+        zk_tagged_hash(z_tag, 13, fs_buf, 99, z_hash);
     }
     Scalar256 y = scalar_from_bytes(y_hash);
     Scalar256 z = scalar_from_bytes(z_hash);
@@ -518,8 +518,8 @@ inline CTRangeProofMetal ct_range_prove_metal(
 
     uchar x_hash[32];
     {
-        uchar x_tag[] = {'B','P','/','x'};
-        zk_tagged_hash(x_tag, 4, x_buf, 130, x_hash);
+        uchar x_tag[] = {'B','u','l','l','e','t','p','r','o','o','f','/','x'};
+        zk_tagged_hash(x_tag, 13, x_buf, 130, x_hash);
     }
     Scalar256 xx = scalar_from_bytes(x_hash);
 
@@ -649,8 +649,8 @@ inline CTRangeProofMetal ct_range_prove_metal(
         for (int i = 0; i < 33; ++i) { ip_buf[i] = l_comp[i]; ip_buf[33+i] = r_comp[i]; }
 
         uchar xr_hash[32];
-        uchar ip_tag[] = {'B','P','/','i','p'};
-        zk_tagged_hash(ip_tag, 5, ip_buf, 66, xr_hash);
+        uchar ip_tag[] = {'B','u','l','l','e','t','p','r','o','o','f','/','i','p'};
+        zk_tagged_hash(ip_tag, 14, ip_buf, 66, xr_hash);
         Scalar256 x_r = scalar_from_bytes(xr_hash);
         Scalar256 x_r_inv = ct_scalar_inverse_metal(x_r);
 

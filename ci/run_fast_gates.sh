@@ -58,6 +58,7 @@ MANDATORY_GATES=(
     "ci/sync_canonical_numbers.py"
     "ci/check_bench_doc_consistency.py"
     "ci/check_backend_parity.py"
+    "ci/check_zk_tag_conformance.py"
     "ci/check_secret_parse_strictness.py"
     "ci/check_protocol_invariants.py"
     "ci/check_nonce_erase_coverage.py"
@@ -142,6 +143,7 @@ run "Assurance validation"   ci/validate_assurance.py
 # Protocol & Backend Parity Gates — catch copy-paste divergence and
 # protocol invariant violations (root cause of confirmed red-team bugs C1–C8).
 run "Backend parity"                           ci/check_backend_parity.py
+run "ZK Fiat-Shamir tag conformance"           ci/check_zk_tag_conformance.py
 run "Secret parse strictness (Rule 11)"        ci/check_secret_parse_strictness.py
 run "Protocol invariants (FROST threshold)"    ci/check_protocol_invariants.py
 run "Nonce erase coverage (BIP-327)"           ci/check_nonce_erase_coverage.py
