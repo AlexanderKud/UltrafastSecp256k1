@@ -2,6 +2,21 @@
 
 **UltrafastSecp256k1 v4.1.1** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-06-08 - MuSig2 BIP-327 tweak correctness (gacc/tacc)
+
+Fixed a P1 correctness bug: tweaked MuSig2 signing. The keyagg cache lacked the BIP-327
+`gacc`/`tacc` accumulators, so `secp256k1_musig_pubkey_{ec,xonly}_tweak_add` baked the
+tweak into the aggregate but signing never applied the additive/sign correction — the
+EC-tweaked aggregate key was wrong for odd-Y aggregates and the aggregated signature
+failed to verify against any tweaked key. The fix threads `gacc`/`tacc` through the
+tweak functions, `musig2_partial_sign` (`d = g·gacc·d'`), `musig2_partial_sig_agg`
+(`s += e·g·tacc`), `musig2_start_sign_session`, and `musig2_partial_verify`.
+`gacc`/`tacc` are PUBLIC; the untweaked path is byte-identical (defaults `gacc=1`,
+`tacc=0`). Verified against the bip-0327 `reference.py` oracle (tweaked-output KATs) and
+sign+verify+partial-verify roundtrips (regression test
+`compat/libsecp256k1_shim/tests/test_bip327_tweak_sign.cpp`, CTest `bip327_tweak_sign`).
+Taproot+MuSig2 key/script-path tweaked signing is now correct.
+
 ### 2026-06-06 - CPU ABI/shim fail-closed outputs and secret lifecycle refresh
 
 `src/cpu/src/bip32.cpp` and `src/cpu/src/bip39.cpp` received a secret-lifecycle

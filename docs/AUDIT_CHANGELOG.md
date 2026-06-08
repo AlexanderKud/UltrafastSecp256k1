@@ -1,5 +1,22 @@
 # Audit Changelog
 
+## 2026-06-08 — MuSig2 tweaked-signing fix (BIP-327 gacc/tacc)
+
+- **P1 fix — MuSig2 tweaked signing.** The keyagg cache (`MuSig2KeyAggCtx`) lacked the
+  BIP-327 `gacc`/`tacc` tweak accumulators: `secp256k1_musig_pubkey_{ec,xonly}_tweak_add`
+  baked the tweak into the aggregate `Q` but the additive/sign state never reached the
+  signer, so (a) the EC-tweaked aggregate pubkey was wrong for odd-Y aggregates and
+  (b) the aggregated signature failed to verify against any tweaked key. Added
+  `gacc`/`tacc` (default identity → untweaked path byte-identical), corrected the
+  tweak functions to operate on the actual aggregate, and threaded the state through
+  `musig2_partial_sign` (`d = g·gacc·d'`), `musig2_partial_sig_agg` (`s += e·g·tacc`),
+  `musig2_start_sign_session`, and `musig2_partial_verify`.
+- **Discovery + verification:** found via the new official-vector conformance tests;
+  confirmed against the bip-0327 `reference.py` oracle (tweaked-output KATs) and full
+  sign+verify / partial-verify roundtrips (no-tweak / EC / x-only / mixed) on an odd-Y
+  aggregate. Regression test: `compat/libsecp256k1_shim/tests/test_bip327_tweak_sign.cpp`
+  (CTest `bip327_tweak_sign`). No regression in BIP-327 keyagg or BIP-341 vectors.
+
 ## 2026-06-06 — Minerva CVE timing regression macOS CI stability
 
 - **Minerva MC-3c timing gate:** `audit/test_exploit_minerva_cve_2024_23342.cpp`

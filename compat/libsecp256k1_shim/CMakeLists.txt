@@ -162,4 +162,11 @@ if(SECP256K1_SHIM_BUILD_TESTS AND NOT SECP256K1_BUILD_SHIM)
     target_link_libraries(test_bip327_keyagg_vectors PRIVATE secp256k1_shim)
     add_test(NAME bip327_keyagg_vectors COMMAND test_bip327_keyagg_vectors)
     set_tests_properties(bip327_keyagg_vectors PROPERTIES LABELS "shim")
+
+    # BIP-327 MuSig2 tweak correctness: output KATs (reference.py oracle) + sign/verify
+    # roundtrips. Guards the gacc/tacc tweaked-signing fix.
+    add_executable(test_bip327_tweak_sign tests/test_bip327_tweak_sign.cpp)
+    target_link_libraries(test_bip327_tweak_sign PRIVATE secp256k1_shim)
+    add_test(NAME bip327_tweak_sign COMMAND test_bip327_tweak_sign)
+    set_tests_properties(bip327_tweak_sign PROPERTIES LABELS "shim")
 endif()

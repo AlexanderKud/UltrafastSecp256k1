@@ -395,6 +395,15 @@ MuSig2Session musig2_start_sign_session(
     auto e_hash = cached_tagged_hash(g_challenge_midstate, e_input, 96);
     session.e = Scalar::from_bytes(e_hash);
 
+    // BIP-327 additive-tweak correction: tweak_s = e * g * tacc, where g = -1 if the
+    // (even-Y-normalized) aggregate was negated, else 1. Added to the aggregated
+    // signature in musig2_partial_sig_agg. tacc defaults to 0 (no tweaks) -> tweak_s = 0,
+    // so the untweaked path is unchanged. gacc's sign is folded into d in partial_sign.
+    {
+        Scalar const gtacc = key_agg_ctx.Q_negated ? key_agg_ctx.tacc.negate() : key_agg_ctx.tacc;
+        session.tweak_s = ct::scalar_mul(session.e, gtacc);
+    }
+
     return session;
 }
 
@@ -484,6 +493,11 @@ Scalar musig2_partial_sign(
         d = ct::scalar_select(neg_d, d, mask);
     }
 
+    // BIP-327: fold the accumulated tweak sign gacc into the signing key (d = g*gacc*d').
+    // gacc is +/-1 derived from public pubkeys + public tweaks (default +1, untweaked),
+    // so this is a public, branchless multiply that leaves the untweaked path unchanged.
+    d = ct::scalar_mul(d, key_agg_ctx.gacc);
+
     // s_i = k + e * a_i * d  (mod n)
     // ct::scalar_mul/add: branchless modular arithmetic -- no secret-dependent
     // branches in the final reduction, unlike fast::Scalar operator*/ operator+.
@@ -550,6 +564,9 @@ bool musig2_partial_verify(
 
     Scalar ea = session.e * key_agg_ctx.key_coefficients[signer_index];
     if (key_agg_ctx.Q_negated) ea = ea.negate();
+    // BIP-327: the signer's key term is e*a_i*g*gacc*P_i — fold gacc in to match
+    // musig2_partial_sign (gacc defaults to 1, so untweaked verification is unchanged).
+    ea = ea * key_agg_ctx.gacc;
 
     // Helper: check if sG == R_eff + ea * Point::from_affine(px, y_candidate)
     auto jacobian_eq = [](const Point& A, const Point& B) -> bool {
@@ -583,6 +600,10 @@ std::array<uint8_t, 64> musig2_partial_sig_agg(
     for (const auto& si : partial_sigs) {
         s = secp256k1::ct::scalar_add(s, si);
     }
+
+    // BIP-327: add the additive-tweak correction e*g*tacc so the aggregated signature
+    // verifies against the tweaked aggregate key. tweak_s = 0 when no tweaks were applied.
+    s = secp256k1::ct::scalar_add(s, session.tweak_s);
 
     // Fail-closed: degenerate aggregated signature is a security failure
     if (s.is_zero_ct() || session.R.is_infinity()) {

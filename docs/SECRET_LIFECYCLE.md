@@ -1,6 +1,15 @@
 # Secret Lifecycle Review
 
-**Last updated**: 2026-06-06 | **Version**: 4.1.1
+**Last updated**: 2026-06-08 | **Version**: 4.1.1
+
+### 2026-06-08 - MuSig2 BIP-327 tweak fix (gacc/tacc) — secret handling unchanged
+
+The MuSig2 tweaked-signing fix added BIP-327 `gacc`/`tacc` accumulators to the keyagg
+cache and folds them into signing. Secret lifecycle is **unaffected**: `gacc`/`tacc` are
+PUBLIC (derived from public pubkeys + public tweaks). In `musig2_partial_sign` the signing
+key `d` is still `secure_erase`d after use — the new `d = ct::scalar_mul(d, gacc)` multiply
+by a public ±1 occurs before the existing erase of `d`, `k`, and the caller's secret nonce.
+No secret is added to the keyagg cache or the session; `tweak_s = e·g·tacc` is public.
 
 ### 2026-06-06 - CPU ABI/shim fail-closed refresh and BIP32/BIP39 cleanup
 
