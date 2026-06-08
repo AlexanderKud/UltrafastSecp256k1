@@ -65,9 +65,13 @@ else()
     # but must not leak to consumers — PRIVATE keeps it shim-internal.
     target_compile_features(secp256k1_shim PRIVATE cxx_std_20)
 
-    # Public includes -- exposes libsecp256k1-compatible headers
+    # Public includes -- exposes libsecp256k1-compatible headers.
+    # Also expose the CPU C++ headers: secp256k1.h pulls in `secp256k1/ecdsa.hpp`
+    # under `#ifdef __cplusplus` (inlined secp256k1_pubkey_precomp). C consumers are
+    # unaffected; C++ consumers (the shim conformance tests) need it to compile.
     target_include_directories(secp256k1_shim PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/cpu/include
     )
 
     # Link against UltrafastSecp256k1 CPU library.

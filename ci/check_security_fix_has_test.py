@@ -635,6 +635,15 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "gate.yml workflow structure / CAAS gate integrity is exercised by "
         "ci/test_caas_integrity.py. Same class as the 7d094c7c09 retention-change entry.",
     ),
+    "02602cf420": (
+        ["ci/test_check_tag_conformance.py"],
+        "ci(caas): systemic tagged-hash tag-conformance gate. Flagged SOLELY because it "
+        "wires ci/check_tag_conformance.py into ci/run_fast_gates.sh (∈ SECURITY_CI_FILES). "
+        "The gate is a pure CI scanner (no executable crypto surface); its behavior is "
+        "exercised by the paired ci/test_check_tag_conformance.py unit test (added in the "
+        "immediately-following commit). Same class as the gate.yml SECURITY_CI_FILES "
+        "entries (7d094c7c09 / f0ea17663a) and the 8f5915c5b6 ZK-tag-gate entry.",
+    ),
     "8f5915c5b6": (
         ["ci/check_zk_tag_conformance.py"],
         "fix(zk): GPU CT range-prove Fiat-Shamir tags corrected to Bulletproof/* (Metal "
@@ -651,7 +660,7 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
 # Frozen count guard (CAAS-006): prevents silent whitelist growth.
 # When adding a new entry above, increment this constant too.
 # Unauthorized bypass (adding an entry without incrementing) → import-time assertion failure.
-RETROACTIVELY_COVERED_FROZEN_COUNT: int = 58
+RETROACTIVELY_COVERED_FROZEN_COUNT: int = 59
 assert len(RETROACTIVELY_COVERED) == RETROACTIVELY_COVERED_FROZEN_COUNT, (
     f"RETROACTIVELY_COVERED has {len(RETROACTIVELY_COVERED)} entries but "
     f"RETROACTIVELY_COVERED_FROZEN_COUNT={RETROACTIVELY_COVERED_FROZEN_COUNT}. "

@@ -490,7 +490,13 @@ if(SECP256K1_BUILD_CPU AND BUILD_TESTING)
 endif()
 
 # -- libsecp256k1 compatibility shim (Bitcoin Core integration) ---------------
-if(SECP256K1_BUILD_SHIM AND SECP256K1_BUILD_CPU)
+# Add the shim subdirectory when EITHER (a) BUILD_SHIM mode is on, OR (b) the shim
+# conformance tests are explicitly requested with BUILD_SHIM=OFF
+# (-DSECP256K1_SHIM_BUILD_TESTS=ON). Case (b) is required because the shim test block
+# is guarded by `NOT SECP256K1_BUILD_SHIM`: without it that block is unreachable and the
+# official BIP-340/341/327 vector tests (which exercise the shim ABI — the libsecp drop-in
+# surface integrators actually use) never build, so they never run in CI.
+if((SECP256K1_BUILD_SHIM OR SECP256K1_SHIM_BUILD_TESTS) AND SECP256K1_BUILD_CPU)
     # Default ON for standalone builds; parent project can override with FORCE before
     # calling add_subdirectory (e.g. Bitcoin Core sets SECP256K1_SHIM_BUILD_TESTS OFF FORCE).
     set(SECP256K1_SHIM_BUILD_TESTS ON CACHE BOOL "Build shim compatibility tests")

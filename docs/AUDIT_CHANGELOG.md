@@ -1,5 +1,26 @@
 # Audit Changelog
 
+## 2026-06-08 — CAAS: official shim conformance vectors now run in CI
+
+- **Gap fixed — the shim conformance tests were unreachable by the build system.**
+  `test_bip341_vectors`, `test_bip327_keyagg_vectors`, `test_bip327_tweak_sign`,
+  `test_bip327_sign_verify_vectors`, and `shim_test` exercise the libsecp256k1-compatible
+  shim ABI (the drop-in surface integrators such as Frigate consume) against the official
+  bitcoin/bips vectors + the bip-0327 reference.py oracle — they are the tests that catch
+  the "self-consistent but spec-divergent" bug class (the MuSig2 binding-factor and
+  infinity-aggnonce bugs fixed this cycle). They never ran in CI: the shim test block is
+  guarded by `NOT SECP256K1_BUILD_SHIM`, but the shim subdirectory was only added when
+  `SECP256K1_BUILD_SHIM=ON` — a contradiction that made the block unreachable. A latent
+  missing engine include in the Mode-A shim library compounded it.
+- **Fix:** (1) root `CMakeLists.txt` adds the shim subdirectory when
+  `SECP256K1_SHIM_BUILD_TESTS=ON` even with `BUILD_SHIM=OFF`; (2) the Mode-A shim library
+  now PUBLIC-exposes the CPU C++ include dir (`secp256k1.h` pulls in `secp256k1/ecdsa.hpp`
+  under `__cplusplus`); (3) new `.github/workflows/conformance-vectors.yml` builds with
+  that combo and runs the conformance ctests as a hard gate on every push/PR.
+  Backward-compatible: plain and `BUILD_SHIM=ON` builds are unchanged (verified).
+- **Verified:** the 5 conformance ctests build + pass with the new combo
+  (`BUILD_SHIM=OFF -DSECP256K1_SHIM_BUILD_TESTS=ON`); plain/BUILD_SHIM configures unaffected.
+
 ## 2026-06-08 — CAAS: systemic tagged-hash tag-conformance gate
 
 - **New gate — `ci/check_tag_conformance.py`** (wired into `run_fast_gates` as
