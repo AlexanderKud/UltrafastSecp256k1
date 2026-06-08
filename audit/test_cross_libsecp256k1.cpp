@@ -27,6 +27,7 @@
 #include "secp256k1/point.hpp"
 #include "secp256k1/ecdsa.hpp"
 #include "secp256k1/schnorr.hpp"
+#include "secp256k1/musig2.hpp"
 #include "secp256k1/sha256.hpp"
 #include "secp256k1/sanitizer_scale.hpp"
 
@@ -36,6 +37,7 @@
 #include <secp256k1_extrakeys.h>
 #include <secp256k1_recovery.h>
 #include <secp256k1_ecdh.h>
+#include <secp256k1_musig.h>
 
 // Intentionally uses the legacy variable-time secp256k1::ecdsa_sign /
 // schnorr_sign entry points (audit harness / cross-platform vectors).
@@ -734,6 +736,46 @@ static void test_ecdh_cross(const secp256k1_context* ctx) {
     std::printf("    %d checks OK\n\n", g_pass);
 }
 
+// -- Test 12: MuSig2 KeyAgg ---------------------------------------------------
+// BIP-327 key aggregation is deterministic, so the engine's aggregate x-only key
+// must be byte-identical to libsecp256k1's for the same ordered pubkey set. This
+// fuzzes the KeyAgg list/coefficient math (the bug area this cycle) against the
+// authoritative reference across many random 2..4-signer sets.
+static void test_musig_keyagg_cross(const secp256k1_context* ctx) {
+    const int N = 100 * g_multiplier;
+    std::printf("[12] Cross-Library MuSig2 KeyAgg (%d rounds)\n", N);
+
+    for (int i = 0; i < N; ++i) {
+        const int n = 2 + static_cast<int>(rng() % 3);  // 2..4 signers
+        std::vector<std::array<uint8_t, 33>> comp(static_cast<size_t>(n));
+        std::vector<secp256k1_pubkey> refpk(static_cast<size_t>(n));
+        std::vector<const secp256k1_pubkey*> refpp(static_cast<size_t>(n));
+        for (int j = 0; j < n; ++j) {
+            auto sk = random_seckey(ctx);
+            CHECK(secp256k1_ec_pubkey_create(ctx, &refpk[j], sk.data()) == 1, "ref: pubkey_create");
+            size_t L = 33;
+            secp256k1_ec_pubkey_serialize(ctx, comp[j].data(), &L, &refpk[j], SECP256K1_EC_COMPRESSED);
+            refpp[j] = &refpk[j];
+        }
+
+        // --- Reference libsecp256k1 MuSig2 key aggregation ---
+        secp256k1_xonly_pubkey ref_agg;
+        secp256k1_musig_keyagg_cache cache;
+        CHECK(secp256k1_musig_pubkey_agg(ctx, &ref_agg, &cache, refpp.data(),
+                                         static_cast<size_t>(n)) == 1,
+              "ref: musig_pubkey_agg");
+        uint8_t ref_aggx[32];
+        secp256k1_xonly_pubkey_serialize(ctx, ref_aggx, &ref_agg);
+
+        // --- UltrafastSecp256k1 MuSig2 key aggregation ---
+        auto kctx = secp256k1::musig2_key_agg(comp);
+
+        CHECK(std::memcmp(ref_aggx, kctx.Q_x.data(), 32) == 0,
+              "musig2 keyagg aggregate x-only match");
+    }
+    std::printf("    %d checks OK\n\n", g_pass);
+}
+
 int main(int argc, char* argv[]) {
     if (argc > 1) {
         g_multiplier = std::atoi(argv[1]);
@@ -766,6 +808,7 @@ int main(int argc, char* argv[]) {
     test_ecdsa_batch_cross(ctx);          // [9] ECDSA batch verify
     test_extended_edge_cases(ctx);        // [10] overflow/doubling/mutation
     test_ecdh_cross(ctx);                 // [11] ECDH shared secret
+    test_musig_keyagg_cross(ctx);         // [12] MuSig2 key aggregation
 
     secp256k1_context_destroy(ctx);
 
