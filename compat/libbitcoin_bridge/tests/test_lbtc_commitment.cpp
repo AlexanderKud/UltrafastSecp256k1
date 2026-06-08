@@ -13,6 +13,7 @@
  */
 #include "ufsecp_libbitcoin.h"
 #include "ufsecp.h"
+#include "ufsecp_gpu.h"
 #include "secp256k1.h"
 #include "secp256k1_extrakeys.h"
 
@@ -187,6 +188,74 @@ int main() {
             if (std::memcmp(out.data()+i*32, ref, 32) != 0) ok = false;
         }
         CHECK(ok, "tagged_hash_batch TapBranch == shim secp256k1_tagged_sha256 per item");
+    }
+
+    /* (9) Direct GPU ABI per-item kernels vs shim ground truth. Probes each backend
+     * and uses the first that actually IMPLEMENTS the kernels (CUDA); OpenCL/Metal/CPU
+     * return UFSECP_ERR_GPU_UNSUPPORTED -> skipped (consensus served by the CPU path). */
+    {
+        ufsecp_gpu_ctx* g = nullptr;
+        const uint32_t order[3] = {UFSECP_GPU_BACKEND_CUDA, UFSECP_GPU_BACKEND_OPENCL,
+                                   UFSECP_GPU_BACKEND_METAL};
+        for (uint32_t b : order) {
+            if (!ufsecp_gpu_is_available(b)) continue;
+            ufsecp_gpu_ctx* cand = nullptr;
+            if (ufsecp_gpu_ctx_create(&cand, b, 0) == UFSECP_OK && ufsecp_gpu_is_ready(cand)) {
+                uint8_t k[32]; std::memcpy(k, ix.data(), 32); uint8_t r = 0xAA;
+                if (ufsecp_gpu_xonly_validate(cand, k, 1, &r) == UFSECP_OK) { g = cand; break; }
+            }
+            if (cand) ufsecp_gpu_ctx_destroy(cand);
+        }
+        if (!g) {
+            std::printf("  skip: direct GPU ABI kernels — no GPU device implements them\n");
+        } else {
+            /* 9a: xonly_validate */
+            const size_t M = 256;
+            std::vector<uint8_t> keys(M*32), gr(M, 0xAA);
+            for (size_t i = 0; i < M; ++i) {
+                if (i & 1) std::memset(keys.data()+i*32, 0xFF, 32);                 /* >=p invalid */
+                else       std::memcpy(keys.data()+i*32, ix.data()+(i%N)*32, 32);   /* valid */
+            }
+            bool xok = ufsecp_gpu_xonly_validate(g, keys.data(), M, gr.data()) == UFSECP_OK;
+            for (size_t i = 0; xok && i < M; ++i) {
+                secp256k1_xonly_pubkey xp;
+                bool shim = secp256k1_xonly_pubkey_parse(sctx, &xp, keys.data()+i*32) == 1;
+                if ((gr[i]==1) != shim) xok = false;
+            }
+            CHECK(xok, "GPU ufsecp_gpu_xonly_validate matches shim xonly_parse per key");
+
+            /* 9b: commitment_verify (all-valid matches shim, then one corruption rejects) */
+            std::vector<uint8_t> cr(N, 0xAA);
+            bool cok = ufsecp_gpu_commitment_verify(g, ix.data(), tw.data(), tx.data(),
+                                                    par.data(), N, cr.data()) == UFSECP_OK;
+            for (size_t i = 0; cok && i < N; ++i) {
+                int shim = secp256k1_xonly_pubkey_tweak_add_check(sctx, tx.data()+i*32, par[i],
+                                                                  &ixo[i], tw.data()+i*32);
+                if ((cr[i]==1) != (shim==1)) cok = false;
+            }
+            CHECK(cok, "GPU ufsecp_gpu_commitment_verify matches shim tweak_add_check per row");
+            uint8_t sv = tx[5*32]; tx[5*32] ^= 0x01;
+            ufsecp_gpu_commitment_verify(g, ix.data(), tw.data(), tx.data(), par.data(), N, cr.data());
+            bool crej = (cr[5]==0 && cr[4]==1 && cr[6]==1);
+            tx[5*32] = sv;
+            CHECK(crej, "GPU commitment_verify: corrupted row rejects, neighbours accept");
+
+            /* 9c: tagged_hash (TapBranch) vs shim tagged_sha256 */
+            const size_t TM = 128, ML = 64;
+            std::vector<uint8_t> tmsg(TM*ML), tout(TM*32);
+            for (size_t i = 0; i < TM*ML; ++i) tmsg[i] = (uint8_t)((i*40503u) >> (i%24));
+            uint8_t th[32]; ufsecp_sha256((const uint8_t*)"TapBranch", 9, th);
+            bool tok = ufsecp_gpu_tagged_hash(g, th, tmsg.data(), ML, TM, tout.data()) == UFSECP_OK;
+            for (size_t i = 0; tok && i < TM; ++i) {
+                uint8_t ref[32];
+                secp256k1_tagged_sha256(sctx, ref, (const unsigned char*)"TapBranch", 9,
+                                        tmsg.data()+i*ML, ML);
+                if (std::memcmp(tout.data()+i*32, ref, 32) != 0) tok = false;
+            }
+            CHECK(tok, "GPU ufsecp_gpu_tagged_hash TapBranch == shim tagged_sha256 per item");
+
+            ufsecp_gpu_ctx_destroy(g);
+        }
     }
 
     ufsecp_lbtc_ctrl_destroy(ctrl);

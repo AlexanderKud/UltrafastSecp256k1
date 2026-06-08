@@ -688,6 +688,16 @@ void ufsecp_lbtc_verify_commitment(ufsecp_lbtc_ctrl* ctrl,
     std::memset(results, 0, n);  /* fail-closed default: any early return = all invalid */
     if (!ctrl || !internal_x32 || !tweak32 || !tweaked_x32 || !parity) return;
 
+#ifdef UFSECP_LBTC_WITH_GPU
+    /* GPU per-item tweak-add-check (one thread per row). Exact per-row verdict (no
+     * RLC) — consensus-identical to the CPU path; fall back on device failure. */
+    if (ctrl->gpu) {
+        if (ufsecp_gpu_commitment_verify(ctrl->gpu, internal_x32, tweak32,
+                                         tweaked_x32, parity, n, results) == UFSECP_OK) return;
+        std::memset(results, 0, n);
+    }
+#endif
+
     /* Hoisted invariant: G (compressed) computed ONCE for the whole batch. */
     uint8_t Gc[33]; { uint8_t one[32] = {0}; one[31] = 1;
         ufsecp_ctx* gctx = nullptr;
@@ -821,6 +831,32 @@ void ufsecp_lbtc_verify_commitment_rows(ufsecp_lbtc_ctrl* ctrl,
     std::memset(results, 0, n);  /* fail-closed default */
     if (!ctrl || !rows || stride < UFSECP_LBTC_COMMITMENT_RECORD) return;
 
+#ifdef UFSECP_LBTC_WITH_GPU
+    /* GPU per-item path over the AoS buffer. De-interleave the 97-byte records into
+     * columns; the stored `tweaked` is compressed (prefix=parity, x=bytes 1..33). A
+     * malformed prefix (not 0x02/0x03) is forced invalid AFTER the kernel so the
+     * verdict matches the CPU path's full 33-byte compare bit-for-bit. */
+    if (ctrl->gpu) {
+        std::vector<uint8_t> ix(n*32), tw(n*32), tx(n*32), par(n);
+        for (size_t i = 0; i < n; ++i) {
+            const uint8_t* r = rows + i*stride;
+            std::memcpy(ix.data()+i*32, r,      32);
+            std::memcpy(tw.data()+i*32, r + 32, 32);
+            std::memcpy(tx.data()+i*32, r + 65, 32);          /* tweaked_x = comp[1..33] */
+            par[i] = (r[64] == 0x03) ? 1u : 0u;               /* y-parity from comp prefix */
+        }
+        if (ufsecp_gpu_commitment_verify(ctrl->gpu, ix.data(), tw.data(),
+                                         tx.data(), par.data(), n, results) == UFSECP_OK) {
+            for (size_t i = 0; i < n; ++i) {                  /* match CPU full-compress compare */
+                const uint8_t pfx = rows[i*stride + 64];
+                if (pfx != 0x02 && pfx != 0x03) results[i] = 0u;
+            }
+            return;
+        }
+        std::memset(results, 0, n);
+    }
+#endif
+
     uint8_t Gc[33]; { uint8_t one[32] = {0}; one[31] = 1;
         ufsecp_ctx* g = nullptr;
         if (ufsecp_ctx_create(&g) != UFSECP_OK || !g) return;
@@ -927,6 +963,22 @@ void ufsecp_lbtc_validate_xonly(ufsecp_lbtc_ctrl* ctrl,
     std::memset(results, 0, n);  /* fail-closed default */
     if (!ctrl || !keys || stride < 32) return;
 
+#ifdef UFSECP_LBTC_WITH_GPU
+    /* GPU per-key lift_x fast path (one thread per key). On any device failure we
+     * reset and fall through to the CPU reference — consensus-identical. */
+    if (ctrl->gpu) {
+        const uint8_t* contig = keys;
+        std::vector<uint8_t> packed;
+        if (stride != 32) {                       /* de-stride into contiguous n*32 */
+            packed.resize(n * 32);
+            for (size_t i = 0; i < n; ++i) std::memcpy(packed.data() + i*32, keys + i*stride, 32);
+            contig = packed.data();
+        }
+        if (ufsecp_gpu_xonly_validate(ctrl->gpu, contig, n, results) == UFSECP_OK) return;
+        std::memset(results, 0, n);               /* device failed → CPU fallback */
+    }
+#endif
+
     unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
     if (n < 512) T = 1;
     std::vector<std::thread> ths; ths.reserve(T);
@@ -964,6 +1016,25 @@ void ufsecp_lbtc_tagged_hash_batch(ufsecp_lbtc_ctrl* ctrl, const char* tag,
     (void)ctrl;
     if (!out32 || n == 0) return;
     if (!tag || !msgs || msg_len == 0 || stride < msg_len) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    /* GPU path (one thread per message). tag_hash = SHA256(tag) is precomputed once
+     * on host; the kernel does SHA256(tag_hash||tag_hash||msg). msg_len capped at
+     * 256 on the device; fall back to the CPU pool on any failure. */
+    if (ctrl && ctrl->gpu && msg_len <= 256) {
+        uint8_t th[32];
+        if (ufsecp_sha256(reinterpret_cast<const uint8_t*>(tag), std::strlen(tag), th) == UFSECP_OK) {
+            const uint8_t* contig = msgs;
+            std::vector<uint8_t> packed;
+            if (stride != msg_len) {                  /* de-stride into contiguous n*msg_len */
+                packed.resize(n * msg_len);
+                for (size_t i = 0; i < n; ++i) std::memcpy(packed.data()+i*msg_len, msgs+i*stride, msg_len);
+                contig = packed.data();
+            }
+            if (ufsecp_gpu_tagged_hash(ctrl->gpu, th, contig, msg_len, n, out32) == UFSECP_OK) return;
+        }
+    }
+#endif
 
     uint8_t warm[32];                                   /* serialize any lazy tag-midstate init */
     if (ufsecp_tagged_hash(tag, msgs, msg_len, warm) != UFSECP_OK) return;

@@ -322,6 +322,70 @@ UFSECP_API ufsecp_error_t ufsecp_gpu_msm(
     uint8_t* out_result33);
 
 /* ============================================================================
+ * libbitcoin-bridge per-item batch ops (CUDA implemented; OpenCL/Metal return
+ * UFSECP_ERR_GPU_UNSUPPORTED so the bridge falls back to its CPU path). All
+ * PUBLIC-DATA -> variable-time.
+ * ============================================================================ */
+
+/** Batch x-only pubkey validation: one lift_x per key (on-curve x check).
+ *
+ *  PUBLIC-DATA operation.
+ *
+ *  @param ctx       GPU context.
+ *  @param keys32    Input: n * 32 bytes (contiguous x-only keys).
+ *  @param n         Number of keys.
+ *  @param results   Output: n bytes (1 = valid x-coordinate, 0 = invalid).
+ *  @return UFSECP_OK on success. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_xonly_validate(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* keys32,
+    size_t n,
+    uint8_t* results);
+
+/** Batch BIP-341 commitment tweak-add-check, one item per thread.
+ *  Accept iff x(lift_x(internal_x_i, even-y) + tweak_i*G) == tweaked_x_i AND its
+ *  y-parity == parity[i].
+ *
+ *  PUBLIC-DATA operation.
+ *
+ *  @param ctx           GPU context.
+ *  @param internal_x32  Input: n * 32 bytes (x-only internal keys).
+ *  @param tweak32       Input: n * 32 bytes (BIP-341 tweaks).
+ *  @param tweaked_x32   Input: n * 32 bytes (claimed tweaked output x).
+ *  @param parity        Input: n bytes (claimed y-parity, 0 even / 1 odd).
+ *  @param n             Number of items.
+ *  @param results       Output: n bytes (1 = valid, 0 = invalid).
+ *  @return UFSECP_OK on success. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_commitment_verify(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* internal_x32,
+    const uint8_t* tweak32,
+    const uint8_t* tweaked_x32,
+    const uint8_t* parity,
+    size_t n,
+    uint8_t* results);
+
+/** Batch Taproot tagged hash: out_i = SHA256(tag_hash || tag_hash || msg_i),
+ *  where tag_hash = SHA256(tag) is precomputed once by the caller.
+ *
+ *  PUBLIC-DATA operation.
+ *
+ *  @param ctx        GPU context.
+ *  @param tag_hash32 Input: 32 bytes (SHA256 of the BIP-340 tag).
+ *  @param msgs       Input: n * msg_len bytes (contiguous fixed-length messages).
+ *  @param msg_len    Message length in bytes (1..256; e.g. 64 for TapBranch).
+ *  @param n          Number of messages.
+ *  @param out32      Output: n * 32 bytes (tagged hashes).
+ *  @return UFSECP_OK on success. UFSECP_ERR_BAD_INPUT if msg_len out of range. */
+UFSECP_API ufsecp_error_t ufsecp_gpu_tagged_hash(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* tag_hash32,
+    const uint8_t* msgs,
+    size_t msg_len,
+    size_t n,
+    uint8_t* out32);
+
+/* ============================================================================
  * GPU error string extension
  * ============================================================================ */
 

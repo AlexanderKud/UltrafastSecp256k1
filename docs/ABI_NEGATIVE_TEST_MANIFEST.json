@@ -1,12 +1,12 @@
 {
   "generated_at": "2026-04-28T08:16:31.261078+00:00",
-  "header_count": 184,
+  "header_count": 187,
   "blocking_function_count": 0,
   "coverage_counts": {
-    "null_rejection": 183,
-    "zero_edge": 172,
-    "invalid_content": 179,
-    "success_smoke": 184
+    "null_rejection": 186,
+    "zero_edge": 175,
+    "invalid_content": 182,
+    "success_smoke": 187
   },
   "functions": [
     {
@@ -5622,6 +5622,38 @@
       "blocking": false
     },
     {
+      "function": "ufsecp_gpu_commitment_verify",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_commitment_verify( ufsecp_gpu_ctx* ctx, const uint8_t* internal_x32, const uint8_t* tweak32, const uint8_t* tweaked_x32, const uint8_t* parity, size_t n, uint8_t* results)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:gpu_abi_gate",
+          "graph:function_test_map:gpu_api_negative",
+          "graph:function_test_map:gpu_bip352_scan",
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)",
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
       "function": "ufsecp_gpu_ctx_create",
       "category": "gpu",
       "header": "include/ufsecp/ufsecp_gpu.h",
@@ -6350,6 +6382,69 @@
         ],
         "invalid_content": [
           "test-call:audit/test_gpu_abi_gate.cpp:test_gpu_ops_if_available",
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gpu_tagged_hash",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_tagged_hash( ufsecp_gpu_ctx* ctx, const uint8_t* tag_hash32, const uint8_t* msgs, size_t msg_len, size_t n, uint8_t* out32)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:gpu_abi_gate",
+          "graph:function_test_map:gpu_api_negative",
+          "graph:function_test_map:gpu_bip352_scan",
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)",
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ],
+        "zero_edge": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ]
+      },
+      "missing_checks": [],
+      "blocking": false
+    },
+    {
+      "function": "ufsecp_gpu_xonly_validate",
+      "category": "gpu",
+      "header": "include/ufsecp/ufsecp_gpu.h",
+      "signature": "ufsecp_error_t ufsecp_gpu_xonly_validate( ufsecp_gpu_ctx* ctx, const uint8_t* keys32, size_t n, uint8_t* results)",
+      "required_checks": [
+        "success_smoke",
+        "null_rejection",
+        "zero_edge",
+        "invalid_content"
+      ],
+      "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:gpu_abi_gate",
+          "graph:function_test_map:gpu_api_negative",
+          "graph:function_test_map:gpu_bip352_scan",
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "invalid_content": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "null_rejection": [
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)",
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
+        ],
+        "zero_edge": [
           "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
         ]
       },

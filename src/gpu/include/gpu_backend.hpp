@@ -132,6 +132,40 @@ public:
         const uint8_t* scalars32, const uint8_t* points33,
         size_t n, uint8_t* out_result33) = 0;
 
+    /** libbitcoin-bridge: batch x-only key validation (lift_x per key). PUBLIC data.
+     *  result[i] = 1 iff keys32[i*32..] is a valid x-only pubkey x-coordinate.
+     *  Default Unsupported: only CUDA implements it; OpenCL/Metal fall back to CPU. */
+    virtual GpuError xonly_validate(
+        const uint8_t* keys32, size_t n, uint8_t* results)
+    {
+        (void)keys32; (void)n; (void)results;
+        return GpuError::Unsupported;
+    }
+
+    /** libbitcoin-bridge: BIP-341 commitment tweak-add-check, one item per thread.
+     *  result[i] = 1 iff x(lift_x(internal_x_i)+tweak_i*G)==tweaked_x_i and its
+     *  y-parity==parity[i]. PUBLIC data. Default Unsupported (CUDA-only). */
+    virtual GpuError commitment_verify(
+        const uint8_t* internal_x32, const uint8_t* tweak32,
+        const uint8_t* tweaked_x32, const uint8_t* parity,
+        size_t n, uint8_t* results)
+    {
+        (void)internal_x32; (void)tweak32; (void)tweaked_x32; (void)parity;
+        (void)n; (void)results;
+        return GpuError::Unsupported;
+    }
+
+    /** libbitcoin-bridge: Taproot tagged hash. tag_hash32 = SHA256(tag) (host-precomputed);
+     *  out32[i*32..] = SHA256(tag_hash||tag_hash||msg_i) over fixed-length msgs. PUBLIC
+     *  data. Default Unsupported (CUDA-only). */
+    virtual GpuError tagged_hash(
+        const uint8_t* tag_hash32, const uint8_t* msgs,
+        size_t msg_len, size_t n, uint8_t* out32)
+    {
+        (void)tag_hash32; (void)msgs; (void)msg_len; (void)n; (void)out32;
+        return GpuError::Unsupported;
+    }
+
     /** Batch FROST partial signature verification.
      *  Each item verifies: R_i = D_i + rho_i*E_i, lhs = z_i*G, rhs = R_i + lambda_ie*Y_i
      *  result[i] = (lhs == rhs). */

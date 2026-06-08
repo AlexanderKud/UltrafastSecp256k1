@@ -1061,6 +1061,23 @@ bit-identical to `ufsecp_gpu_*_verify_batch` (proven GPU==CPU==libsecp by
 back to the host-collapse path. Hostile-caller quartet: see
 [FFI_HOSTILE_CALLER.md](FFI_HOSTILE_CALLER.md) Section J.
 
+### GPU per-item batch ABI (libbitcoin bridge, 2026-06-08 — PUBLIC-DATA)
+
+`ufsecp_gpu_xonly_validate`, `ufsecp_gpu_commitment_verify` and
+`ufsecp_gpu_tagged_hash` are libbitcoin-bridge per-item batch kernels. They are
+**public-data operations**: inputs are x-only keys, BIP-341 tweaks/outputs, and
+script-tree messages (all on-chain / caller-public) — **no private key, nonce, or
+secret material is processed**, so the CT-vs-variable-time boundary does not apply
+(variable-time is correct, per the verify-path rule). Each is a one-thread-per-item
+CUDA kernel; OpenCL/Metal return `Unsupported` and the bridge falls back to its
+threaded CPU reference (consensus-identical). Correctness is anchored bit-for-bit on
+the libsecp shim: `ufsecp_gpu_xonly_validate` == `secp256k1_xonly_pubkey_parse`
+(including the `x ≥ p` reject), `ufsecp_gpu_commitment_verify` ==
+`secp256k1_xonly_pubkey_tweak_add_check` per row, and `ufsecp_gpu_tagged_hash` ==
+`secp256k1_tagged_sha256` per item — proven in `tests/test_lbtc_commitment.cpp`
+(section 9). Outputs are fail-closed (cleared on any error). Hostile-caller quartet:
+see [FFI_HOSTILE_CALLER.md](FFI_HOSTILE_CALLER.md) Section J (J.lbtc-batch).
+
 ### GPU (CUDA/OpenCL/Metal) API
 
 All GPU CT functions are in the `secp256k1::cuda::ct::` namespace (CUDA),

@@ -425,6 +425,67 @@ ufsecp_error_t ufsecp_gpu_msm(
     } UFSECP_GPU_CATCH
 }
 
+ufsecp_error_t ufsecp_gpu_xonly_validate(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* keys32,
+    size_t n,
+    uint8_t* results)
+{
+    if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
+    if (n == 0) return UFSECP_OK;
+    if (n > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(results, n, 1)) return UFSECP_ERR_BAD_INPUT;
+    if (SECP256K1_UNLIKELY(!keys32 || !results)) return UFSECP_ERR_NULL_ARG;
+    try {
+    return to_abi_error_clear_on_fail(
+        ctx->backend->xonly_validate(keys32, n, results),
+        results, n, 1);
+    } UFSECP_GPU_CATCH
+}
+
+ufsecp_error_t ufsecp_gpu_commitment_verify(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* internal_x32,
+    const uint8_t* tweak32,
+    const uint8_t* tweaked_x32,
+    const uint8_t* parity,
+    size_t n,
+    uint8_t* results)
+{
+    if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
+    if (n == 0) return UFSECP_OK;
+    if (n > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(results, n, 1)) return UFSECP_ERR_BAD_INPUT;
+    if (SECP256K1_UNLIKELY(!internal_x32 || !tweak32 || !tweaked_x32 || !parity || !results))
+        return UFSECP_ERR_NULL_ARG;
+    try {
+    return to_abi_error_clear_on_fail(
+        ctx->backend->commitment_verify(internal_x32, tweak32, tweaked_x32, parity, n, results),
+        results, n, 1);
+    } UFSECP_GPU_CATCH
+}
+
+ufsecp_error_t ufsecp_gpu_tagged_hash(
+    ufsecp_gpu_ctx* ctx,
+    const uint8_t* tag_hash32,
+    const uint8_t* msgs,
+    size_t msg_len,
+    size_t n,
+    uint8_t* out32)
+{
+    if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
+    if (n == 0) return UFSECP_OK;
+    if (n > kMaxGpuBatchN) return UFSECP_ERR_BAD_INPUT;
+    if (msg_len == 0 || msg_len > 256) return UFSECP_ERR_BAD_INPUT;
+    if (!clear_output_bytes(out32, n, 32)) return UFSECP_ERR_BAD_INPUT;
+    if (SECP256K1_UNLIKELY(!tag_hash32 || !msgs || !out32)) return UFSECP_ERR_NULL_ARG;
+    try {
+    return to_abi_error_clear_on_fail(
+        ctx->backend->tagged_hash(tag_hash32, msgs, msg_len, n, out32),
+        out32, n, 32);
+    } UFSECP_GPU_CATCH
+}
+
 ufsecp_error_t ufsecp_gpu_frost_verify_partial_batch(
     ufsecp_gpu_ctx* ctx,
     const uint8_t* z_i32,

@@ -293,6 +293,19 @@ never secret material). Hostile-caller quartet in `test_gpu_abi_gate.cpp`:
 Backends without a native collect kernel (OpenCL/Metal) return `Unsupported`; the
 libbitcoin bridge then falls back to the host-collapse path (consensus-identical).
 
+**J.lbtc-batch — `ufsecp_gpu_xonly_validate` / `ufsecp_gpu_commitment_verify` /
+`ufsecp_gpu_tagged_hash`** (libbitcoin bridge, PUBLIC-DATA; no secret material on
+these paths). CUDA-native per-item kernels; OpenCL/Metal return `Unsupported` and the
+bridge falls back to its threaded CPU path (consensus-identical). Hostile-caller
+quartet cross-checked against the libsecp shim in `tests/test_lbtc_commitment.cpp`
+(section 9: GPU verdict == shim per row/key):
+
+| Function | null | zero | invalid | smoke |
+|----------|------|------|---------|-------|
+| `ufsecp_gpu_xonly_validate`    | NULL ctx / NULL buffer → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | x ≥ p / off-curve key → result 0 (invalid/reject), matches shim xonly_parse | valid x-only key succeeds (smoke, GPU present) |
+| `ufsecp_gpu_commitment_verify` | NULL ctx / any NULL column → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | corrupted tweaked_x / wrong parity / internal x ≥ p → result 0 (invalid/reject) | valid BIP-341 commitment succeeds (smoke); matches shim tweak_add_check |
+| `ufsecp_gpu_tagged_hash`       | NULL ctx / NULL msgs → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | msg_len 0 or > 256 → `UFSECP_ERR_BAD_INPUT` (invalid/reject) | valid TapBranch digest succeeds (smoke); matches shim tagged_sha256 |
+
 ---
 
 ## Section K: Deep Session Security (v3.4+)

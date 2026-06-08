@@ -270,8 +270,11 @@ run-to-run variance <1%, every verdict matching the CPU/shim reference). Notably
 this **beats the RLC aggregate fast-check (~2.5 M/s)** for the full per-row case:
 `tweak*G` hits the 16-entry `__constant__` fixed-base table and the work is
 embarrassingly parallel, so it avoids the Pippenger bucket + Fiat-Shamir overhead
-the aggregate path pays. Wiring this kernel behind a per-row GPU ABI (reading the
-strided 97-byte records on-device, no host de-interleave) is the remaining step.
+the aggregate path pays. **Shipped:** engine ABI `ufsecp_gpu_commitment_verify` backs
+it, and both `verify_commitment` (columns) and `verify_commitment_rows` (AoS)
+auto-dispatch to the GPU when the controller is GPU-bound — falling back to the threaded
+CPU path on OpenCL/Metal or device failure (consensus-identical; `tests/test_lbtc_commitment.cpp`
+section 9 proves GPU == shim `tweak_add_check` per row).
 
 ## Batch x-only pubkey validation — `validate_xonly`
 
@@ -286,8 +289,9 @@ this only for *separate* bulk validation, not a redundant second lift.
 Measured (i5-14400F, 16 threads, 1M keys): baseline 0.17 M/s (1 thread) →
 **1.85 M/s threaded (10.7×)**. A one-thread-per-key GPU `lift_x` kernel was
 benchmarked at **111 M keys/s** (RTX 5060 Ti, CUDA, kernel-only) — ~60× the
-CPU-threaded path; wiring it behind a GPU ABI is a follow-up (no MSM to reuse
-here, unlike the commitment RLC).
+CPU-threaded path. **Shipped:** engine ABI `ufsecp_gpu_xonly_validate` backs it and
+`validate_xonly` auto-dispatches to the GPU (CUDA), falling back to the threaded CPU
+path on OpenCL/Metal (no MSM to reuse here, unlike the commitment RLC).
 
 ## Batch Taproot tagged hash — `tagged_hash_batch`
 
@@ -304,10 +308,11 @@ Measured (i5-14400F, 16 threads, 2M × 64-byte TapBranch): baseline 5.45 M/s
 (1 thread) → **52.2 M/s threaded (9.6×)**. Verdict matches the shim
 `secp256k1_tagged_sha256` bit-for-bit. A one-thread-per-message GPU kernel was
 benchmarked at **505 M hashes/s** (RTX 5060 Ti, CUDA, kernel-only) — ~9.7× the
-CPU-threaded path. Caveat for a shipped GPU tagged-hash: the engine's device
-SHA-256 caps at ~119-byte inputs (2 blocks), and the 128-byte TapBranch preimage
-(`SHA256(tag)‖SHA256(tag)‖64-byte msg`) needs a multi-block SHA-256, so that must
-be added on-device first.
+CPU-threaded path. **Shipped:** engine ABI `ufsecp_gpu_tagged_hash` backs it and
+`tagged_hash_batch` auto-dispatches to the GPU (CUDA). The engine's device SHA-256
+caps at ~119-byte inputs (2 blocks), so the kernel carries its own multi-block
+SHA-256 for the 128-byte TapBranch preimage (`SHA256(tag)‖SHA256(tag)‖64-byte msg`);
+OpenCL/Metal fall back to the threaded CPU path.
 
 ## Measured GPU throughput (per-item kernels, RTX 5060 Ti)
 
