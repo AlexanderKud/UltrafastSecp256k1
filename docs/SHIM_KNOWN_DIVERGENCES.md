@@ -502,3 +502,30 @@ unsupported API.
 - **Fix scope:** Document-only. Adding `agg_x` extraction from the cache token is a
   medium-priority improvement but not a security regression for the primary use case.
 - **Test:** No differential test currently exists for this path.
+
+### secp256k1_musig_nonce_process — infinity aggregate nonce rejected (SHIM-MUSIG-INF)
+
+- **Upstream behavior:** BIP-327 §GetSessionValues accepts an aggregate nonce whose
+  halves are the point at infinity (serialized as 33 zero bytes via the "ext" encoding).
+  After computing `R' = R1 + b·R2`, if `R'` is infinity it substitutes `R = G` and
+  proceeds; the session is valid. libsecp256k1 follows this (see `secp256k1_musig_ge_serialize_ext`).
+  The official `sign_verify_vectors.json` includes a `valid_test_case` for this
+  ("Both halves of aggregate nonce correspond to point at infinity").
+- **Shim behavior:** `musig2_start_sign_session` rejects an aggregate nonce whose R1 or
+  R2 half is infinity and returns an invalid (default-constructed) session, so
+  `secp256k1_musig_nonce_process` fails fail-closed. The infinity-aggregate `valid` case
+  is therefore not accepted.
+- **Reason:** Fail-closed hardening — an infinity aggregate nonce means the participant
+  nonces canceled (empty input, nonce cancellation, or an adversarially crafted set);
+  the substituted `R = G` is a publicly-known nonce. Rejecting such a degenerate session
+  is stricter than the spec but safer. This behavior pre-dates and is independent of the
+  `MuSig/noncecoef` binding-tag fix.
+- **Impact:** Only the degenerate infinity-aggregate-nonce path; honest signing never
+  produces it. A peer that deliberately constructs canceling nonces cannot drive this
+  engine into an `R = G` session.
+- **Fix scope:** Owner decision pending — keep the fail-closed rejection, or conform to
+  BIP-327 (parse infinity halves, substitute `R = G`). Conforming would touch the
+  existing infinity-nonce hardening tests.
+- **Test:** `compat/libsecp256k1_shim/tests/test_bip327_sign_verify_vectors.cpp`
+  (`bip327_sign_verify_vectors`) asserts the documented rejection for the official
+  infinity-aggregate `valid` case.

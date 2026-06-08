@@ -27,7 +27,7 @@ using fast::Point;
 using fast::FieldElement;
 using detail::g_keyagg_list_midstate;
 using detail::g_keyagg_coeff_midstate;
-using detail::g_musig_nonceblinding_midstate;
+using detail::g_musig_noncecoef_midstate;
 using detail::g_musig_aux_midstate;
 using detail::g_musig_nonce_midstate;
 using detail::g_challenge_midstate;
@@ -363,8 +363,10 @@ MuSig2Session musig2_start_sign_session(
         return session;  // default-constructed: R=infinity, b=0, e=0, R_negated=false
     }
 
-    // b = tagged_hash("MuSig/nonceblinding", cbytes_ext(R1)||cbytes_ext(R2)||xbytes(Q)||msg)
-    // BIP-327 §GetSessionValues: tag MUST be "MuSig/nonceblinding" (not "noncecoef").
+    // b = tagged_hash("MuSig/noncecoef", cbytes_ext(R1)||cbytes_ext(R2)||xbytes(Q)||msg)
+    // BIP-327 §GetSessionValues: tag is "MuSig/noncecoef" (matches reference.py and
+    // libsecp256k1). Any other tag stays self-consistent for a pure-engine session but
+    // breaks cross-implementation interop — partial sigs become mutually unverifiable.
     auto R1_comp = agg_nonce.R1.to_compressed();
     auto R2_comp = agg_nonce.R2.to_compressed();
 
@@ -373,7 +375,7 @@ MuSig2Session musig2_start_sign_session(
     std::memcpy(b_input + 33, R2_comp.data(), 33);
     std::memcpy(b_input + 66, key_agg_ctx.Q_x.data(), 32);
     std::memcpy(b_input + 98, msg.data(), 32);
-    auto b_hash = cached_tagged_hash(g_musig_nonceblinding_midstate, b_input, 130);
+    auto b_hash = cached_tagged_hash(g_musig_noncecoef_midstate, b_input, 130);
     session.b = Scalar::from_bytes(b_hash);
 
     // R = R1 + b * R2

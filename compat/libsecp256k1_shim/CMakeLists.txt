@@ -169,4 +169,12 @@ if(SECP256K1_SHIM_BUILD_TESTS AND NOT SECP256K1_BUILD_SHIM)
     target_link_libraries(test_bip327_tweak_sign PRIVATE secp256k1_shim)
     add_test(NAME bip327_tweak_sign COMMAND test_bip327_tweak_sign)
     set_tests_properties(bip327_tweak_sign PROPERTIES LABELS "shim")
+
+    # BIP-327 sign_verify_vectors.json (verify side): every external (reference-impl)
+    # partial signature must verify under the engine. Guards the binding-factor tag
+    # ("MuSig/noncecoef") — regression for the cross-implementation interop bug.
+    add_executable(test_bip327_sign_verify_vectors tests/test_bip327_sign_verify_vectors.cpp)
+    target_link_libraries(test_bip327_sign_verify_vectors PRIVATE secp256k1_shim)
+    add_test(NAME bip327_sign_verify_vectors COMMAND test_bip327_sign_verify_vectors)
+    set_tests_properties(bip327_sign_verify_vectors PROPERTIES LABELS "shim")
 endif()

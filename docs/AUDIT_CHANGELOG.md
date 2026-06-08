@@ -1,5 +1,33 @@
 # Audit Changelog
 
+## 2026-06-08 — MuSig2 binding-factor tag (BIP-327 interop fix)
+
+- **P1 fix — MuSig2 nonce binding-factor tag.** `musig2_start_sign_session` computed the
+  nonce binding factor `b` with the tagged-hash tag `"MuSig/nonceblinding"`. BIP-327
+  (`reference.py`) and upstream libsecp256k1 use **`"MuSig/noncecoef"`**; the hashed input
+  (`R1‖R2‖Qx‖msg`, 130 bytes) was otherwise identical. The wrong tag is self-consistent
+  for a pure-engine session — sign and verify used the same tag, so roundtrips and the
+  BIP-327 key_agg vectors passed — but it produces a **different `b`**, so any MuSig2
+  session mixing this engine with a BIP-327 implementation fails and the engine rejected
+  every externally-produced partial signature. Fixed by changing the tag to
+  `"MuSig/noncecoef"` (midstate `g_musig_noncecoef_midstate`, recomputed from the string
+  at init — no hardcoded constant changes).
+- **Impact.** Cross-implementation MuSig2 interoperability — the core promise of a
+  libsecp256k1 drop-in. `b` only needs to be consistent within a session, so pure-engine
+  sessions already produced valid BIP-340 signatures; no previously-accepted signature
+  becomes invalid, and previously-impossible interop now works.
+- **Discovery + verification.** Found while wiring the official BIP-327
+  `sign_verify_vectors.json` verify-side test. Confirmed by three independent sources:
+  BIP-327 `reference.py`, upstream libsecp256k1 (`session_impl.h`), and an empirical
+  differential (after the fix the engine verifies reference-impl partial sigs for both
+  even-Y and odd-Y aggregates; before it rejected all of them). Regression test:
+  `compat/libsecp256k1_shim/tests/test_bip327_sign_verify_vectors.cpp`
+  (CTest `bip327_sign_verify_vectors`). Full MuSig2 + FROST suite: no regression.
+- **Related divergence documented.** The same official vector set exposed a pre-existing,
+  independent fail-closed divergence: the engine rejects an infinity aggregate nonce
+  instead of substituting `R = G` per BIP-327 (SHIM-MUSIG-INF in
+  `docs/SHIM_KNOWN_DIVERGENCES.md`).
+
 ## 2026-06-08 — MuSig2 tweaked-signing fix (BIP-327 gacc/tacc)
 
 - **P1 fix — MuSig2 tweaked signing.** The keyagg cache (`MuSig2KeyAggCtx`) lacked the

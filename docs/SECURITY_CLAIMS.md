@@ -2,6 +2,25 @@
 
 **UltrafastSecp256k1 v4.1.1** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-06-08 - MuSig2 BIP-327 binding-factor tag (interoperability)
+
+Fixed a P1 interoperability bug: the MuSig2 nonce binding factor `b` in
+`musig2_start_sign_session` was derived with the tag `"MuSig/nonceblinding"` instead of
+BIP-327's `"MuSig/noncecoef"` (the hashed input was otherwise identical). This was
+self-consistent for a pure-engine signing session but incompatible with any BIP-327
+implementation (e.g. libsecp256k1): the engine rejected every externally-produced partial
+signature, and a mixed-implementation session could never complete. `b` is PUBLIC, so this
+is a conformance/interop fix, not a secret-handling change, and no previously-valid
+pure-engine aggregate signature is affected. Confirmed against the bip-0327 `reference.py`
+oracle and upstream libsecp256k1; regression test
+`compat/libsecp256k1_shim/tests/test_bip327_sign_verify_vectors.cpp` (CTest
+`bip327_sign_verify_vectors`) verifies external BIP-327 partial signatures for even-Y and
+odd-Y aggregates.
+
+**Claim:** MuSig2 partial signatures and aggregate nonces are now interoperable with
+BIP-327 / libsecp256k1. (The infinity aggregate-nonce path remains a documented
+fail-closed divergence — SHIM-MUSIG-INF in `docs/SHIM_KNOWN_DIVERGENCES.md`.)
+
 ### 2026-06-08 - MuSig2 BIP-327 tweak correctness (gacc/tacc)
 
 Fixed a P1 correctness bug: tweaked MuSig2 signing. The keyagg cache lacked the BIP-327

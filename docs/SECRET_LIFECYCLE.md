@@ -2,6 +2,15 @@
 
 **Last updated**: 2026-06-08 | **Version**: 4.1.1
 
+### 2026-06-08 - MuSig2 binding-factor tag fix — secret handling unchanged
+
+`musig2_start_sign_session` now derives the nonce binding factor `b` with the BIP-327
+tag `"MuSig/noncecoef"` (was `"MuSig/nonceblinding"`). `b` is a PUBLIC value computed from
+the public aggregate nonce, the public aggregate pubkey `Q_x`, and the public message;
+no secret material enters the binding hash. The change is a tagged-hash tag string only —
+the signing-key and nonce `secure_erase` paths in `musig2_partial_sign` are untouched.
+No lifecycle impact.
+
 ### 2026-06-08 - MuSig2 BIP-327 tweak fix (gacc/tacc) — secret handling unchanged
 
 The MuSig2 tweaked-signing fix added BIP-327 `gacc`/`tacc` accumulators to the keyagg
