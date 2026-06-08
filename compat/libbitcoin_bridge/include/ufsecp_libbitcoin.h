@@ -400,6 +400,7 @@ ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,
 
 #if __cplusplus >= 202002L
 #  include <span>
+#  include <array>
 #  include <type_traits>
 #endif
 
@@ -670,6 +671,23 @@ public:
         return ufsecp_lbtc_commitment_batch_ok_rows(
             ctrl_, reinterpret_cast<const uint8_t*>(batch.data()), batch.size(),
             sizeof(Row));
+    }
+    // Typed-span x-only validation: stride = sizeof(Key) (e.g. std::array<uint8_t,32>,
+    // or a wider packed row whose 32-byte x is first). results[i] == 1 if valid.
+    template <class Key>
+    void validate_xonly(std::span<const Key> keys, uint8_t* results) const {
+        static_assert(sizeof(Key) >= 32, "Key must hold the 32-byte x-coordinate first");
+        validate_xonly(reinterpret_cast<const uint8_t*>(keys.data()), keys.size(),
+                       sizeof(Key), results);
+    }
+    // Typed-span tagged hash: msg_len = stride = sizeof(Msg) (e.g. std::array<uint8_t,64>
+    // for TapBranch min||max). out[i] = tagged_hash(tag, msg_i).
+    template <class Msg>
+    void tagged_hash_batch(const char* tag, std::span<const Msg> msgs,
+                           std::array<uint8_t, 32>* out) const {
+        tagged_hash_batch(tag, reinterpret_cast<const uint8_t*>(msgs.data()),
+                          sizeof(Msg), msgs.size(), sizeof(Msg),
+                          reinterpret_cast<uint8_t*>(out));
     }
 #endif
     void collect_multisig_columns(const uint8_t* msg_hashes32, const uint8_t* pubkeys33,

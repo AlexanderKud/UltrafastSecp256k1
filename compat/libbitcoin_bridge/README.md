@@ -263,9 +263,15 @@ marshal is the same one every GPU dispatch pays (independent of AoS vs SoA). `st
 may exceed 97 to carry a correlation tail the bridge ignores. The columns (SoA)
 variants stay available for one-stream-per-field callers.
 
-Remaining follow-up: a **per-item GPU kernel** (one thread per check) reading the
-strided 97-byte records on-device (no host de-interleave) for per-row GPU verdicts
-at a higher ceiling (~Schnorr-class, ~5 M/s).
+**Per-item GPU kernel — measured.** A one-thread-per-check kernel (`lift_x` +
+`tweak*G` + point-add + compress + compare) was benchmarked on an RTX 5060 Ti at
+**7.07 M checks/s** (CUDA, `cudaEvent` best-of-25, kernel-only, 2M & 8M items,
+run-to-run variance <1%, every verdict matching the CPU/shim reference). Notably
+this **beats the RLC aggregate fast-check (~2.5 M/s)** for the full per-row case:
+`tweak*G` hits the 16-entry `__constant__` fixed-base table and the work is
+embarrassingly parallel, so it avoids the Pippenger bucket + Fiat-Shamir overhead
+the aggregate path pays. Wiring this kernel behind a per-row GPU ABI (reading the
+strided 97-byte records on-device, no host de-interleave) is the remaining step.
 
 ## Batch x-only pubkey validation — `validate_xonly`
 
@@ -275,11 +281,13 @@ x-only key, `results[i] = 1` iff it is a valid pubkey x-coordinate (`x < p` and
 sqrt + QR), public data, variable-time, CPU-threaded; `stride >= 32` may carry a
 tail the bridge ignores. For a node's **parallel pre-validation** pass. Note: the
 ECDSA/Schnorr/commitment verify batches already lift their keys internally, so use
-this only for *separate* bulk validation, not a redundant second lift. (A GPU
-`lift_x` kernel is a follow-up — no MSM reuse here, unlike the commitment RLC.)
+this only for *separate* bulk validation, not a redundant second lift.
 
 Measured (i5-14400F, 16 threads, 1M keys): baseline 0.17 M/s (1 thread) →
-**1.85 M/s threaded (10.7×)**.
+**1.85 M/s threaded (10.7×)**. A one-thread-per-key GPU `lift_x` kernel was
+benchmarked at **111 M keys/s** (RTX 5060 Ti, CUDA, kernel-only) — ~60× the
+CPU-threaded path; wiring it behind a GPU ABI is a follow-up (no MSM to reuse
+here, unlike the commitment RLC).
 
 ## Batch Taproot tagged hash — `tagged_hash_batch`
 
@@ -294,7 +302,78 @@ is stateless. This is SHA-256 (not EC) — included for the script-tree path.
 
 Measured (i5-14400F, 16 threads, 2M × 64-byte TapBranch): baseline 5.45 M/s
 (1 thread) → **52.2 M/s threaded (9.6×)**. Verdict matches the shim
-`secp256k1_tagged_sha256` bit-for-bit.
+`secp256k1_tagged_sha256` bit-for-bit. A one-thread-per-message GPU kernel was
+benchmarked at **505 M hashes/s** (RTX 5060 Ti, CUDA, kernel-only) — ~9.7× the
+CPU-threaded path. Caveat for a shipped GPU tagged-hash: the engine's device
+SHA-256 caps at ~119-byte inputs (2 blocks), and the 128-byte TapBranch preimage
+(`SHA256(tag)‖SHA256(tag)‖64-byte msg`) needs a multi-block SHA-256, so that must
+be added on-device first.
+
+## Measured GPU throughput (per-item kernels, RTX 5060 Ti)
+
+The three Taproot/auxiliary batches were benchmarked as one-thread-per-item CUDA
+kernels on an RTX 5060 Ti (CUDA 12, `compute_90` PTX, `cudaEvent` best-of-25,
+**kernel-only** timing, 2M and 8M items, run-to-run variance <1%). Every GPU
+verdict was cross-checked against the CPU/shim reference (all 2M commitment and
+lift_x verdicts valid; tagged-hash bit-for-bit equal to `ufsecp_tagged_hash`).
+
+| Op | CPU 1-thread | CPU 16-thread | GPU per-item | GPU vs CPU-16t |
+|----|-------------:|--------------:|-------------:|---------------:|
+| `validate_xonly` (lift_x)          | 0.17 M/s | 1.85 M/s | **111 M/s** | ~60× |
+| `verify_commitment` (tweak-add)    | 0.17 M/s | ~1.2 M/s | **7.07 M/s** | ~5.9× |
+| `tagged_hash_batch` (TapBranch 64B)| 5.45 M/s | 52.2 M/s | **505 M/s** | ~9.7× |
+
+Notes for the integrator:
+- **`verify_commitment` per-item (7.07 M/s) beats the shipped RLC aggregate
+  fast-check (~2.5 M/s).** The aggregate path pays Pippenger-bucket + Fiat-Shamir
+  cost; the per-item path is embarrassingly parallel and `tweak*G` hits a
+  `__constant__` fixed-base table. For per-row verdicts the simple kernel wins; the
+  RLC path is still useful when only one aggregate accept/reject is needed.
+- These are **kernel-only** rates (data resident on the device). A one-shot batch
+  adds the H2D/D2H transfer every GPU dispatch pays; for IBD-scale runs the marshal
+  amortises across millions of rows.
+- **`tagged_hash_batch` on GPU needs a multi-block SHA-256** — the engine's device
+  SHA-256 caps at ~119-byte inputs and TapBranch's preimage is 128 bytes.
+- Measured on **CUDA only** (the box here). The CPU paths are platform-independent;
+  OpenCL/Metal per-item kernels are not yet measured.
+
+## Usage examples (the new batches)
+
+```cpp
+#include "ufsecp_libbitcoin.h"
+using namespace ufsecp::lbtc;
+
+static thread_local Controller ctrl{ UFSECP_LBTC_AUTO };   // GPU if present, else CPU
+if (!ctrl.ok()) std::abort();                              // only hard failure: no backend
+
+// --- BIP-341 commitment, single mmap'd AoS table (zero repack) ---
+// CommitmentRow = internal_x[32] | tweak[32] | tweaked[33 compressed]  (97 B)
+std::span<const CommitmentRow> taproot = ...;              // your table, verbatim
+std::vector<uint8_t> ok(taproot.size());
+ctrl.verify_commitment(taproot, ok.data());               // per-row 1=valid/0=invalid
+// fast path when you only need one verdict for the whole batch:
+int agg = ctrl.commitment_batch_ok(taproot);              // 1 all-valid / 0 some-bad / -1 no-GPU
+if (agg == 0) /* re-run verify_commitment to locate the bad rows */;
+
+// --- batch x-only key pre-validation (lift_x per key) ---
+std::span<const std::array<uint8_t,32>> keys = ...;
+std::vector<uint8_t> valid(keys.size());
+ctrl.validate_xonly(keys, valid.data());                  // valid[i]=1 iff x lifts to a point
+
+// --- batch Taproot tagged hash (script-tree nodes) ---
+// each msg is min‖max (two 32-byte child hashes), BIP-341 ordered
+std::span<const std::array<uint8_t,64>> branch_msgs = ...;
+std::vector<std::array<uint8_t,32>> hashes(branch_msgs.size());
+ctrl.tagged_hash_batch("TapBranch", branch_msgs, hashes.data());
+```
+
+Plain C ABI (no C++20 spans) is identical, passing `(ptr, n, stride)` explicitly:
+
+```c
+ufsecp_lbtc_verify_commitment_rows(ctrl, rows, n, sizeof(CommitmentRow), results);
+ufsecp_lbtc_validate_xonly        (ctrl, keys, n, /*stride=*/32, results);
+ufsecp_lbtc_tagged_hash_batch     (ctrl, "TapBranch", msgs, /*msg_len=*/64, n, /*stride=*/64, out32);
+```
 
 ## Collect (in-place) verify — `*_collect`
 
