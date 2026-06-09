@@ -297,6 +297,53 @@ def sync_file(path: Path, rules: list[tuple[str, str]], data: dict,
     return changed
 
 
+# ---------------------------------------------------------------------------
+# Module-breakdown strings ("N modules (M non-exploit + E exploit PoCs)" and the
+# reversed BACKEND_PARITY form) are not single fixed templates — the three numbers
+# co-vary on every module-count change. Sync them line-by-line with the SAME regexes
+# and the SAME HISTORICAL skip rule that ci/check_doc_module_counts.py validates, so
+# the two never disagree and these strings stop needing manual fixes (P3-5).
+# ---------------------------------------------------------------------------
+_HISTORICAL_RE = re.compile(r"(->|→|\b20\d\d-\d\d\b|catalogued|\badded\)|\bremoved\b)")
+_BREAKDOWN_FWD_RE = re.compile(
+    r"(\d+)(\s+modules\s*\(\s*)(\d+)(\s+non-exploit\s*\+\s*)(\d+)(\s+exploit\s+PoCs?)", re.I)
+_BREAKDOWN_REV_RE = re.compile(
+    r"(\(\s*)(\d+)(\s+non-exploit\s*\+\s*)(\d+)(\s+exploit\s+PoCs?\s*=\s*)(\d+)(\s+modules)", re.I)
+_BREAKDOWN_FILES = [
+    "docs/BACKEND_PARITY.md",
+    "docs/CROSS_PLATFORM_TEST_MATRIX.md",
+    "docs/TEST_MATRIX.md",
+]
+
+
+def sync_breakdowns(data: dict, dry_run: bool) -> list[tuple[str, int]]:
+    """Rewrite module-breakdown strings to canonical, skipping historical references."""
+    total = str(data["total_modules"])
+    nonex = str(data["non_exploit_modules"])
+    ex    = str(data["exploit_poc_count"])
+    fwd = lambda m: total + m.group(2) + nonex + m.group(4) + ex + m.group(6)
+    rev = lambda m: m.group(1) + nonex + m.group(3) + ex + m.group(5) + total + m.group(7)
+    changed: list[tuple[str, int]] = []
+    for rel in _BREAKDOWN_FILES:
+        path = ROOT / rel
+        if not path.exists():
+            continue
+        lines = path.read_text(errors="replace").split("\n")
+        n = 0
+        for i, line in enumerate(lines):
+            if _HISTORICAL_RE.search(line):
+                continue
+            new = _BREAKDOWN_REV_RE.sub(rev, _BREAKDOWN_FWD_RE.sub(fwd, line))
+            if new != line:
+                lines[i] = new
+                n += 1
+        if n:
+            changed.append((rel, n))
+            if not dry_run:
+                path.write_text("\n".join(lines))
+    return changed
+
+
 def main() -> int:
     dry_run = "--dry-run" in sys.argv
 
@@ -324,6 +371,14 @@ def main() -> int:
             drift_files.append(rel_path)
             verb = "would update" if dry_run else "updated"
             print(f"  {verb}: {rel_path} ({len(changed)} substitution(s))")
+
+    # Module-breakdown strings (co-varying numbers) — line-based, historical-aware.
+    for rel_path, n in sync_breakdowns(data, dry_run=dry_run):
+        total_changed += n
+        if rel_path not in drift_files:
+            drift_files.append(rel_path)
+        verb = "would update" if dry_run else "updated"
+        print(f"  {verb}: {rel_path} ({n} breakdown string(s))")
 
     if dry_run:
         if drift_files:
