@@ -59,6 +59,28 @@ static int g_pass = 0;
 static int g_fail = 0;
 static int g_skip = 0;
 
+/* Rule 16 / Guardrail 16: a GPU advisory module MUST return ADVISORY_SKIP_CODE
+ * (77) — never 0 — when the GPU runtime (or the GPU ZK module) is absent. Returning
+ * 0 would be a false PASS. Enforced by gate.yml's shim security gate (CI-012) and
+ * ci/check_advisory_skip_codes.py. Returns 0 only when the GPU actually ran and all
+ * assertions passed; 1 on a real failure. */
+static constexpr int ADVISORY_SKIP_CODE = 77;
+
+/* "GPU runtime cannot actually dispatch this kernel" — broader than UNSUPPORTED.
+ * On GitHub-hosted macos runners software Metal registers a backend and creates a
+ * context, but the ZK metallib fails to load ("Failed to load metallib") and the
+ * dispatch returns GPU_LAUNCH/BACKEND/QUEUE/MEMORY/DEVICE rather than UNSUPPORTED.
+ * All of these mean "the kernel did not run" → advisory skip, not a failure.
+ * Mirrors gpu_runtime_unusable() in test_gpu_host_api_negative.cpp. */
+static inline bool gpu_runtime_unusable(ufsecp_error_t rc) {
+    return rc == UFSECP_ERR_GPU_UNSUPPORTED ||
+           rc == UFSECP_ERR_GPU_LAUNCH      ||
+           rc == UFSECP_ERR_GPU_MEMORY      ||
+           rc == UFSECP_ERR_GPU_BACKEND     ||
+           rc == UFSECP_ERR_GPU_QUEUE       ||
+           rc == UFSECP_ERR_GPU_DEVICE;
+}
+
 #define CHECK(cond, id, msg)                                                    \
     do {                                                                        \
         if (cond) { ++g_pass; }                                                 \
@@ -110,13 +132,13 @@ int test_gpu_zk_prove_verify_differential_run() {
             SKIP("GZK-PV", "no GPU backend available");
             std::printf("\n=== Results: %d passed, %d failed, %d skipped ===\n",
                         g_pass, g_fail, g_skip);
-            return 0;
+            return ADVISORY_SKIP_CODE;
         }
         if (ufsecp_gpu_ctx_create(&gpu, ids[0], 0) != UFSECP_OK || !gpu) {
             SKIP("GZK-PV", "GPU context creation failed");
             std::printf("\n=== Results: %d passed, %d failed, %d skipped ===\n",
                         g_pass, g_fail, g_skip);
-            return 0;
+            return ADVISORY_SKIP_CODE;
         }
     }
 
@@ -164,8 +186,8 @@ int test_gpu_zk_prove_verify_differential_run() {
         ufsecp_error_t rc = ufsecp_gpu_bulletproof_verify_batch(
             gpu, proofs[i].data(), commits[i].data(), H.data(), 1, &res);
         char id[24]; std::snprintf(id, sizeof(id), "GZK-GPU-%d", i);
-        if (rc == UFSECP_ERR_GPU_UNSUPPORTED) {
-            SKIP(id, "GPU ZK module not built into this backend");
+        if (gpu_runtime_unusable(rc)) {
+            SKIP(id, "GPU ZK kernel unavailable (module not built / metallib not loaded)");
             gpu_unsupported = true;
             continue;
         }
@@ -177,7 +199,9 @@ int test_gpu_zk_prove_verify_differential_run() {
         ufsecp_gpu_ctx_destroy(gpu);
         std::printf("\n=== Results: %d passed, %d failed, %d skipped ===\n",
                     g_pass, g_fail, g_skip);
-        return (g_fail > 0) ? 1 : 0;
+        /* GPU present but ZK module absent → advisory skip (77), unless the CPU
+         * oracle itself failed (a real prover regression must still surface). */
+        return (g_fail > 0) ? 1 : ADVISORY_SKIP_CODE;
     }
 
     /* --- batch: all-valid proofs in one call must all verify ------------- */

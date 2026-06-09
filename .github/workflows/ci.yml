@@ -454,11 +454,13 @@ jobs:
         run: cmake --build build -j$(sysctl -n hw.logicalcpu)
 
       - name: Test (all including Metal GPU)
-        # Exclude gpu_ecdsa_snark_witness and gpu_bip352_scan: these Metal
-        # kernels (ecdsa_snark_witness_batch, bip352_scan_pipeline) are not
-        # compiled into the default metallib on CI runners and fail with
-        # "Function not found".  They are covered by the Metal GPU audit step.
-        run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.logicalcpu) -E "^(ct_sidechannel|secp256k1_metal_audit|gpu_ops_equivalence|gpu_ecdsa_snark_witness|gpu_bip352_scan)"
+        # Exclude gpu_ecdsa_snark_witness, gpu_bip352_scan, and
+        # gpu_zk_prove_verify_differential: these Metal kernels
+        # (ecdsa_snark_witness_batch, bip352_scan_pipeline, bulletproof poly-check)
+        # are not compiled into the default metallib on CI runners and fail with
+        # "Failed to load metallib" / "Function not found".  They are covered by the
+        # Metal GPU audit step (and by the CUDA self-hosted runner for the ZK test).
+        run: ctest --test-dir build --output-on-failure -j$(sysctl -n hw.logicalcpu) -E "^(ct_sidechannel|secp256k1_metal_audit|gpu_ops_equivalence|gpu_ecdsa_snark_witness|gpu_bip352_scan|gpu_zk_prove_verify_differential)"
 
       - name: Metal GPU audit (advisory -- not blocking)
         if: success() || failure()

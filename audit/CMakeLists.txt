@@ -306,8 +306,10 @@ if(TARGET secp256k1_gpu_host AND (TARGET ufsecp_shared OR TARGET ufsecp_static))
     )
     target_compile_definitions(test_gpu_zk_prove_verify_differential PRIVATE STANDALONE_TEST)
     add_test(NAME gpu_zk_prove_verify_differential COMMAND test_gpu_zk_prove_verify_differential)
+    # SKIP_RETURN_CODE 77: advisory GPU+ZK module — returns 77 (not 0) when the GPU
+    # runtime or the GPU ZK module is absent, so CTest treats it as skipped, not failed.
     set_tests_properties(gpu_zk_prove_verify_differential PROPERTIES
-        TIMEOUT 300 LABELS "audit;zk;bulletproof;differential;gpu")
+        TIMEOUT 300 SKIP_RETURN_CODE 77 LABELS "audit;zk;bulletproof;differential;gpu")
 
     # Disable LTO for GPU-linked targets (nvcc LTO version differs from host compiler)
     if(SECP256K1_BUILD_CUDA)
