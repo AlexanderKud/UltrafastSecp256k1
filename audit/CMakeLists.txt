@@ -5202,12 +5202,11 @@ target_include_directories(test_regression_musig2_infinity_nonce_standalone PRIV
 target_compile_definitions(test_regression_musig2_infinity_nonce_standalone PRIVATE STANDALONE_TEST)
 add_test(NAME regression_musig2_infinity_nonce
     COMMAND test_regression_musig2_infinity_nonce_standalone)
-# TIMEOUT 300 (was 30): the test runs in ~0.25s normally, but the MIN-2/3/4 BIP-327
-# conformance rewrite added full MuSig2 sessions (R=b·G / R=G), and under the MSan
-# job (Debug + no-ASM + origin tracking, ~50-100x overhead on EC ops) it exceeded
-# the old 30s cap — the per-test property overrides the job's --timeout 900. 300s
-# gives ample MSan headroom while still catching a genuine hang.
-set_tests_properties(regression_musig2_infinity_nonce PROPERTIES TIMEOUT 300
+# TIMEOUT 30 is correct for normal builds (the test runs in ~0.25s). It is NOT run
+# under MSan — the MIN-2/3/4 BIP-327 rewrite added full MuSig2 sessions (EC scalar
+# mults) that exceed any sane per-test cap under MSan+origin-tracking, so the test
+# is excluded in security-audit.yml (covered by ASan+UBSan, Valgrind, normal build).
+set_tests_properties(regression_musig2_infinity_nonce PROPERTIES TIMEOUT 30
     LABELS "audit;regression;musig2;security;sec-005;sec-009")
 
 # SEC-001: MuSig2 ABI signer-index cross-validation (ufsecp_musig2_partial_sign_v2)
