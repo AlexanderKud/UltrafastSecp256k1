@@ -789,6 +789,12 @@ ufsecp_error_t ufsecp_gpu_zk_ecdsa_snark_witness_batch(
     }
     if (!ctx || !msg_hashes32 || !pubkeys33 || !sigs64 || !out_witnesses)
         return UFSECP_ERR_NULL_ARG;
+    // Reject malformed compressed pubkeys before dispatch (prefix must be 0x02/0x03),
+    // matching the input-validation done by bulletproof_verify_batch and the other GPU
+    // ZK wrappers. Without this, an off-curve / wrong-prefix pubkey silently produces a
+    // garbage witness instead of an error (SW-16).
+    if (!has_valid_compressed_pubkeys(pubkeys33, count))
+        return UFSECP_ERR_BAD_PUBKEY;
     try {
         return to_abi_error_clear_on_fail(
             ctx->backend->snark_witness_batch(
@@ -812,6 +818,16 @@ ufsecp_error_t ufsecp_gpu_zk_schnorr_snark_witness_batch(
     }
     if (!ctx || !msgs32 || !pubkeys_x32 || !sigs64 || !out_witnesses)
         return UFSECP_ERR_NULL_ARG;
+    // Reject degenerate signatures before dispatch: a BIP-340 sig is (R.x[32] || s[32]),
+    // and s == 0 is never valid. This catches all-zero / uninitialized input that would
+    // otherwise silently produce a garbage witness (mirrors the snark/bulletproof
+    // input-validation pattern; x-only pubkey shape has no prefix to check).
+    for (size_t i = 0; i < count; ++i) {
+        const uint8_t* s = sigs64 + i * 64 + 32;
+        bool s_zero = true;
+        for (int b = 0; b < 32; ++b) { if (s[b] != 0) { s_zero = false; break; } }
+        if (s_zero) return UFSECP_ERR_BAD_SIG;
+    }
     try {
         return to_abi_error_clear_on_fail(
             ctx->backend->schnorr_snark_witness_batch(
