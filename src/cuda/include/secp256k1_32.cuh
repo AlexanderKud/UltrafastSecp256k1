@@ -889,25 +889,30 @@ __device__ inline void scalar_mul_mod_n(const Scalar* a, const Scalar* b, Scalar
     }
     uint32_t r8 = prod[8] - qn[8] - borrow;
 
-    // At most 2 conditional subtracts to bring into [0, ORDER)
-    if (r8 > 0 || scalar_ge(r, ORDER)) {
-        borrow = 0;
+    // At most 2 conditional subtracts to bring into [0, ORDER) — CONSTANT-TIME.
+    // Branchless: always compute (r - ORDER) and cmov-select via a value-barriered mask,
+    // so warp execution is uniform regardless of the (secret) value. See the 64-bit
+    // scalar_mul_mod_n in secp256k1.cuh for the measured rationale (GPU ECDSA CT:
+    // the old `if (scalar_ge(r,ORDER)) subtract` branch caused key-dependent warp
+    // divergence). need = (r8 != 0) | (no borrow out of r-ORDER) == (r >= ORDER).
+    #pragma unroll
+    for (int ct_pass = 0; ct_pass < 2; ++ct_pass) {
+        uint32_t cb = 0;
+        uint32_t cand[8];
         #pragma unroll
         for (int i = 0; i < 8; i++) {
-            int64_t d = (int64_t)r->limbs[i] - ORDER[i] - borrow;
-            r->limbs[i] = (uint32_t)d;
-            borrow = (d < 0) ? 1u : 0u;
+            int64_t d = (int64_t)r->limbs[i] - ORDER[i] - cb;
+            cand[i] = (uint32_t)d;
+            cb = (d < 0) ? 1u : 0u;
         }
-        r8 -= borrow;
-    }
-    if (r8 > 0 || scalar_ge(r, ORDER)) {
-        borrow = 0;
+        const uint32_t cand_r8 = r8 - cb;
+        uint32_t need = static_cast<uint32_t>((r8 != 0u) | (cb == 0u));
+        asm volatile("" : "+r"(need));            // value barrier
+        const uint32_t mask = (uint32_t)0 - need;
         #pragma unroll
-        for (int i = 0; i < 8; i++) {
-            int64_t d = (int64_t)r->limbs[i] - ORDER[i] - borrow;
-            r->limbs[i] = (uint32_t)d;
-            borrow = (d < 0) ? 1u : 0u;
-        }
+        for (int i = 0; i < 8; i++)
+            r->limbs[i] = (cand[i] & mask) | (r->limbs[i] & ~mask);
+        r8 = (cand_r8 & mask) | (r8 & ~mask);
     }
 }
 
