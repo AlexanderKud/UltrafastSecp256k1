@@ -1,5 +1,29 @@
 # Audit Changelog
 
+## 2026-06-09 — GPU Bulletproof poly-check vs CPU prover differential (closes GPU ZK blind-spot)
+
+- Until now the GPU range-proof verifier `ufsecp_gpu_bulletproof_verify_batch` was only
+  ever exercised with malformed stub inputs (`test_gpu_host_api_negative`). No VALID,
+  CPU-generated range proof was ever fed to it, so the device polynomial check was never
+  proven to ACCEPT a genuine proof — only to reject garbage. This was the largest remaining
+  GPU correctness blind-spot.
+- New advisory module `gpu_zk_prove_verify_differential` (`differential` section): CPU
+  `range_prove` produces real Bulletproof range proofs over values spanning bit 0..63; the
+  324-byte polynomial part (`A‖S‖T1‖T2‖tau_x‖t_hat`) + 65-byte commitment + 65-byte H
+  generator are serialized and fed to the GPU verifier. CPU full `range_verify` is the
+  oracle: a genuinely-valid proof MUST verify on the GPU (verdict 1); a one-byte tamper of
+  a poly-part scalar (`tau_x`/`t_hat`), a wrong commitment, and a mixed valid/tampered batch
+  MUST be rejected per-slot. This proves the CPU prover and the GPU verifier agree on the
+  same Fiat-Shamir transcript and polynomial equation.
+- The GPU check is the t-polynomial identity only (NOT the inner-product argument); it is a
+  necessary, not sufficient, condition for validity. There is no standalone CPU
+  `range_proof_poly_check`, so this is an accept-valid / reject-tampered consistency test
+  rather than a symmetric CPU↔GPU differential.
+- Validated on an RTX 5060 Ti (CUDA, `SECP256K1_GPU_BUILD_ZK=ON`): 31/31 assertions pass,
+  0 skipped. Advisory=true (`ADVISORY_CEILING` 58→59): skips cleanly when no GPU backend is
+  present or the backend was built without the GPU ZK module
+  (`bulletproof_verify_batch → ERR_GPU_UNSUPPORTED`). Wired into `gpu-selfhosted.yml`.
+
 ## 2026-06-08 — Build profiles: CAAS gates wired to named CMake presets (+ bch-gpu, embedded)
 
 - The CAAS gate build configs were ad-hoc inline cmake flags in the workflow. Codified

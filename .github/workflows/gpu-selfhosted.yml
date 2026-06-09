@@ -116,7 +116,7 @@ jobs:
         ctest --test-dir out/gpu-ci \
           --output-on-failure \
           -j$(nproc) \
-          -R "^(gpu_abi_gate|gpu_ops_equivalence|gpu_host_api_negative|gpu_backend_matrix)$" \
+          -R "^(gpu_abi_gate|gpu_ops_equivalence|gpu_host_api_negative|gpu_backend_matrix|gpu_zk_prove_verify_differential)$" \
           2>&1 | tee /tmp/gpu-ci-artifacts/gpu_ctest_output.txt
 
     # -- CPU core tests (sanity) ----------------------------------------------

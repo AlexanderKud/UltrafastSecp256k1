@@ -160,6 +160,7 @@ int test_ecies_regression_run();
 // ============================================================================
 int test_gpu_host_api_negative_run(); // NULL guards, invalid backend/device, error strings
 int test_gpu_abi_gate_run();          // Discovery, lifecycle, ops-if-available
+int test_gpu_zk_prove_verify_differential_run(); // CPU range-proof → GPU poly-check accept/reject
 
 // ============================================================================
 // Forward declarations -- adversarial / fuzz tests
@@ -848,6 +849,11 @@ static const AuditModule ALL_MODULES[] = {
     { "libfuzzer_unified", "LibFuzzer deterministic regression (6 parsers)","fuzzing",        test_libfuzzer_unified_run, false },
     { "mutation_kill_rate","Mutation kill-rate audit (advisory)",          "fuzzing",        test_mutation_kill_rate_run, true  },
     { "cryptol_specs",     "Cryptol formal spec — arithmetic primitives",  "differential",   test_cryptol_specs_run, true  },
+    // advisory=true: GPU + ZK module required. CPU prover ↔ GPU Bulletproof poly-check
+    // consistency (valid CPU range proof → GPU verdict 1; tampered scalar → 0). Skips
+    // when no GPU backend (GitHub runners) or backend built without SECP256K1_GPU_HAS_ZK
+    // (bulletproof_verify_batch → ERR_GPU_UNSUPPORTED) — cannot be made mandatory in CI.
+    { "gpu_zk_prove_verify_differential", "GPU Bulletproof poly-check vs CPU prover (CPU-prove → GPU-verify)", "differential", test_gpu_zk_prove_verify_differential_run, true  },
     { "fault_injection",   "Fault injection simulation",                   "fuzzing",        test_fault_injection_run, false },
 
     // ===================================================================
