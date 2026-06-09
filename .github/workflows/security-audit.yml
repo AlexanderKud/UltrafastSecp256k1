@@ -235,16 +235,22 @@ jobs:
         run: cmake --build build -j"$(nproc)"
 
       - name: Test under MSan
-        # ADVISORY during the 2026-06-09 zone-rescope rollout. MSan was switched from a
-        # 70-token timeout DENY-list (~74% of the suite excluded — only arithmetic ran,
-        # which Valgrind-memcheck already covers for the SAME uninitialized-memory class)
-        # to an -R WHITELIST of stdlib-heavy, light tests where MSan's instrumented-libc++
-        # origin-tracking is genuinely UNIQUE (hashing / PBKDF2 / parsing / encoding — no
-        # EC scalar-mul, so no timeout). Valgrind-memcheck (full suite, blocking, now with
-        # the corrected ci/valgrind.supp path) is the broad uninitialized-memory authority;
-        # MSan no longer duplicates it. continue-on-error keeps the build green while the
-        # new whitelist is validated on real CI (MSan cannot be run locally) — promote to
-        # blocking once a CI run confirms the whitelist runs clean and fast.
+        # ADVISORY deep-probe (steady state, 2026-06-09 zone-rescope). MSan was switched
+        # from a 70-token timeout DENY-list (~74% of the suite excluded — only arithmetic
+        # ran, which Valgrind-memcheck already covers for the SAME uninitialized-memory
+        # class) to an -R WHITELIST of stdlib-heavy tests where MSan's instrumented-libc++
+        # origin-tracking is genuinely UNIQUE (hashing / PBKDF2 / encoding parsing).
+        #
+        # The blocking uninitialized-memory authority is the Valgrind-memcheck job (full
+        # suite, now with the corrected ci/valgrind.supp path) — MSan no longer duplicates
+        # it. MSan stays continue-on-error BY DESIGN: it is a deep origin-tracking probe,
+        # not a hard gate. Rationale is measured, not assumed — in CI run 27205149393 the
+        # 18-test trial set had 3 pure-timeout failures (kat_all_operations 120s,
+        # parse_strictness 120s, exploit_der_parsing_differential 60s under MSan's
+        # ~10-20x overhead). Those 3 were dropped; the remaining 15 PASSED clean under CI
+        # MSan. Because MSan timing is inherently flaky (and unrunnable on the ASLR/PIE-
+        # constrained bench host), making it blocking would cause periodic timeout-reds
+        # with no security benefit Valgrind doesn't already provide. Keep advisory.
         continue-on-error: true
         env:
           MSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
@@ -303,7 +309,7 @@ jobs:
           # Valgrind-memcheck job (blocking, full suite). --no-tests=error guards against a
           # whitelist that matches nothing (would otherwise pass silently).
           ctest --test-dir build --output-on-failure -j"$(nproc)" --no-tests=error \
-            -R "^(exploit_sha256_kat|exploit_sha512_kat|exploit_sha_kat|exploit_keccak256_kat|exploit_ripemd160_kat|exploit_primitive_kat|hash_accel|kat_all_operations|bip39|exploit_bip39_mnemonic|exploit_bip39_entropy|exploit_bip39_nfkd|parse_strictness|exploit_hkdf_kat|wycheproof_hmac_sha256|wycheproof_hkdf_sha256|exploit_der_parsing_differential|exploit_bech32_underflow)$" --timeout 1800
+            -R "^(exploit_sha256_kat|exploit_sha512_kat|exploit_sha_kat|exploit_keccak256_kat|exploit_ripemd160_kat|exploit_primitive_kat|hash_accel|bip39|exploit_bip39_mnemonic|exploit_bip39_entropy|exploit_bip39_nfkd|exploit_hkdf_kat|wycheproof_hmac_sha256|wycheproof_hkdf_sha256|exploit_bech32_underflow)$" --timeout 1800
 
   # ── Thread Sanitizer (data races) ───────────────────────────────────────
   tsan:
