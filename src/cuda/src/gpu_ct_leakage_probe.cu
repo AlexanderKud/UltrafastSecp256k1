@@ -293,11 +293,22 @@ int main(int argc, char** argv) {
     cudaDeviceProp props{};
     cudaGetDeviceProperties(&props, device_id);
 
+    // --keys controls the device input population. "interleaved" (default) alternates
+    // fixed/random for the in-launch Welch t-test. "fixed"/"random" make EVERY thread
+    // fixed (all same key) or random (all distinct) — used for an external white-box
+    // Nsight branch-uniformity comparison: a true CT kernel must show the SAME branch
+    // uniformity in both modes (divergence is structural, not key-dependent). The
+    // interleaved t-test can mask key-dependent warp divergence when both classes share
+    // a warp; the fixed-vs-random uniformity comparison cannot.
+    const std::string keys_mode = parse_string_arg(argv + 1, argv + argc, "--keys", "interleaved");
     std::vector<Scalar> host_keys(samples);
     std::vector<uint8_t> host_classes(samples);
     std::mt19937_64 rng(0xC7A11A6E5EEDULL);
     for (int i = 0; i < samples; ++i) {
-        const uint8_t cls = static_cast<uint8_t>(i & 1);
+        uint8_t cls;
+        if (keys_mode == "fixed")       cls = 0;
+        else if (keys_mode == "random") cls = 1;
+        else                            cls = static_cast<uint8_t>(i & 1);
         host_classes[i] = cls;
         host_keys[i] = cls ? random_scalar(rng) : fixed_scalar();
     }
