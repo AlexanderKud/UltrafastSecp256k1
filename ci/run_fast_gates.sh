@@ -61,6 +61,8 @@ MANDATORY_GATES=(
     "ci/check_zk_tag_conformance.py"
     "ci/check_tag_conformance.py"
     "ci/check_secret_parse_strictness.py"
+    "ci/check_ct_branches.py"             # GPU-CT-001: forbid secret-dependent branches in CT arithmetic primitives
+    "ci/test_check_ct_branches.py"        # self-test: the CT-branch gate must catch the leak pattern
     "ci/check_protocol_invariants.py"
     "ci/check_nonce_erase_coverage.py"
     "ci/check_doc_drift.py"
@@ -147,6 +149,8 @@ run "Backend parity"                           ci/check_backend_parity.py
 run "ZK Fiat-Shamir tag conformance"           ci/check_zk_tag_conformance.py
 run "Tagged-hash tag conformance (all tags)"   ci/check_tag_conformance.py
 run "Secret parse strictness (Rule 11)"        ci/check_secret_parse_strictness.py
+run "GPU/CPU CT-branch lint (GPU-CT-001)"      ci/check_ct_branches.py
+run "CT-branch lint self-test"                 ci/test_check_ct_branches.py
 run "Protocol invariants (FROST threshold)"    ci/check_protocol_invariants.py
 run "Nonce erase coverage (BIP-327)"           ci/check_nonce_erase_coverage.py
 run "Doc drift (badges, removed files)"        ci/check_doc_drift.py
