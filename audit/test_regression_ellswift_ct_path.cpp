@@ -176,10 +176,11 @@ static void test_ellswift_xdh_general_path() {
 }
 
 // ── ECP-7: encode->decode round-trip recovers the x-coordinate ────────────
-// Directly exercises the forward decode map (xswiftec_fwd / xswiftec_fwd_point)
-// after its `t` parameter was changed to const-reference: the decode must still
-// recover the encoded x-coordinate (the refactor is behavior-preserving). Parity
-// is shim-chosen on decode, so only the 32-byte x-coordinate is compared.
+// Directly exercises the canonical forward decode map (xswiftec_fwd): the decode
+// must still recover the encoded x-coordinate (behavior-preserving). The
+// optimized even-Y `xswiftec_fwd_point` variant was removed with the VT-secret
+// XDH path it served (see ECP-9/ECP-10); decode now uses only xswiftec_fwd.
+// Parity is shim-chosen on decode, so only the 32-byte x-coordinate is compared.
 static void test_ellswift_encode_decode_roundtrip() {
     secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
 
@@ -278,6 +279,42 @@ static void test_ellswift_xdh_ct_only_after_removal() {
     secp256k1_context_destroy(ctx);
 }
 
+// ── ECP-10: CT lift-from-x XDH stays correct after even-Y variant removal ──
+// The optimized `xswiftec_fwd_point` (decode that also returned the even-Y
+// coordinate) was removed once its only caller, the variable-time secret-key
+// XDH fast path, was deleted (RT1-001). The surviving constant-time XDH path
+// reconstructs Y from x with the standard lift. Guard that this lift-from-x
+// path computes a correct, symmetric, non-zero shared secret across many key
+// pairs — i.e. removing the even-Y shortcut did not change XDH output.
+static void test_ellswift_xdh_lift_from_x_many_pairs() {
+    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    static const unsigned char aux[32] = {0};
+    int checked = 0;
+    for (int i = 1; i <= 24; ++i) {
+        unsigned char ska[32] = {}, skb[32] = {};
+        ska[31] = static_cast<unsigned char>(i);
+        ska[0]  = static_cast<unsigned char>(i * 5 + 1);
+        skb[31] = static_cast<unsigned char>(i * 3 + 2);
+        skb[0]  = static_cast<unsigned char>(i * 11 + 7);
+        unsigned char enc_a[64], enc_b[64];
+        if (secp256k1_ellswift_create(ctx, enc_a, ska, aux) != 1) continue;
+        if (secp256k1_ellswift_create(ctx, enc_b, skb, aux) != 1) continue;
+
+        unsigned char s_ab[32], s_ba[32];
+        int r_ab = secp256k1_ellswift_xdh(ctx, s_ab, enc_a, enc_b, ska, 0,
+                                          secp256k1_ellswift_xdh_hash_function_bip324, nullptr);
+        int r_ba = secp256k1_ellswift_xdh(ctx, s_ba, enc_a, enc_b, skb, 1,
+                                          secp256k1_ellswift_xdh_hash_function_bip324, nullptr);
+        check(r_ab == 1 && r_ba == 1, "[ECP-10a] CT lift-from-x XDH succeeds both sides");
+        check(memcmp(s_ab, s_ba, 32) == 0, "[ECP-10b] CT lift-from-x XDH symmetric");
+        unsigned char zero[32] = {};
+        check(memcmp(s_ab, zero, 32) != 0, "[ECP-10c] CT lift-from-x XDH non-zero");
+        ++checked;
+    }
+    check(checked >= 12, "[ECP-10d] enough key pairs exercised the lift-from-x path");
+    secp256k1_context_destroy(ctx);
+}
+
 // ── _run() ─────────────────────────────────────────────────────────────────
 int test_regression_ellswift_ct_path_run() {
     g_pass = 0; g_fail = 0;
@@ -292,6 +329,7 @@ int test_regression_ellswift_ct_path_run() {
     test_ellswift_xdh_general_path();
     test_ellswift_encode_decode_roundtrip();
     test_ellswift_xdh_ct_only_after_removal();
+    test_ellswift_xdh_lift_from_x_many_pairs();
 
     std::printf("  pass=%d  fail=%d\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;
