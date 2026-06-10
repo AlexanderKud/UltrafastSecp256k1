@@ -13,6 +13,8 @@
 name: Audit Report
 
 on:
+  schedule:
+    - cron: '0 6 * * 1'   # Weekly: Monday 06:00 UTC (keeps Code Scanning fresh)
   workflow_dispatch:
     inputs:
       section:
@@ -20,6 +22,9 @@ on:
         required: false
         default: ''
         type: string
+  push:
+    tags:
+      - 'v*'                # Release tags (audit snapshot per release)
 
 permissions:
   contents: read
@@ -318,6 +323,8 @@ jobs:
     timeout-minutes: 60
     outputs:
       audit_artifact_id: ${{ steps.upload_reports.outputs.artifact-id }}
+    permissions:
+      security-events: write   # required for upload-sarif (audit-runner-msvc); was missing
     steps:
       - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
