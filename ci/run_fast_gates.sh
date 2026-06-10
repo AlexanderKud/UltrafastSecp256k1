@@ -55,6 +55,7 @@ MANDATORY_GATES=(
     "ci/test_check_sanitizer_result_assertions.py"  # self-test: the sanitizer-assertion gate must flag a fail-open block
     "ci/check_doc_module_counts.py"            # CLAIMS-AUDIT-001: reviewer-doc module/workflow counts must match canonical
     "ci/gen_build_options.py"                  # docs/BUILD_OPTIONS.md must match CMake option() declarations
+    "ci/test_gen_build_options.py"             # self-test: the build-options drift gate parser + render
     "ci/build_canonical_data.py"
     "ci/sync_docs_from_canonical.py"
     "ci/sync_module_count.py"
@@ -171,6 +172,7 @@ run "Sanitizer result assertions (CAAS6-01)"    ci/check_sanitizer_result_assert
 run "Sanitizer-assertion gate self-test"        ci/test_check_sanitizer_result_assertions.py
 run "Reviewer-doc module counts (CLAIMS-001)"   ci/check_doc_module_counts.py
 run "Build options doc sync"                    ci/gen_build_options.py --check
+run "Build options gate self-test"              ci/test_gen_build_options.py
 run "Workflow trigger claims (CLAIM-07)"       ci/check_workflow_trigger_claims.py
 run "Secret-erase coverage (CT-04/RT-05)"      ci/check_secret_erase_coverage.py
 

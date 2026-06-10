@@ -658,12 +658,22 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "abbreviated BP/<chal> tag across all backends. Same class as the gate.yml "
         "SECURITY_CI_FILES entries (7d094c7c09 / f0ea17663a).",
     ),
+    "0d2edda60b": (
+        ["ci/test_gen_build_options.py"],
+        "docs(build): wired the new ci/gen_build_options.py BUILD_OPTIONS.md drift gate "
+        "into ci/run_fast_gates.sh (∈ SECURITY_CI_FILES) + added docs/BUILD_OPTIONS.md. "
+        "Flagged SOLELY because run_fast_gates.sh ∈ SECURITY_CI_FILES; the gate is a "
+        "pure doc-drift scanner (no executable crypto surface). Its behaviour is "
+        "exercised by the paired ci/test_gen_build_options.py unit test (parser + "
+        "deterministic render + live --check), added in the immediately-following commit. "
+        "Same class as the gate-wiring entries 02602cf420 / 8f5915c5b6 / 7d094c7c09.",
+    ),
 }
 
 # Frozen count guard (CAAS-006): prevents silent whitelist growth.
 # When adding a new entry above, increment this constant too.
 # Unauthorized bypass (adding an entry without incrementing) → import-time assertion failure.
-RETROACTIVELY_COVERED_FROZEN_COUNT: int = 59
+RETROACTIVELY_COVERED_FROZEN_COUNT: int = 60
 assert len(RETROACTIVELY_COVERED) == RETROACTIVELY_COVERED_FROZEN_COUNT, (
     f"RETROACTIVELY_COVERED has {len(RETROACTIVELY_COVERED)} entries but "
     f"RETROACTIVELY_COVERED_FROZEN_COUNT={RETROACTIVELY_COVERED_FROZEN_COUNT}. "
