@@ -42,7 +42,7 @@ static int s_fail = 0;
         ++s_fail;                           \
         std::printf("  FAIL: %s\n", msg);  \
     } else {                                \
-        ++s_pass;                           \
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)                           \
     }                                       \
 } while(0)
 
@@ -80,7 +80,7 @@ static void run_fuzz_der_parse(ufsecp_ctx* ctx) {
         uint8_t compact[64] = {};
         ufsecp_error_t rc = ufsecp_ecdsa_sig_from_der(ctx, s.d, s.n, compact);
         (void)rc;  // any return code is acceptable; crash is not
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
 
         if (rc == UFSECP_OK) {
             // round-trip check
@@ -105,7 +105,7 @@ static void run_fuzz_der_parse(ufsecp_ctx* ctx) {
         for (size_t j = 0; j < len; ++j) buf[j] = static_cast<uint8_t>(rng());
         uint8_t compact[64] = {};
         (void)ufsecp_ecdsa_sig_from_der(ctx, buf, len, compact);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     }
 }
 
@@ -126,7 +126,7 @@ static void run_fuzz_pubkey_parse(ufsecp_ctx* ctx) {
     auto try_parse = [&](const uint8_t* d, size_t n) {
         uint8_t pk[64] = {};
         (void)ufsecp_pubkey_parse(ctx, d, n, pk);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     };
 
     try_parse(kAllZero33, 33);
@@ -156,7 +156,7 @@ static void run_fuzz_pubkey_parse(ufsecp_ctx* ctx) {
     // pk_g came from ufsecp_pubkey_parse and is already 33 bytes
     uint8_t pk_tweak_out[33] = {};
     (void)ufsecp_pubkey_tweak_add(ctx, pk_g, kScalar1, pk_tweak_out);
-    ++s_pass;
+    ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
 
     const int kIter = SCALED(2000, 100);
     std::mt19937 rng(0xDEADBEEF ^ 0x02);
@@ -166,7 +166,7 @@ static void run_fuzz_pubkey_parse(ufsecp_ctx* ctx) {
         for (size_t j = 0; j < len; ++j) buf[j] = static_cast<uint8_t>(rng());
         uint8_t pk[64] = {};
         (void)ufsecp_pubkey_parse(ctx, buf, len, pk);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     }
 }
 
@@ -217,7 +217,7 @@ static void run_fuzz_schnorr_verify(ufsecp_ctx* ctx) {
         memcpy(flipped, sig, 64);
         flipped[i] ^= 0xFF;
         (void)ufsecp_schnorr_verify(ctx, kMsg, flipped, pk_xonly);
-        ++s_pass;  // no crash required; rejection is expected but not asserted
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)  // no crash required; rejection is expected but not asserted
     }
 
     // Pseudo-random garbage
@@ -229,7 +229,7 @@ static void run_fuzz_schnorr_verify(ufsecp_ctx* ctx) {
         for (auto& b : rpk)  b = static_cast<uint8_t>(rng());
         for (auto& b : rmsg) b = static_cast<uint8_t>(rng());
         (void)ufsecp_schnorr_verify(ctx, rmsg, rsig, rpk);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     }
 }
 
@@ -273,7 +273,7 @@ static void run_fuzz_ecdsa_verify(ufsecp_ctx* ctx) {
     static const uint8_t kZero64[64] = {};
     uint8_t pk_dummy[64] = {};
     (void)ufsecp_ecdsa_verify(ctx, kMsg, kZero64, pk_dummy);
-    ++s_pass;
+    ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
 
     // Pseudo-random coverage
     const int kIter = SCALED(2000, 100);
@@ -284,7 +284,7 @@ static void run_fuzz_ecdsa_verify(ufsecp_ctx* ctx) {
         for (auto& b : pk)  b = static_cast<uint8_t>(rng());
         for (auto& b : msg) b = static_cast<uint8_t>(rng());
         (void)ufsecp_ecdsa_verify(ctx, msg, sig, pk);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     }
 }
 
@@ -323,14 +323,14 @@ static void run_fuzz_bip32_path(ufsecp_ctx* ctx) {
 
     ufsecp_bip32_key master_key = {};
     if (ufsecp_bip32_master(ctx, kSeed, 64, &master_key) != UFSECP_OK) {
-        ++s_pass;  // seed may be unsupported; skip
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)  // seed may be unsupported; skip
         return;
     }
 
     for (int i = 0; kPaths[i] != nullptr; ++i) {
         ufsecp_bip32_key child_key = {};
         (void)ufsecp_bip32_derive_path(ctx, &master_key, kPaths[i], &child_key);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     }
 
     // Embedded NUL test
@@ -338,7 +338,7 @@ static void run_fuzz_bip32_path(ufsecp_ctx* ctx) {
         char path_nul[] = "m/0\x00/1";
         ufsecp_bip32_key child_key = {};
         (void)ufsecp_bip32_derive_path(ctx, &master_key, path_nul, &child_key);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     }
 
     // Pseudo-random path strings
@@ -354,7 +354,7 @@ static void run_fuzz_bip32_path(ufsecp_ctx* ctx) {
         buf[len] = '\0';
         ufsecp_bip32_key child_key = {};
         (void)ufsecp_bip32_derive_path(ctx, &master_key, buf, &child_key);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     }
 }
 
@@ -371,7 +371,7 @@ static void run_fuzz_bip324_frame(ufsecp_ctx* ctx) {
         uint8_t out[64] = {};
         size_t  out_len = sizeof(out);
         (void)ufsecp_bip324_decrypt(nullptr, kFrame, sizeof(kFrame), out, &out_len);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     }
 
     // Standalone AEAD: random key/nonce/ciphertext — must not crash
@@ -386,7 +386,7 @@ static void run_fuzz_bip324_frame(ufsecp_ctx* ctx) {
         for (size_t j = 0; j < ct_len; ++j) ct[j] = static_cast<uint8_t>(rng());
         (void)ufsecp_aead_chacha20_poly1305_decrypt(
             key, nonce, nullptr, 0, ct, ct_len, tag, pt);
-        ++s_pass;
+        ++s_pass;  // no crash (fuzz survival probe — no semantic oracle by design)
     }
 #else
     ++s_pass;  // BIP-324 not compiled in this build — skip domain

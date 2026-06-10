@@ -313,10 +313,39 @@ def check_count_sync(root: Path) -> bool:
     stale = [(p, n) for p, n in _scan_docs_for_count(root, exploit_pattern)
              if n != auth_exploit]
 
+    # CLAIM-GPU-ABI-COUNT: the header's documented "stable batch-op surface" count is
+    # authoritative for doc-facing GPU op claims. (auth_gpu above counts
+    # ufsecp_error_t declarations — a different, lower-level metric — and was printed
+    # but never enforced against docs, a false-green.) Scan docs for GPU op-count
+    # claims and require they match the header's documented number.
+    auth_gpu_doc = None
+    if gpu_hdr.exists():
+        # The phrase wraps across a comment-continuation line ("stable batch-op\n
+        # *   surface currently includes 13 ..."), so allow whitespace + '*' between
+        # tokens.
+        m = re.search(r'stable batch-op[\s*]+surface currently includes\s+(\d+)\s+backend-neutral',
+                      gpu_hdr.read_text(encoding='utf-8'))
+        if m:
+            auth_gpu_doc = int(m.group(1))
+    gpu_stale = []
+    if auth_gpu_doc is not None:
+        _gpu_patterns = [
+            re.compile(r'(\d+)-op GPU C ABI'),
+            re.compile(r'(\d+)-op FFI'),
+            re.compile(r'stable\s+(\d+)-op\b'),
+            re.compile(r'(\d+)\s+backend-neutral (?:batch )?operations?'),
+            re.compile(r'(\d+)\s+stable batch ops'),
+        ]
+        for _pat in _gpu_patterns:
+            for path, n in _scan_docs_for_count(root, _pat):
+                if n != auth_gpu_doc:
+                    gpu_stale.append((path, n))
+
     col_w = 55
     print('\n── Canonical count sync ─────────────────────────────────────────')
     print(f'  Authoritative exploit PoC count (unified_audit_runner.cpp): {auth_exploit}')
-    print(f'  Authoritative GPU stable batch ops (ufsecp_gpu.h):          {auth_gpu}')
+    print(f'  GPU declared error_t fns (ufsecp_gpu.h, lower-level metric): {auth_gpu}')
+    print(f'  Authoritative GPU stable batch ops (header prose):          {auth_gpu_doc}')
 
     ok = True
     if stale:
@@ -327,6 +356,17 @@ def check_count_sync(root: Path) -> bool:
         print(f'\n  Fix: python3 ci/sync_version_refs.py --sync-exploit --dry-run')
     else:
         print(f'\n  All exploit PoC count references match {auth_exploit}. OK')
+
+    if gpu_stale:
+        ok = False
+        print(f'\n  STALE GPU op-count references ({len(gpu_stale)} locations, '
+              f'expected {auth_gpu_doc} per ufsecp_gpu.h prose):')
+        for path, n in sorted(set(gpu_stale))[:10]:
+            print(f'    {path}: found {n}, expected {auth_gpu_doc}')
+        print('\n  Fix: reconcile the doc GPU op-count to the header\'s documented '
+              'stable batch-op surface.')
+    elif auth_gpu_doc is not None:
+        print(f'  All GPU op-count references match {auth_gpu_doc}. OK')
     return ok
 
 

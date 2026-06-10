@@ -66,8 +66,9 @@ UltrafastSecp256k1 shim is a **drop-in replacement** — same benchmark code, en
 | `ConnectBlockAllSchnorr` | 246.4 ms | 249.2 ms | −1% (libsecp) |
 | `ConnectBlockMixed` | 248.7 ms | 251.5 ms | −1% (libsecp) |
 
-> **ConnectBlock without LTO:** Ultra's larger instruction footprint (~900 KB extra secp256k1 code
-> vs libsecp's ~400 KB) causes ~1% L2/L3 cache pressure over 2500 iterations. LTO eliminates this
+> **ConnectBlock without LTO:** Ultra's larger instruction footprint (measured 2,310 KB `.text`
+> vs libsecp256k1's 1,261 KB = 1.83×, bitcoin-core profile, no-LTO; see `docs/SHIM_FOOTPRINT_COMPARISON.md`)
+> causes ~1% L2/L3 cache pressure over 2500 iterations. LTO eliminates this
 > by co-optimizing code layout globally. The signing speedups (14–35%) are not affected by LTO.
 > See `nolto_gap_root_cause` in `BITCOIN_CORE_BENCH_RESULTS.json` for root-cause evidence.
 

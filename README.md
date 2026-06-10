@@ -301,7 +301,7 @@ Benchmark numbers and historical milestones are maintained in [`docs/BENCHMARKS.
 
 > **The following capabilities are out of scope for the Bitcoin Core CPU backend evaluation profile:**
 
-- **Differentiated GPU secp256k1 surface** -- CUDA, OpenCL, and Metal all implement the stable 16-op GPU C ABI, while CUDA also carries the highest-throughput signing and verification kernels plus **GPU FROST partial verification** ([reproducible benchmark suite and raw logs](docs/BENCHMARKS.md))
+- **Differentiated GPU secp256k1 surface** -- CUDA, OpenCL, and Metal all implement the stable 13-op GPU C ABI (8 core + 5 extended batch ops; see `include/ufsecp/ufsecp_gpu.h`), while CUDA also carries the highest-throughput signing and verification kernels plus **GPU FROST partial verification** ([reproducible benchmark suite and raw logs](docs/BENCHMARKS.md))
 - **BIP-352 Silent Payments GPU pipeline** -- the full 7-stage GPU pipeline (k×P → hash → k×G → add → match) on CUDA; throughput and CPU comparison: [GPU bench](docs/BENCHMARKS.md), [standalone CPU benchmark by @craigraw](https://github.com/craigraw/bench_bip352)
 - **Field-tested GPU pipeline** -- the CUDA engine has been stress-tested in live high-throughput workflows over long-running sessions and very large point volumes, not only in short synthetic benchmarks
 - **Known production adoption** -- publicly disclosed production use includes [SparrowWallet Frigate](https://github.com/sparrowwallet/frigate), with permission to publish the adoption note from Craig Raw (adoption evidence as of 2026-03-29 — verify against current Frigate README for latest status)
@@ -382,7 +382,7 @@ Full adopter list: [ADOPTERS.md](docs/ADOPTERS.md)
 
 - **BIP-352 GPU pipeline** -- full silent payment scanning pipeline on CUDA; benchmark and CPU comparison in [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
 - **GPU-accelerated secp256k1** -- high-throughput CUDA verification kernels, batch ECDH, BIP-352 scanning, and BIP-324 encryption on CUDA/OpenCL/Metal; CT-sensitive signing always routes through the CPU CT layer; GPU operations that handle secret material (ECDH, BIP-352, BIP-324) require a trusted single-tenant environment (see [GPU Security Model](docs/BACKEND_ASSURANCE_MATRIX.md))
-- **GPU C ABI (`ufsecp_gpu`)** -- stable 16-op FFI for GPU batch ops across CUDA, OpenCL, and Metal, with full backend parity on the public surface
+- **GPU C ABI (`ufsecp_gpu`)** -- stable 13-op FFI for GPU batch ops across CUDA, OpenCL, and Metal, with full backend parity on the public surface
 - **Zero-Knowledge cryptographic layer** -- Pedersen commitments, DLEQ proofs, Bulletproof range proofs, Ethereum-compatible Keccak-256
 - **Batch operations** -- all-affine Pippenger with touched-bucket optimization; see [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for measured throughput
 - **Multi-language bindings** -- Python (`pip install ufsecp`), Node.js (`npm i ufsecp`), Rust, Go, C#/.NET, Java, Swift, PHP, Ruby, Dart, React Native — all via the stable C ABI
@@ -416,7 +416,7 @@ This top-level narrative maps directly to the assurance ledger: CT secret-key ro
 | Fuzzing adversarial corpus | **libFuzzer + ClusterFuzz-Lite (see `.clusterfuzzlite/` and `src/cpu/fuzz/`; corpus count grows with CI runs and is not stored in-repo)** |
 | Static analysis tools | **7 (CodeQL, Clang-Tidy, CPPCheck, SonarCloud, Semgrep, Infer, Clang-SA)** |
 | Self-audit documents in repo | see [`docs/`](docs/) directory |
-| Self-tests passing (all backends) | **76/76** (reproduce: `./out/release/selftest` → "ALL TESTS PASSED"; observed on the 4.1.0 release build) |
+| Self-tests passing (all backends) | **76/76** (reproduce: `./out/release/selftest` → "ALL TESTS PASSED" on the current release build) |
 
 ### CI/CD Pipeline Highlights
 
@@ -485,9 +485,9 @@ In addition to the 418-module `unified_audit_runner`, UltrafastSecp256k1 ships *
 <details>
 <summary>GPU Performance (diagnostic — out of scope for Bitcoin Core backend evaluation)</summary>
 
-> GPU throughput numbers are intentionally not published in this README.
+> Headline GPU **verify/sign** throughput numbers are intentionally not tabulated in this performance section. (The BIP-352 Silent Payments GPU pipeline figures shown elsewhere in this README are measured and trace to the canonical artifact `benchmarks/gpu/cuda/rtx-50xx/bip352_rtx5060ti_20260504.txt`.)
 >
-> **Why:** CLAUDE.md ABSOLUTE rule — every benchmark number must come from a measurement on the current machine and current binary; "diagnostic" or "not verified against current build" annotations on concrete numbers violate that rule even with a label. The previous RTX 5060 Ti table mixed live diagnostic figures with explicitly-stale figures; replacing both with this single pointer keeps the README honest.
+> **Why:** CLAUDE.md ABSOLUTE rule — every benchmark number must come from a measurement on the current machine and current binary; "diagnostic" or "not verified against current build" annotations on concrete numbers violate that rule even with a label. The previous RTX 5060 Ti verify/sign table mixed live diagnostic figures with explicitly-stale figures; replacing both with this single pointer keeps the README honest.
 >
 > **Where to find the current numbers if you need them:**
 >
@@ -591,7 +591,7 @@ Features are organized into **maturity tiers** (see [SUPPORTED_GUARANTEES.md](in
 | **2 -- Protocol** | BIP-352 | Silent Payments scanning pipeline (CPU + GPU) | [OK] |
 | **2 -- Protocol** | ECIES | Elliptic curve integrated encryption | [OK] |
 | -- | GPU | CUDA, Metal, OpenCL kernels | [OK] · ROCm [EXPERIMENTAL] |
-| -- | GPU C ABI | `ufsecp_gpu` -- 19 functions (16 batch ops + 3 lifecycle: ctx/device/error), 3 backends, incl. FROST, BIP-324, BIP-352 | [OK] |
+| -- | GPU C ABI | `ufsecp_gpu` -- 16 functions (13 stable batch ops + 3 lifecycle: ctx/device/error), 3 backends, incl. FROST, BIP-324, BIP-352 | [OK] |
 | -- | Platforms | x64, ARM64, RISC-V, ESP32, STM32, WASM, iOS, Android | [OK] |
 
 > **Tier 1** = battle-tested core crypto with stable API. **Tier 2** = protocol-level features, API may evolve. **Tier 3** = convenience utilities.
@@ -625,7 +625,7 @@ The full 7-stage BIP-352 scanning pipeline runs entirely on-GPU with zero CPU ro
 |------|-------|------------|-------|
 | GPU pipeline (GLV, w=4) | 179.2 ns | 5.58 M/s | GLV wNAF decomposition |
 | **GPU pipeline (LUT)** | **91.0 ns** | **11.00 M/s** | 64 MB precomputed 16×64K generator table |
-| GPU pipeline (LUT + pretbl) | 102.1 ns | ~9.79 M/s | Precomputed per-tweak tables |
+| GPU pipeline (LUT + pretbl) | 91.3 ns | ~10.95 M/s | Precomputed per-tweak tables |
 
 *500K tweak points per batch, 11 passes, median. Near-optimal occupancy for RTX 5060 Ti (SM 12.0, 36 SMs). ~950 billion candidates/day.*
 
@@ -821,7 +821,7 @@ g++ myapp.cpp $(pkg-config --cflags --libs ufsecp) -o myapp
 ## secp256k1 GPU Acceleration (CUDA / OpenCL / Metal / ROCm)
 
 > **Scope note:** The GPU backends are **not part of the Bitcoin Core secondary CPU backend PR**.
-> The Bitcoin Core PR targets the CPU-only library as a compile-time drop-in secp256k1 replacement.
+> The Bitcoin Core PR targets the CPU-only library as a compile-time **secondary** secp256k1 backend, selected behind libsecp256k1 via the libsecp256k1-compatible shim. It is **not** a replacement for libsecp256k1; the default backend is unchanged.
 > GPU capabilities require opt-in build flags (`-DSECP256K1_BUILD_CUDA=ON` etc.) and are outside
 > the scope of consensus-critical signing paths. See the Bitcoin Core PR description for the
 > exact build configuration targeted.

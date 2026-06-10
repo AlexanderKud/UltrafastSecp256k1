@@ -1,5 +1,28 @@
 # Audit Changelog
 
+## 2026-06-10 — Doc reconciliation + CLAIM-GPU-ABI-COUNT gate (10-pass review)
+
+- **CLAIM-GPU-ABI-COUNT**: docs stated the GPU stable batch-op count four ways
+  (README 16/19, ASSURANCE_LEDGER 16, GPU_VALIDATION_MATRIX 19) while the
+  authoritative header `ufsecp_gpu.h` documents **13** (8 core + 5 extended). The
+  count-sync gate computed a lower-level 24 (error_t-returning decls) and printed it
+  but never enforced it — a false green. Reconciled all docs to 13 and added a
+  doc-scan to `check_count_sync` that extracts the header's documented number and
+  fails on any divergent doc claim.
+- **PR8-02 / footprint**: replaced the superseded "~1.3 MB vs ~400 KB" approximation
+  with the measured 2,310 KB vs 1,261 KB (1.83×) in the two PR drafts and
+  BENCHMARK_CROSS_LIBRARY.md (README/EVIDENCE were already correct).
+- **CLAIM-GPU-BENCH-INLINE**: README BIP-352 LUT+pretbl row 102.1 ns → canonical
+  91.3 ns / ~10.95 M/s (GLV 179.2 and LUT 91.0 were already within tolerance).
+- **PR8-01 / not-a-replacement**: README "drop-in … replacement" reworded to
+  "secondary backend … NOT a replacement"; the "GPU numbers not published" banner
+  scoped to verify/sign (the BIP-352 pipeline figures are measured + canonical).
+- **CLAIM-VERSION-STALE**: BACKEND_EVIDENCE/PR_BLOCKERS/PR_BODY/AUDIT_REPORT/README
+  version + module-count strings refreshed to 4.1.1 / 418; fixed
+  `sync_audit_report_version.py` which pointed at a non-existent repo-root path.
+- **RT1-002**: KB `RECOVER-PMN-GUARD` flipped open → fixed after re-verifying the
+  branchless r ≥ (p-n) reject at recovery.cpp:171-202.
+
 ## 2026-06-10 — TQ7-03 / REL9: scanner idioms broadened + package-metadata version sync
 
 - **TQ7-03**: `audit_test_quality_scanner.py` recognised only `CHECK`/`check`, so a

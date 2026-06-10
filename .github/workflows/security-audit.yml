@@ -73,9 +73,9 @@ jobs:
     name: ASan + UBSan
     runs-on: ubuntu-24.04
     # CI-001 fix: removed job-level continue-on-error so build failures ARE blocking.
-    # Test step remains advisory (step-level continue-on-error) due to known
-    # scalar-mul KAT divergence in non-x86-asm fallback under sanitizers.
-    # TODO: fix the non-asm scalar_mul bug and remove test-step continue-on-error.
+    # CI-005 + CORR-01 (CAAS6-05): the test step is now a HARD GATE. Its step-level
+    # continue-on-error and the former scalar-mul KAT carve-out were removed (see the
+    # "Test under sanitizers" step below); any ASan/UBSan violation fails the job.
     steps:
       - name: Harden the runner
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
