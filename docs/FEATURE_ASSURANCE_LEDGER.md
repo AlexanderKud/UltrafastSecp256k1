@@ -608,6 +608,12 @@ Backend-neutral GPU acceleration surface (`ufsecp_gpu.h`). Separate opaque conte
 | `ufsecp_gpu_ecdh_batch` | Y | Y | Y | - | SECRET-BEARING |
 | `ufsecp_gpu_hash160_pubkey_batch` | Y | Y | Y | - | SHA-256+RIPEMD-160 |
 | `ufsecp_gpu_msm` | Y | Y | Y | - | Multi-scalar multiplication |
+| `ufsecp_gpu_xonly_validate` | fb | Y | fb | Y (GPU==shim xonly_parse) | libbitcoin: batch x-only lift_x validation; CUDA native kernel, OpenCL/Metal CPU fallback |
+| `ufsecp_gpu_commitment_verify` | fb | Y | fb | Y (GPU==shim tweak_add_check) | libbitcoin: BIP-341 per-item tweak-add-check; CUDA native kernel, OpenCL/Metal CPU fallback |
+| `ufsecp_gpu_tagged_hash` | fb | Y | fb | Y (GPU==shim tagged_sha256) | libbitcoin: Taproot tagged hash (multi-block SHA-256); CUDA native kernel, OpenCL/Metal CPU fallback |
+| `ufsecp_gpu_pubkey_validate` | fb | Y | fb | Y (GPU==shim ec_pubkey_parse) | libbitcoin: batch full compressed-pubkey validation; CUDA native kernel, OpenCL/Metal CPU fallback |
+| `ufsecp_gpu_tagged_hash_var` | fb | Y | fb | Y (GPU==shim tagged_sha256) | libbitcoin: TapLeaf per-item-length tagged hash; CUDA native kernel, OpenCL/Metal CPU fallback |
+| `ufsecp_gpu_hash256` | fb | Y | fb | Y (GPU==SHA256d ref) | libbitcoin: batch HASH256 / merkle node hashing; CUDA native kernel, OpenCL/Metal CPU fallback |
 | `ufsecp_gpu_frost_verify_partial_batch` | Y | Y | Y | - | Batch FROST partial verification |
 | `ufsecp_gpu_ecrecover_batch` | Y | Y | Y | - | Recover compressed pubkeys from recoverable ECDSA sigs |
 | `ufsecp_gpu_zk_knowledge_verify_batch` | - | - | - | CUDA only | Batch ZK knowledge proof verification |

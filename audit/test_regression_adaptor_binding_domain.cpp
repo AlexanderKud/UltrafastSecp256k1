@@ -1,26 +1,23 @@
 // ============================================================================
-// test_regression_adaptor_binding_domain.cpp — adaptor binding BIP-340 domain
+// test_regression_adaptor_binding_domain.cpp — adaptor soundness regression
 // ============================================================================
-// Regression tests for the ecdsa_adaptor_binding() domain-separation fix:
+// Schnorr adaptor binding (BIP-340 tagged challenge) + ECDSA adaptor DLEQ soundness.
 //
-//   BEFORE (v1): SHA256("ecdsa_adaptor_bind_v1" || adaptor_compressed)
-//     — plain SHA256 with tag appended, no BIP-340 double-tag prefix.
-//     — No cross-protocol domain separation.
-//
-//   AFTER (v2):  SHA256(SHA256("ecdsa_adaptor_bind_v2") ||
-//                       SHA256("ecdsa_adaptor_bind_v2") ||
-//                       adaptor_compressed)
-//     — BIP-340 tagged hash with double-prepended tag hash.
-//     — Domain-separated from arbitrary SHA256 computations.
+// GHSA-c7q2-gv3g-rgxm: the ECDSA adaptor previously used a "binding" scalar that
+// cancelled in verify and bound nothing — r (= x-coord of k*T) was NOT tied to the
+// adaptor point T, so a malicious signer could substitute an arbitrary r' (adjusting
+// s_hat) and still pass adaptor_verify, yet the pre-signature was not adaptable. The
+// fix replaces the binding scalar with a Chaum-Pedersen DLEQ proof that R_hat = k*G
+// and R = k*T share the same k; verify checks the DLEQ, r == R.x, and the ECDSA
+// relation. These tests guard both the honest path and forgery rejection.
 //
 // TESTS:
-//   ADB-1  Schnorr adaptor sign/verify round-trip succeeds with new binding hash
+//   ADB-1  Schnorr adaptor sign/verify round-trip succeeds
 //   ADB-2  schnorr_adaptor_verify rejects flipped needs_negation flag
 //   ADB-3  schnorr_adaptor_adapt produces a valid BIP-340 Schnorr signature
 //   ADB-4  schnorr_adaptor_extract recovers the adaptor secret exactly
-//   ADB-5  ECDSA adaptor sign/verify round-trip succeeds with new binding hash
-//   ADB-6  New (v2) binding differs from old (v1) plain-SHA256 binding
-//          — confirms domain separation is active, not a no-op change
+//   ADB-5  ECDSA adaptor full round-trip: sign→verify→adapt→ecdsa_verify→extract
+//   ADB-6  GHSA-c7q2 forgery rejected: substituted r' / tampered DLEQ / swapped R
 // ============================================================================
 
 #include <cstdio>
@@ -160,9 +157,9 @@ static void test_adb_4() {
     check(T_x == Tc_x, "[adb-4] extracted secret reproduces T x-coordinate");
 }
 
-// ── ADB-5: ECDSA adaptor round-trip ────────────────────────────────────────
+// ── ADB-5: ECDSA adaptor full round-trip (sign→verify→adapt→ecdsa_verify→extract) ──
 static void test_adb_5() {
-    printf("  -- ADB-5: ECDSA adaptor sign/verify round-trip\n");
+    printf("  -- ADB-5: ECDSA adaptor full round-trip (DLEQ-bound)\n");
 
     Scalar sk = make_sk(19);
     Scalar t  = make_sk(29);
@@ -171,50 +168,71 @@ static void test_adb_5() {
     auto   msg = make_msg(0x05);
 
     ECDSAAdaptorSig pre = ecdsa_adaptor_sign(sk, msg, T);
-
     check(!pre.r.is_zero() && !pre.s_hat.is_zero(),
           "[adb-5] ECDSA adaptor pre-sig is non-degenerate");
+    check(ecdsa_adaptor_verify(pre, P, msg, T),
+          "[adb-5a] ecdsa_adaptor_verify(honest pre-sig) == true");
 
-    bool ok = ecdsa_adaptor_verify(pre, P, msg, T);
-    check(ok, "[adb-5] ecdsa_adaptor_verify(honest pre-sig) == true");
+    // Adapt with the witness t → a standard ECDSA signature that verifies under P.
+    // This proves the pre-signature was actually adaptable (the soundness property
+    // GHSA-c7q2-gv3g-rgxm restored: adaptor_verify==OK ⇒ adaptable).
+    ECDSASignature sig = ecdsa_adaptor_adapt(pre, t);
+    check(ecdsa_verify(msg.data(), P, sig),
+          "[adb-5b] adapted signature is a valid ECDSA signature");
+
+    // Extract recovers the adaptor secret t from (pre-sig, completed sig).
+    auto extracted = ecdsa_adaptor_extract(pre, sig);
+    check(extracted.second && extracted.first.to_bytes() == t.to_bytes(),
+          "[adb-5c] ecdsa_adaptor_extract recovers the adaptor secret t");
 }
 
-// ── ADB-6: v2 binding differs from v1 plain-SHA256 binding ─────────────────
+// ── ADB-6: GHSA-c7q2-gv3g-rgxm — forged / unbound pre-signatures are rejected ─────
 static void test_adb_6() {
-    printf("  -- ADB-6: new v2 binding hash differs from old v1 plain-SHA256\n");
+    printf("  -- ADB-6: GHSA-c7q2 forgery (substituted r' / tampered DLEQ / swapped R) rejected\n");
 
-    // Build a known adaptor point
-    Scalar t = make_sk(37);
-    Point  T = ct::generator_mul(t);
-    auto adaptor_bytes = T.to_compressed();  // 33 bytes
+    Scalar sk = make_sk(41);
+    Scalar t  = make_sk(43);
+    Point  T  = ct::generator_mul(t);
+    Point  P  = ct::generator_mul(sk);
+    auto   msg = make_msg(0x06);
 
-    // Old v1 binding: SHA256("ecdsa_adaptor_bind_v1" || adaptor_compressed_bytes)
-    constexpr char tag_v1[] = "ecdsa_adaptor_bind_v1";
-    SHA256 h_old;
-    h_old.update(reinterpret_cast<const uint8_t*>(tag_v1), sizeof(tag_v1) - 1);
-    h_old.update(adaptor_bytes.data(), adaptor_bytes.size());
-    auto hash_v1 = h_old.finalize();
+    ECDSAAdaptorSig pre = ecdsa_adaptor_sign(sk, msg, T);
+    check(ecdsa_adaptor_verify(pre, P, msg, T),
+          "[adb-6] honest pre-sig verifies (baseline)");
 
-    // New v2 binding: SHA256(SHA256(tag_v2) || SHA256(tag_v2) || adaptor_bytes)
-    constexpr char tag_v2[] = "ecdsa_adaptor_bind_v2";
-    auto tag_hash_v2 = SHA256::hash(reinterpret_cast<const uint8_t*>(tag_v2),
-                                    sizeof(tag_v2) - 1);
-    SHA256 h_new;
-    h_new.update(tag_hash_v2.data(), 32);
-    h_new.update(tag_hash_v2.data(), 32);
-    h_new.update(adaptor_bytes.data(), adaptor_bytes.size());
-    auto hash_v2 = h_new.finalize();
+    // The advisory forgery: a malicious signer (knows sk) substitutes an arbitrary r'
+    // NOT bound to T, and adjusts s_hat' = s_hat*(z + r'*x)*(z + r*x)^-1. The old verify
+    // accepted this (r was unbound); the DLEQ-bound verify MUST reject it (r' != R.x).
+    Scalar z = Scalar::from_bytes(msg);
+    Scalar r_prime = make_sk(0x7b);
+    check(r_prime.to_bytes() != pre.r.to_bytes(), "[adb-6] chosen r' differs from the honest r");
+    Scalar s_forged = pre.s_hat * (z + (r_prime * sk)) * (z + (pre.r * sk)).inverse();
+    ECDSAAdaptorSig forged = pre;
+    forged.r = r_prime;
+    forged.s_hat = s_forged;
+    check(!ecdsa_adaptor_verify(forged, P, msg, T),
+          "[adb-6] forged pre-sig with substituted r' is REJECTED (r bound to T via DLEQ)");
 
-    check(hash_v1 != hash_v2,
-          "[adb-6] v2 BIP-340 tagged hash differs from v1 plain-SHA256 (domain separation active)");
+    // Tampering the DLEQ response must also be rejected.
+    ECDSAAdaptorSig dleq_tamper = pre;
+    dleq_tamper.dleq_s = pre.dleq_s + Scalar::one();
+    check(!ecdsa_adaptor_verify(dleq_tamper, P, msg, T),
+          "[adb-6] corrupted DLEQ response is REJECTED");
+
+    // Swapping R (and its matching r) without a fresh DLEQ must be rejected.
+    ECDSAAdaptorSig r_tamper = pre;
+    r_tamper.R = ct::generator_mul(make_sk(0x55));
+    r_tamper.r = Scalar::from_bytes(r_tamper.R.x().to_bytes());
+    check(!ecdsa_adaptor_verify(r_tamper, P, msg, T),
+          "[adb-6] swapped R with no valid DLEQ is REJECTED");
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
 int test_regression_adaptor_binding_domain_run() {
     g_pass = 0; g_fail = 0;
-    printf("[adaptor_binding] Adaptor Binding Domain Separation (ADB-1..6)\n");
-    printf("  Wire format: ecdsa_adaptor_bind_v2 (BIP-340 tagged hash)\n\n");
+    printf("[adaptor_binding] Schnorr adaptor binding + ECDSA adaptor DLEQ soundness (ADB-1..6)\n");
+    printf("  ECDSA adaptor: DLEQ-bound (GHSA-c7q2-gv3g-rgxm); Schnorr adaptor: BIP-340 tagged challenge\n\n");
 
     test_adb_1();
     test_adb_2();

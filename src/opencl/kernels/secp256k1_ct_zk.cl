@@ -666,8 +666,8 @@ inline int ct_range_prove_impl(
 
         // Use simple SHA-256 tagged hash for IP rounds
         uchar xr_hash[32];
-        uchar ip_tag[] = {'B','P','/','i','p'};
-        zk_tagged_hash_impl(ip_tag, 5, ip_buf, 66, xr_hash);
+        uchar ip_tag[] = {'B','u','l','l','e','t','p','r','o','o','f','/','i','p'};
+        zk_tagged_hash_impl(ip_tag, 14, ip_buf, 66, xr_hash);
         Scalar x_r;
         scalar_from_bytes_impl(xr_hash, &x_r);
         Scalar x_r_inv;

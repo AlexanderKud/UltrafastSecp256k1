@@ -39,7 +39,7 @@ to work without modification.
 | 749/749 `make check` tests pass | `python3 ci/check_bitcoin_core_test_results.py` | `docs/BITCOIN_CORE_BENCH_RESULTS.json` |
 | All signing paths constant-time | `python3 ci/audit_gate.py --ct-integrity` | `docs/CT_VERIFICATION.md` |
 | Differential parity with libsecp256k1 | CTest `differential_*` targets | `docs/BITCOIN_CORE_BACKEND_EVIDENCE.md §2` |
-| 270 exploit PoCs tests, 0 failures | `python3 ci/check_exploit_wiring.py` | `audit/unified_audit_runner.cpp` |
+| 269 exploit PoCs tests, 0 failures | `python3 ci/check_exploit_wiring.py` | `audit/unified_audit_runner.cpp` |
 | Reproducible evidence bundle | `python3 ci/verify_external_audit_bundle.py` | `docs/EXTERNAL_AUDIT_BUNDLE.json` |
 
 ### Constant-time guarantee
@@ -78,7 +78,7 @@ Differential testing against bitcoin-core/secp256k1 reference:
 | ConnectBlockMixed | 257.7 ms/blk | 253.9 ms/blk | **+1.5%** ±0.3% err |
 | P2WPKH verify | 45,777 ns | 45,978 ns | ≈parity (0.4% slower, within noise margin) |
 
-Full data in `docs/BITCOIN_CORE_BENCH_RESULTS.json` (benchmark run 2026-05-12, hard turbo lock, GCC 14.2.0; P1 security fixes applied through 2026-05-23). All CT signing paths use `generator_mul_blinded` for nonce multiplication (DPA defense active when `secp256k1_context_randomize` is called). CT verification is via CAAS — the project's automated multi-layer audit framework (LLVM ct-verif, Valgrind taint, dudect, 419-module unified runner).
+Full data in `docs/BITCOIN_CORE_BENCH_RESULTS.json` (benchmark run 2026-05-12, hard turbo lock, GCC 14.2.0; P1 security fixes applied through 2026-05-23). All CT signing paths use `generator_mul_blinded` for nonce multiplication (DPA defense active when `secp256k1_context_randomize` is called). CT verification is via CAAS — the project's automated multi-layer audit framework (LLVM ct-verif, Valgrind taint, dudect, 418-module unified runner).
 
 **Honest disclosure:** a 2026-05-07 native-C++-API run (GCC 13.3, 2000 unique pubkeys) showed
 ConnectBlockAllSchnorr at 0.83× (−17%) vs libsecp256k1 due to per-pubkey GLV table rebuild
@@ -88,7 +88,7 @@ path with GCC 14 + LTO lands. Full disclosure in `docs/BITCOIN_CORE_PR_DESCRIPTI
 
 ### Known gaps and honest statements
 
-- **Without LTO (development builds): ConnectBlock is ~0.5–1.0% slower than libsecp256k1.** The positive results above require `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`. Development builds (`RelWithDebInfo`) will show a small regression due to larger code footprint (~1.3 MB vs libsecp ~400 KB causing i-cache pressure). Release builds with LTO recover and surpass libsecp.
+- **Without LTO (development builds): ConnectBlock is ~0.5–1.0% slower than libsecp256k1.** The positive results above require `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`. Development builds (`RelWithDebInfo`) will show a small regression due to larger code footprint (measured 2,310 KB Ultra `.text` vs libsecp256k1 1,261 KB = 1.83×, bitcoin-core profile, no-LTO, 2026-05-22, causing i-cache pressure; see `docs/SHIM_FOOTPRINT_COMPARISON.md`). Release builds with LTO recover and surpass libsecp.
 - macOS ARM64 CI covers shim build + test only; full GPU suite remains Linux x86-64
 - Formal verification is not claimed; software-tool CT verification only (LLVM ct-verif, Valgrind, dudect)
 - Thread safety: each context is independent; concurrent use of distinct contexts is safe

@@ -108,18 +108,30 @@ _CHECKED_RE = re.compile(
 # Detection of if...else...CHECK(true) over multiple lines
 # Matches both uppercase CHECK(true,...) and lowercase check(true,...) helpers
 _ELSE_OPEN_RE  = re.compile(r"^\s*\}\s*else\s*\{")
-_CHECK_TRUE_RE = re.compile(r'(?:CHECK|check)\s*\(\s*true\s*,\s*"([^"]*)"')
+# TQ7-03: recognise every assert idiom used in the corpus, not just CHECK/check.
+# CHECK/check/CHK/REQUIRE share the (cond, "msg") shape used by the message-bearing
+# A1/B patterns; ASSERT_TRUE/EXPECT_TRUE/VERIFY are bare-bool macros, handled by the
+# A1b literal pattern. Without this, a vacuous CHK(true)/ASSERT_TRUE(true) (e.g. the
+# lambda CHK in test_exploit_batch_verify_malleability.cpp) silently evades the gate.
+_MSG_ASSERT_TOKENS = r'(?:CHECK|check|CHK|REQUIRE)'          # take (cond, "msg")
+_ASSERT_TOKENS     = r'(?:CHECK|check|CHK|REQUIRE|ASSERT_TRUE|EXPECT_TRUE|VERIFY)'
+# A1/B: vacuous CHECK(true, "msg") (message-bearing idioms)
+_CHECK_TRUE_RE = re.compile(_MSG_ASSERT_TOKENS + r'\s*\(\s*true\s*,\s*"([^"]*)"')
+# A1b: bare literal-true assert with NO message — ASSERT_TRUE(true), CHK(true), ...
+_ASSERT_TRUE_LITERAL_RE = re.compile(_ASSERT_TOKENS + r'\s*\(\s*(?:true|1)\s*\)\s*;')
 # A2: expr || true tautology — always evaluates true regardless of expr
-_CHECK_OR_TRUE_RE = re.compile(r'CHECK\s*\([^)]*\|\|\s*true\s*[,)]')
+_CHECK_OR_TRUE_RE = re.compile(_ASSERT_TOKENS + r'\s*\([^)]*\|\|\s*true\s*[,)]')
 # A3: x || !x tautology
-_CHECK_OR_NOT_RE  = re.compile(r'CHECK\s*\([^)]*\b(\w+)\s*\|\|\s*!\s*\1\b')
-_ANY_CHECK_RE  = re.compile(r'(?:CHECK|check)\s*\(')
-# A4: bare g_pass++ — increments pass counter without testing any condition.
-# Matches lines whose non-whitespace content is exactly "g_pass++;", "++g_pass;"
-# or "g_pass += 1;". Both postfix AND prefix increment must be caught (P7-TEST-001:
-# the prefix form "++g_pass;" previously slipped past the postfix-only pattern).
-# Does NOT flag g_pass = 0 (reset), g_pass + 1 (expression), or printf(g_pass) (report).
-_BARE_GPASS_RE = re.compile(r'^\s*(?:\+\+\s*g_pass|g_pass\s*(?:\+\+|\+=\s*1))\s*;')
+_CHECK_OR_NOT_RE  = re.compile(_ASSERT_TOKENS + r'\s*\([^)]*\b(\w+)\s*\|\|\s*!\s*\1\b')
+_ANY_CHECK_RE  = re.compile(_ASSERT_TOKENS + r'\s*\(')
+# A4: bare pass-counter increment — increments a pass counter without testing any
+# condition. Matches lines whose non-whitespace content is exactly "<ctr>++;",
+# "++<ctr>;" or "<ctr> += 1;". TQ7-03: was hardcoded to g_pass — now also catches the
+# s_pass/n_pass/pass counters used elsewhere in the corpus. Both postfix AND prefix
+# increment are caught (P7-TEST-001). Does NOT flag <ctr> = 0 (reset), <ctr> + 1
+# (expression), or printf(<ctr>) (report).
+_PASS_CTR = r'(?:g_pass|s_pass|n_pass|pass)'
+_BARE_GPASS_RE = re.compile(r'^\s*(?:\+\+\s*' + _PASS_CTR + r'|' + _PASS_CTR + r'\s*(?:\+\+|\+=\s*1))\s*;')
 
 # Statistical bounds: catch things like  CHECK(x >= 32 && x <= 224, ...)
 _STAT_BOUND_RE = re.compile(
@@ -199,6 +211,16 @@ class AuditTestScanner:
                           raw.strip(),
                           'Replace CHECK(true, "...") with an assertion that validates '
                           'the actual library behavior (return code, output bytes, state).')
+
+            # A1b: bare literal-true assert with no message — ASSERT_TRUE(true);,
+            # CHK(true);, VERIFY(1); etc. (TQ7-03). Always passes, validates nothing.
+            if _ASSERT_TRUE_LITERAL_RE.search(raw):
+                self._add(fname, i + 1, "low", "A1", "vacuous_check",
+                          'Bare literal-true assertion (e.g. ASSERT_TRUE(true)) always '
+                          'passes — no library behavior is tested.',
+                          raw.strip(),
+                          'Replace the literal with the actual correctness condition, '
+                          'or remove the no-op assertion.')
 
             # A2: CHECK(expr || true, ...) — always true regardless of expr
             if _CHECK_OR_TRUE_RE.search(raw):

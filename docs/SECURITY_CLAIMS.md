@@ -2,7 +2,125 @@
 
 **UltrafastSecp256k1 v4.1.1** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
-### 2026-06-04 — P2-CT-001: bip32_derive_path intermediate-key erasure (stack residue)
+### 2026-06-08 - MuSig2 infinity aggregate-nonce BIP-327 conformance (R=G)
+
+`musig2_start_sign_session` now handles an infinity aggregate nonce per BIP-327
+§GetSessionValues: a 33-zero ("ext") aggregate-nonce half is the point at infinity and is
+accepted, and when the effective nonce `R = R1 + b·R2` is infinity the session nonce is set
+to the generator `G`. Previously the engine rejected infinity halves (a non-conformant
+divergence based on a BIP-327 misreading), so the official `sign_verify_vectors.json`
+"both halves at infinity" valid case could not be processed. The shim
+(`secp256k1_musig_nonce_process`) and native ABI (`ufsecp_musig2_start_sign_session`) now
+accept a 33-zero half while still rejecting a non-zero half that fails to decompress;
+individual pubnonces are still rejected at `pubnonce_parse` (BIP-327 `cpoint`). All affected
+values are PUBLIC; no secret handling changes. Verified against `reference.py` and
+libsecp256k1.
+
+**Claim:** MuSig2 aggregate-nonce processing (including the infinity / `R=G` case) is now
+interoperable with BIP-327 / libsecp256k1. The `SHIM-MUSIG-INF` divergence is removed.
+
+### 2026-06-08 - MuSig2 BIP-327 binding-factor tag (interoperability)
+
+Fixed a P1 interoperability bug: the MuSig2 nonce binding factor `b` in
+`musig2_start_sign_session` was derived with the tag `"MuSig/nonceblinding"` instead of
+BIP-327's `"MuSig/noncecoef"` (the hashed input was otherwise identical). This was
+self-consistent for a pure-engine signing session but incompatible with any BIP-327
+implementation (e.g. libsecp256k1): the engine rejected every externally-produced partial
+signature, and a mixed-implementation session could never complete. `b` is PUBLIC, so this
+is a conformance/interop fix, not a secret-handling change, and no previously-valid
+pure-engine aggregate signature is affected. Confirmed against the bip-0327 `reference.py`
+oracle and upstream libsecp256k1; regression test
+`compat/libsecp256k1_shim/tests/test_bip327_sign_verify_vectors.cpp` (CTest
+`bip327_sign_verify_vectors`) verifies external BIP-327 partial signatures for even-Y and
+odd-Y aggregates.
+
+**Claim:** MuSig2 partial signatures and aggregate nonces are now interoperable with
+BIP-327 / libsecp256k1. (The infinity aggregate-nonce path remains a documented
+fail-closed divergence — SHIM-MUSIG-INF in `docs/SHIM_KNOWN_DIVERGENCES.md`.)
+
+### 2026-06-08 - MuSig2 BIP-327 tweak correctness (gacc/tacc)
+
+Fixed a P1 correctness bug: tweaked MuSig2 signing. The keyagg cache lacked the BIP-327
+`gacc`/`tacc` accumulators, so `secp256k1_musig_pubkey_{ec,xonly}_tweak_add` baked the
+tweak into the aggregate but signing never applied the additive/sign correction — the
+EC-tweaked aggregate key was wrong for odd-Y aggregates and the aggregated signature
+failed to verify against any tweaked key. The fix threads `gacc`/`tacc` through the
+tweak functions, `musig2_partial_sign` (`d = g·gacc·d'`), `musig2_partial_sig_agg`
+(`s += e·g·tacc`), `musig2_start_sign_session`, and `musig2_partial_verify`.
+`gacc`/`tacc` are PUBLIC; the untweaked path is byte-identical (defaults `gacc=1`,
+`tacc=0`). Verified against the bip-0327 `reference.py` oracle (tweaked-output KATs) and
+sign+verify+partial-verify roundtrips (regression test
+`compat/libsecp256k1_shim/tests/test_bip327_tweak_sign.cpp`, CTest `bip327_tweak_sign`).
+Taproot+MuSig2 key/script-path tweaked signing is now correct.
+
+### 2026-06-06 - CPU ABI/shim fail-closed outputs and secret lifecycle refresh
+
+`src/cpu/src/bip32.cpp` and `src/cpu/src/bip39.cpp` received a secret-lifecycle
+cleanup pass. BIP32 public-key derivation now erases its parsed private scalar
+after constant-time generator multiplication, and BIP32 master-key derivation
+erases HMAC output halves, the parsed master scalar, and the temporary serialized
+private-key bytes after copying the final key material into the caller-owned
+`ExtendedKey`. BIP39 PBKDF2 now erases the per-block `salt_block` as soon as the
+block output is copied; the existing `result` and `u` erasure remains in place.
+
+**Claim:** these changes are lifecycle hardening only. They do not change BIP32
+or BIP39 derived outputs, and they do not introduce variable-time secret
+branches. Invalid strict-parse paths erase local secret-derived buffers before
+returning failure.
+
+The CPU ABI and shim boundary now treats malformed or internally invalid
+secret-bearing results as fail-closed. Taproot, BIP144, coin helpers, FROST
+sign/aggregate, Ethereum recoverable signing, and libsecp256k1 shim parser/sign
+entry points zero their output buffers before processing or before returning
+non-OK once they enter parser/signing dispatch. Unsupported custom nonce
+callbacks in the shim are rejected before signing dispatch and leave the caller's
+output signature untouched; this is a pre-dispatch argument/configuration reject,
+not an internally invalid signing result. Zero partial signatures, all-zero
+aggregate signatures, invalid recoverable signatures, and bad serialized keys are
+returned as errors rather than success-with-zero-output.
+
+**Contract:** callers may rely on a non-OK CPU ABI/shim return leaving the
+documented output buffer in a zero/invalid default state for these hardened
+surfaces. Caller-owned secret inputs remain caller-owned; when an ABI consumes a
+nonce by contract, that nonce is still erased on every non-NULL exit path.
+
+Validation: `unified_audit_runner --section protocol_security`,
+`--section standard_vectors`, `--section memory_safety`, `--section
+ct_analysis`, `--section fuzzing`, `--section exploit_poc`, shim CTest targets,
+and `ci/check_exploit_wiring.py`.
+
+### 2026-06-06 - GPU C ABI fail-closed outputs and secret-buffer erasure parity
+
+The stable GPU C ABI now has an explicit fail-closed output contract for
+result-bearing calls in `include/ufsecp/ufsecp_gpu.h` and
+`src/cpu/src/ufsecp_gpu_impl.cpp`: outputs are cleared before backend dispatch
+and are cleared again if the backend returns non-OK. This covers batch
+verification, ECDH, Hash160, MSM, ecrecover, FROST partial verification, ZK
+verification, Bulletproof verification, BIP-324 AEAD, SNARK witness helpers,
+and BIP-352 scan. The collect APIs are excluded because their `key_buffer` is
+in-place caller-owned marker state used for fallback.
+
+**Claim:** the secret-bearing GPU operations are ECDH, BIP-352 scan, and
+BIP-324 AEAD encrypt/decrypt. BIP-352 scan keys are now strict-parsed on the CPU
+ABI path and in CUDA/OpenCL/Metal backends; zero and order-or-larger scan keys
+fail with a bad-key error and leave outputs zeroed. OpenCL erases both the host
+GLV wNAF scan plan and device plan buffer on every return path. CUDA validates
+decompressed spend/tweak points before kernel use and zeroes scan/device buffers
+through erase-on-exit guards. Metal erases BIP-352 scan scalar buffers, ECDH
+scratch scalar buffers, and BIP-324 AEAD shared key buffers before release.
+
+**Contract:** GPU callers must still treat any non-OK return as failure and
+discard outputs, but the ABI additionally zeroes result buffers so hostile or
+buggy callers do not observe partial successful outputs after backend errors.
+Backend parity remains required across CUDA, OpenCL, and Metal for every
+`GpuBackend` operation.
+
+Validation: `audit/test_gpu_bip352_scan.cpp`,
+`audit/test_gpu_host_api_negative.cpp`,
+`audit/test_exploit_gpu_bip352_key_erase.cpp`, `unified_audit_runner --section
+memory_safety`, and `unified_audit_runner --section exploit_poc`.
+
+### 2026-06-04 - P2-CT-001: bip32_derive_path intermediate-key erasure (stack residue)
 
 `src/cpu/src/bip32.cpp` `bip32_derive_path` now `secure_erase`s the redundant `child`
 copy of each intermediate extended private key (key + chain code) between derivation
@@ -993,6 +1111,31 @@ bit-identical to `ufsecp_gpu_*_verify_batch` (proven GPU==CPU==libsecp by
 `test_lbtc_consensus_diff`). OpenCL/Metal return `Unsupported` and the bridge falls
 back to the host-collapse path. Hostile-caller quartet: see
 [FFI_HOSTILE_CALLER.md](FFI_HOSTILE_CALLER.md) Section J.
+
+### GPU per-item batch ABI (libbitcoin bridge, 2026-06-08 — PUBLIC-DATA)
+
+`ufsecp_gpu_xonly_validate`, `ufsecp_gpu_commitment_verify` and
+`ufsecp_gpu_tagged_hash` are libbitcoin-bridge per-item batch kernels. They are
+**public-data operations**: inputs are x-only keys, BIP-341 tweaks/outputs, and
+script-tree messages (all on-chain / caller-public) — **no private key, nonce, or
+secret material is processed**, so the CT-vs-variable-time boundary does not apply
+(variable-time is correct, per the verify-path rule). Each is a one-thread-per-item
+CUDA kernel; OpenCL/Metal return `Unsupported` and the bridge falls back to its
+threaded CPU reference (consensus-identical). Correctness is anchored bit-for-bit on
+the libsecp shim: `ufsecp_gpu_xonly_validate` == `secp256k1_xonly_pubkey_parse`
+(including the `x ≥ p` reject), `ufsecp_gpu_commitment_verify` ==
+`secp256k1_xonly_pubkey_tweak_add_check` per row, and `ufsecp_gpu_tagged_hash` ==
+`secp256k1_tagged_sha256` per item — proven in `tests/test_lbtc_commitment.cpp`
+(section 9). Outputs are fail-closed (cleared on any error). Hostile-caller quartet:
+see [FFI_HOSTILE_CALLER.md](FFI_HOSTILE_CALLER.md) Section J (J.lbtc-batch).
+
+Three further libbitcoin-bridge batch kernels follow the same model (CUDA-native,
+OpenCL/Metal `Unsupported` → threaded CPU fallback, fail-closed, all PUBLIC-DATA):
+`ufsecp_gpu_pubkey_validate` (full compressed-pubkey on-curve check, == shim
+`ec_pubkey_parse`), `ufsecp_gpu_tagged_hash_var` (TapLeaf per-item-length tagged
+hash, == shim `tagged_sha256`), and `ufsecp_gpu_hash256` (double-SHA-256 / merkle
+node hashing, == SHA256d reference) — all proven per item in
+`tests/test_lbtc_commitment.cpp` (sections 10–12).
 
 ### GPU (CUDA/OpenCL/Metal) API
 

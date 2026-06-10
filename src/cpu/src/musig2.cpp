@@ -27,7 +27,7 @@ using fast::Point;
 using fast::FieldElement;
 using detail::g_keyagg_list_midstate;
 using detail::g_keyagg_coeff_midstate;
-using detail::g_musig_nonceblinding_midstate;
+using detail::g_musig_noncecoef_midstate;
 using detail::g_musig_aux_midstate;
 using detail::g_musig_nonce_midstate;
 using detail::g_challenge_midstate;
@@ -313,6 +313,11 @@ MuSig2AggNonce musig2_nonce_agg(const std::vector<MuSig2PubNonce>& pub_nonces) {
     for (const auto& nonce : pub_nonces) {
         auto r1 = decompress_point(nonce.R1);
         auto r2 = decompress_point(nonce.R2);
+        if (r1.is_infinity() || r2.is_infinity()) {
+            agg.R1 = Point::infinity();
+            agg.R2 = Point::infinity();
+            return agg;
+        }
         agg.R1 = agg.R1.add(r1);
         agg.R2 = agg.R2.add(r2);
     }
@@ -328,6 +333,11 @@ MuSig2AggNonce musig2_nonce_agg_points(
     agg.R1 = Point::infinity();
     agg.R2 = Point::infinity();
     for (const auto& [r1, r2] : pts) {
+        if (r1.is_infinity() || r2.is_infinity()) {
+            agg.R1 = Point::infinity();
+            agg.R2 = Point::infinity();
+            return agg;
+        }
         agg.R1 = agg.R1.add(r1);
         agg.R2 = agg.R2.add(r2);
     }
@@ -343,32 +353,48 @@ MuSig2Session musig2_start_sign_session(
 
     MuSig2Session session{};
 
-    // SEC-005: BIP-327 §GetSessionValues step 2 — abort if either aggregated nonce
-    // component is infinity (indicates empty input, nonce cancellation, or invalid input).
-    // A zero Scalar for session.b and session.e signals an invalid session to the caller
-    // (musig2_partial_sign checks: if session.e.is_zero() the session is degenerate).
-    // Returning a default-constructed session (all-zero scalars, infinity R) is the
-    // agreed invalid-session convention used throughout this codebase.
-    if (agg_nonce.R1.is_infinity() || agg_nonce.R2.is_infinity()) {
-        return session;  // default-constructed: R=infinity, b=0, e=0, R_negated=false
-    }
+    // BIP-327 §GetSessionValues: an aggregate-nonce half may legitimately be the point
+    // at infinity (cpoint_ext / 33-zero "ext" encoding) when participant nonces cancel.
+    // It is NOT rejected here — the effective nonce R = R1 + b·R2 is computed and only the
+    // *combined* nonce being infinity triggers the R = G substitution (below). This matches
+    // reference.py and libsecp256k1 (secp256k1_musig_nonce_process: fin_nonce → G if inf).
+    // Individual pubnonces are still rejected upstream in pubnonce_parse (BIP-327 cpoint).
 
-    // b = tagged_hash("MuSig/nonceblinding", cbytes_ext(R1)||cbytes_ext(R2)||xbytes(Q)||msg)
-    // BIP-327 §GetSessionValues: tag MUST be "MuSig/nonceblinding" (not "noncecoef").
-    auto R1_comp = agg_nonce.R1.to_compressed();
-    auto R2_comp = agg_nonce.R2.to_compressed();
+    // b = tagged_hash("MuSig/noncecoef", cbytes_ext(R1)||cbytes_ext(R2)||xbytes(Q)||msg)
+    // BIP-327 §GetSessionValues: tag is "MuSig/noncecoef" (matches reference.py and
+    // libsecp256k1). Any other tag stays self-consistent for a pure-engine session but
+    // breaks cross-implementation interop — partial sigs become mutually unverifiable.
+    // cbytes_ext(infinity) is 33 zero bytes — match that for the hash input.
+    std::array<uint8_t, 33> R1_comp = agg_nonce.R1.is_infinity()
+        ? std::array<uint8_t, 33>{} : agg_nonce.R1.to_compressed();
+    std::array<uint8_t, 33> R2_comp = agg_nonce.R2.is_infinity()
+        ? std::array<uint8_t, 33>{} : agg_nonce.R2.to_compressed();
 
     uint8_t b_input[130]; // 33 + 33 + 32 + 32
     std::memcpy(b_input, R1_comp.data(), 33);
     std::memcpy(b_input + 33, R2_comp.data(), 33);
     std::memcpy(b_input + 66, key_agg_ctx.Q_x.data(), 32);
     std::memcpy(b_input + 98, msg.data(), 32);
-    auto b_hash = cached_tagged_hash(g_musig_nonceblinding_midstate, b_input, 130);
+    auto b_hash = cached_tagged_hash(g_musig_noncecoef_midstate, b_input, 130);
     session.b = Scalar::from_bytes(b_hash);
 
-    // R = R1 + b * R2
-    auto bR2 = agg_nonce.R2.scalar_mul(session.b);  // nosemgrep: secret-scalar-variable-time-mul
-    session.R = agg_nonce.R1.add(bR2);
+    // R = R1 + b * R2  (effective nonce). Infinity halves are the group identity, handled
+    // explicitly so we never feed an infinity point into the incomplete add/scalar_mul.
+    Point bR2 = agg_nonce.R2.is_infinity()
+        ? Point::infinity()
+        : agg_nonce.R2.scalar_mul(session.b);  // nosemgrep: secret-scalar-variable-time-mul
+    if (agg_nonce.R1.is_infinity()) {
+        session.R = bR2;                 // 0 + b*R2
+    } else if (bR2.is_infinity()) {
+        session.R = agg_nonce.R1;        // R1 + 0
+    } else {
+        session.R = agg_nonce.R1.add(bR2);
+    }
+
+    // BIP-327 §GetSessionValues: if the effective nonce R is infinity, use the generator G.
+    if (session.R.is_infinity()) {
+        session.R = Point::generator();
+    }
 
     // Negate R if needed for even Y
     session.R_negated = !has_even_y(session.R);
@@ -384,6 +410,15 @@ MuSig2Session musig2_start_sign_session(
     std::memcpy(e_input + 64, msg.data(), 32);
     auto e_hash = cached_tagged_hash(g_challenge_midstate, e_input, 96);
     session.e = Scalar::from_bytes(e_hash);
+
+    // BIP-327 additive-tweak correction: tweak_s = e * g * tacc, where g = -1 if the
+    // (even-Y-normalized) aggregate was negated, else 1. Added to the aggregated
+    // signature in musig2_partial_sig_agg. tacc defaults to 0 (no tweaks) -> tweak_s = 0,
+    // so the untweaked path is unchanged. gacc's sign is folded into d in partial_sign.
+    {
+        Scalar const gtacc = key_agg_ctx.Q_negated ? key_agg_ctx.tacc.negate() : key_agg_ctx.tacc;
+        session.tweak_s = ct::scalar_mul(session.e, gtacc);
+    }
 
     return session;
 }
@@ -474,6 +509,11 @@ Scalar musig2_partial_sign(
         d = ct::scalar_select(neg_d, d, mask);
     }
 
+    // BIP-327: fold the accumulated tweak sign gacc into the signing key (d = g*gacc*d').
+    // gacc is +/-1 derived from public pubkeys + public tweaks (default +1, untweaked),
+    // so this is a public, branchless multiply that leaves the untweaked path unchanged.
+    d = ct::scalar_mul(d, key_agg_ctx.gacc);
+
     // s_i = k + e * a_i * d  (mod n)
     // ct::scalar_mul/add: branchless modular arithmetic -- no secret-dependent
     // branches in the final reduction, unlike fast::Scalar operator*/ operator+.
@@ -540,6 +580,9 @@ bool musig2_partial_verify(
 
     Scalar ea = session.e * key_agg_ctx.key_coefficients[signer_index];
     if (key_agg_ctx.Q_negated) ea = ea.negate();
+    // BIP-327: the signer's key term is e*a_i*g*gacc*P_i — fold gacc in to match
+    // musig2_partial_sign (gacc defaults to 1, so untweaked verification is unchanged).
+    ea = ea * key_agg_ctx.gacc;
 
     // Helper: check if sG == R_eff + ea * Point::from_affine(px, y_candidate)
     auto jacobian_eq = [](const Point& A, const Point& B) -> bool {
@@ -573,6 +616,10 @@ std::array<uint8_t, 64> musig2_partial_sig_agg(
     for (const auto& si : partial_sigs) {
         s = secp256k1::ct::scalar_add(s, si);
     }
+
+    // BIP-327: add the additive-tweak correction e*g*tacc so the aggregated signature
+    // verifies against the tweaked aggregate key. tweak_s = 0 when no tweaks were applied.
+    s = secp256k1::ct::scalar_add(s, session.tweak_s);
 
     // Fail-closed: degenerate aggregated signature is a security failure
     if (s.is_zero_ct() || session.R.is_infinity()) {

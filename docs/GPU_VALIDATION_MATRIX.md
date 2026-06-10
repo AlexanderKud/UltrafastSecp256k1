@@ -21,7 +21,7 @@ The C ABI layer (`ufsecp_gpu.h`) currently exposes 13 backend-neutral GPU batch
 operations. CUDA, OpenCL, and Metal all implement that stable public surface.
 `UFSECP_ERR_GPU_UNSUPPORTED` (104) remains part of the ABI for unsupported
 backend selection, missing device/runtime capability, or invalid execution
-context, not as a standing parity gap for the stable 19-op surface.
+context, not as a standing parity gap for the stable 13-op surface.
 
 | Operation | CUDA | OpenCL | Metal | Data Class |
 |-----------|------|--------|-------|------------|

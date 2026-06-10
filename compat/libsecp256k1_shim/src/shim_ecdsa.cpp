@@ -534,8 +534,6 @@ int secp256k1_ecdsa_sign(
         secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ecdsa_sign: NULL argument");
         return 0;
     }
-    // Apply per-context blinding for the duration of this signing call (SHIM-001 fix).
-    secp256k1_shim_internal::ContextBlindingScope _blind(ctx);
     // Reject custom nonce functions: this shim uses RFC 6979 internally and
     // cannot forward an arbitrary noncefp callback. Fail-closed so callers
     // that rely on a specific nonce function are not silently given RFC 6979.
@@ -549,6 +547,9 @@ int secp256k1_ecdsa_sign(
             "pass NULL or secp256k1_nonce_function_rfc6979");
         return 0;
     }
+    std::memset(sig->data, 0, sizeof(sig->data));
+    // Apply per-context blinding for the duration of this signing call (SHIM-001 fix).
+    secp256k1_shim_internal::ContextBlindingScope _blind(ctx);
 
     std::array<uint8_t, 32> msg{};
     std::memcpy(msg.data(), msghash32, 32);

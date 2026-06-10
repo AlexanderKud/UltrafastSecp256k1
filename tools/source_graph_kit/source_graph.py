@@ -8897,11 +8897,12 @@ def context_cmd(name):
     """Unified context query: summary + functions + deps + rdeps + tests + edges for a file."""
     conn = get_conn()
     pattern = f"%{name}%"
+    basename_pattern = f"%{os.path.basename(name)}%"
 
     # 1. File summary
     summary = conn.execute(
-        "SELECT file, project, summary, category FROM file_summaries WHERE file LIKE ?",
-        (pattern,)
+        "SELECT file, project, summary, category FROM file_summaries WHERE file LIKE ? OR file LIKE ?",
+        (pattern, basename_pattern)
     ).fetchall()
     if summary:
         print(f"\n  === File Summary ===")
@@ -8909,60 +8910,87 @@ def context_cmd(name):
     else:
         print(f"\n  (no summary for '{name}')")
 
-    # 2. Functions with line ranges
-    funcs = conn.execute(
-        "SELECT function_name, class_name, start_line, end_line, signature FROM function_index WHERE file LIKE ? ORDER BY start_line",
-        (pattern,)
+    file_rows = conn.execute(
+        "SELECT path, project, category FROM files WHERE path LIKE ? OR path LIKE ? ORDER BY path LIMIT 25",
+        (pattern, basename_pattern)
     ).fetchall()
+    if file_rows:
+        print(f"\n  === Indexed Files ({len(file_rows)}) ===")
+        print_table(file_rows, ["path", "project", "category"])
+    docs_context = bool(file_rows) and all(row["category"] == "docs" for row in file_rows)
+
+    # 2. Functions with line ranges
+    funcs = []
+    if not docs_context:
+        funcs = conn.execute(
+            "SELECT function_name, class_name, start_line, end_line, signature FROM function_index "
+            "WHERE file LIKE ? OR file LIKE ? ORDER BY start_line",
+            (pattern, basename_pattern)
+        ).fetchall()
     if funcs:
         print(f"\n  === Functions ({len(funcs)}) ===")
         print_table(funcs, ["function_name", "class_name", "start_line", "end_line", "signature"])
 
-    symbols = conn.execute(
-        "SELECT symbol_name, hot_path, ct_sensitive, batchable, gpu_candidate, risk_level, review_priority "
-        "FROM symbol_metadata WHERE file_path LIKE ? ORDER BY review_priority DESC, symbol_name LIMIT 25",
-        (pattern,)
-    ).fetchall()
+    symbols = []
+    if not docs_context:
+        symbols = conn.execute(
+            "SELECT symbol_name, hot_path, ct_sensitive, batchable, gpu_candidate, risk_level, review_priority "
+            "FROM symbol_metadata WHERE file_path LIKE ? OR file_path LIKE ? "
+            "ORDER BY review_priority DESC, symbol_name LIMIT 25",
+            (pattern, basename_pattern)
+        ).fetchall()
     if symbols:
         print(f"\n  === Symbol Metadata ===")
         print_table(symbols, ["symbol_name", "hot_path", "ct_sensitive", "batchable", "gpu_candidate", "risk_level", "review_priority"])
 
-    calls = conn.execute(
-        "SELECT caller_symbol, callee_symbol, confidence, call_count FROM call_edges "
-        "WHERE caller_file LIKE ? OR callee_file LIKE ? ORDER BY confidence DESC, call_count DESC LIMIT 25",
-        (pattern, pattern)
-    ).fetchall()
+    calls = []
+    if not docs_context:
+        calls = conn.execute(
+            "SELECT caller_symbol, callee_symbol, confidence, call_count FROM call_edges "
+            "WHERE caller_file LIKE ? OR callee_file LIKE ? OR caller_file LIKE ? OR callee_file LIKE ? "
+            "ORDER BY confidence DESC, call_count DESC LIMIT 25",
+            (pattern, pattern, basename_pattern, basename_pattern)
+        ).fetchall()
     if calls:
         print(f"\n  === Call Edges ===")
         print_table(calls, ["caller_symbol", "callee_symbol", "confidence", "call_count"])
 
     # 3. Dependencies (what this file includes/uses)
-    deps = conn.execute(
-        "SELECT target_file, dep_type FROM dependencies WHERE source_file LIKE ? ORDER BY dep_type, target_file",
-        (pattern,)
-    ).fetchall()
+    deps = []
+    if not docs_context:
+        deps = conn.execute(
+            "SELECT target_file, dep_type FROM dependencies WHERE source_file LIKE ? OR source_file LIKE ? "
+            "ORDER BY dep_type, target_file",
+            (pattern, basename_pattern)
+        ).fetchall()
     if deps:
         print(f"\n  === Depends On ({len(deps)}) ===")
         print_table(deps, ["target_file", "dep_type"])
 
     # 4. Reverse dependencies (who includes/uses this file)
-    rdeps = conn.execute(
-        "SELECT source_file, dep_type FROM dependencies WHERE target_file LIKE ? ORDER BY dep_type, source_file",
-        (pattern,)
-    ).fetchall()
+    rdeps = []
+    if not docs_context:
+        rdeps = conn.execute(
+            "SELECT source_file, dep_type FROM dependencies WHERE target_file LIKE ? OR target_file LIKE ? "
+            "ORDER BY dep_type, source_file",
+            (pattern, basename_pattern)
+        ).fetchall()
     if rdeps:
         print(f"\n  === Used By ({len(rdeps)}) ===")
         print_table(rdeps, ["source_file", "dep_type"])
 
     # 5. Edges (tests, extends, etc.)
-    edges_out = conn.execute(
-        "SELECT target, edge_type, detail FROM edges WHERE source LIKE ? ORDER BY edge_type",
-        (pattern,)
-    ).fetchall()
-    edges_in = conn.execute(
-        "SELECT source, edge_type, detail FROM edges WHERE target LIKE ? ORDER BY edge_type",
-        (pattern,)
-    ).fetchall()
+    edges_out = []
+    edges_in = []
+    if not docs_context:
+        edges_out = conn.execute(
+            "SELECT target, edge_type, detail FROM edges WHERE source LIKE ? OR source LIKE ? ORDER BY edge_type",
+            (pattern, basename_pattern)
+        ).fetchall()
+        edges_in = conn.execute(
+            "SELECT source, edge_type, detail FROM edges WHERE target LIKE ? OR target LIKE ? ORDER BY edge_type",
+            (pattern, basename_pattern)
+        ).fetchall()
     if edges_out:
         print(f"\n  === Outgoing Edges ===")
         print_table(edges_out, ["target", "edge_type", "detail"])
@@ -8971,33 +8999,39 @@ def context_cmd(name):
         print_table(edges_in, ["source", "edge_type", "detail"])
 
     # 6. Singletons defined in this file
-    singletons = conn.execute(
-        "SELECT macro, class_name, description FROM singletons WHERE header LIKE ?",
-        (pattern,)
-    ).fetchall()
+    singletons = []
+    if not docs_context:
+        singletons = conn.execute(
+            "SELECT macro, class_name, description FROM singletons WHERE header LIKE ? OR header LIKE ?",
+            (pattern, basename_pattern)
+        ).fetchall()
     if singletons:
         print(f"\n  === Singletons ===")
         print_table(singletons, ["macro", "class_name", "description"])
 
     # 7. Enums in this file
-    enums = conn.execute(
-        "SELECT name, value_count, values_preview FROM enums WHERE file LIKE ?",
-        (pattern,)
-    ).fetchall()
+    enums = []
+    if not docs_context:
+        enums = conn.execute(
+            "SELECT name, value_count, values_preview FROM enums WHERE file LIKE ? OR file LIKE ?",
+            (pattern, basename_pattern)
+        ).fetchall()
     if enums:
         print(f"\n  === Enums ===")
         print_table(enums, ["name", "value_count", "values_preview"])
 
     # 8. Structs in this file
-    structs = conn.execute(
-        "SELECT name, field_count, is_packed, fields_preview FROM structs WHERE file LIKE ?",
-        (pattern,)
-    ).fetchall()
+    structs = []
+    if not docs_context:
+        structs = conn.execute(
+            "SELECT name, field_count, is_packed, fields_preview FROM structs WHERE file LIKE ? OR file LIKE ?",
+            (pattern, basename_pattern)
+        ).fetchall()
     if structs:
         print(f"\n  === Structs ===")
         print_table(structs, ["name", "field_count", "is_packed", "fields_preview"])
 
-    if not summary and not funcs:
+    if not summary and not funcs and not file_rows:
         print(f"\n  No context found for '{name}'. Try a more specific filename.")
 
 

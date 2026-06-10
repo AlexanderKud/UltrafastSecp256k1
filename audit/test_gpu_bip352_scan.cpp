@@ -61,6 +61,13 @@ static const uint8_t SCAN_KEY[32] = {
     0x38,0xaf,0x4a,0xd3,0x00,0xda,0x1a,0x42
 };
 
+static const uint8_t ORDER_N[32] = {
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFE,
+    0xBA,0xAE,0xDC,0xE6,0xAF,0x48,0xA0,0x3B,
+    0xBF,0xD2,0x5E,0x8C,0xD0,0x36,0x41,0x41
+};
+
 static const uint8_t SPEND_PUBKEY[33] = {
     0x02,
     0xe2,0xed,0x4b,0x9c,0xe9,0x14,0x5e,0x17,
@@ -78,6 +85,14 @@ static void fill_det(uint8_t* buf, size_t len, uint8_t seed) {
         st = st * 1103515245u + 12345u;
         buf[i] = static_cast<uint8_t>((st >> 16) & 0xFF);
     }
+}
+
+static bool all_zero(const void* ptr, size_t len) {
+    const auto* p = static_cast<const uint8_t*>(ptr);
+    for (size_t i = 0; i < len; ++i) {
+        if (p[i] != 0) return false;
+    }
+    return true;
 }
 
 /* Build n compressed tweak public keys via ufsecp_pubkey_create.
@@ -113,6 +128,21 @@ static void test_bip352_2_3_cpu_plan() {
     uint8_t plan[264] = {};
     auto rc_null = ufsecp_bip352_prepare_scan_plan(nullptr, plan);
     CHECK(rc_null != UFSECP_OK, "SW-BIP352-2", "null scan_privkey → error");
+
+    std::memset(plan, 0xA5, sizeof(plan));
+    uint8_t zero_scan[32] = {};
+    auto rc_zero = ufsecp_bip352_prepare_scan_plan(zero_scan, plan);
+    CHECK(rc_zero == UFSECP_ERR_BAD_KEY,
+          "SW-BIP352-2b", "zero scan_privkey → BAD_KEY");
+    CHECK(all_zero(plan, sizeof(plan)),
+          "SW-BIP352-2c", "zero scan_privkey leaves plan output zeroed");
+
+    std::memset(plan, 0xA5, sizeof(plan));
+    auto rc_order = ufsecp_bip352_prepare_scan_plan(ORDER_N, plan);
+    CHECK(rc_order == UFSECP_ERR_BAD_KEY,
+          "SW-BIP352-2d", "scan_privkey == group order → BAD_KEY");
+    CHECK(all_zero(plan, sizeof(plan)),
+          "SW-BIP352-2e", "order scan_privkey leaves plan output zeroed");
 
     /* SW-BIP352-3: valid key → non-zero plan */
     auto rc_ok = ufsecp_bip352_prepare_scan_plan(SCAN_KEY, plan);
@@ -207,9 +237,19 @@ static void test_bip352_4_13_gpu(ufsecp_ctx* cpu_ctx) {
                                              tweaks, 0, &dummy1);
     CHECK(rc9 == UFSECP_OK, "SW-BIP352-9", "n_tweaks==0 → UFSECP_OK");
 
+    uint8_t zero_scan[32] = {};
+    dummy1 = UINT64_MAX;
+    auto rc9a = ufsecp_gpu_bip352_scan_batch(gpu, zero_scan, SPEND_PUBKEY,
+                                              tweaks, 1, &dummy1);
+    CHECK(rc9a == UFSECP_ERR_BAD_KEY,
+          "SW-BIP352-9a", "zero scan key is rejected before GPU dispatch");
+    CHECK(dummy1 == 0,
+          "SW-BIP352-9b", "bad scan key clears prefix64_out");
+
     uint8_t bad_tweak[33] = {};
     std::memcpy(bad_tweak, tweaks, sizeof(bad_tweak));
     bad_tweak[0] = 0x05;
+    dummy1 = UINT64_MAX;
     auto rc9b = ufsecp_gpu_bip352_scan_batch(gpu, SCAN_KEY, SPEND_PUBKEY,
                                               bad_tweak, 1, &dummy1);
     if (rc9b == UFSECP_ERR_GPU_UNSUPPORTED) {
@@ -217,6 +257,8 @@ static void test_bip352_4_13_gpu(ufsecp_ctx* cpu_ctx) {
     } else {
         CHECK(rc9b != UFSECP_OK,
               "SW-BIP352-14", "invalid compressed tweak pubkey is rejected");
+        CHECK(dummy1 == 0,
+              "SW-BIP352-14b", "invalid tweak pubkey clears prefix64_out");
     }
 
     /* SW-BIP352-10: single tweak → prefix non-zero */

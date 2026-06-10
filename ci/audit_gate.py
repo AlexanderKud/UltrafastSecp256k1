@@ -1427,7 +1427,10 @@ def check_source_graph_quality(conn):
         finally:
             sg_conn.close()
     except Exception as exc:
-        findings.append(('WARN', f'Could not query source graph DB: {exc}'))
+        # The DB file exists (its mtime was stat'd above), so a connect/query failure
+        # means it is present but corrupt/unqueryable — that must FAIL, not WARN. A WARN
+        # here silently bypasses the row-count completeness check below the try.
+        findings.append(('FAIL', f'Source graph DB present but unqueryable (corrupt?): {exc}'))
 
     return 'G-12: Source Graph Quality', findings
 

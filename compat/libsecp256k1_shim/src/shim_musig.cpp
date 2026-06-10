@@ -166,6 +166,15 @@ static KAEntry* ka_get(const secp256k1_musig_keyagg_cache* p) {
     return it != g_ka.end() ? it->second.get() : nullptr;
 }
 
+// Look up the keyagg entry directly by token (used by partial_sig_agg to recover the
+// BIP-327 tweak accumulators — the session blob has no room to carry tweak_s).
+static KAEntry* ka_get_by_token(std::uint64_t tok) {
+    if (tok == 0) return nullptr;
+    std::lock_guard<std::mutex> lk(g_mu);
+    auto it = g_ka.find(tok);
+    return it != g_ka.end() ? it->second.get() : nullptr;
+}
+
 static KAEntry* ka_put(secp256k1_musig_keyagg_cache* p, std::unique_ptr<KAEntry> v) {
     std::lock_guard<std::mutex> lk(g_mu);
     if (g_ka.size() >= kMaxKaEntries) return nullptr;  // DoS cap
@@ -406,13 +415,24 @@ int secp256k1_musig_pubkey_ec_tweak_add(
     // SHIM-003: parse_bytes_strict (not nonzero) — tweak=0 valid per libsecp
     // (result is Q unchanged). parse_bytes_strict_nonzero incorrectly rejected
     // zero tweak, diverging from upstream behavior.
+    // SHIM-003: parse_bytes_strict (not nonzero) — tweak=0 valid per libsecp.
     Scalar t;
     if (!Scalar::parse_bytes_strict(tweak32, t)) return 0;
     Point tG = secp256k1::fast::scalar_mul_generator(t);
-    e->ctx.Q = e->ctx.Q.add(tG);
-    if (e->ctx.Q.is_infinity()) return 0;
+    // BIP-327 ordinary tweak (g=1): operate on the ACTUAL aggregate. e->ctx.Q is stored
+    // even-Y normalized, so recover the actual point via Q_negated before adding t*G.
+    Point A  = e->ctx.Q_negated ? e->ctx.Q.negate() : e->ctx.Q;
+    Point A2 = A.add(tG);
+    if (A2.is_infinity()) return 0;
+    e->ctx.tacc = e->ctx.tacc + t;                       // tacc += t  (gacc unchanged for EC)
+    // re-store the cache in its even-Y + Q_negated convention (signer relies on it)
+    bool a_odd = !A2.has_even_y();
+    e->ctx.Q = a_odd ? A2.negate() : A2;
+    e->ctx.Q_negated = a_odd;
     {
-        auto unc_q = e->ctx.Q.to_uncompressed();
+        // output + agg_pk_comp = the ACTUAL tweaked aggregate (real parity); Q_x = x (parity-free)
+        auto unc_q = A2.to_uncompressed();
+        std::memcpy(e->ctx.Q_x.data(), unc_q.data() + 1, 32);
         bool q_odd = (unc_q[64] & 1) != 0;
         e->agg_pk_comp[0] = q_odd ? 0x03 : 0x02;
         std::memcpy(e->agg_pk_comp.data() + 1, unc_q.data() + 1, 32);
@@ -434,19 +454,24 @@ int secp256k1_musig_pubkey_xonly_tweak_add(
     if (!keyagg_cache || !tweak32) return 0;
     KAEntry* e = ka_get(keyagg_cache);
     if (!e) return 0;
-    if (!e->ctx.Q.has_even_y()) {
-        e->ctx.Q = e->ctx.Q.negate();
-        e->ctx.Q_negated = !e->ctx.Q_negated;
-    }
-    // SHIM-001 fix: parse_bytes_strict (not nonzero) — tweak=0 is valid per libsecp256k1
-    // (result: Q unchanged, i.e. adding the identity). Matches ec_tweak_add behaviour.
+    // SHIM-001: parse_bytes_strict (not nonzero) — tweak=0 valid per libsecp256k1.
     Scalar t;
     if (!Scalar::parse_bytes_strict(tweak32, t)) return 0;
     Point tG = secp256k1::fast::scalar_mul_generator(t);
-    e->ctx.Q = e->ctx.Q.add(tG);
-    if (e->ctx.Q.is_infinity()) return 0;
+    // BIP-327 x-only tweak: g = -1 if the ACTUAL aggregate has odd Y, else 1. e->ctx.Q is
+    // even-Y normalized so the actual aggregate is odd iff Q_negated, and even-Y(actual)
+    // IS e->ctx.Q. So A2 = g*A + t*G = e->ctx.Q + t*G.
+    bool const g_neg = e->ctx.Q_negated;
+    Point A2 = e->ctx.Q.add(tG);
+    if (A2.is_infinity()) return 0;
+    if (g_neg) e->ctx.gacc = e->ctx.gacc.negate();                  // gacc = g*gacc
+    e->ctx.tacc = (g_neg ? e->ctx.tacc.negate() : e->ctx.tacc) + t; // tacc = t + g*tacc
+    bool a_odd = !A2.has_even_y();
+    e->ctx.Q = a_odd ? A2.negate() : A2;
+    e->ctx.Q_negated = a_odd;
     {
-        auto unc_q = e->ctx.Q.to_uncompressed();
+        auto unc_q = A2.to_uncompressed();
+        std::memcpy(e->ctx.Q_x.data(), unc_q.data() + 1, 32);
         bool q_odd = (unc_q[64] & 1) != 0;
         e->agg_pk_comp[0] = q_odd ? 0x03 : 0x02;
         std::memcpy(e->agg_pk_comp.data() + 1, unc_q.data() + 1, 32);
@@ -612,14 +637,21 @@ int secp256k1_musig_nonce_process(
     KAEntry* e = ka_get(keyagg_cache);
     if (!e) return 0;
     secp256k1::MuSig2AggNonce an;
+    // BIP-327 cpoint_ext: a 33-zero aggnonce half is the point at infinity and is VALID
+    // (participant nonces cancelled). Reject only a half that is non-zero yet fails to
+    // decompress (an invalid contribution). The combined-nonce-infinity case is handled
+    // by musig2_start_sign_session (R = G), matching libsecp256k1.
+    static const unsigned char kZero33[33] = {0};
+    const bool r1_is_zero = std::memcmp(aggnonce->data, kZero33, 33) == 0;
     an.R1 = decompress(aggnonce->data);
-    if (an.R1.is_infinity()) return 0;
+    if (an.R1.is_infinity() && !r1_is_zero) return 0;
+    const bool r2_is_zero = std::memcmp(aggnonce->data + 33, kZero33, 33) == 0;
     an.R2 = decompress(aggnonce->data + 33);
-    if (an.R2.is_infinity()) return 0;
+    if (an.R2.is_infinity() && !r2_is_zero) return 0;
     std::array<unsigned char, 32> msg;
     std::memcpy(msg.data(), msg32, 32);
     auto s = secp256k1::musig2_start_sign_session(an, e->ctx, msg);
-    if (s.e.is_zero()) return 0;  // SEC-006: combined R = R1 + b*R2 was infinity
+    if (s.e.is_zero()) return 0;  // defensive: degenerate session (challenge e == 0)
     sess_pack(session, s);
     sess_stash_cache_token(session, keyagg_cache);
     return 1;
@@ -736,6 +768,13 @@ int secp256k1_musig_partial_sig_agg(
     // avoiding default-init + element-by-element assignment on the heap path.
     constexpr size_t kSBOLimit = 16;
     auto s = sess_unpack(session);
+    // BIP-327 additive-tweak correction: tweak_s = e*g*tacc is not carried in the session
+    // blob (no spare bytes), so recompute it from the still-live keyagg cache (released
+    // only at the end of this function). tacc defaults to 0 for untweaked sessions.
+    if (KAEntry* ke = ka_get_by_token(sess_load_cache_token(session))) {
+        Scalar const gtacc = ke->ctx.Q_negated ? ke->ctx.tacc.negate() : ke->ctx.tacc;
+        s.tweak_s = s.e * gtacc;
+    }
     std::array<uint8_t, 64> final_sig{};
     if (n_sigs <= kSBOLimit) {
         Scalar sbo_buf[kSBOLimit];

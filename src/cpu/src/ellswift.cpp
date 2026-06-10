@@ -234,41 +234,12 @@ FieldElement xswiftec_fwd(FieldElement u, const FieldElement& t) noexcept {
     return (x2 + u).negate();
 }
 
-// Optimized variant: same as xswiftec_fwd but also returns the even-Y coordinate.
-// Avoids the extra sqrt that callers (ECDH) would need to reconstruct the full point.
-// Saves ~1-2 field exponentiations vs decode+lift separately.
-static std::pair<FieldElement, FieldElement> xswiftec_fwd_point(FieldElement u, const FieldElement& t) noexcept {
-    // Field constants + XSWIFTEC_C1 / XSWIFTEC_C2 live at file scope above.
-    const FieldElement& C1 = XSWIFTEC_C1;
-    const FieldElement& C2 = XSWIFTEC_C2;
-
-    if (u == FE_ZERO) u = FE_ONE;
-    FieldElement s = (t == FE_ZERO) ? FE_ONE : t.square();
-    auto u2 = u.square(); auto u3 = u2 * u;
-    auto g  = u3 + FE_SEVEN;
-    auto p = g + s;
-    if (p == FE_ZERO) { s = FE_FOUR * s; p = g + s; }
-    auto d  = FE_THREE * s * u2;
-    auto n3 = d * u - p.square();
-    auto x3 = n3 * d.inverse();
-    auto [qr3, y3] = fe_sqrt_checked(x3 * x3 * x3 + FE_SEVEN);
-    if (qr3) {
-        if ((y3.to_bytes()[31] & 1)) y3 = y3.negate();
-        return {x3, y3};
-    }
-    auto n2 = (C1 * s + C2 * g) * u;
-    auto x2 = n2 * p.inverse();
-    auto [qr2, y2] = fe_sqrt_checked(x2 * x2 * x2 + FE_SEVEN);
-    if (qr2) {
-        if ((y2.to_bytes()[31] & 1)) y2 = y2.negate();
-        return {x2, y2};
-    }
-    // x1 = -(x2+u): guaranteed on curve
-    auto x1 = (x2 + u).negate();
-    auto y1 = (x1 * x1 * x1 + FE_SEVEN).sqrt();
-    if ((y1.to_bytes()[31] & 1)) y1 = y1.negate();
-    return {x1, y1};
-}
+// NOTE: the optimized `xswiftec_fwd_point` variant (returned both x and the
+// even-Y coordinate to save a sqrt for ECDH callers) was removed together with
+// the variable-time secret-key XDH path (`ellswift_xdh_fast`) it served — see
+// RT1-001 / the ECP-9 regression test. The constant-time XDH path reconstructs
+// Y from x via the standard lift, so the optimized decode+lift variant has no
+// remaining caller. The canonical `xswiftec_fwd` (above) covers all decode use.
 
 // XSwiftEC inverse: given x (on curve) and u (must be nonzero), find t such that
 // xswiftec_fwd(u,t)=x. c (0-7) selects which of up to 8 solutions to try.
@@ -677,45 +648,13 @@ std::array<std::uint8_t, 64> ellswift_create_fast(const Scalar& privkey,
     return result;
 }
 
-std::array<std::uint8_t, 32> ellswift_xdh_fast(
-    const std::uint8_t ell_a64[64],
-    const std::uint8_t ell_b64[64],
-    const Scalar& our_privkey,
-    bool initiating) noexcept {
-
-    const std::uint8_t* their_ell = initiating ? ell_b64 : ell_a64;
-    // Use xswiftec_fwd_point to get (x, even_y) in one decode — avoids extra sqrt.
-    std::array<uint8_t, 32> ub{}, tb{};
-    std::memcpy(ub.data(), their_ell,      32);
-    std::memcpy(tb.data(), their_ell + 32, 32);
-    auto [their_x, their_y] = xswiftec_fwd_point(fe_from_bytes_mod_p(ub.data()),
-                                                   fe_from_bytes_mod_p(tb.data()));
-
-    auto their_point = Point::from_affine(their_x, their_y);
-    if (their_point.is_infinity()) return std::array<std::uint8_t, 32>{};
-
-    // Non-CT variable-base scalar mul (~17.6 µs vs ~40 µs CT path).
-    // Suitable for ephemeral BIP-324 session keys.
-    auto ecdh_point = their_point.scalar_mul(our_privkey);
-    if (ecdh_point.is_infinity()) return std::array<std::uint8_t, 32>{};
-    auto ecdh_x = ecdh_point.x().to_bytes();
-
-    // Precomputed midstate (static = computed once per process).
-    static const auto kTagHash = SHA256::hash("bip324_ellswift_xonly_ecdh", 26);
-    static const SHA256 kTagMid = [](){
-        SHA256 h; h.update(kTagHash.data(), 32); h.update(kTagHash.data(), 32); return h;
-    }();
-
-    SHA256 hasher = kTagMid;
-    hasher.update(ell_a64, 64);
-    hasher.update(ell_b64, 64);
-    hasher.update(ecdh_x.data(), 32);
-    auto shared_secret = hasher.finalize();
-
-    detail::secure_erase(ecdh_x.data(), 32);
-    detail::secure_erase(&ecdh_point, sizeof(ecdh_point));
-
-    return shared_secret;
-}
+// RT1-001 (removed 2026-06-10): ellswift_xdh_fast did a variable-time
+// variable-base scalar_mul on a SECRET key against an attacker-controlled decoded
+// point — a side-channel foot-gun. It had zero callers and duplicated the
+// constant-time ellswift_xdh() above. All public entry points (shim
+// secp256k1_ellswift_xdh, ABI ufsecp_ellswift_xdh) route through the CT path
+// (ct::ecmult_const_xonly), which yields a byte-identical shared secret. Removed
+// rather than retained-and-CT-fixed to avoid a redundant near-duplicate of
+// ellswift_xdh().
 
 } // namespace secp256k1

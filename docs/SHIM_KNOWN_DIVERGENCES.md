@@ -39,6 +39,31 @@ are stricter but never less safe. Callers using well-formed inputs are unaffecte
 
 ---
 
+### Opaque pubkey/keypair failure paths clear outputs and reject hostile raw structs
+
+- **Upstream behavior:** libsecp256k1 treats `secp256k1_pubkey`,
+  `secp256k1_xonly_pubkey`, and `secp256k1_keypair` as opaque structs populated by
+  parser/create APIs. Callers that write arbitrary bytes into these structs are
+  outside the API contract; many failure paths leave the caller-provided output or
+  in-place target unchanged.
+- **Shim behavior:** serialization and mutation paths validate strict field range
+  and curve membership before trusting opaque bytes. Failed signing calls that
+  enter signing dispatch zero the output signature, failed pubkey/xonly
+  serialization returns 0 without serializing invalid bytes, and failed in-place
+  pubkey/keypair mutation clears the target struct. Unsupported custom nonce
+  callbacks are rejected before signing dispatch and leave the output signature
+  untouched, matching the shim noncefp fail-closed PoC and upstream-style
+  pre-dispatch argument rejection.
+- **Reason:** The shim is used across FFI boundaries where hostile callers can
+  construct raw opaque structs. Fail-closed zeroization prevents stale keys or
+  signatures from being reused after an error and avoids silently reducing
+  out-of-range coordinates.
+- **Impact:** Well-formed callers are unaffected. Callers that bypass parse/create
+  APIs now receive 0 and a zeroed output/target instead of stale or reduced data.
+- **Test:** `audit/test_regression_p2_ct_shim_fixes.cpp` (`SHIM-FC`).
+
+---
+
 ### secp256k1_ecdh — private key >= curve order rejected
 
 - **Upstream behavior:** `secp256k1_ecdh` with a private key value `>= n` (curve order)
@@ -477,3 +502,20 @@ unsupported API.
 - **Fix scope:** Document-only. Adding `agg_x` extraction from the cache token is a
   medium-priority improvement but not a security regression for the primary use case.
 - **Test:** No differential test currently exists for this path.
+
+<!-- SHIM-MUSIG-INF removed 2026-06-08: the infinity aggregate-nonce path now CONFORMS to
+     BIP-327 (parses infinity "ext" halves, substitutes R = G when the effective nonce is
+     infinity) — matching reference.py and libsecp256k1. It is no longer a divergence. See
+     docs/AUDIT_CHANGELOG.md (2026-06-08 — MuSig2 infinity aggregate-nonce BIP-327 conformance). -->
+
+### secp256k1_musig_nonce_process — infinity aggregate nonce (CONFORMANT, not a divergence)
+
+- **Behavior:** Matches BIP-327 / libsecp256k1 exactly. A 33-zero aggregate-nonce half is
+  the point at infinity (valid "ext" encoding); the engine computes the effective nonce
+  `R = R1 + b·R2` and, only when that combined nonce is infinity, substitutes `R = G`.
+  Individual aggregate-nonce halves at infinity are NOT rejected. (Individual *pubnonces*
+  are still rejected at `pubnonce_parse` per the BIP-327 `cpoint` rule — that is correct.)
+- **Test:** `compat/libsecp256k1_shim/tests/test_bip327_sign_verify_vectors.cpp`
+  (`bip327_sign_verify_vectors`) verifies the official infinity-aggregate `valid` case;
+  `audit/test_regression_musig2_infinity_nonce.cpp` covers the R=b·G / R=G unit cases.
+  Listed here only to record that the earlier fail-closed rejection was corrected.

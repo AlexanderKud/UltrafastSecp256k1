@@ -1,8 +1,37 @@
 # FFI Hostile-Caller Coverage
 
-**Last updated**: 2026-06-02 | **Version**: 4.1.1
+**Last updated**: 2026-06-06 | **Version**: 4.1.1
 
-### 2026-06-02 — failure-path output zeroing + recover overflow guard (review fixes)
+### 2026-06-06 - GPU C ABI fail-closed output contract
+
+`include/ufsecp/ufsecp_gpu.h` and `src/cpu/src/ufsecp_gpu_impl.cpp` now
+document and enforce a hostile-caller fail-closed contract for result-bearing
+GPU C ABI calls:
+
+- Output buffers are cleared to zero/invalid defaults before backend dispatch.
+- If a backend returns non-OK, the same output buffers are cleared again before
+  the ABI returns to the caller.
+- The in-place collect APIs are excluded because `key_buffer` is caller-owned
+  verdict-marker state used for CPU fallback; it is not a secret buffer.
+
+This prevents a hostile or buggy caller from observing stale or partial GPU
+results after failures in generator multiplication, batch verification, ECDH,
+Hash160, MSM, FROST partial verification, ecrecover, ZK verification,
+Bulletproof verification, BIP-324 AEAD, SNARK witness helpers, or BIP-352 scan.
+
+BIP-352 scan is now explicitly hostile-input hardened at the C ABI and backend
+boundary: zero or order-or-larger scan keys fail with `UFSECP_ERR_BAD_KEY` /
+`GpuError::BadKey`, invalid spend/tweak public keys fail before kernel use, and
+`prefix64_out` remains zero on failure. CUDA, OpenCL, and Metal additionally
+erase uploaded scan-key or scan-plan buffers before device memory release.
+
+Coverage: `audit/test_gpu_host_api_negative.cpp` checks NULL/invalid content
+and fail-closed output behavior; `audit/test_gpu_bip352_scan.cpp` checks
+BIP-352 zero/order scan key rejection and prefix clearing; and
+`audit/test_exploit_gpu_bip352_key_erase.cpp` source-scans CUDA/OpenCL
+scan-key/plan erasure.
+
+### 2026-06-02 - failure-path output zeroing + recover overflow guard (review fixes)
 
 ABI/shim hardening from the 2026-06-01 review tightens the hostile-caller
 contract at the C boundary (`include/ufsecp/ufsecp.h` and the libsecp256k1 shim):
@@ -263,6 +292,22 @@ never secret material). Hostile-caller quartet in `test_gpu_abi_gate.cpp`:
 
 Backends without a native collect kernel (OpenCL/Metal) return `Unsupported`; the
 libbitcoin bridge then falls back to the host-collapse path (consensus-identical).
+
+**J.lbtc-batch — `ufsecp_gpu_xonly_validate` / `ufsecp_gpu_commitment_verify` /
+`ufsecp_gpu_tagged_hash`** (libbitcoin bridge, PUBLIC-DATA; no secret material on
+these paths). CUDA-native per-item kernels; OpenCL/Metal return `Unsupported` and the
+bridge falls back to its threaded CPU path (consensus-identical). Hostile-caller
+quartet cross-checked against the libsecp shim in `tests/test_lbtc_commitment.cpp`
+(section 9: GPU verdict == shim per row/key):
+
+| Function | null | zero | invalid | smoke |
+|----------|------|------|---------|-------|
+| `ufsecp_gpu_xonly_validate`    | NULL ctx / NULL buffer → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | x ≥ p / off-curve key → result 0 (invalid/reject), matches shim xonly_parse | valid x-only key succeeds (smoke, GPU present) |
+| `ufsecp_gpu_commitment_verify` | NULL ctx / any NULL column → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | corrupted tweaked_x / wrong parity / internal x ≥ p → result 0 (invalid/reject) | valid BIP-341 commitment succeeds (smoke); matches shim tweak_add_check |
+| `ufsecp_gpu_tagged_hash`       | NULL ctx / NULL msgs → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | msg_len 0 or > 256 → `UFSECP_ERR_BAD_INPUT` (invalid/reject) | valid TapBranch digest succeeds (smoke); matches shim tagged_sha256 |
+| `ufsecp_gpu_pubkey_validate`   | NULL ctx / NULL buffer → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | bad prefix / x ≥ p / off-curve → result 0 (invalid/reject), matches shim ec_pubkey_parse | valid compressed pubkey succeeds (smoke, GPU present) |
+| `ufsecp_gpu_tagged_hash_var`   | NULL ctx / NULL msgs / NULL lens → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | stride 0 or > 256 → `UFSECP_ERR_BAD_INPUT` (invalid/reject) | valid TapLeaf per-item digest succeeds (smoke); matches shim tagged_sha256 |
+| `ufsecp_gpu_hash256`           | NULL ctx / NULL inputs → `UFSECP_ERR_NULL_ARG` | n=0 → no-op OK (zero-edge) | input_len 0 or > 320 → `UFSECP_ERR_BAD_INPUT` (invalid/reject) | valid SHA256d digest succeeds (smoke); matches SHA256d reference |
 
 ---
 

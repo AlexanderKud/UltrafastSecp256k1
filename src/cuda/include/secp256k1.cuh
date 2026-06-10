@@ -582,9 +582,14 @@ __device__ inline void scalar_add(const Scalar* a, const Scalar* b, Scalar* r) {
     uint64_t t2 = sub_cc(r->limbs[2], ORDER[2], borrow);
     uint64_t t3 = sub_cc(r->limbs[3], ORDER[3], borrow);
     
-    if (carry || borrow == 0) {
-        r->limbs[0] = t0; r->limbs[1] = t1; r->limbs[2] = t2; r->limbs[3] = t3;
-    }
+    // CT: branchless conditional subtraction of ORDER (cmov, not a data-dependent branch).
+    uint64_t need = (uint64_t)((carry != 0ULL) | (borrow == 0ULL));
+    asm volatile("" : "+l"(need));
+    const uint64_t msk = (uint64_t)0 - need;
+    r->limbs[0] = (t0 & msk) | (r->limbs[0] & ~msk);
+    r->limbs[1] = (t1 & msk) | (r->limbs[1] & ~msk);
+    r->limbs[2] = (t2 & msk) | (r->limbs[2] & ~msk);
+    r->limbs[3] = (t3 & msk) | (r->limbs[3] & ~msk);
 }
 
 __device__ inline void scalar_sub(const Scalar* a, const Scalar* b, Scalar* r) {
@@ -594,13 +599,20 @@ __device__ inline void scalar_sub(const Scalar* a, const Scalar* b, Scalar* r) {
     r->limbs[2] = sub_cc(a->limbs[2], b->limbs[2], borrow);
     r->limbs[3] = sub_cc(a->limbs[3], b->limbs[3], borrow);
     
-    if (borrow) {
-        uint64_t carry = 0;
-        r->limbs[0] = add_cc(r->limbs[0], ORDER[0], carry);
-        r->limbs[1] = add_cc(r->limbs[1], ORDER[1], carry);
-        r->limbs[2] = add_cc(r->limbs[2], ORDER[2], carry);
-        // Optimization: last limb addition doesn't need to capture carry
-        r->limbs[3] += ORDER[3] + carry;
+    // CT: branchless add-back of ORDER on underflow (cmov, not a data-dependent branch).
+    {
+        uint64_t c = 0;
+        const uint64_t a0 = add_cc(r->limbs[0], ORDER[0], c);
+        const uint64_t a1 = add_cc(r->limbs[1], ORDER[1], c);
+        const uint64_t a2 = add_cc(r->limbs[2], ORDER[2], c);
+        const uint64_t a3 = r->limbs[3] + ORDER[3] + c;
+        uint64_t need = (uint64_t)(borrow != 0ULL);
+        asm volatile("" : "+l"(need));
+        const uint64_t msk = (uint64_t)0 - need;
+        r->limbs[0] = (a0 & msk) | (r->limbs[0] & ~msk);
+        r->limbs[1] = (a1 & msk) | (r->limbs[1] & ~msk);
+        r->limbs[2] = (a2 & msk) | (r->limbs[2] & ~msk);
+        r->limbs[3] = (a3 & msk) | (r->limbs[3] & ~msk);
     }
 }
 
@@ -618,9 +630,14 @@ __device__ inline void scalar_add_u64(const Scalar* a, uint64_t b, Scalar* r) {
     uint64_t t2 = sub_cc(r->limbs[2], ORDER[2], borrow);
     uint64_t t3 = sub_cc(r->limbs[3], ORDER[3], borrow);
     
-    if (carry || borrow == 0) {
-        r->limbs[0] = t0; r->limbs[1] = t1; r->limbs[2] = t2; r->limbs[3] = t3;
-    }
+    // CT: branchless conditional subtraction of ORDER (cmov, not a data-dependent branch).
+    uint64_t need = (uint64_t)((carry != 0ULL) | (borrow == 0ULL));
+    asm volatile("" : "+l"(need));
+    const uint64_t msk = (uint64_t)0 - need;
+    r->limbs[0] = (t0 & msk) | (r->limbs[0] & ~msk);
+    r->limbs[1] = (t1 & msk) | (r->limbs[1] & ~msk);
+    r->limbs[2] = (t2 & msk) | (r->limbs[2] & ~msk);
+    r->limbs[3] = (t3 & msk) | (r->limbs[3] & ~msk);
 }
 
 __device__ inline void scalar_sub_u64(const Scalar* a, uint64_t b, Scalar* r) {
@@ -630,12 +647,20 @@ __device__ inline void scalar_sub_u64(const Scalar* a, uint64_t b, Scalar* r) {
     r->limbs[2] = sub_cc(a->limbs[2], 0, borrow);
     r->limbs[3] = sub_cc(a->limbs[3], 0, borrow);
     
-    if (borrow) {
-        uint64_t carry = 0;
-        r->limbs[0] = add_cc(r->limbs[0], ORDER[0], carry);
-        r->limbs[1] = add_cc(r->limbs[1], ORDER[1], carry);
-        r->limbs[2] = add_cc(r->limbs[2], ORDER[2], carry);
-        r->limbs[3] += ORDER[3] + carry;
+    // CT: branchless add-back of ORDER on underflow (cmov, not a data-dependent branch).
+    {
+        uint64_t c = 0;
+        const uint64_t a0 = add_cc(r->limbs[0], ORDER[0], c);
+        const uint64_t a1 = add_cc(r->limbs[1], ORDER[1], c);
+        const uint64_t a2 = add_cc(r->limbs[2], ORDER[2], c);
+        const uint64_t a3 = r->limbs[3] + ORDER[3] + c;
+        uint64_t need = (uint64_t)(borrow != 0ULL);
+        asm volatile("" : "+l"(need));
+        const uint64_t msk = (uint64_t)0 - need;
+        r->limbs[0] = (a0 & msk) | (r->limbs[0] & ~msk);
+        r->limbs[1] = (a1 & msk) | (r->limbs[1] & ~msk);
+        r->limbs[2] = (a2 & msk) | (r->limbs[2] & ~msk);
+        r->limbs[3] = (a3 & msk) | (r->limbs[3] & ~msk);
     }
 }
 
@@ -758,21 +783,31 @@ __device__ inline void scalar_mul_mod_n(const Scalar* a, const Scalar* b, Scalar
     r->limbs[3] = sub_cc(prod[3], qn[3], borrow);
     uint64_t r4 = prod[4] - qn[4] - borrow;
 
-    // At most 2 conditional subtracts to bring into [0, ORDER)
-    if (r4 > 0 || scalar_ge(r, ORDER)) {
-        borrow = 0;
-        r->limbs[0] = sub_cc(r->limbs[0], ORDER[0], borrow);
-        r->limbs[1] = sub_cc(r->limbs[1], ORDER[1], borrow);
-        r->limbs[2] = sub_cc(r->limbs[2], ORDER[2], borrow);
-        r->limbs[3] = sub_cc(r->limbs[3], ORDER[3], borrow);
-        r4 -= borrow;
-    }
-    if (r4 > 0 || scalar_ge(r, ORDER)) {
-        borrow = 0;
-        r->limbs[0] = sub_cc(r->limbs[0], ORDER[0], borrow);
-        r->limbs[1] = sub_cc(r->limbs[1], ORDER[1], borrow);
-        r->limbs[2] = sub_cc(r->limbs[2], ORDER[2], borrow);
-        r->limbs[3] = sub_cc(r->limbs[3], ORDER[3], borrow);
+    // At most 2 conditional subtracts to bring into [0, ORDER) — CONSTANT-TIME.
+    // The previous version used `if (r4 > 0 || scalar_ge(r, ORDER)) { subtract }` which
+    // is a DATA-DEPENDENT branch (scalar_ge is also branchy). Because this reduction runs
+    // on secret-derived values (every scalar_mul/scalar_sqr, and scalar_inverse calls it
+    // 512x), that branch produced measurable key-dependent warp divergence in GPU ECDSA
+    // signing (RTX 5060 Ti ncu: 100% uniform fixed-keys vs 84.48% random-keys; ~1.85%
+    // timing). Now branchless: always compute (r - ORDER) and cmov-select via a
+    // value-barriered mask, so the executed instruction stream is identical regardless of
+    // the (secret) value. need = (r4 != 0) | (no borrow out of r-ORDER) == (r >= ORDER).
+    #pragma unroll
+    for (int ct_pass = 0; ct_pass < 2; ++ct_pass) {
+        uint64_t cb = 0;
+        const uint64_t c0 = sub_cc(r->limbs[0], ORDER[0], cb);
+        const uint64_t c1 = sub_cc(r->limbs[1], ORDER[1], cb);
+        const uint64_t c2 = sub_cc(r->limbs[2], ORDER[2], cb);
+        const uint64_t c3 = sub_cc(r->limbs[3], ORDER[3], cb);
+        const uint64_t cand_r4 = r4 - cb;
+        uint64_t need = static_cast<uint64_t>((r4 != 0ULL) | (cb == 0ULL));
+        asm volatile("" : "+l"(need));          // value barrier: block branch re-introduction
+        const uint64_t mask = (uint64_t)0 - need;  // all-ones if subtract, else 0
+        r->limbs[0] = (c0 & mask) | (r->limbs[0] & ~mask);
+        r->limbs[1] = (c1 & mask) | (r->limbs[1] & ~mask);
+        r->limbs[2] = (c2 & mask) | (r->limbs[2] & ~mask);
+        r->limbs[3] = (c3 & mask) | (r->limbs[3] & ~mask);
+        r4 = (cand_r4 & mask) | (r4 & ~mask);
     }
 }
 
@@ -958,9 +993,27 @@ __device__ inline GLVDecomposition glv_decompose(const Scalar* k) {
 
     Scalar c1, c2;
     for (int i = 0; i < 4; i++) { c1.limbs[i] = c1_limbs[i]; c2.limbs[i] = c2_limbs[i]; }
-    // Normalize in case >= ORDER
-    if (scalar_ge(&c1, ORDER)) scalar_sub(&c1, (const Scalar*)ORDER, &c1);
-    if (scalar_ge(&c2, ORDER)) scalar_sub(&c2, (const Scalar*)ORDER, &c2);
+    // Normalize in case >= ORDER — CONSTANT-TIME: c1,c2 are derived from the secret
+    // scalar k, so a `if (scalar_ge) scalar_sub` would be a key-dependent branch. Always
+    // compute (c - ORDER) and cmov-select iff c >= ORDER (no borrow), for both c1 and c2.
+    {
+        Scalar* cs[2] = { &c1, &c2 };
+        for (int s = 0; s < 2; ++s) {
+            Scalar* c = cs[s];
+            uint64_t b = 0;
+            uint64_t d0 = sub_cc(c->limbs[0], ORDER[0], b);
+            uint64_t d1 = sub_cc(c->limbs[1], ORDER[1], b);
+            uint64_t d2 = sub_cc(c->limbs[2], ORDER[2], b);
+            uint64_t d3 = sub_cc(c->limbs[3], ORDER[3], b);
+            uint64_t need = (uint64_t)(b == 0ULL);   // c >= ORDER (no borrow out)
+            asm volatile("" : "+l"(need));
+            const uint64_t msk = (uint64_t)0 - need;
+            c->limbs[0] = (d0 & msk) | (c->limbs[0] & ~msk);
+            c->limbs[1] = (d1 & msk) | (c->limbs[1] & ~msk);
+            c->limbs[2] = (d2 & msk) | (c->limbs[2] & ~msk);
+            c->limbs[3] = (d3 & msk) | (c->limbs[3] & ~msk);
+        }
+    }
 
     // Step 2: k2 = c1*(-b1) + c2*(-b2) (mod n)
     Scalar minus_b1, minus_b2;
@@ -1042,10 +1095,15 @@ __device__ __forceinline__ void field_add(const FieldElement* a, const FieldElem
           "l"(MODULUS[0]), "l"(MODULUS[1]), "l"(MODULUS[2]), "l"(MODULUS[3])
     );
     
-    if (carry || borrow == 0) {
-        r->limbs[0] = t0; r->limbs[1] = t1; r->limbs[2] = t2; r->limbs[3] = t3;
-    } else {
-        r->limbs[0] = r0; r->limbs[1] = r1; r->limbs[2] = r2; r->limbs[3] = r3;
+    // CT: branchless conditional subtraction of MODULUS (cmov, not a data-dependent branch).
+    {
+        uint64_t need = (uint64_t)((carry != 0ULL) | (borrow == 0ULL));
+        asm volatile("" : "+l"(need));
+        const uint64_t msk = (uint64_t)0 - need;
+        r->limbs[0] = (t0 & msk) | (r0 & ~msk);
+        r->limbs[1] = (t1 & msk) | (r1 & ~msk);
+        r->limbs[2] = (t2 & msk) | (r2 & ~msk);
+        r->limbs[3] = (t3 & msk) | (r3 & ~msk);
     }
 }
 #else
@@ -1063,10 +1121,15 @@ __device__ __forceinline__ void field_add(const FieldElement* a, const FieldElem
     uint64_t t2 = sub_cc(r2, MODULUS[2], borrow);
     uint64_t t3 = sub_cc(r3, MODULUS[3], borrow);
 
-    if (carry || borrow == 0) {
-        r->limbs[0] = t0; r->limbs[1] = t1; r->limbs[2] = t2; r->limbs[3] = t3;
-    } else {
-        r->limbs[0] = r0; r->limbs[1] = r1; r->limbs[2] = r2; r->limbs[3] = r3;
+    // CT: branchless conditional subtraction of MODULUS (cmov, not a data-dependent branch).
+    {
+        uint64_t need = (uint64_t)((carry != 0ULL) | (borrow == 0ULL));
+        asm volatile("" : "+l"(need));
+        const uint64_t msk = (uint64_t)0 - need;
+        r->limbs[0] = (t0 & msk) | (r0 & ~msk);
+        r->limbs[1] = (t1 & msk) | (r1 & ~msk);
+        r->limbs[2] = (t2 & msk) | (r2 & ~msk);
+        r->limbs[3] = (t3 & msk) | (r3 & ~msk);
     }
 }
 #endif
@@ -1087,18 +1150,25 @@ __device__ __forceinline__ void field_sub(const FieldElement* a, const FieldElem
           "l"(b->limbs[0]), "l"(b->limbs[1]), "l"(b->limbs[2]), "l"(b->limbs[3])
     );
     
-    if (borrow) {
+    // CT: branchless add-back of MODULUS on underflow (always compute, cmov-select).
+    {
+        uint64_t a0, a1, a2, a3;
         asm volatile(
             "add.cc.u64 %0, %4, %8; \n\t"
             "addc.cc.u64 %1, %5, %9; \n\t"
             "addc.cc.u64 %2, %6, %10; \n\t"
             "addc.u64 %3, %7, %11; \n\t"
-            : "=l"(r->limbs[0]), "=l"(r->limbs[1]), "=l"(r->limbs[2]), "=l"(r->limbs[3])
+            : "=l"(a0), "=l"(a1), "=l"(a2), "=l"(a3)
             : "l"(r0), "l"(r1), "l"(r2), "l"(r3),
               "l"(MODULUS[0]), "l"(MODULUS[1]), "l"(MODULUS[2]), "l"(MODULUS[3])
         );
-    } else {
-        r->limbs[0] = r0; r->limbs[1] = r1; r->limbs[2] = r2; r->limbs[3] = r3;
+        uint64_t need = (uint64_t)(borrow != 0ULL);
+        asm volatile("" : "+l"(need));
+        const uint64_t msk = (uint64_t)0 - need;
+        r->limbs[0] = (a0 & msk) | (r0 & ~msk);
+        r->limbs[1] = (a1 & msk) | (r1 & ~msk);
+        r->limbs[2] = (a2 & msk) | (r2 & ~msk);
+        r->limbs[3] = (a3 & msk) | (r3 & ~msk);
     }
 }
 #else
@@ -1110,14 +1180,20 @@ __device__ __forceinline__ void field_sub(const FieldElement* a, const FieldElem
     uint64_t r2 = sub_cc(a->limbs[2], b->limbs[2], borrow);
     uint64_t r3 = sub_cc(a->limbs[3], b->limbs[3], borrow);
 
-    if (borrow) {
+    // CT: branchless add-back of MODULUS on underflow (always compute, cmov-select).
+    {
         uint64_t carry = 0;
-        r->limbs[0] = add_cc(r0, MODULUS[0], carry);
-        r->limbs[1] = add_cc(r1, MODULUS[1], carry);
-        r->limbs[2] = add_cc(r2, MODULUS[2], carry);
-        r->limbs[3] = add_cc(r3, MODULUS[3], carry);
-    } else {
-        r->limbs[0] = r0; r->limbs[1] = r1; r->limbs[2] = r2; r->limbs[3] = r3;
+        const uint64_t a0 = add_cc(r0, MODULUS[0], carry);
+        const uint64_t a1 = add_cc(r1, MODULUS[1], carry);
+        const uint64_t a2 = add_cc(r2, MODULUS[2], carry);
+        const uint64_t a3 = add_cc(r3, MODULUS[3], carry);
+        uint64_t need = (uint64_t)(borrow != 0ULL);
+        asm volatile("" : "+l"(need));
+        const uint64_t msk = (uint64_t)0 - need;
+        r->limbs[0] = (a0 & msk) | (r0 & ~msk);
+        r->limbs[1] = (a1 & msk) | (r1 & ~msk);
+        r->limbs[2] = (a2 & msk) | (r2 & ~msk);
+        r->limbs[3] = (a3 & msk) | (r3 & ~msk);
     }
 }
 #endif
@@ -1302,10 +1378,16 @@ __device__ __forceinline__ void reduce_512_to_256(uint64_t t[8], FieldElement* r
           "l"(MODULUS[0]), "l"(MODULUS[1]), "l"(MODULUS[2]), "l"(MODULUS[3])
     );
     
-    if (borrow == 0) {
-        r->limbs[0] = r0; r->limbs[1] = r1; r->limbs[2] = r2; r->limbs[3] = r3;
-    } else {
-        r->limbs[0] = t0; r->limbs[1] = t1; r->limbs[2] = t2; r->limbs[3] = t3;
+    // CT: branchless final reduction (cmov) — borrow==0 means value >= MODULUS, so select
+    // the subtracted limbs r0..r3; else keep the originals t0..t3. No data-dependent branch.
+    {
+        uint64_t need = (uint64_t)(borrow == 0ULL);
+        asm volatile("" : "+l"(need));
+        const uint64_t msk = (uint64_t)0 - need;
+        r->limbs[0] = (r0 & msk) | (t0 & ~msk);
+        r->limbs[1] = (r1 & msk) | (t1 & ~msk);
+        r->limbs[2] = (r2 & msk) | (t2 & ~msk);
+        r->limbs[3] = (r3 & msk) | (t3 & ~msk);
     }
 }
 #else
@@ -1357,10 +1439,16 @@ __device__ __forceinline__ void reduce_512_to_256(uint64_t t[8], FieldElement* r
     uint64_t r2 = sub_cc(t2, MODULUS[2], borrow);
     uint64_t r3 = sub_cc(t3, MODULUS[3], borrow);
 
-    if (borrow == 0) {
-        r->limbs[0] = r0; r->limbs[1] = r1; r->limbs[2] = r2; r->limbs[3] = r3;
-    } else {
-        r->limbs[0] = t0; r->limbs[1] = t1; r->limbs[2] = t2; r->limbs[3] = t3;
+    // CT: branchless final reduction (cmov) — borrow==0 means value >= MODULUS, so select
+    // the subtracted limbs r0..r3; else keep the originals t0..t3. No data-dependent branch.
+    {
+        uint64_t need = (uint64_t)(borrow == 0ULL);
+        asm volatile("" : "+l"(need));
+        const uint64_t msk = (uint64_t)0 - need;
+        r->limbs[0] = (r0 & msk) | (t0 & ~msk);
+        r->limbs[1] = (r1 & msk) | (t1 & ~msk);
+        r->limbs[2] = (r2 & msk) | (t2 & ~msk);
+        r->limbs[3] = (r3 & msk) | (t3 & ~msk);
     }
 }
 #endif // SECP256K1_USE_PTX (reduce_512_to_256)

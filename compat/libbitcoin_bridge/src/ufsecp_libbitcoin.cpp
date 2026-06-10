@@ -7,6 +7,8 @@
  *
  *   CPU:  ufsecp_ecdsa_batch_verify / ufsecp_schnorr_batch_verify
  *           (packed records — exactly the row layout this bridge documents)
+ *         ufsecp_ecdsa_verify / ufsecp_schnorr_verify
+ *           (columnar fallback: one signature per row, no row re-pack)
  *   GPU:  ufsecp_gpu_ecdsa_verify_batch / ufsecp_gpu_schnorr_verify_batch
  *           (per-item results — one signature per thread)
  *   SP :  ufsecp_gpu_bip352_scan_batch
@@ -29,13 +31,16 @@
 #include "ufsecp.h"     /* ufsecp_ctx, ufsecp_ctx_create/destroy,
                            ufsecp_ecdsa_batch_verify, ufsecp_schnorr_batch_verify */
 #ifdef UFSECP_LBTC_WITH_GPU
-#include "ufsecp_gpu.h" /* GPU C ABI + UFSECP_GPU_BACKEND_*, UFSECP_ERR_GPU_* */
+#include "ufsecp_gpu.h"          /* GPU C ABI + UFSECP_GPU_BACKEND_*, UFSECP_ERR_GPU_* */
+#include "secp256k1/scalar.hpp"  /* Scalar — Fiat-Shamir g_coeff for the commitment RLC */
 #endif
 
 #include <cstring>
 #include <new>
 #include <type_traits>
 #include <vector>
+#include <thread>
+#include <algorithm>
 
 /* UFSECP_ERR_GPU_UNAVAILABLE lives in ufsecp_gpu.h; provide it for CPU-only builds. */
 #ifndef UFSECP_ERR_GPU_UNAVAILABLE
@@ -74,6 +79,10 @@ enum class Kind { Ecdsa, Schnorr };
 
 inline std::size_t record_size(Kind k) {
     return k == Kind::Ecdsa ? UFSECP_LBTC_ECDSA_RECORD : UFSECP_LBTC_SCHNORR_RECORD;
+}
+
+inline std::size_t pubkey_size(Kind k) {
+    return k == Kind::Ecdsa ? 33u : 32u;
 }
 
 inline ufsecp_error_t cpu_verify_one(ufsecp_ctx* ctx, Kind k, const uint8_t* rec) {
@@ -137,6 +146,23 @@ struct CollectSink {
     }
 };
 
+/* In-place sink for the vertical/columnar API. The key column is separate from
+ * the verified msg/pub/sig columns, so valid rows zero only
+ * key_cells[i*key_size .. i*key_size+key_size). */
+struct KeyColumnSink {
+    uint8_t*    key_cells;  /* mutable n * key_size correlation-key column */
+    std::size_t key_size;   /* > 0 */
+
+    inline void mark(std::size_t global, bool valid) {
+        if (valid)
+            std::memset(key_cells + global * key_size, 0, key_size);
+    }
+    inline void mark_all_valid(std::size_t base, std::size_t cnt) {
+        for (std::size_t i = 0; i < cnt; ++i)
+            std::memset(key_cells + (base + i) * key_size, 0, key_size);
+    }
+};
+
 /* Translate one libbitcoin row into the engine's packed record layout.
  *   ECDSA   row == engine record:        32 msg | 33 pubkey | 64 sig.
  *   Schnorr row (uniform with ECDSA):    32 msg | 32 xonly  | 64 sig,
@@ -190,6 +216,32 @@ void cpu_chunk(ufsecp_ctx* ctx, Kind k, const uint8_t* rows,
     }
     for (std::size_t i = 0; i < cnt; ++i)
         sink.mark(base + i, cpu_verify_one(ctx, k, eng.data() + i * rec) == UFSECP_OK);
+}
+
+inline ufsecp_error_t cpu_verify_columns_one(ufsecp_ctx* ctx, Kind k,
+                                             const uint8_t* msg,
+                                             const uint8_t* pub,
+                                             const uint8_t* sig) {
+    return k == Kind::Ecdsa ? ufsecp_ecdsa_verify(ctx, msg, sig, pub)
+                            : ufsecp_schnorr_verify(ctx, msg, sig, pub);
+}
+
+/* CPU fallback for vertical/columnar inputs. This deliberately avoids rebuilding
+ * packed records; each row is verified directly from its three public columns. */
+template <class Sink>
+void cpu_columns_chunk(ufsecp_ctx* ctx, Kind k,
+                       const uint8_t* msgs32, const uint8_t* pubs,
+                       const uint8_t* sigs64, std::size_t base,
+                       std::size_t cnt, Sink& sink) {
+    const std::size_t pub = pubkey_size(k);
+    for (std::size_t i = 0; i < cnt; ++i) {
+        const std::size_t idx = base + i;
+        sink.mark(idx,
+                  cpu_verify_columns_one(ctx, k,
+                                         msgs32 + idx * 32,
+                                         pubs + idx * pub,
+                                         sigs64 + idx * 64) == UFSECP_OK);
+    }
 }
 
 #ifdef UFSECP_LBTC_WITH_GPU
@@ -281,6 +333,55 @@ bool gpu_chunk_collect(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
         sink.mark(base + i, keys[i] == 0u); /* keys[i]==0 ⇔ valid (see above) */
     return true;
 }
+
+bool gpu_columns_results(ufsecp_gpu_ctx* gpu, Kind k,
+                         const uint8_t* msgs32, const uint8_t* pubs,
+                         const uint8_t* sigs64, std::size_t base,
+                         std::size_t cnt, uint8_t* results) {
+    const std::size_t pub = pubkey_size(k);
+    std::vector<uint8_t> scratch;
+    uint8_t* out = results ? results + base : nullptr;
+    if (!out) {
+        scratch.resize(cnt);
+        out = scratch.data();
+    }
+
+    const ufsecp_error_t rc =
+        k == Kind::Ecdsa
+            ? ufsecp_gpu_ecdsa_verify_batch(gpu, msgs32 + base * 32,
+                                            pubs + base * pub,
+                                            sigs64 + base * 64, cnt, out)
+            : ufsecp_gpu_schnorr_verify_batch(gpu, msgs32 + base * 32,
+                                              pubs + base * pub,
+                                              sigs64 + base * 64, cnt, out);
+    return rc == UFSECP_OK;
+}
+
+bool gpu_columns_collect(ufsecp_gpu_ctx* gpu, Kind k,
+                         const uint8_t* msgs32, const uint8_t* pubs,
+                         const uint8_t* sigs64, std::size_t base,
+                         std::size_t cnt, KeyColumnSink& sink) {
+    const std::size_t pub = pubkey_size(k);
+    /* Use a 1-byte temporary verdict column even when the caller's key column is
+     * also 1 byte. That keeps the caller-owned key cells untouched until the
+     * backend reports success, so a device failure can safely fall back to CPU. */
+    std::vector<uint8_t> markers(cnt, 1u);
+    const ufsecp_error_t rc =
+        k == Kind::Ecdsa
+            ? ufsecp_gpu_ecdsa_verify_collect(gpu, msgs32 + base * 32,
+                                              pubs + base * pub,
+                                              sigs64 + base * 64, cnt,
+                                              markers.data())
+            : ufsecp_gpu_schnorr_verify_collect(gpu, msgs32 + base * 32,
+                                                pubs + base * pub,
+                                                sigs64 + base * 64, cnt,
+                                                markers.data());
+    if (rc != UFSECP_OK) return false;
+
+    for (std::size_t i = 0; i < cnt; ++i)
+        sink.mark(base + i, markers[i] == 0u);
+    return true;
+}
 #endif /* UFSECP_LBTC_WITH_GPU */
 
 /* The shared chunk loop, generic over the output sink. `rows` is the const view
@@ -350,6 +451,53 @@ void verify_collect_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
     /* rows passed twice: as the const read view to verify_core, and (inside the
      * sink) as the mutable write target. No aliasing — see CollectSink. */
     verify_core(ctrl, k, static_cast<const uint8_t*>(rows), n, stride, sink);
+}
+
+/* Vertical/columnar results[] variant. This is the copy-avoidance path for a
+ * caller that stores its batch as independent msg/pub/sig columns already. */
+void verify_columns_results_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
+                                 const uint8_t* msgs32, const uint8_t* pubs,
+                                 const uint8_t* sigs64, std::size_t n,
+                                 uint8_t* results) {
+    if (!ctrl || n == 0 || !msgs32 || !pubs || !sigs64) return;
+    ResultSink sink{results};
+    try {
+        for (std::size_t base = 0; base < n; base += kChunk) {
+            const std::size_t cnt = (n - base) < kChunk ? (n - base) : kChunk;
+#ifdef UFSECP_LBTC_WITH_GPU
+            if (ctrl->gpu &&
+                gpu_columns_results(ctrl->gpu, k, msgs32, pubs, sigs64, base, cnt, results))
+                continue;
+#endif
+            cpu_columns_chunk(ctrl->cpu, k, msgs32, pubs, sigs64, base, cnt, sink);
+        }
+    } catch (...) {
+        return; /* fail-closed: caller-initialized result bytes remain untouched */
+    }
+}
+
+/* Vertical/columnar collect variant. key_cells is an independent n*key_size
+ * correlation-key column. VALID rows are zeroed; INVALID rows are left intact. */
+void verify_columns_collect_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
+                                 const uint8_t* msgs32, const uint8_t* pubs,
+                                 const uint8_t* sigs64, std::size_t n,
+                                 uint8_t* key_cells, std::size_t key_size) {
+    if (!ctrl || n == 0 || !msgs32 || !pubs || !sigs64 || !key_cells || key_size == 0)
+        return;
+    KeyColumnSink sink{key_cells, key_size};
+    try {
+        for (std::size_t base = 0; base < n; base += kChunk) {
+            const std::size_t cnt = (n - base) < kChunk ? (n - base) : kChunk;
+#ifdef UFSECP_LBTC_WITH_GPU
+            if (ctrl->gpu &&
+                gpu_columns_collect(ctrl->gpu, k, msgs32, pubs, sigs64, base, cnt, sink))
+                continue;
+#endif
+            cpu_columns_chunk(ctrl->cpu, k, msgs32, pubs, sigs64, base, cnt, sink);
+        }
+    } catch (...) {
+        return; /* fail-closed: unprocessed key cells stay non-zero/rejected */
+    }
 }
 
 } // namespace
@@ -455,6 +603,651 @@ void ufsecp_lbtc_verify_schnorr_collect(ufsecp_lbtc_ctrl* ctrl,
                                         uint8_t* rows, size_t n,
                                         size_t key_size) {
     verify_collect_impl(ctrl, Kind::Schnorr, rows, n, key_size);
+}
+
+void ufsecp_lbtc_verify_ecdsa_columns(ufsecp_lbtc_ctrl* ctrl,
+                                      const uint8_t* msg_hashes32,
+                                      const uint8_t* pubkeys33,
+                                      const uint8_t* sigs64,
+                                      size_t n,
+                                      uint8_t* results) {
+    verify_columns_results_impl(ctrl, Kind::Ecdsa, msg_hashes32, pubkeys33, sigs64,
+                                n, results);
+}
+
+void ufsecp_lbtc_verify_schnorr_columns(ufsecp_lbtc_ctrl* ctrl,
+                                        const uint8_t* msg_hashes32,
+                                        const uint8_t* pubkeys_x32,
+                                        const uint8_t* sigs64,
+                                        size_t n,
+                                        uint8_t* results) {
+    verify_columns_results_impl(ctrl, Kind::Schnorr, msg_hashes32, pubkeys_x32,
+                                sigs64, n, results);
+}
+
+void ufsecp_lbtc_verify_ecdsa_columns_collect(ufsecp_lbtc_ctrl* ctrl,
+                                              const uint8_t* msg_hashes32,
+                                              const uint8_t* pubkeys33,
+                                              const uint8_t* sigs64,
+                                              size_t n,
+                                              uint8_t* key_cells,
+                                              size_t key_size) {
+    verify_columns_collect_impl(ctrl, Kind::Ecdsa, msg_hashes32, pubkeys33, sigs64,
+                                n, key_cells, key_size);
+}
+
+void ufsecp_lbtc_verify_schnorr_columns_collect(ufsecp_lbtc_ctrl* ctrl,
+                                                const uint8_t* msg_hashes32,
+                                                const uint8_t* pubkeys_x32,
+                                                const uint8_t* sigs64,
+                                                size_t n,
+                                                uint8_t* key_cells,
+                                                size_t key_size) {
+    verify_columns_collect_impl(ctrl, Kind::Schnorr, msg_hashes32, pubkeys_x32,
+                                sigs64, n, key_cells, key_size);
+}
+
+/* ---------------------------------------------------------------------------
+ * BIP-341 Taproot commitment batch (x-only tweak-add-check).
+ *
+ * Per item: Q = lift_x(internal, even-y) + tweak*G; accept iff x(Q)==tweaked_x
+ * and the y-parity of Q equals the claimed parity. ALL inputs are PUBLIC
+ * (variable-time correct). Each check is computed engine-native as one 2-term
+ * MSM — Q = 1*P + tweak*G, where P is the compressed even-y point 0x02||internal_x
+ * (the MSM's compressed-point parse performs the lift). It is INDEPENDENT and
+ * EXACT per row (no random-linear-combination), so it is consensus-safe with no
+ * aggregate randomness, and the CPU path fans the rows across a thread pool.
+ *
+ * (A GPU random-linear-combination fast-check — collapsing the batch to two
+ * device MSMs via ufsecp_gpu_msm — is a measured follow-up. For a consensus path
+ * its per-row weights r_i MUST be Fiat-Shamir-derived from the batch data, else a
+ * crafted block could force the aggregate to pass; that is deliberately not shipped
+ * here. A dedicated per-item GPU kernel gives per-row GPU verdicts at a higher
+ * ceiling — also a follow-up.)
+ * ------------------------------------------------------------------------- */
+static inline bool lbtc_commit_one(ufsecp_ctx* ctx, const uint8_t Gc[33],
+                                   const uint8_t* internal_x32, const uint8_t* tweak32,
+                                   const uint8_t* tweaked_x32, uint8_t parity) {
+    uint8_t pts[66], scl[64], Q[33], exp[33];
+    pts[0] = 0x02; std::memcpy(pts + 1, internal_x32, 32);  /* lift(internal, even-y) */
+    std::memcpy(pts + 33, Gc, 33);                          /* generator             */
+    std::memset(scl, 0, 64); scl[31] = 1;                   /* scalar 1 * P          */
+    std::memcpy(scl + 32, tweak32, 32);                     /* scalar tweak * G      */
+    if (ufsecp_multi_scalar_mul(ctx, scl, pts, 2, Q) != UFSECP_OK) return false;
+    exp[0] = parity ? 0x03 : 0x02; std::memcpy(exp + 1, tweaked_x32, 32);
+    return std::memcmp(Q, exp, 33) == 0;
+}
+
+void ufsecp_lbtc_verify_commitment(ufsecp_lbtc_ctrl* ctrl,
+                                   const uint8_t* internal_x32,
+                                   const uint8_t* tweak32,
+                                   const uint8_t* tweaked_x32,
+                                   const uint8_t* parity,
+                                   size_t n, uint8_t* results) {
+    if (!results || n == 0) return;
+    std::memset(results, 0, n);  /* fail-closed default: any early return = all invalid */
+    if (!ctrl || !internal_x32 || !tweak32 || !tweaked_x32 || !parity) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    /* GPU per-item tweak-add-check (one thread per row). Exact per-row verdict (no
+     * RLC) — consensus-identical to the CPU path; fall back on device failure. */
+    if (ctrl->gpu) {
+        if (ufsecp_gpu_commitment_verify(ctrl->gpu, internal_x32, tweak32,
+                                         tweaked_x32, parity, n, results) == UFSECP_OK) return;
+        std::memset(results, 0, n);
+    }
+#endif
+
+    /* Hoisted invariant: G (compressed) computed ONCE for the whole batch. */
+    uint8_t Gc[33]; { uint8_t one[32] = {0}; one[31] = 1;
+        ufsecp_ctx* gctx = nullptr;
+        if (ufsecp_ctx_create(&gctx) != UFSECP_OK || !gctx) return;
+        const ufsecp_error_t ge = ufsecp_pubkey_create(gctx, one, Gc);
+        ufsecp_ctx_destroy(gctx);
+        if (ge != UFSECP_OK) return;
+    }
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;  /* small batches: thread setup is not worth it */
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            ufsecp_ctx* c = nullptr;                 /* per-thread ctx (ctx is not shared-safe) */
+            if (ufsecp_ctx_create(&c) != UFSECP_OK || !c) return;  /* results stay 0 = fail-closed */
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i)
+                results[i] = lbtc_commit_one(c, Gc, internal_x32 + i*32, tweak32 + i*32,
+                                             tweaked_x32 + i*32, parity[i]) ? 1u : 0u;
+            ufsecp_ctx_destroy(c);
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
+/*
+ * GPU random-linear-combination fast-check for the commitment batch.
+ *   returns  1 = all commitments valid,
+ *            0 = at least one invalid,
+ *           -1 = GPU unavailable / device error (caller falls back to the per-row
+ *                ufsecp_lbtc_verify_commitment, which is exact and locates failures).
+ *
+ * Aggregate identity: with weights r_i,
+ *     Sum r_i*P_i + (Sum r_i*t_i)*G  ==  Sum r_i*Q_i   iff   every P_i+t_i*G == Q_i.
+ * Evaluated as two device MSMs (ufsecp_gpu_msm). The weights r_i are FIAT-SHAMIR
+ * derived from a SHA-256 over the ENTIRE batch — e = H(internal_x||tweak||tweaked_x
+ * ||parity), r_i = H(e || i) mod n — so a crafted block cannot choose data that
+ * forces a false cancellation (that would require grinding SHA-256 into a fixed
+ * group relation). A constant r would be forgeable; the per-row CPU path stays the
+ * exact consensus reference. PUBLIC data only -> variable-time.
+ */
+int ufsecp_lbtc_commitment_batch_ok(ufsecp_lbtc_ctrl* ctrl,
+                                    const uint8_t* internal_x32,
+                                    const uint8_t* tweak32,
+                                    const uint8_t* tweaked_x32,
+                                    const uint8_t* parity,
+                                    size_t n) {
+    if (!ctrl || n == 0 || !internal_x32 || !tweak32 || !tweaked_x32 || !parity) return -1;
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (!ctrl->gpu) return -1;
+    using secp256k1::fast::Scalar;
+    try {
+        /* Fiat-Shamir batch digest e = SHA256(internal_x || tweak || tweaked_x || parity). */
+        std::vector<uint8_t> tr;
+        tr.reserve(n*32*3 + n);
+        tr.insert(tr.end(), internal_x32, internal_x32 + n*32);
+        tr.insert(tr.end(), tweak32,      tweak32      + n*32);
+        tr.insert(tr.end(), tweaked_x32,  tweaked_x32  + n*32);
+        tr.insert(tr.end(), parity,       parity       + n);
+        uint8_t e[32];
+        if (ufsecp_sha256(tr.data(), tr.size(), e) != UFSECP_OK) return -1;
+
+        /* Generator (compressed), once. */
+        uint8_t Gc[33]; { uint8_t one[32]={0}; one[31]=1; ufsecp_ctx* g=nullptr;
+            if (ufsecp_ctx_create(&g)!=UFSECP_OK || !g) return -1;
+            const ufsecp_error_t ge = ufsecp_pubkey_create(g, one, Gc);
+            ufsecp_ctx_destroy(g);
+            if (ge != UFSECP_OK) return -1; }
+
+        std::vector<uint8_t> lp((n+1)*33), ls((n+1)*32), qp(n*33);
+        Scalar g_coeff = Scalar::zero();
+        for (size_t i = 0; i < n; ++i) {
+            uint8_t seed[36]; std::memcpy(seed, e, 32);
+            seed[32]=(uint8_t)i; seed[33]=(uint8_t)(i>>8);
+            seed[34]=(uint8_t)(i>>16); seed[35]=(uint8_t)(i>>24);
+            uint8_t rb[32]; if (ufsecp_sha256(seed, 36, rb) != UFSECP_OK) return -1;
+            const Scalar r = Scalar::from_bytes(rb);           /* reduced mod n */
+            const auto ra = r.to_bytes();
+            std::memcpy(ls.data() + i*32, ra.data(), 32);
+            lp[i*33] = 0x02; std::memcpy(lp.data()+i*33+1, internal_x32+i*32, 32); /* even-y P_i */
+            qp[i*33] = parity[i] ? 0x03 : 0x02; std::memcpy(qp.data()+i*33+1, tweaked_x32+i*32, 32); /* Q_i */
+            g_coeff = g_coeff + r * Scalar::from_bytes(tweak32 + i*32);
+        }
+        std::memcpy(lp.data() + n*33, Gc, 33);
+        { const auto ga = g_coeff.to_bytes(); std::memcpy(ls.data() + n*32, ga.data(), 32); }
+
+        uint8_t lhs[33], rhs[33];
+        if (ufsecp_gpu_msm(ctrl->gpu, ls.data(), lp.data(), n+1, lhs) != UFSECP_OK) return -1;
+        if (ufsecp_gpu_msm(ctrl->gpu, ls.data(), qp.data(), n,   rhs) != UFSECP_OK) return -1;
+        return std::memcmp(lhs, rhs, 33) == 0 ? 1 : 0;
+    } catch (...) { return -1; }
+#else
+    return -1;  /* no GPU build — caller uses ufsecp_lbtc_verify_commitment */
+#endif
+}
+
+/* ---------------------------------------------------------------------------
+ * Single-buffer (AoS) commitment batch — one horizontal mmap'd table, one ptr.
+ *
+ * Each row is a tightly-packed 97-byte record (+ optional caller tail counted in
+ * `stride`):
+ *     [ internal_x(32) ][ tweak(32) ][ tweaked(33) ]
+ * where `tweaked` is the COMPRESSED output key (0x02/0x03 prefix folds in the
+ * y-parity — no separate parity column). The verified record is the first 97
+ * bytes; stride may be larger (a block-fk / correlation tail the bridge ignores).
+ *
+ * CPU path: each row is read in place from the mmap at base + i*stride (strided,
+ * ZERO copy) and verified independently — Q = lift_x(internal,even)+tweak*G,
+ * accept iff its compressed form equals the stored `tweaked` (33 bytes; this
+ * single compare captures both x AND parity). Rows fan across a thread pool.
+ * ------------------------------------------------------------------------- */
+static inline bool lbtc_commit_one_comp(ufsecp_ctx* ctx, const uint8_t Gc[33],
+                                        const uint8_t* internal_x32,
+                                        const uint8_t* tweak32,
+                                        const uint8_t* tweaked_comp33) {
+    uint8_t pts[66], scl[64], Q[33];
+    pts[0] = 0x02; std::memcpy(pts + 1, internal_x32, 32);  /* lift(internal, even-y) */
+    std::memcpy(pts + 33, Gc, 33);
+    std::memset(scl, 0, 64); scl[31] = 1;
+    std::memcpy(scl + 32, tweak32, 32);
+    if (ufsecp_multi_scalar_mul(ctx, scl, pts, 2, Q) != UFSECP_OK) return false;
+    return std::memcmp(Q, tweaked_comp33, 33) == 0;  /* x + parity in one compare */
+}
+
+void ufsecp_lbtc_verify_commitment_rows(ufsecp_lbtc_ctrl* ctrl,
+                                        const uint8_t* rows, size_t n,
+                                        size_t stride, uint8_t* results) {
+    if (!results || n == 0) return;
+    std::memset(results, 0, n);  /* fail-closed default */
+    if (!ctrl || !rows || stride < UFSECP_LBTC_COMMITMENT_RECORD) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    /* GPU per-item path over the AoS buffer. De-interleave the 97-byte records into
+     * columns; the stored `tweaked` is compressed (prefix=parity, x=bytes 1..33). A
+     * malformed prefix (not 0x02/0x03) is forced invalid AFTER the kernel so the
+     * verdict matches the CPU path's full 33-byte compare bit-for-bit. */
+    if (ctrl->gpu) {
+        std::vector<uint8_t> ix(n*32), tw(n*32), tx(n*32), par(n);
+        for (size_t i = 0; i < n; ++i) {
+            const uint8_t* r = rows + i*stride;
+            std::memcpy(ix.data()+i*32, r,      32);
+            std::memcpy(tw.data()+i*32, r + 32, 32);
+            std::memcpy(tx.data()+i*32, r + 65, 32);          /* tweaked_x = comp[1..33] */
+            par[i] = (r[64] == 0x03) ? 1u : 0u;               /* y-parity from comp prefix */
+        }
+        if (ufsecp_gpu_commitment_verify(ctrl->gpu, ix.data(), tw.data(),
+                                         tx.data(), par.data(), n, results) == UFSECP_OK) {
+            for (size_t i = 0; i < n; ++i) {                  /* match CPU full-compress compare */
+                const uint8_t pfx = rows[i*stride + 64];
+                if (pfx != 0x02 && pfx != 0x03) results[i] = 0u;
+            }
+            return;
+        }
+        std::memset(results, 0, n);
+    }
+#endif
+
+    uint8_t Gc[33]; { uint8_t one[32] = {0}; one[31] = 1;
+        ufsecp_ctx* g = nullptr;
+        if (ufsecp_ctx_create(&g) != UFSECP_OK || !g) return;
+        const ufsecp_error_t ge = ufsecp_pubkey_create(g, one, Gc);
+        ufsecp_ctx_destroy(g);
+        if (ge != UFSECP_OK) return;
+    }
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            ufsecp_ctx* c = nullptr;
+            if (ufsecp_ctx_create(&c) != UFSECP_OK || !c) return;  /* results stay 0 */
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i) {
+                const uint8_t* r = rows + i * stride;          /* in-place strided read */
+                results[i] = lbtc_commit_one_comp(c, Gc, r, r + 32, r + 64) ? 1u : 0u;
+            }
+            ufsecp_ctx_destroy(c);
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
+/* GPU RLC fast-check over the single AoS buffer (see ufsecp_lbtc_commitment_batch_ok).
+ * Q_i is read straight from the row's compressed `tweaked` field — no repack. */
+int ufsecp_lbtc_commitment_batch_ok_rows(ufsecp_lbtc_ctrl* ctrl,
+                                         const uint8_t* rows, size_t n, size_t stride) {
+    if (!ctrl || n == 0 || !rows || stride < UFSECP_LBTC_COMMITMENT_RECORD) return -1;
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (!ctrl->gpu) return -1;
+    using secp256k1::fast::Scalar;
+    try {
+        /* Fiat-Shamir digest e = SHA256 over the 97-byte records (excludes any tail). */
+        std::vector<uint8_t> tr(n * UFSECP_LBTC_COMMITMENT_RECORD);
+        for (size_t i = 0; i < n; ++i)
+            std::memcpy(tr.data() + i * UFSECP_LBTC_COMMITMENT_RECORD,
+                        rows + i * stride, UFSECP_LBTC_COMMITMENT_RECORD);
+        uint8_t e[32];
+        if (ufsecp_sha256(tr.data(), tr.size(), e) != UFSECP_OK) return -1;
+
+        uint8_t Gc[33]; { uint8_t one[32]={0}; one[31]=1; ufsecp_ctx* g=nullptr;
+            if (ufsecp_ctx_create(&g)!=UFSECP_OK || !g) return -1;
+            const ufsecp_error_t ge = ufsecp_pubkey_create(g, one, Gc);
+            ufsecp_ctx_destroy(g);
+            if (ge != UFSECP_OK) return -1; }
+
+        std::vector<uint8_t> lp((n+1)*33), ls((n+1)*32), qp(n*33);
+        Scalar g_coeff = Scalar::zero();
+        for (size_t i = 0; i < n; ++i) {
+            const uint8_t* r = rows + i * stride;
+            uint8_t seed[36]; std::memcpy(seed, e, 32);
+            seed[32]=(uint8_t)i; seed[33]=(uint8_t)(i>>8);
+            seed[34]=(uint8_t)(i>>16); seed[35]=(uint8_t)(i>>24);
+            uint8_t rb[32]; if (ufsecp_sha256(seed, 36, rb) != UFSECP_OK) return -1;
+            const Scalar rs = Scalar::from_bytes(rb);
+            const auto ra = rs.to_bytes();
+            std::memcpy(ls.data() + i*32, ra.data(), 32);
+            lp[i*33] = 0x02; std::memcpy(lp.data()+i*33+1, r, 32);   /* P_i = even-y(internal) */
+            std::memcpy(qp.data()+i*33, r + 64, 33);                 /* Q_i = stored compressed */
+            g_coeff = g_coeff + rs * Scalar::from_bytes(r + 32);     /* + r_i * tweak_i */
+        }
+        std::memcpy(lp.data() + n*33, Gc, 33);
+        { const auto ga = g_coeff.to_bytes(); std::memcpy(ls.data() + n*32, ga.data(), 32); }
+
+        uint8_t lhs[33], rhs[33];
+        if (ufsecp_gpu_msm(ctrl->gpu, ls.data(), lp.data(), n+1, lhs) != UFSECP_OK) return -1;
+        if (ufsecp_gpu_msm(ctrl->gpu, ls.data(), qp.data(), n,   rhs) != UFSECP_OK) return -1;
+        return std::memcmp(lhs, rhs, 33) == 0 ? 1 : 0;
+    } catch (...) { return -1; }
+#else
+    (void)rows; (void)n; (void)stride; return -1;
+#endif
+}
+
+/* ---------------------------------------------------------------------------
+ * Batch x-only pubkey validation (lift_x on-curve check), AoS single-buffer.
+ *
+ * For each 32-byte x-only key, decide whether it is a valid pubkey x-coordinate
+ * (x < p AND x^3+7 is a quadratic residue, i.e. a point lifts). One lift_x per
+ * key — a field sqrt + QR test; PUBLIC data, variable-time. results[i] = 1 valid.
+ * Engine-native: validate via ufsecp_pubkey_parse(0x02||x). CPU-threaded.
+ *
+ * Use case: a node's PARALLEL pre-validation pass (validate a block's x-only keys
+ * in bulk before sequential script eval). NOTE: the ECDSA/Schnorr/commitment
+ * verify batches already lift their keys internally, so this is for a SEPARATE
+ * bulk validation — not a redundant second lift on keys you already verify.
+ * (A dedicated GPU lift_x kernel — no MSM reuse here, unlike the commitment RLC —
+ * is a follow-up; this ships the threaded CPU path.)
+ * ------------------------------------------------------------------------- */
+static inline bool lbtc_validate_xonly_one(ufsecp_ctx* ctx, const uint8_t* x32) {
+    uint8_t comp[33], out[33];
+    comp[0] = 0x02; std::memcpy(comp + 1, x32, 32);  /* even-y compressed candidate */
+    return ufsecp_pubkey_parse(ctx, comp, 33, out) == UFSECP_OK;
+}
+
+void ufsecp_lbtc_validate_xonly(ufsecp_lbtc_ctrl* ctrl,
+                                const uint8_t* keys, size_t n,
+                                size_t stride, uint8_t* results) {
+    if (!results || n == 0) return;
+    std::memset(results, 0, n);  /* fail-closed default */
+    if (!ctrl || !keys || stride < 32) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    /* GPU per-key lift_x fast path (one thread per key). On any device failure we
+     * reset and fall through to the CPU reference — consensus-identical. */
+    if (ctrl->gpu) {
+        const uint8_t* contig = keys;
+        std::vector<uint8_t> packed;
+        if (stride != 32) {                       /* de-stride into contiguous n*32 */
+            packed.resize(n * 32);
+            for (size_t i = 0; i < n; ++i) std::memcpy(packed.data() + i*32, keys + i*stride, 32);
+            contig = packed.data();
+        }
+        if (ufsecp_gpu_xonly_validate(ctrl->gpu, contig, n, results) == UFSECP_OK) return;
+        std::memset(results, 0, n);               /* device failed → CPU fallback */
+    }
+#endif
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            ufsecp_ctx* c = nullptr;
+            if (ufsecp_ctx_create(&c) != UFSECP_OK || !c) return;  /* results stay 0 */
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i)
+                results[i] = lbtc_validate_xonly_one(c, keys + i * stride) ? 1u : 0u;
+            ufsecp_ctx_destroy(c);
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
+/* ---------------------------------------------------------------------------
+ * Batch BIP-340 tagged hash — Taproot script-tree (leaf / branch) hashing.
+ *
+ * out_i = tagged_hash(tag, msg_i) = SHA256( SHA256(tag) || SHA256(tag) || msg_i ),
+ * for n messages of fixed msg_len (AoS, stride >= msg_len; tail ignored).
+ *   TapBranch: tag="TapBranch", msg_len=64 — the caller supplies the two child
+ *              hashes ALREADY ordered (min||max) per BIP-341.
+ *   TapLeaf  : tag="TapLeaf"  — for fixed-size leaves (variable scripts need a
+ *              lengths[] variant; not provided here).
+ * PUBLIC data, CPU-threaded. ufsecp_tagged_hash is stateless (no ctx); one warmup
+ * call first absorbs any lazily-built tag midstate before the pool starts. A node
+ * uses this to hash a block's merkle-tree internal nodes in bulk during parallel
+ * pre-validation. `ctrl` is accepted for API uniformity / future GPU SHA dispatch.
+ * ------------------------------------------------------------------------- */
+void ufsecp_lbtc_tagged_hash_batch(ufsecp_lbtc_ctrl* ctrl, const char* tag,
+                                   const uint8_t* msgs, size_t msg_len,
+                                   size_t n, size_t stride, uint8_t* out32) {
+    (void)ctrl;
+    if (!out32 || n == 0) return;
+    if (!tag || !msgs || msg_len == 0 || stride < msg_len) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    /* GPU path (one thread per message). tag_hash = SHA256(tag) is precomputed once
+     * on host; the kernel does SHA256(tag_hash||tag_hash||msg). msg_len capped at
+     * 256 on the device; fall back to the CPU pool on any failure. */
+    if (ctrl && ctrl->gpu && msg_len <= 256) {
+        uint8_t th[32];
+        if (ufsecp_sha256(reinterpret_cast<const uint8_t*>(tag), std::strlen(tag), th) == UFSECP_OK) {
+            const uint8_t* contig = msgs;
+            std::vector<uint8_t> packed;
+            if (stride != msg_len) {                  /* de-stride into contiguous n*msg_len */
+                packed.resize(n * msg_len);
+                for (size_t i = 0; i < n; ++i) std::memcpy(packed.data()+i*msg_len, msgs+i*stride, msg_len);
+                contig = packed.data();
+            }
+            if (ufsecp_gpu_tagged_hash(ctrl->gpu, th, contig, msg_len, n, out32) == UFSECP_OK) return;
+        }
+    }
+#endif
+
+    uint8_t warm[32];                                   /* serialize any lazy tag-midstate init */
+    if (ufsecp_tagged_hash(tag, msgs, msg_len, warm) != UFSECP_OK) return;
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i)
+                ufsecp_tagged_hash(tag, msgs + i * stride, msg_len, out32 + i * 32);
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
+/* ---------------------------------------------------------------------------
+ * Batch full compressed-pubkey validation (prefix 0x02/0x03 + x<p + on-curve).
+ * For CHECKSIG bulk pre-validation. PUBLIC data, variable-time, CPU-threaded;
+ * GPU per-key kernel when the controller is GPU-bound (ufsecp_gpu_pubkey_validate).
+ * ------------------------------------------------------------------------- */
+static inline bool lbtc_validate_pubkey_one(ufsecp_ctx* ctx, const uint8_t* pk33) {
+    uint8_t out[33];
+    return ufsecp_pubkey_parse(ctx, pk33, 33, out) == UFSECP_OK;
+}
+
+void ufsecp_lbtc_validate_pubkeys(ufsecp_lbtc_ctrl* ctrl,
+                                  const uint8_t* keys, size_t n,
+                                  size_t stride, uint8_t* results) {
+    if (!results || n == 0) return;
+    std::memset(results, 0, n);
+    if (!ctrl || !keys || stride < 33) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (ctrl->gpu) {
+        const uint8_t* contig = keys;
+        std::vector<uint8_t> packed;
+        if (stride != 33) {
+            packed.resize(n * 33);
+            for (size_t i = 0; i < n; ++i) std::memcpy(packed.data() + i*33, keys + i*stride, 33);
+            contig = packed.data();
+        }
+        if (ufsecp_gpu_pubkey_validate(ctrl->gpu, contig, n, results) == UFSECP_OK) return;
+        std::memset(results, 0, n);
+    }
+#endif
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            ufsecp_ctx* c = nullptr;
+            if (ufsecp_ctx_create(&c) != UFSECP_OK || !c) return;
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i)
+                results[i] = lbtc_validate_pubkey_one(c, keys + i * stride) ? 1u : 0u;
+            ufsecp_ctx_destroy(c);
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
+/* ---------------------------------------------------------------------------
+ * Batch Taproot tagged hash with PER-ITEM length (TapLeaf scripts). PUBLIC data,
+ * CPU-threaded; GPU when bound (ufsecp_gpu_tagged_hash_var). lens[i] in 1..256.
+ * ------------------------------------------------------------------------- */
+void ufsecp_lbtc_tagged_hash_var(ufsecp_lbtc_ctrl* ctrl, const char* tag,
+                                 const uint8_t* msgs, const uint32_t* lens,
+                                 size_t stride, size_t n, uint8_t* out32) {
+    if (!out32 || n == 0) return;
+    if (!tag || !msgs || !lens || stride == 0 || stride > 256) return;
+
+    uint8_t warm[32];                                   /* serialize lazy tag-midstate init */
+    const uint8_t one = 0;
+    if (ufsecp_tagged_hash(tag, &one, 1, warm) != UFSECP_OK) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (ctrl && ctrl->gpu) {
+        uint8_t th[32];
+        if (ufsecp_sha256(reinterpret_cast<const uint8_t*>(tag), std::strlen(tag), th) == UFSECP_OK) {
+            if (ufsecp_gpu_tagged_hash_var(ctrl->gpu, th, msgs, lens, stride, n, out32) == UFSECP_OK) return;
+        }
+    }
+#endif
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i) {
+                size_t L = lens[i]; if (L > 256) L = 256;
+                ufsecp_tagged_hash(tag, msgs + i * stride, L, out32 + i * 32);
+            }
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
+/* ---------------------------------------------------------------------------
+ * Batch HASH256 (double SHA-256) of fixed-length inputs — merkle node hashing.
+ * out32[i*32..] = SHA256(SHA256(inputs[i*input_len..])). PUBLIC, CPU-threaded;
+ * GPU when bound (ufsecp_gpu_hash256).
+ * ------------------------------------------------------------------------- */
+void ufsecp_lbtc_hash256(ufsecp_lbtc_ctrl* ctrl, const uint8_t* inputs,
+                         size_t input_len, size_t n, uint8_t* out32) {
+    if (!out32 || n == 0) return;
+    if (!inputs || input_len == 0) return;
+
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (ctrl && ctrl->gpu && input_len <= 320) {
+        if (ufsecp_gpu_hash256(ctrl->gpu, inputs, input_len, n, out32) == UFSECP_OK) return;
+    }
+#endif
+
+    unsigned T = std::thread::hardware_concurrency(); if (!T) T = 4;
+    if (n < 512) T = 1;
+    std::vector<std::thread> ths; ths.reserve(T);
+    const size_t per = (n + T - 1) / T;
+    for (unsigned t = 0; t < T; ++t) {
+        ths.emplace_back([&, t]() {
+            const size_t lo = (size_t)t * per, hi = std::min(n, lo + per);
+            for (size_t i = lo; i < hi; ++i) {
+                uint8_t h1[32];
+                ufsecp_sha256(inputs + i * input_len, input_len, h1);
+                ufsecp_sha256(h1, 32, out32 + i * 32);
+            }
+        });
+    }
+    for (auto& th : ths) th.join();
+}
+
+/* ---------------------------------------------------------------------------
+ * Aggregate (random-linear-combination) BIP-340 Schnorr batch verification.
+ *
+ * For each i a valid signature satisfies  sᵢ·G = Rᵢ + eᵢ·Pᵢ  (BIP-340), with
+ * Rᵢ=lift_x(rᵢ), Pᵢ=lift_x(pubkey_xᵢ), eᵢ=tagged_hash("BIP0340/challenge",rᵢ‖Pᵢ‖mᵢ).
+ * Summing with random weights aᵢ:  (Σaᵢsᵢ)·G == Σaᵢ·Rᵢ + Σ(aᵢeᵢ)·Pᵢ  iff every
+ * signature is valid. Evaluated as two device MSMs (LHS = (Σaᵢsᵢ)·G over the single
+ * generator; RHS = the 2n-point combination). The weights aᵢ are FIAT-SHAMIR-derived
+ * from a SHA-256 over the whole batch, so a crafted block cannot grind a false
+ * cancellation (Bellare-Garay-Rabin; identical construction to the commitment RLC).
+ * Returns 1 all-valid / 0 some-invalid / -1 no-GPU-or-device-error. PUBLIC data.
+ * ------------------------------------------------------------------------- */
+int ufsecp_lbtc_schnorr_aggregate_verify(ufsecp_lbtc_ctrl* ctrl,
+                                         const uint8_t* msgs32,
+                                         const uint8_t* pubkeys_x32,
+                                         const uint8_t* sigs64,
+                                         size_t n) {
+    if (!ctrl || n == 0 || !msgs32 || !pubkeys_x32 || !sigs64) return -1;
+#ifdef UFSECP_LBTC_WITH_GPU
+    if (!ctrl->gpu) return -1;
+    using secp256k1::fast::Scalar;
+    try {
+        /* Fiat-Shamir batch digest e = SHA256(msgs || pubkeys || sigs). */
+        std::vector<uint8_t> tr; tr.reserve(n*32 + n*32 + n*64);
+        tr.insert(tr.end(), msgs32,      msgs32      + n*32);
+        tr.insert(tr.end(), pubkeys_x32, pubkeys_x32 + n*32);
+        tr.insert(tr.end(), sigs64,      sigs64      + n*64);
+        uint8_t e[32];
+        if (ufsecp_sha256(tr.data(), tr.size(), e) != UFSECP_OK) return -1;
+
+        /* Generator (compressed), once. */
+        uint8_t Gc[33]; { uint8_t one[32]={0}; one[31]=1; ufsecp_ctx* g=nullptr;
+            if (ufsecp_ctx_create(&g)!=UFSECP_OK || !g) return -1;
+            const ufsecp_error_t ge = ufsecp_pubkey_create(g, one, Gc);
+            ufsecp_ctx_destroy(g);
+            if (ge != UFSECP_OK) return -1; }
+
+        /* RHS = Σ aᵢ·Rᵢ + Σ (aᵢeᵢ)·Pᵢ  → 2n points; LHS scalar = Σ aᵢ·sᵢ. */
+        std::vector<uint8_t> rp(2*n*33), rs(2*n*32);
+        Scalar lhs_s = Scalar::zero();
+        for (size_t i = 0; i < n; ++i) {
+            const uint8_t* r = sigs64 + i*64;          /* R.x */
+            const uint8_t* s = sigs64 + i*64 + 32;     /* s   */
+            const uint8_t* P = pubkeys_x32 + i*32;     /* P.x (x-only) */
+            const uint8_t* m = msgs32 + i*32;
+
+            uint8_t cb[96]; std::memcpy(cb, r, 32); std::memcpy(cb+32, P, 32); std::memcpy(cb+64, m, 32);
+            uint8_t eh[32];
+            if (ufsecp_tagged_hash("BIP0340/challenge", cb, 96, eh) != UFSECP_OK) return -1;
+            const Scalar ei = Scalar::from_bytes(eh);
+
+            uint8_t seed[36]; std::memcpy(seed, e, 32);
+            seed[32]=(uint8_t)i; seed[33]=(uint8_t)(i>>8);
+            seed[34]=(uint8_t)(i>>16); seed[35]=(uint8_t)(i>>24);
+            uint8_t ab[32];
+            if (ufsecp_sha256(seed, 36, ab) != UFSECP_OK) return -1;
+            const Scalar ai = Scalar::from_bytes(ab);
+            const Scalar si = Scalar::from_bytes(s);
+            lhs_s = lhs_s + ai * si;
+
+            rp[i*33] = 0x02; std::memcpy(rp.data()+i*33+1, r, 32);          /* Rᵢ = lift_x(r) even-y */
+            { const auto a = ai.to_bytes(); std::memcpy(rs.data()+i*32, a.data(), 32); }
+            rp[(n+i)*33] = 0x02; std::memcpy(rp.data()+(n+i)*33+1, P, 32);  /* Pᵢ = lift_x(P.x) even-y */
+            { const auto ae = (ai * ei).to_bytes(); std::memcpy(rs.data()+(n+i)*32, ae.data(), 32); }
+        }
+
+        uint8_t rhs[33], lhs[33];
+        if (ufsecp_gpu_msm(ctrl->gpu, rs.data(), rp.data(), 2*n, rhs) != UFSECP_OK) return -1;
+        { const auto ls = lhs_s.to_bytes();
+          if (ufsecp_gpu_msm(ctrl->gpu, ls.data(), Gc, 1, lhs) != UFSECP_OK) return -1; }
+        return std::memcmp(lhs, rhs, 33) == 0 ? 1 : 0;
+    } catch (...) { return -1; }
+#else
+    (void)msgs32; (void)pubkeys_x32; (void)sigs64; return -1;
+#endif
 }
 
 ufsecp_error_t ufsecp_lbtc_sp_scan(ufsecp_lbtc_ctrl* ctrl,

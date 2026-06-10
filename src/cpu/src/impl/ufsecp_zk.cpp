@@ -145,6 +145,23 @@ ufsecp_error_t ufsecp_schnorr_adaptor_extract(
     return UFSECP_OK;
 }
 
+// GHSA-c7q2-gv3g-rgxm: parse the 162-byte DLEQ-bound ECDSA adaptor wire format into
+// an ECDSAAdaptorSig. Layout: R_hat(33) ∥ R(33) ∥ s_hat(32) ∥ dleq_e(32) ∥ dleq_s(32).
+// r is DERIVED as R.x mod n (not transmitted, so it cannot be tampered independently
+// of R). Returns false on any malformed component. Shared by verify/adapt/extract.
+static bool parse_ecdsa_adaptor_sig(const uint8_t* p, secp256k1::ECDSAAdaptorSig& out) {
+    out.R_hat = point_from_compressed(p);
+    if (out.R_hat.is_infinity()) return false;
+    out.R = point_from_compressed(p + 33);
+    if (out.R.is_infinity()) return false;
+    if (!scalar_parse_strict(p + 66, out.s_hat)) return false;
+    if (!scalar_parse_strict(p + 98, out.dleq_e)) return false;
+    if (!scalar_parse_strict(p + 130, out.dleq_s)) return false;
+    auto rx = out.R.x().to_bytes();
+    out.r = Scalar::from_bytes(rx);   // r = R.x mod n
+    return true;
+}
+
 ufsecp_error_t ufsecp_ecdsa_adaptor_sign(
     ufsecp_ctx* ctx,
     const uint8_t privkey[32],
@@ -169,17 +186,22 @@ ufsecp_error_t ufsecp_ecdsa_adaptor_sign(
     secp256k1::detail::secure_erase(&sk, sizeof(sk));
     // T-09: degenerate output guard — Rule 4: ABI wrappers must not emit zero/infinity
     // pre-signatures as success (prob ~2^-128, but a fault-injection target).
-    if (pre.s_hat.is_zero() || pre.r.is_zero() || pre.R_hat.is_infinity()) {
+    if (pre.s_hat.is_zero() || pre.r.is_zero() ||
+        pre.R_hat.is_infinity() || pre.R.is_infinity()) {
         return ctx_set_err(ctx, UFSECP_ERR_INTERNAL, "adaptor sign produced degenerate output");
     }
+    // GHSA-c7q2-gv3g-rgxm wire format (162 B): R_hat(33) ∥ R(33) ∥ s_hat(32) ∥
+    // dleq_e(32) ∥ dleq_s(32). r is R.x mod n — derived on parse, not transmitted.
     auto rhat = pre.R_hat.to_compressed();
+    auto rpt  = pre.R.to_compressed();
     auto shat = pre.s_hat.to_bytes();
-    auto r_bytes = pre.r.to_bytes();
-    std::memcpy(pre_sig_out, rhat.data(), 33);
-    std::memcpy(pre_sig_out + 33, shat.data(), 32);
-    std::memcpy(pre_sig_out + 65, r_bytes.data(), 32);
-    /* zero-pad remainder */
-    std::memset(pre_sig_out + 97, 0, UFSECP_ECDSA_ADAPTOR_SIG_LEN - 97);
+    auto de   = pre.dleq_e.to_bytes();
+    auto ds   = pre.dleq_s.to_bytes();
+    std::memcpy(pre_sig_out + 0,   rhat.data(), 33);
+    std::memcpy(pre_sig_out + 33,  rpt.data(),  33);
+    std::memcpy(pre_sig_out + 66,  shat.data(), 32);
+    std::memcpy(pre_sig_out + 98,  de.data(),   32);
+    std::memcpy(pre_sig_out + 130, ds.data(),   32);
     return UFSECP_OK;
 }
 
@@ -194,17 +216,8 @@ ufsecp_error_t ufsecp_ecdsa_adaptor_verify(
     }
     ctx_clear_err(ctx);
     secp256k1::ECDSAAdaptorSig as;
-    as.R_hat = point_from_compressed(pre_sig);
-    if (as.R_hat.is_infinity()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor R_hat");
-    }
-    Scalar shat;
-    if (SECP256K1_UNLIKELY(!scalar_parse_strict(pre_sig + 33, shat))) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig scalar");
-    }
-    as.s_hat = shat;
-    if (SECP256K1_UNLIKELY(!scalar_parse_strict(pre_sig + 65, as.r))) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig r");
+    if (SECP256K1_UNLIKELY(!parse_ecdsa_adaptor_sig(pre_sig, as))) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor pre-signature");
     }
     auto pk = point_from_compressed(pubkey33);
     if (pk.is_infinity()) {
@@ -230,17 +243,8 @@ ufsecp_error_t ufsecp_ecdsa_adaptor_adapt(
     if (SECP256K1_UNLIKELY(!ctx || !pre_sig || !adaptor_secret || !sig64_out)) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
     secp256k1::ECDSAAdaptorSig as;
-    as.R_hat = point_from_compressed(pre_sig);
-    if (as.R_hat.is_infinity()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor R_hat");
-    }
-    Scalar shat;
-    if (SECP256K1_UNLIKELY(!scalar_parse_strict(pre_sig + 33, shat))) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig scalar");
-    }
-    as.s_hat = shat;
-    if (SECP256K1_UNLIKELY(!scalar_parse_strict(pre_sig + 65, as.r))) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig r");
+    if (SECP256K1_UNLIKELY(!parse_ecdsa_adaptor_sig(pre_sig, as))) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor pre-signature");
     }
     Scalar secret;
     if (SECP256K1_UNLIKELY(!scalar_parse_strict_nonzero(adaptor_secret, secret))) {
@@ -261,17 +265,8 @@ ufsecp_error_t ufsecp_ecdsa_adaptor_extract(
     if (SECP256K1_UNLIKELY(!ctx || !pre_sig || !sig64 || !secret32_out)) return UFSECP_ERR_NULL_ARG;
     ctx_clear_err(ctx);
     secp256k1::ECDSAAdaptorSig as;
-    as.R_hat = point_from_compressed(pre_sig);
-    if (as.R_hat.is_infinity()) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor R_hat");
-    }
-    Scalar shat;
-    if (SECP256K1_UNLIKELY(!scalar_parse_strict(pre_sig + 33, shat))) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig scalar");
-    }
-    as.s_hat = shat;
-    if (SECP256K1_UNLIKELY(!scalar_parse_strict(pre_sig + 65, as.r))) {
-        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor sig r");
+    if (SECP256K1_UNLIKELY(!parse_ecdsa_adaptor_sig(pre_sig, as))) {
+        return ctx_set_err(ctx, UFSECP_ERR_BAD_SIG, "invalid adaptor pre-signature");
     }
     std::array<uint8_t, 64> compact;
     std::memcpy(compact.data(), sig64, 64);

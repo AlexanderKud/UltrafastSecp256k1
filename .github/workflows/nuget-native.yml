@@ -52,7 +52,7 @@ jobs:
         config: [Release, Debug]
         linkage: [static, ltcg]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ github.event.inputs.tag }}
 
@@ -81,11 +81,11 @@ jobs:
 
       - name: Install Ninja
         shell: bash
-        # Pin the chocolatey package version (Scorecard PinnedDependenciesID):
-        # a floating `choco install ninja` is an unpinned supply-chain dependency.
+        # Pin the Chocolatey package version and the upstream ninja-win.zip hash
+        # embedded in the package (Scorecard PinnedDependenciesID).
         # Bump deliberately; this workflow is workflow_dispatch-only so the pin is
         # validated on the next manual NuGet build, never on an automatic push.
-        run: choco install ninja --version 1.12.1 -y --no-progress
+        run: choco install ninja --version=1.12.1 --checksum=f550fec705b6d6ff58f2db3c374c2277a37691678d6aba463adcbb129108467a --checksum-type=sha256 --requirechecksum -y --no-progress
 
       - name: Configure + build fastsecp256k1 (shim ABI, static runtime)
         shell: bash
@@ -178,7 +178,7 @@ jobs:
     if: ${{ always() && !cancelled() }}
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ github.event.inputs.tag }}
 

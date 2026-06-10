@@ -57,7 +57,7 @@ lags behind the generated validation surfaces, prefer the generated counts.
 | `test_frost_kat.cpp` | -- | FROST t-of-n threshold signing known-answer tests |
 | `test_wycheproof_ecdsa.cpp` | -- | Wycheproof ECDSA: Google Project Wycheproof test vectors |
 | `test_wycheproof_ecdh.cpp` | -- | Wycheproof ECDH: Google Project Wycheproof test vectors |
-| `unified_audit_runner.cpp` | 419 modules (149 non-exploit + 270 exploit PoCs) | Unified audit: all current modules in single binary (includes GPU null-guard paths) |
+| `unified_audit_runner.cpp` | 418 modules (149 non-exploit + 269 exploit PoCs) | Unified audit: all current modules in single binary (includes GPU null-guard paths) |
 
 ### CPU Unit Tests (`src/cpu/tests/`)
 
@@ -104,18 +104,21 @@ lags behind the generated validation surfaces, prefer the generated counts.
 |------|---------|-------|
 | `opencl/tests/test_opencl.cpp` | OpenCL | Kernel correctness |
 | `opencl/tests/opencl_extended_test.cpp` | OpenCL | Extended operations |
-| `opencl/src/opencl_audit_runner.cpp` | OpenCL | Unified GPU audit ( 419 modules, 8 sections) |
+| `opencl/src/opencl_audit_runner.cpp` | OpenCL | Unified GPU audit ( 418 modules, 8 sections) |
 | `metal/tests/test_metal_host.cpp` | Metal | Metal shader correctness |
-| `metal/src/metal_audit_runner.mm` | Metal | `secp256k1_metal_audit`: unified GPU audit ( 419 modules, 8 sections) |
+| `metal/src/metal_audit_runner.mm` | Metal | `secp256k1_metal_audit`: unified GPU audit ( 418 modules, 8 sections) |
 | `src/cuda/src/test_ct_smoke.cu` | CUDA | CT smoke tests incl. ZK knowledge + DLEQ prove/verify (9 tests) |
 | `src/cuda/src/gpu_ct_leakage_probe.cu` | CUDA | Fixed-vs-random device-cycle Welch t-test for CT generator/signing kernels with JSON evidence output |
 | `src/cuda/src/test_suite.cu` | CUDA | `cuda_selftest`: kernel correctness, field + scalar + point ops |
-| `src/cuda/src/gpu_audit_runner.cu` | CUDA | `gpu_audit`: unified GPU audit ( 419 modules, 8 sections) |
+| `src/cuda/src/gpu_audit_runner.cu` | CUDA | `gpu_audit`: unified GPU audit ( 418 modules, 8 sections) |
 | `metal/app/metal_test.mm` | Metal | `secp256k1_metal_test`: shader correctness, compute pipeline |
 | `metal/app/bench_metal.mm` | Metal | `secp256k1_metal_bench_full`: comprehensive Metal benchmark |
 | `compat/libsecp256k1_shim/tests/shim_test.cpp` | CPU | `secp256k1_shim_test`: libsecp256k1 API compatibility shim |
 | `compat/libbitcoin_bridge/tests/test_lbtc_bridge.cpp` | CPU | `lbtc_bridge`: libbitcoin batch script-sig verify (ECDSA/Schnorr) + opaque-key correlation, CPU reference path |
 | `compat/libbitcoin_bridge/tests/test_lbtc_consensus_diff.cpp` | GPU (local-only) | `lbtc_consensus_diff`: GPU-vs-CPU consensus differential — every script-sig verdict must match bit-for-bit (ECDSA/Schnorr, mixed corpus). `SKIP_RETURN_CODE 77` (no GPU); runs in `gpu-selfhosted.yml` only |
+| `compat/libbitcoin_bridge/tests/test_lbtc_collect.cpp` | CPU | `lbtc_collect`: in-place collect verify (verdict written into each row's key cell); + `lbtc_collect_smallchunk` recompiles the bridge with a tiny kChunk to straddle chunk boundaries |
+| `compat/libbitcoin_bridge/tests/test_lbtc_multisig_threshold.cpp` | CPU | `lbtc_multisig_threshold`: 4-table batch model (multisig/threshold m-of-n) verify+collect via the ECDSA/Schnorr cores with a 6-byte tail; tail-width independence + typed-span overloads |
+| `compat/libbitcoin_bridge/tests/test_lbtc_commitment.cpp` | CPU (+GPU RLC) | `lbtc_commitment`: BIP-341 Taproot commitment batch (`verify_commitment` per-row + `commitment_batch_ok` GPU RLC fast-check); cross-checked bit-for-bit vs the shim `tweak_add_check` |
 | `audit/test_gpu_abi_gate.cpp` | GPU (all) | `gpu_abi_gate`: GPU C ABI surface test -- discovery, lifecycle, NULL safety, error strings, generator_mul equivalence |
 | `audit/test_gpu_ops_equivalence.cpp` | GPU (all) | `gpu_ops_equivalence`: GPU vs CPU reference for all 6 first-wave ops (skips UNSUPPORTED) |
 | `audit/test_gpu_host_api_negative.cpp` | GPU (all) | `gpu_host_api_negative`: NULL ptrs, count=0 no-ops, invalid backend/device, error strings |
@@ -686,7 +689,6 @@ Each test compiles as a separate binary and verifies that attacks fail, edge cas
 | AEAD / ChaCha20 | `test_exploit_chacha20_nonce_reuse` | Nonce reuse hazard |
 | AEAD / ChaCha20 | `test_exploit_chacha20_poly1305` | AEAD roundtrip |
 | HKDF | `test_exploit_hkdf_kat` | HKDF known-answer tests |
-| HKDF | `test_exploit_hkdf_security` | HKDF security properties |
 | Hash primitives | `test_exploit_keccak256_kat` | Keccak-256 KAT |
 | Hash primitives | `test_exploit_ripemd160_kat` | RIPEMD-160 KAT |
 | Hash primitives | `test_exploit_sha256_kat` | SHA-256 KAT |
@@ -748,7 +750,7 @@ Each test compiles as a separate binary and verifies that attacks fail, edge cas
 | Self-Test / API | `test_exploit_binding_adversarial_api` | Adversarial API misuse: ctx lifecycle, double destroy, bad ctx |
 | Self-Test / API | `test_exploit_buffer_type_confusion` | Type confusion: passing wrong-type buffers to API functions |
 | Self-Test / API | `test_exploit_cross_scheme_pubkey` | Cross-scheme pubkey reuse: same key in ECDH/Schnorr/ECIES isolation |
-| Self-Test / API | `test_exploit_differential_libsecp` | Differential testing vs libsecp256k1: sign/verify/ECDH mismatch |
+| Self-Test / API | `test_exploit_differential_libsecp` | Self-consistency invariants (RFC6979 sign determinism, sign↔verify roundtrip) — NOT an external-library differential; the real in-process libsecp256k1 differential is `test_cross_libsecp256k1` |
 | Adaptor / ZK | `test_exploit_quantum_exposure` | Quantum exposure: pubkey creation under adversarial key guessing |
 | Boundary sentinels | `test_exploit_boundary_sentinels` | Zero, max, order-boundary sentinel values across all API entry points |
 | Hash | `test_exploit_hash_algo_sig_isolation` | Hash-algorithm signature isolation: SHA-256 vs alt-hash no cross-verify |

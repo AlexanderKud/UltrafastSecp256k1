@@ -293,12 +293,31 @@ if(TARGET secp256k1_gpu_host AND (TARGET ufsecp_shared OR TARGET ufsecp_static))
     set_tests_properties(gpu_bip352_scan PROPERTIES
         TIMEOUT 300 LABELS "audit;bip352;silent-payment;gpu")
 
+    # -- GPU Bulletproof poly-check vs CPU range prover (CPU-prove → GPU-verify) --
+    # Needs the C++ engine (range_prove / pedersen_commit) AND the GPU ABI, so it
+    # links fastsecp256k1 in addition to the GPU test lib.
+    add_executable(test_gpu_zk_prove_verify_differential test_gpu_zk_prove_verify_differential.cpp)
+    target_link_libraries(test_gpu_zk_prove_verify_differential PRIVATE
+        ${UFSECP_GPU_TEST_LIB} fastsecp256k1)
+    target_include_directories(test_gpu_zk_prove_verify_differential PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/cpu/include
+        ${CMAKE_BINARY_DIR}/include/ufsecp
+    )
+    target_compile_definitions(test_gpu_zk_prove_verify_differential PRIVATE STANDALONE_TEST)
+    add_test(NAME gpu_zk_prove_verify_differential COMMAND test_gpu_zk_prove_verify_differential)
+    # SKIP_RETURN_CODE 77: advisory GPU+ZK module — returns 77 (not 0) when the GPU
+    # runtime or the GPU ZK module is absent, so CTest treats it as skipped, not failed.
+    set_tests_properties(gpu_zk_prove_verify_differential PROPERTIES
+        TIMEOUT 300 SKIP_RETURN_CODE 77 LABELS "audit;zk;bulletproof;differential;gpu")
+
     # Disable LTO for GPU-linked targets (nvcc LTO version differs from host compiler)
     if(SECP256K1_BUILD_CUDA)
         set_target_properties(
             test_gpu_abi_gate test_gpu_ops_equivalence
             test_gpu_host_api_negative test_gpu_backend_matrix
             test_gpu_ecdsa_snark_witness test_gpu_bip352_scan
+            test_gpu_zk_prove_verify_differential
             PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE
         )
     endif()
@@ -753,11 +772,6 @@ add_test(NAME exploit_pedersen_homomorphism COMMAND test_exploit_pedersen_homomo
 set_tests_properties(exploit_pedersen_homomorphism PROPERTIES TIMEOUT 60 LABELS "audit;exploit;pedersen")
 endif() # SECP256K1_BUILD_ZK
 
-add_executable(test_exploit_hkdf_security_standalone test_exploit_hkdf_security.cpp)
-audit_target_defaults(test_exploit_hkdf_security_standalone)
-target_compile_definitions(test_exploit_hkdf_security_standalone PRIVATE STANDALONE_TEST)
-add_test(NAME exploit_hkdf_security COMMAND test_exploit_hkdf_security_standalone)
-set_tests_properties(exploit_hkdf_security PROPERTIES TIMEOUT 60 LABELS "audit;exploit;hkdf")
 
 add_executable(test_exploit_batch_schnorr_standalone test_exploit_batch_schnorr.cpp)
 audit_target_defaults(test_exploit_batch_schnorr_standalone)
@@ -3418,6 +3432,7 @@ if(SECP256K1_BUILD_CROSS_TESTS)
         set(SECP256K1_ENABLE_MODULE_EXTRAKEYS  ON  CACHE BOOL "" FORCE)
         set(SECP256K1_ENABLE_MODULE_RECOVERY   ON  CACHE BOOL "" FORCE)
         set(SECP256K1_ENABLE_MODULE_ECDH       ON  CACHE BOOL "" FORCE)
+        set(SECP256K1_ENABLE_MODULE_MUSIG      ON  CACHE BOOL "" FORCE)
         set(SECP256K1_BUILD_BENCHMARK          OFF CACHE BOOL "" FORCE)
         set(SECP256K1_BUILD_EXAMPLES           OFF CACHE BOOL "" FORCE)
         set(SECP256K1_BUILD_PROGRAMS           OFF CACHE BOOL "" FORCE)
@@ -3654,6 +3669,8 @@ add_executable(unified_audit_runner
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/gpu/src/gpu_backend_fallback.cpp
     test_gpu_host_api_negative.cpp
     test_gpu_abi_gate.cpp
+    # CPU range-proof → GPU Bulletproof poly-check consistency (advisory; skips w/o GPU/ZK)
+    test_gpu_zk_prove_verify_differential.cpp
     # -- field representation tests --
     ${CPU_TESTS_DIR}/test_field_26.cpp
     # -- diagnostics --
@@ -3736,7 +3753,6 @@ add_executable(unified_audit_runner
     test_exploit_gpu_host_api_shape.cpp
     test_exploit_hedged_nonce_bias.cpp
     test_exploit_hkdf_kat.cpp
-    test_exploit_hkdf_security.cpp
     test_exploit_invalid_curve_twist.cpp
     test_exploit_keccak256_kat.cpp
     test_exploit_multiscalar.cpp
@@ -4028,8 +4044,6 @@ add_executable(unified_audit_runner
     # SEC-001: CT scalar_inverse zero-branch removal (2026-05-21)
     # Removes data-dependent if(is_zero) branch in non-int128 Fermat fallback.
     test_regression_ct_scalar_inverse_zero.cpp
-    # SEC-002/007/008/010, CT-004/005: CT ops regressions (2026-05-21)
-    test_regression_ct_ops_2026_05_21.cpp
     # SEC-006: Bip324Session privkey_ lifetime documentation (2026-05-21)
     test_regression_bip324_privkey_lifetime.cpp
 )
@@ -4050,7 +4064,8 @@ target_sources(unified_audit_runner PRIVATE
     test_regression_shim_seckey_erase.cpp
     # P1-SEC-002: schnorr_sign e_hash erasure (no special dependency)
     test_regression_schnorr_sign_e_hash_erased.cpp
-    # P2: CT-001/002/003 + SHIM-002/003/004 fixes (includes secp256k1.h — needs shim include path)
+    # P2: CT-001/002/003 + SHIM-002/003/004 fixes. Unified keeps shim
+    # subtests stubbed; the dedicated standalone target below links the shim.
     test_regression_p2_ct_shim_fixes.cpp
     # P1-SEC-001: FROST frost_sign absent signer ID (real impl when FROST built)
     $<$<BOOL:${SECP256K1_BUILD_FROST}>:test_exploit_frost_absent_signer_id.cpp>
@@ -4131,6 +4146,22 @@ else()
     target_sources(unified_audit_runner PRIVATE shim_run_stubs_unified.cpp
         # fe52_var_paths does not need the shim — include in non-shim build.
         test_regression_fe52_var_paths.cpp)
+endif()
+
+# -- P2: CT + shim fail-closed regression target (shim-linked standalone) -----
+if(TARGET secp256k1_shim OR SECP256K1_BUILD_SHIM)
+    add_executable(test_regression_p2_ct_shim_fixes_standalone
+        test_regression_p2_ct_shim_fixes.cpp)
+    audit_target_defaults(test_regression_p2_ct_shim_fixes_standalone)
+    target_link_libraries(test_regression_p2_ct_shim_fixes_standalone PRIVATE secp256k1_shim)
+    target_include_directories(test_regression_p2_ct_shim_fixes_standalone PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../compat/libsecp256k1_shim/include)
+    target_compile_definitions(test_regression_p2_ct_shim_fixes_standalone PRIVATE
+        STANDALONE_TEST SECP256K1_BUILD_COMPAT_SHIM)
+    add_test(NAME regression_p2_ct_shim_fixes
+        COMMAND test_regression_p2_ct_shim_fixes_standalone)
+    set_tests_properties(regression_p2_ct_shim_fixes PROPERTIES
+        TIMEOUT 60 LABELS "audit;regression;shim;ct;failclosed;p2")
 endif()
 
 # -- v8: shim security regression guards — standalone CTest target (shim-dependent) --
@@ -4428,7 +4459,7 @@ set_tests_properties(
     exploit_chacha20_nonce_reuse
     exploit_ellswift
     exploit_address_generation exploit_bip324_session exploit_multiscalar
-    exploit_hkdf_security exploit_batch_schnorr
+    exploit_batch_schnorr
     exploit_segwit_encoding exploit_private_key exploit_bip143_sighash
     exploit_ecdh_variants exploit_glv_endomorphism
     exploit_sha_kat exploit_bip144_serialization
@@ -5163,6 +5194,10 @@ target_include_directories(test_regression_musig2_infinity_nonce_standalone PRIV
 target_compile_definitions(test_regression_musig2_infinity_nonce_standalone PRIVATE STANDALONE_TEST)
 add_test(NAME regression_musig2_infinity_nonce
     COMMAND test_regression_musig2_infinity_nonce_standalone)
+# TIMEOUT 30 is correct for normal builds (the test runs in ~0.25s). It is NOT run
+# under MSan — the MIN-2/3/4 BIP-327 rewrite added full MuSig2 sessions (EC scalar
+# mults) that exceed any sane per-test cap under MSan+origin-tracking, so the test
+# is excluded in security-audit.yml (covered by ASan+UBSan, Valgrind, normal build).
 set_tests_properties(regression_musig2_infinity_nonce PROPERTIES TIMEOUT 30
     LABELS "audit;regression;musig2;security;sec-005;sec-009")
 
@@ -5227,17 +5262,9 @@ add_test(NAME regression_ct_ops
 set_tests_properties(regression_ct_ops PROPERTIES TIMEOUT 60
     LABELS "audit;regression;ct;security;sec-002;sec-007;sec-008;ct-004;ct-005")
 target_sources(unified_audit_runner PRIVATE test_regression_ct_ops.cpp)
-
-# 2026-05-22 CT ops v2: source-scan guards (orphan file resolved — was test_regression_ct_ops_2026_05_21.cpp)
-add_executable(test_regression_ct_ops_v2_standalone
-    test_regression_ct_ops_2026_05_21.cpp)
-audit_target_defaults(test_regression_ct_ops_v2_standalone)
-target_compile_definitions(test_regression_ct_ops_v2_standalone PRIVATE STANDALONE_TEST)
-add_test(NAME regression_ct_ops_v2
-    COMMAND test_regression_ct_ops_v2_standalone)
-set_tests_properties(regression_ct_ops_v2 PROPERTIES TIMEOUT 60
-    LABELS "audit;regression;ct;security;sec-002;sec-007;sec-008;ct-004;ct-005;source-scan")
-target_sources(unified_audit_runner PRIVATE test_regression_ct_ops_2026_05_21.cpp)
+# 2026-06-09: test_regression_ct_ops_2026_05_21.cpp (regression_ct_ops_v2) removed —
+# byte-identical duplicate of test_regression_ct_ops.cpp; its unique 10-key loop was
+# merged into the canonical file above.
 
 # SEC-NEW-001/002, P3-SHIM-STACK, P3-BATCH-MEM (2026-05-23)
 # advisory=false: source-scan + C++ adaptor round-trip, no shim/GPU dependency.

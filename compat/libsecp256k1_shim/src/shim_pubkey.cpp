@@ -180,6 +180,11 @@ int secp256k1_ec_pubkey_serialize(
         secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_serialize: invalid flags");
         return 0;
     }
+    auto P = pubkey_data_to_point(pubkey->data);
+    if (P.is_infinity()) {
+        *outputlen = 0;
+        return 0;
+    }
 
     if (flags & SECP256K1_FLAGS_BIT_COMPRESSION) {
         // Compressed
@@ -241,11 +246,19 @@ int secp256k1_ec_pubkey_create(
     Scalar k;
     if (!Scalar::parse_bytes_strict_nonzero(seckey, k)) {
         secp256k1::detail::secure_erase(&k, sizeof(k));   // secret-residue sweep
+        // PASS3-SHIM-CREATE-ZERO: zero the output on failure to match upstream
+        // secp256k1_ec_pubkey_create's memczero(pubkey, !ret) and the shim's own
+        // convention (keypair_create, ec_pubkey_negate). Was the only seckey-consuming
+        // creation API that left the caller's output buffer untouched on failure.
+        std::memset(pubkey->data, 0, sizeof(pubkey->data));
         return 0;
     }
     auto P = secp256k1::ct::generator_mul(k);   // CT: Rule 12 — sk is a private key
     secp256k1::detail::secure_erase(&k, sizeof(k));   // erase parsed private key after last use
-    if (P.is_infinity()) return 0;
+    if (P.is_infinity()) {
+        std::memset(pubkey->data, 0, sizeof(pubkey->data));  // PASS3-SHIM-CREATE-ZERO
+        return 0;
+    }
     point_to_pubkey_data(P, pubkey->data);
     return 1;
 }
@@ -259,7 +272,10 @@ int secp256k1_ec_pubkey_negate(
         return 0;
     }
     auto P = pubkey_data_to_point(pubkey->data);
-    if (P.is_infinity()) return 0;  // SHIM-002: off-curve input rejected
+    if (P.is_infinity()) {
+        std::memset(pubkey->data, 0, sizeof(pubkey->data));
+        return 0;
+    }  // SHIM-002: off-curve input rejected
     auto neg = P.negate();
     point_to_pubkey_data(neg, pubkey->data);
     return 1;
@@ -279,12 +295,13 @@ int secp256k1_ec_pubkey_tweak_add(
         return 0;
     }
     auto P = pubkey_data_to_point(pubkey->data);
+    if (P.is_infinity()) { std::memset(pubkey->data, 0, sizeof(pubkey->data)); return 0; }
     // tweak in [0, n-1]; 0 is valid (result == pubkey)
     Scalar t;
-    if (!Scalar::parse_bytes_strict(tweak32, t)) return 0;
+    if (!Scalar::parse_bytes_strict(tweak32, t)) { std::memset(pubkey->data, 0, sizeof(pubkey->data)); return 0; }
     auto T = scalar_mul_generator(t);
     auto result = P.add(T);
-    if (result.is_infinity()) return 0;
+    if (result.is_infinity()) { std::memset(pubkey->data, 0, sizeof(pubkey->data)); return 0; }
     point_to_pubkey_data(result, pubkey->data);
     return 1;
 }
@@ -304,9 +321,10 @@ int secp256k1_ec_pubkey_tweak_mul(
     }
     auto P = pubkey_data_to_point(pubkey->data);
     Scalar t;
-    if (!Scalar::parse_bytes_strict_nonzero(tweak32, t)) return 0;
+    if (P.is_infinity()) { std::memset(pubkey->data, 0, sizeof(pubkey->data)); return 0; }
+    if (!Scalar::parse_bytes_strict_nonzero(tweak32, t)) { std::memset(pubkey->data, 0, sizeof(pubkey->data)); return 0; }
     auto result = P.scalar_mul(t);
-    if (result.is_infinity()) return 0;
+    if (result.is_infinity()) { std::memset(pubkey->data, 0, sizeof(pubkey->data)); return 0; }
     point_to_pubkey_data(result, pubkey->data);
     return 1;
 }
@@ -324,7 +342,7 @@ int secp256k1_ec_pubkey_combine(
         secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_combine: ins is NULL");
         return 0;
     }
-    if (n == 0) return 0;
+    if (n == 0) { std::memset(out->data, 0, sizeof(out->data)); return 0; }
     for (size_t i = 0; i < n; ++i) {
         if (!ins[i]) {
             secp256k1_shim_call_illegal_cb(ctx, "secp256k1_ec_pubkey_combine: ins[i] is NULL");
@@ -332,11 +350,13 @@ int secp256k1_ec_pubkey_combine(
         }
     }
     auto acc = pubkey_data_to_point(ins[0]->data);
+    if (acc.is_infinity()) { std::memset(out->data, 0, sizeof(out->data)); return 0; }
     for (size_t i = 1; i < n; ++i) {
         auto P = pubkey_data_to_point(ins[i]->data);
+        if (P.is_infinity()) { std::memset(out->data, 0, sizeof(out->data)); return 0; }
         acc = acc.add(P);
     }
-    if (acc.is_infinity()) return 0;
+    if (acc.is_infinity()) { std::memset(out->data, 0, sizeof(out->data)); return 0; }
     point_to_pubkey_data(acc, out->data);
     return 1;
 }

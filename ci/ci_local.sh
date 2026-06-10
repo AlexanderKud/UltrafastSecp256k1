@@ -4,8 +4,14 @@
 # ============================================================================
 # Usage:
 #   ./ci/ci_local.sh           # quick gates only (~30s)
-#   ./ci/ci_local.sh --full    # quick + build + tests (~10min)
+#   ./ci/ci_local.sh --full    # quick + build + tests + -Werror prod build (~10min)
 #   ./ci/ci_local.sh --msan    # also runs no-ASM build (MSan path)
+#   ./ci/ci_local.sh --gpu     # also runs the local GPU CTest suite (CUDA/RTX)
+#
+# GPU is local-only: GitHub-hosted runners have NO GPU, so the GPU correctness
+# suite (incl. gpu_zk_prove_verify_differential — CPU-prove → GPU Bulletproof
+# poly-check) can only be validated here. --gpu makes local CI the authority for
+# GPU; it auto-skips cleanly when no NVIDIA GPU is present.
 #
 # Install as pre-push hook:
 #   ln -sf ../../ci/ci_local.sh .git/hooks/pre-push
@@ -22,10 +28,11 @@ cd "$ROOT"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
 
-FULL=0; MSAN=0
+FULL=0; MSAN=0; GPU=0
 for arg in "$@"; do
   [[ "$arg" == "--full" ]] && FULL=1
   [[ "$arg" == "--msan" ]] && MSAN=1 && FULL=1
+  [[ "$arg" == "--gpu"  ]] && GPU=1
 done
 
 # F-23 fix: ensure temp build dirs are cleaned up even on SIGINT/SIGTERM/ERR.
@@ -224,6 +231,7 @@ echo ""
 
 if [[ $FULL -eq 0 ]]; then
   echo -e "${YELLOW}Tip: run with --full to also build + test (catches MSan-class issues)${NC}"
+  [[ $GPU -eq 0 ]] && echo -e "${YELLOW}Tip: run with --gpu on the GPU host to validate the local GPU CTest suite${NC}"
   echo ""
 fi
 
@@ -287,6 +295,16 @@ if [[ $FULL -eq 1 ]]; then
 
   rm -rf "$BUILD_DIR" 2>/dev/null || true
   echo ""
+
+  # ── Production -Werror build (mirrors GitHub "Build with -Werror") ──────────
+  # The CI Security Audit gate compiles the production library with WERROR=ON
+  # (Release). The Debug no-ASM build above does NOT enable -Werror, so a
+  # warning-class regression — e.g. a static function orphaned when its last
+  # caller is removed (-Werror=unused-function) — would pass every local gate
+  # and fail only on CI. This mirror closes that gap. See ci/check_werror_build.sh.
+  echo -e "${BOLD}[7.5] Production -Werror Build (mirrors GitHub Security Audit)${NC}"
+  run_check "Production -Werror build"  bash ci/check_werror_build.sh
+  echo ""
 fi
 
 # ── MSan-specific checks (optional) ─────────────────────────────────────────
@@ -312,6 +330,86 @@ if [[ $MSAN -eq 1 ]]; then
         "$MSAN_DIR/src/cpu/test_field_26_standalone"
     fi
     rm -rf "$MSAN_DIR" 2>/dev/null || true
+  fi
+  echo ""
+fi
+
+# ── GPU validation (local-only; opt-in via --gpu) ────────────────────────────
+# Per project policy GPU (CUDA/OpenCL/Metal) is local-only — GitHub-hosted CI
+# cannot exercise it, so on those runners the GPU audit modules advisory-skip
+# (return 77). This section makes ci_local the AUTHORITY for GPU correctness:
+# it builds the GPU CTest targets and runs the gpu_* suite, including
+# gpu_zk_prove_verify_differential (CPU-prove → GPU Bulletproof poly-check,
+# validated to ACCEPT valid proofs / REJECT tampered on real hardware).
+# Auto-skips cleanly when no NVIDIA GPU is present (e.g. on a GitHub runner).
+if [[ $GPU -eq 1 ]]; then
+  echo -e "${BOLD}[8] GPU Validation (local-only — GitHub-hosted runners have no GPU)${NC}"
+  if ! command -v nvidia-smi &>/dev/null || ! nvidia-smi -L &>/dev/null; then
+    echo -e "  ${YELLOW}no NVIDIA GPU detected — skipping GPU validation${NC}"
+    echo -e "  ${YELLOW}(expected on GitHub-hosted runners; run --gpu on the GPU host)${NC}"
+    gate_results["GPU validation"]="adv-skip"
+    ((adv_skip++))
+  else
+    # Reuse a configured CUDA build dir if present (matches the proven local
+    # arch); else configure cuda-release. Build only the GPU test targets so we
+    # never trip over unrelated targets in a pre-existing dir.
+    _gpu_dir=""
+    for _d in out/lbtc-gpu out/cuda-release out/cuda-release-5060ti; do
+      [[ -f "$ROOT/$_d/CMakeCache.txt" ]] && _gpu_dir="$_d" && break
+    done
+    if [[ -z "$_gpu_dir" ]]; then
+      printf "  %-52s" "configure cuda-release..."
+      if cmake --preset cuda-release -DSECP256K1_BUILD_TESTS=ON \
+           > "${TMPDIR:-/tmp}/ci_local_gpucfg_$$.log" 2>&1; then
+        echo -e "${GREEN}OK${NC}"; _gpu_dir="out/cuda-release"
+      else
+        echo -e "${RED}FAIL${NC}"
+        tail -15 "${TMPDIR:-/tmp}/ci_local_gpucfg_$$.log" | sed 's/^/    /'
+        ((fail++)); gate_results["GPU configure"]="fail"
+      fi
+    fi
+    if [[ -n "$_gpu_dir" ]]; then
+      _gpu_targets="test_gpu_abi_gate test_gpu_ops_equivalence test_gpu_host_api_negative \
+test_gpu_backend_matrix test_gpu_ecdsa_snark_witness test_gpu_bip352_scan \
+test_gpu_zk_prove_verify_differential"
+      printf "  %-52s" "build GPU test targets ($_gpu_dir)..."
+      if cmake --build "$_gpu_dir" -j"$(nproc)" --target $_gpu_targets \
+           > "${TMPDIR:-/tmp}/ci_local_gpubuild_$$.log" 2>&1; then
+        echo -e "${GREEN}OK${NC}"; ((pass++)); gate_results["GPU build"]="pass"
+        # Run each GPU test binary directly. We do NOT use `ctest -R` because some
+        # CUDA build dirs (e.g. the consensus build) don't register CTest targets,
+        # which would make `ctest -R` a silent no-op ("No tests found" → exit 0) —
+        # a false-confidence pass. run_check already classifies exit codes:
+        # 0 = pass, 77 = ADVISORY_SKIP_CODE (no GPU / GPU ZK module absent), else FAIL.
+        # `timeout 300` bounds a hung kernel (→ FAIL, not an infinite ci_local).
+        for _t in $_gpu_targets; do
+          _bin="$_gpu_dir/audit/$_t"
+          if [[ -x "$_bin" ]]; then
+            run_check "GPU: ${_t#test_}" timeout 300 "$_bin"
+          else
+            printf "  %-52s" "GPU: ${_t#test_}..."
+            echo -e "${YELLOW}SKIP${NC} (binary not built)"
+          fi
+        done
+        # White-box GPU constant-time gate: build the leakage probe + run the Nsight
+        # (ncu) branch-uniformity fixed-vs-random comparison. This is the white-box
+        # detector that catches key-dependent warp divergence which the interleaved
+        # dudect t-test MASKS (it caught the 2026-06 GPU ECDSA reduction leak that the
+        # black-box probe reported as |t|=0 PASS). Advisory-skips if ncu is unavailable.
+        if cmake --build "$_gpu_dir" -j"$(nproc)" --target gpu_ct_leakage_probe \
+             >>"${TMPDIR:-/tmp}/ci_local_gpubuild_$$.log" 2>&1; then
+          run_check "GPU CT uniformity (white-box ncu)" \
+            python3 ci/check_gpu_ct_uniformity.py --build-dir "$_gpu_dir"
+        else
+          printf "  %-52s" "GPU CT uniformity (white-box ncu)..."
+          echo -e "${YELLOW}SKIP${NC} (probe build failed)"
+        fi
+      else
+        echo -e "${RED}FAIL${NC}"
+        tail -20 "${TMPDIR:-/tmp}/ci_local_gpubuild_$$.log" | sed 's/^/    /'
+        ((fail++)); gate_results["GPU build"]="fail"
+      fi
+    fi
   fi
   echo ""
 fi

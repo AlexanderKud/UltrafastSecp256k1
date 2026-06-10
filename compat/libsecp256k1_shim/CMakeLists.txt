@@ -65,9 +65,13 @@ else()
     # but must not leak to consumers — PRIVATE keeps it shim-internal.
     target_compile_features(secp256k1_shim PRIVATE cxx_std_20)
 
-    # Public includes -- exposes libsecp256k1-compatible headers
+    # Public includes -- exposes libsecp256k1-compatible headers.
+    # Also expose the CPU C++ headers: secp256k1.h pulls in `secp256k1/ecdsa.hpp`
+    # under `#ifdef __cplusplus` (inlined secp256k1_pubkey_precomp). C consumers are
+    # unaffected; C++ consumers (the shim conformance tests) need it to compile.
     target_include_directories(secp256k1_shim PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/cpu/include
     )
 
     # Link against UltrafastSecp256k1 CPU library.
@@ -144,4 +148,37 @@ if(SECP256K1_SHIM_BUILD_TESTS AND NOT SECP256K1_BUILD_SHIM)
     target_link_libraries(shim_test PRIVATE secp256k1_shim)
     add_test(NAME secp256k1_shim_test COMMAND shim_test)
     set_tests_properties(secp256k1_shim_test PROPERTIES LABELS "shim")
+
+    # Official BIP-340 Schnorr test vectors (bitcoin/bips bip-0340/test-vectors.csv)
+    add_executable(test_bip340_vectors tests/test_bip340_vectors.cpp)
+    target_link_libraries(test_bip340_vectors PRIVATE secp256k1_shim)
+    add_test(NAME bip340_vectors COMMAND test_bip340_vectors)
+    set_tests_properties(bip340_vectors PROPERTIES LABELS "shim")
+
+    # Official BIP-341 Taproot key-path tweak vectors (bip-0341/wallet-test-vectors.json)
+    add_executable(test_bip341_vectors tests/test_bip341_vectors.cpp)
+    target_link_libraries(test_bip341_vectors PRIVATE secp256k1_shim)
+    add_test(NAME bip341_vectors COMMAND test_bip341_vectors)
+    set_tests_properties(bip341_vectors PROPERTIES LABELS "shim")
+
+    # Official BIP-327 MuSig2 key-aggregation vectors (bip-0327/vectors/key_agg_vectors.json)
+    add_executable(test_bip327_keyagg_vectors tests/test_bip327_keyagg_vectors.cpp)
+    target_link_libraries(test_bip327_keyagg_vectors PRIVATE secp256k1_shim)
+    add_test(NAME bip327_keyagg_vectors COMMAND test_bip327_keyagg_vectors)
+    set_tests_properties(bip327_keyagg_vectors PROPERTIES LABELS "shim")
+
+    # BIP-327 MuSig2 tweak correctness: output KATs (reference.py oracle) + sign/verify
+    # roundtrips. Guards the gacc/tacc tweaked-signing fix.
+    add_executable(test_bip327_tweak_sign tests/test_bip327_tweak_sign.cpp)
+    target_link_libraries(test_bip327_tweak_sign PRIVATE secp256k1_shim)
+    add_test(NAME bip327_tweak_sign COMMAND test_bip327_tweak_sign)
+    set_tests_properties(bip327_tweak_sign PROPERTIES LABELS "shim")
+
+    # BIP-327 sign_verify_vectors.json (verify side): every external (reference-impl)
+    # partial signature must verify under the engine. Guards the binding-factor tag
+    # ("MuSig/noncecoef") — regression for the cross-implementation interop bug.
+    add_executable(test_bip327_sign_verify_vectors tests/test_bip327_sign_verify_vectors.cpp)
+    target_link_libraries(test_bip327_sign_verify_vectors PRIVATE secp256k1_shim)
+    add_test(NAME bip327_sign_verify_vectors COMMAND test_bip327_sign_verify_vectors)
+    set_tests_properties(bip327_sign_verify_vectors PROPERTIES LABELS "shim")
 endif()

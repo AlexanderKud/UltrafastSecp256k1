@@ -38,8 +38,8 @@ GRAPH_DB   = LIB_ROOT / "tools" / "source_graph_kit" / "source_graph.db"
 # use CT-correct patterns that were confirmed working in the reference
 # implementation (kernels/secp256k1_extended.cl, include/ct/ct_sign.cuh).
 FAMILY_SIGN_FILES = [
-    "kernels/secp256k1_recovery.cl",
-    "kernels/secp256k1_extended.cl",
+    "src/opencl/kernels/secp256k1_recovery.cl",
+    "src/opencl/kernels/secp256k1_extended.cl",
     "src/cuda/include/recovery.cuh",
     "src/metal/shaders/secp256k1_recovery.h",
 ]
@@ -47,8 +47,8 @@ FAMILY_SIGN_FILES = [
 # Family 2: ECDH compute backends
 # These files implement ECDH — they MUST derive Y parity and NOT hardcode 0x02.
 FAMILY_ECDH_FILES = [
-    "kernels/secp256k1_ecdh.cl",
-    "kernels/secp256k1_extended.cl",
+    "src/opencl/kernels/secp256k1_ecdh.cl",
+    "src/opencl/kernels/secp256k1_extended.cl",
     "src/metal/shaders/secp256k1_extended.h",
 ]
 
@@ -220,7 +220,12 @@ def run(json_mode: bool, out_file: str | None) -> int:
             print(msg)
         return 77
 
-    overall_pass = len(violations) == 0
+    # Fail-closed: a DECLARED backend file that could not be read means the gate
+    # cannot inspect a path it is responsible for — that is a failure, not a silent
+    # pass. A gate that passes when its inputs are absent manufactures false
+    # confidence (this is exactly how the gate previously read only 3 of 7 files
+    # because the OpenCL kernel paths were stale and the rest were silently skipped).
+    overall_pass = len(violations) == 0 and files_absent == 0
 
     report = {
         "overall_pass": overall_pass,
@@ -247,10 +252,16 @@ def run(json_mode: bool, out_file: str | None) -> int:
         else:
             print(f"  Checked {files_checked}/{total_files} files — no copy-paste divergence found")
 
+        if files_absent > 0:
+            print(f"  FAIL: {files_absent}/{total_files} declared backend file(s) could not be "
+                  f"read (stale path?) — gate is fail-closed, fix the paths in "
+                  f"FAMILY_SIGN_FILES/FAMILY_ECDH_FILES")
+
         if overall_pass:
-            print("PASS backend-parity gate")
+            print(f"PASS backend-parity gate ({files_checked}/{total_files} files)")
         else:
-            print(f"FAIL {len(violations)} backend parity violation(s) — see details above")
+            print(f"FAIL backend-parity gate — {len(violations)} violation(s), "
+                  f"{files_absent} absent file(s)")
 
     return 0 if overall_pass else 1
 

@@ -160,6 +160,7 @@ int test_ecies_regression_run();
 // ============================================================================
 int test_gpu_host_api_negative_run(); // NULL guards, invalid backend/device, error strings
 int test_gpu_abi_gate_run();          // Discovery, lifecycle, ops-if-available
+int test_gpu_zk_prove_verify_differential_run(); // CPU range-proof → GPU poly-check accept/reject
 
 // ============================================================================
 // Forward declarations -- adversarial / fuzz tests
@@ -218,8 +219,7 @@ int test_exploit_ecdsa_pmn_wraparound_run();          // ECDSA PMN wraparound: r
 int test_exploit_custom_nonce_injection_run();        // RFC 6979 nonce edge cases (null/zero/n/n-1)
 int test_regression_ct_blinding_nonce_path_run();    // CT nonce path uses generator_mul_blinded (2026-05-12)
 int test_regression_ct_scalar_inverse_zero_run();   // SEC-001: CT scalar_inverse zero-branch removal (2026-05-21)
-int test_regression_ct_ops_run();                   // SEC-002/007/008/010, CT-004/005: CT ops regressions (2026-05-21)
-int test_regression_ct_ops_v2_run();                // SEC-002/007/008/010, CT-004/005: source-scan guards + extended checks (2026-05-21 orphan fixed 2026-05-22)
+int test_regression_ct_ops_run();                   // SEC-002/007/008/010, CT-004/005: CT ops regressions (consolidated 2026-06-09 — was split across two byte-identical files)
 int test_regression_bip324_privkey_lifetime_run();  // SEC-006: Bip324Session privkey_ lifetime documentation (2026-05-21)
 int test_regression_ct_secret_is_zero_run();        // SIZ-1..4: adaptor CT nonce + taproot is_
 int test_regression_segwit_hash160_decouple_run();             // SHD-1..3: P2WPKH hash160 decoupled from BIP-352 (no-LTO link)zero_ct fixes (2026-05-21)
@@ -378,7 +378,6 @@ int test_exploit_gpu_cpu_divergence_run();
 int test_exploit_gpu_host_api_shape_run();
 int test_exploit_hedged_nonce_bias_run();
 int test_exploit_hkdf_kat_run();
-int test_exploit_hkdf_security_run();
 int test_infinity_edge_cases_run();
 int test_exploit_invalid_curve_twist_run();
 int test_exploit_keccak256_kat_run();
@@ -848,6 +847,11 @@ static const AuditModule ALL_MODULES[] = {
     { "libfuzzer_unified", "LibFuzzer deterministic regression (6 parsers)","fuzzing",        test_libfuzzer_unified_run, false },
     { "mutation_kill_rate","Mutation kill-rate audit (advisory)",          "fuzzing",        test_mutation_kill_rate_run, true  },
     { "cryptol_specs",     "Cryptol formal spec — arithmetic primitives",  "differential",   test_cryptol_specs_run, true  },
+    // advisory=true: GPU + ZK module required. CPU prover ↔ GPU Bulletproof poly-check
+    // consistency (valid CPU range proof → GPU verdict 1; tampered scalar → 0). Skips
+    // when no GPU backend (GitHub runners) or backend built without SECP256K1_GPU_HAS_ZK
+    // (bulletproof_verify_batch → ERR_GPU_UNSUPPORTED) — cannot be made mandatory in CI.
+    { "gpu_zk_prove_verify_differential", "GPU Bulletproof poly-check vs CPU prover (CPU-prove → GPU-verify)", "differential", test_gpu_zk_prove_verify_differential_run, true  },
     { "fault_injection",   "Fault injection simulation",                   "fuzzing",        test_fault_injection_run, false },
 
     // ===================================================================
@@ -1004,7 +1008,6 @@ static const AuditModule ALL_MODULES[] = {
     { "exploit_gpu_host_api_shape",     "GPU Host API Hostile Caller",                 "exploit_poc", test_exploit_gpu_host_api_shape_run, false },
     { "exploit_hedged_nonce_bias",      "Hedged Signature Nonce Bias",                 "exploit_poc", test_exploit_hedged_nonce_bias_run, false },
     { "exploit_hkdf_kat",               "HKDF-SHA256 KAT (RFC 5869)",                 "exploit_poc", test_exploit_hkdf_kat_run, false },
-    { "exploit_hkdf_security",          "HKDF-SHA256 Security (RFC 5869)",             "exploit_poc", test_exploit_hkdf_security_run, false },
     { "infinity_edge_cases",            "Point-at-Infinity Edge Cases (INF-1..28)",    "exploit_poc", test_infinity_edge_cases_run, false },
     { "exploit_invalid_curve_twist",    "Invalid Curve / Twist Point Injection",       "exploit_poc", test_exploit_invalid_curve_twist_run, false },
     { "exploit_keccak256_kat",          "Keccak-256 KAT Vectors",                      "exploit_poc", test_exploit_keccak256_kat_run, false },
@@ -1395,10 +1398,11 @@ static const AuditModule ALL_MODULES[] = {
     // (WASM, MSVC 32-bit) have a VT CT scalar_inverse. Mark advisory until resolved.
     { "regression_ct_scalar_inverse_zero", "SEC-001-PARTIAL: ct::scalar_inverse zero-branch CT fix (int128 path only; non-int128 fast:: mul chain is SEC-001-INCOMPLETE); a*a^{-1}==1, (a^{-1})^{-1}==a, inverse(0)==0", "ct_analysis", test_regression_ct_scalar_inverse_zero_run, true },
     // === 2026-05-21 SEC-002/007/008/010, CT-004/005 ===
-    { "regression_ct_ops", "SEC-002/007/008/010,CT-004/005: FROST lagrange CT, batch weight non-zero, adaptor fail-closed, bip32 strict nonzero, musig2 blinded nonce, ecdsa_sign_verified direct ct:: call", "ct_analysis", test_regression_ct_ops_run, false },
-    // === 2026-05-21 source-scan guards (orphan file fixed 2026-05-22) ===
-    // advisory=false: C++ API only, no shim/GPU dependency.
-    { "regression_ct_ops_v2", "SEC-002/007/008/010,CT-004/005,SEC-002-EXTRACT: source-scan guards confirming CT fixes — ct::scalar_sub+cneg in schnorr_adaptor_extract, is_zero_ct on adaptor result, FROST lagrange mul, batch weight, adaptor sentinel, BIP-32 strict nonzero, MuSig2 blinded nonce, ecdsa_sign_verified CT call", "ct_analysis", test_regression_ct_ops_v2_run, false },
+    // advisory=false: C++ API only, no shim/GPU dependency. Consolidated 2026-06-09:
+    // the former regression_ct_ops_v2 (test_regression_ct_ops_2026_05_21.cpp) was a
+    // byte-identical duplicate of the six fixes below + SEC-002-EXTRACT; its only unique
+    // sub-test (10-random-key ecdsa_sign_verified loop) was merged into this module.
+    { "regression_ct_ops", "SEC-002/007/008/010,CT-004/005,SEC-002-EXTRACT: FROST lagrange CT, batch weight non-zero, adaptor fail-closed, bip32 strict nonzero, musig2 blinded nonce, ecdsa_sign_verified direct ct:: call + schnorr_adaptor_extract ct::scalar_sub/cneg/is_zero_ct + 10-random-key sign/verify", "ct_analysis", test_regression_ct_ops_run, false },
     // === 2026-05-23 SEC-NEW-001/002, P3-SHIM-STACK, P3-BATCH-MEM ===
     // advisory=false: source-scan + C++ adaptor round-trip; no shim/GPU dependency.
     { "regression_adaptor_blinded_nonce", "SEC-NEW-001: adaptor.cpp generator_mul_blinded(k) DPA defence; SEC-NEW-002: BCH shim is_zero_ct on nonce k; P3-SHIM-STACK: kStackMsgMax 256->1024; P3-BATCH-MEM: batch vector shrink_to_fit -- source-scan + adaptor sign+adapt+verify round-trip", "ct_analysis", test_regression_adaptor_blinded_nonce_run, false },

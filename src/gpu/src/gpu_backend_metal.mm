@@ -25,6 +25,7 @@
 
 /* -- CPU FieldElement for host-side point decompression -------------------- */
 #include "secp256k1/field.hpp"
+#include "secp256k1/scalar.hpp"
 
 /* -- CPU SHA-256 for ECDH finalization ------------------------------------- */
 #include "secp256k1/sha256.hpp"
@@ -82,6 +83,25 @@ struct MetalBatchScratch {
 };
 
 static thread_local MetalBatchScratch g_metal_batch_scratch;
+
+struct MetalScalarEraseGuard {
+    MetalScalar256* ptr = nullptr;
+    std::size_t count = 0;
+    ~MetalScalarEraseGuard() {
+        if (ptr && count) {
+            secp256k1::detail::secure_erase(ptr, count * sizeof(MetalScalar256));
+        }
+    }
+};
+
+struct MetalBufferEraseGuard {
+    secp256k1::metal::MetalBuffer* buffer = nullptr;
+    ~MetalBufferEraseGuard() {
+        if (buffer && buffer->valid()) {
+            secp256k1::detail::secure_erase(buffer->contents(), buffer->length());
+        }
+    }
+};
 
 /** Convert big-endian 32 bytes → MetalScalar256 (host-side, no reduction). */
 static MetalScalar256 be32_to_metal_scalar(const uint8_t be[32]) {
@@ -541,6 +561,7 @@ public:
         }
 
         auto* const h_scalars = scratch.scalars.data();
+        MetalScalarEraseGuard h_scalars_guard{h_scalars, count};
         for (size_t i = 0; i < count; ++i)
             h_scalars[i] = be32_to_metal_scalar(privkeys32 + i * 32);
 
@@ -549,6 +570,7 @@ public:
 
         auto buf_scalars = runtime_->alloc_buffer_shared(count * sizeof(MetalScalar256));
         std::memcpy(buf_scalars.contents(), h_scalars, count * sizeof(MetalScalar256));
+        MetalBufferEraseGuard buf_scalars_guard{&buf_scalars};
 
         auto buf_results = runtime_->alloc_buffer_shared(count * sizeof(MetalAffinePoint));
 
@@ -1127,6 +1149,7 @@ public:
 
         auto buf_keys   = runtime_->alloc_buffer_shared(count * 32);
         std::memcpy(buf_keys.contents(), keys32, count * 32);
+        MetalBufferEraseGuard buf_keys_guard{&buf_keys};
         auto buf_nonces = runtime_->alloc_buffer_shared(count * 12);
         std::memcpy(buf_nonces.contents(), nonces12, count * 12);
         auto buf_pt     = runtime_->alloc_buffer_shared((size_t)max_payload * count);
@@ -1172,6 +1195,7 @@ public:
 
         auto buf_keys    = runtime_->alloc_buffer_shared(count * 32);
         std::memcpy(buf_keys.contents(), keys32, count * 32);
+        MetalBufferEraseGuard buf_keys_guard{&buf_keys};
         auto buf_nonces  = runtime_->alloc_buffer_shared(count * 12);
         std::memcpy(buf_nonces.contents(), nonces12, count * 12);
         auto buf_wire_in = runtime_->alloc_buffer_shared(wire_stride * count);
@@ -1285,15 +1309,28 @@ public:
         const uint8_t* scan_privkey32, const uint8_t* spend_pubkey33,
         const uint8_t* tweak_pubkeys33, size_t n_tweaks, uint64_t* prefix64_out) override
     {
+        if (!is_ready()) return set_error(GpuError::Device, "context not initialised");
+        if (!n_tweaks) { clear_error(); return GpuError::Ok; }
         if (!scan_privkey32 || !spend_pubkey33 || !tweak_pubkeys33 || !prefix64_out)
             return set_error(GpuError::NullArg, "NULL pointer passed to bip352_scan_batch");
-        if (!n_tweaks) return GpuError::Ok;
 #if !SECP256K1_GPU_HAS_BIP352
         return set_error(GpuError::Unsupported, "GPU BIP-352 module disabled at build time");
 #endif
 
+        {
+            secp256k1::fast::Scalar scan_check;
+            if (!secp256k1::fast::Scalar::parse_bytes_strict_nonzero(
+                    scan_privkey32, scan_check)) {
+                secp256k1::detail::secure_erase(&scan_check, sizeof(scan_check));
+                return set_error(GpuError::BadKey,
+                                 "invalid scan key (zero or >= group order)");
+            }
+            secp256k1::detail::secure_erase(&scan_check, sizeof(scan_check));
+        }
+
         /* Parse scan private key: BE 32 bytes → MetalScalar256 */
         MetalScalar256 scan_scalar = be32_to_metal_scalar(scan_privkey32);
+        MetalScalarEraseGuard scan_scalar_guard{&scan_scalar, 1};
 
         /* Decompress spend pubkey → MetalAffinePoint */
         MetalAffinePoint spend_pt;
@@ -1320,6 +1357,7 @@ public:
         std::memcpy(buf_tweaks.contents(), scratch.affine_points.data(),
                     n_tweaks * sizeof(MetalAffinePoint));
         std::memcpy(buf_scan.contents(),  &scan_scalar, sizeof(scan_scalar));
+        MetalBufferEraseGuard buf_scan_guard{&buf_scan};
         std::memcpy(buf_spend.contents(), &spend_pt,    sizeof(spend_pt));
         uint32_t n32 = (uint32_t)n_tweaks;
         std::memcpy(buf_count.contents(), &n32, sizeof(n32));

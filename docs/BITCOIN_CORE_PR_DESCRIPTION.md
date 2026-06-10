@@ -42,7 +42,9 @@ do not have to hunt for either.
 
 **Build requirement:** Release + LTO is required to reach the wins above.
 RelWithDebInfo will show a small (~0.5–1.0%) ConnectBlock slowdown due to
-larger code footprint (~1.3 MB vs libsecp's ~400 KB → i-cache pressure).
+larger code footprint (measured 2,310 KB Ultra `.text` vs libsecp256k1's 1,261 KB
+= 1.83×, bitcoin-core profile, no-LTO, 2026-05-22 → i-cache pressure; see
+`docs/SHIM_FOOTPRINT_COMPARISON.md`).
 
 Full benchmark data and methodology: `docs/BITCOIN_CORE_BENCH_RESULTS.json`
 and `docs/bench_unified_2026-05-30_gcc14_x86-64.json`.
@@ -50,7 +52,7 @@ and `docs/bench_unified_2026-05-30_gcc14_x86-64.json`.
 ## Security properties
 
 - Constant-time signing paths: LLVM ct-verif + Valgrind taint + dudect (600s)
-- 270 exploit PoCs tests, 0 failures
+- 269 exploit PoCs tests, 0 failures
 - Wycheproof ECDSA/ECDH: all vectors pass
 - RFC 6979 nonce: 35/35 test vectors
 - BIP-340 Schnorr: 27/27 test vectors

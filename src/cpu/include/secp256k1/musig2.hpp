@@ -37,6 +37,13 @@ struct MuSig2KeyAggCtx {
     std::array<std::uint8_t, 32> Q_x;          // X-only aggregated pubkey
     std::vector<fast::Scalar> key_coefficients; // a_i for each signer
     bool Q_negated;                              // Whether Q was negated for even-Y
+    // BIP-327 tweak accumulators (default: identity, so untweaked / ABI-deserialized
+    // caches sign exactly as before). gacc = cumulative ±1 sign of the untweaked
+    // aggregate within the (even-Y) Q; tacc = additive tweak total (actual frame).
+    // Updated only by the pubkey tweak functions; consumed in signing so the
+    // aggregated signature verifies against the tweaked aggregate key (BIP-327).
+    fast::Scalar gacc = fast::Scalar::one();
+    fast::Scalar tacc = fast::Scalar::zero();
     // Individual compressed pubkeys (33 bytes each), populated by musig2_key_agg.
     // Empty when the context was deserialized from the ABI blob (KEYAGG_LEN does not
     // carry individual pubkeys). When non-empty, musig2_partial_sign validates that
@@ -107,6 +114,9 @@ struct MuSig2Session {
     fast::Scalar b;                           // Nonce coefficient
     fast::Scalar e;                           // Challenge
     bool R_negated;                            // Whether R was negated
+    // BIP-327: e * g * tacc, the additive-tweak correction added to the aggregated
+    // signature so it verifies against the tweaked key. Zero when no tweaks applied.
+    fast::Scalar tweak_s = fast::Scalar::zero();
 };
 
 // Start a signing session: compute the effective R, b, and challenge e.

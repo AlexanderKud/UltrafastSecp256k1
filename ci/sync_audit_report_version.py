@@ -10,7 +10,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION_PATH = ROOT / "VERSION.txt"
-REPORT_PATH = ROOT / "AUDIT_REPORT.md"
+# CLAIM-VERSION-STALE: the report lives at docs/AUDIT_REPORT.md; the previous
+# repo-root path did not exist, so this sync silently no-op'd (FileNotFoundError)
+# and the version line drifted to 4.1.0 while VERSION.txt advanced to 4.1.1.
+REPORT_PATH = ROOT / "docs" / "AUDIT_REPORT.md"
 
 BEGIN_MARKER = "<!-- BEGIN CURRENT RELEASE VERSION -->"
 END_MARKER = "<!-- END CURRENT RELEASE VERSION -->"

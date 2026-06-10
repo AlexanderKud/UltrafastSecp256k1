@@ -301,9 +301,11 @@ static void test_sec008_adaptor_sentinel() {
         bool old_partial =
             (src.find("ECDSAAdaptorSig{R_hat, Scalar::zero(), r}") != std::string::npos);
         CHECK(!old_partial, "SEC-008: partial-struct {R_hat,0,r} on r.is_zero() is gone");
-        bool new_sentinel =
-            (src.find("Point::infinity(), Scalar::zero(), Scalar::zero()") != std::string::npos);
-        CHECK(new_sentinel, "SEC-008: fully-zero sentinel {infinity,0,0} on r.is_zero()");
+        // GHSA-c7q2-gv3g-rgxm: degenerate paths now return the pre-zeroed `kZero`
+        // sentinel (all-infinity points + all-zero scalars) instead of any partial struct.
+        bool new_sentinel = (src.find("ECDSAAdaptorSig kZero") != std::string::npos)
+                         && (src.find("return kZero") != std::string::npos);
+        CHECK(new_sentinel, "SEC-008: degenerate r returns the fully-zero kZero sentinel");
     } else {
         std::printf("    [SKIP] adaptor.cpp not found\n");
     }
@@ -416,11 +418,29 @@ static void test_sec002_adaptor_extract_ct() {
 }
 
 // ---------------------------------------------------------------------------
-// Entry point
-// Both this file and test_regression_ct_ops_2026_05_21.cpp are wired into
-// unified_audit_runner. This file provides `test_regression_ct_ops_run()`
-// (the v1 baseline). The 2026_05_21 file provides
-// `test_regression_ct_ops_v2_run()` (extended source-scan guards).
+// CT-005 (extended): ecdsa_sign_verified over many random keys all verify.
+// Merged here from the former test_regression_ct_ops_2026_05_21.cpp (v2) — its
+// only sub-test not already covered above. The two files were otherwise
+// byte-identical source-scan + functional duplicates of the same six fixes.
+// ---------------------------------------------------------------------------
+static void test_ecdsa_sign_verified_random_keys() {
+    std::printf("  [CT-005] ecdsa_sign_verified: 10 random keys all verify\n");
+    int ok_count = 0;
+    for (int i = 0; i < 10; ++i) {
+        Scalar sk = random_nonzero_scalar_();
+        auto msg = random_msg_();
+        auto sig = secp256k1::ecdsa_sign_verified(msg, sk);
+        auto pk  = secp256k1::ct::generator_mul(sk);
+        if (secp256k1::ecdsa_verify(msg.data(), pk, sig)) ++ok_count;
+    }
+    char buf[80];
+    std::snprintf(buf, sizeof(buf), "CT-005: %d/10 random keys verified", ok_count);
+    CHECK(ok_count == 10, buf);
+}
+
+// ---------------------------------------------------------------------------
+// Entry point — single canonical CT-ops regression (was split across two
+// byte-identical files; the 2026-05-21 duplicate was consolidated into this one).
 // ---------------------------------------------------------------------------
 int test_regression_ct_ops_run() {
     g_pass = 0;
@@ -446,6 +466,9 @@ int test_regression_ct_ops_run() {
 
     // 2026-05-22 SEC-002-EXTRACT: adaptor extract CT fix
     test_sec002_adaptor_extract_ct();
+
+    // Merged from the former v2 duplicate: 10-random-key sign+verify loop.
+    test_ecdsa_sign_verified_random_keys();
 
     std::printf("\n  pass=%d  fail=%d\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;

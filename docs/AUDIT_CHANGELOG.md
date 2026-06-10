@@ -1,5 +1,504 @@
 # Audit Changelog
 
+## 2026-06-10 — CI gap: local `-Werror` mirror + ellswift dead-code removal
+
+- **Gap found:** the GitHub Security Audit "Build with -Werror" job (the only step
+  that compiles the production library with `-DSECP256K1_WERROR=ON`) had no local
+  mirror. A static function (`xswiftec_fwd_point` in `src/cpu/src/ellswift.cpp`)
+  orphaned when the variable-time secret-key XDH path was removed (3612e143)
+  triggered `-Werror=unused-function` on CI but passed every `ci_local` gate.
+- **Fix:** removed the dead function (canonical `xswiftec_fwd` covers all decode;
+  CT XDH lifts Y from x); added ECP-10 to `test_regression_ellswift_ct_path.cpp`
+  guarding the surviving lift-from-x XDH path.
+- **Prevention:** added `ci/check_werror_build.sh` (Release · g++-14 · WERROR=ON ·
+  tests excluded · ccache · x86-64-v3 on x86_64) and wired it into `ci_local.sh --full`
+  as gate [7.5]. Self-tested: catches an injected unused static fn (exit 1), green
+  on clean tree.
+- **Bug-class scan:** no other production orphan (gcc-14 `-Werror` build green +
+  source-graph `deadmethods` clean). clang's stricter `-Wunknown-attributes` /
+  `-Wsign-conversion` are out of scope — the project's `-Werror` gate is gcc-14.
+
+## 2026-06-10 — GHSA-c7q2-gv3g-rgxm: ECDSA adaptor DLEQ binding (signature-soundness fix)
+
+- **Reported by Damir** (responsible disclosure via GitHub private advisory
+  GHSA-c7q2-gv3g-rgxm, with a working PoC). Credited at the reporter's request.
+- **Vulnerability (medium, PoC-confirmed):** `ecdsa_adaptor_verify` accepted forged
+  pre-signatures whose `r` (= x-coord of k·T) was NOT cryptographically bound to the
+  adaptor point T. The old "binding" scalar was added to R_hat in sign and subtracted
+  in verify — it cancelled and bound nothing; a reserved DLEQ slot was zero-padded,
+  never produced or checked. A malicious signer could substitute an arbitrary r' and
+  adjust s_hat = s_hat·(z+r'x)·(z+rx)⁻¹, passing verify with a NON-adaptable pre-sig —
+  breaking adaptor soundness (verify==OK no longer implied adaptable).
+- **Fix:** replaced the binding scalar with a Chaum-Pedersen DLEQ proof that
+  R_hat = k·G and R = k·T share the same k. The pre-signature now carries R (= k·T)
+  and (dleq_e, dleq_s); verify checks the DLEQ, r == R.x, and the ECDSA relation
+  s_hat·R_hat == z·G + r·P. Files: src/cpu/src/adaptor.cpp (struct, sign, verify, two
+  DLEQ helpers; removed ecdsa_adaptor_binding), src/cpu/src/impl/ufsecp_zk.cpp (162-byte
+  wire: R_hat∥R∥s_hat∥dleq_e∥dleq_s; r derived as R.x), include/ufsecp/ufsecp.h
+  (UFSECP_ECDSA_ADAPTOR_SIG_LEN 130→162 — **breaking** wire/ABI change for ECDSA
+  adaptor sigs only; isolated — not used by libbitcoin or the Ethereum path).
+- **CT:** sign keeps k, x, and the new DLEQ nonce ρ on constant-time primitives
+  (generator_mul_blinded / ct::scalar_mul / ct::scalar_add); verify is public→VT.
+- **Tests:** test_regression_adaptor_binding_domain repurposed — ADB-5 honest full
+  roundtrip (sign→verify→adapt→ecdsa_verify→extract), ADB-6 forgery rejection
+  (substituted r' / tampered DLEQ / swapped R). 16/16; the 9 adaptor-touching audit
+  modules all pass (incl. 793-check adversarial_protocol).
+
+## 2026-06-10 — BENCH-P5-01: bench_unified JSON emits an explicit unit
+
+- The canonical `bench_unified --json` artifact stored ConnectBlock rows (named
+  `*_ms`) in **milliseconds** under a field named `"ns"`, so a consumer keying on
+  `"ns"` would mis-scale them by 1e6. `write_json` now emits an additive `"unit"`
+  field (`"ms"` for `*_ms`-suffixed rows, else `"ns"`) — value unchanged, existing
+  readers unaffected, artifact now self-describing. Compiles; `check_bench_doc_consistency`
+  still passes (it reads the committed artifacts, which are unchanged).
+- BENCH-P5-02 (emit min/max/stddev dispersion) is a deferred follow-up — it needs a
+  `Harness::run`/`Stats` API change (benchmark_harness.hpp); tracked in
+  workingdocs/REVIEW_2026-06-10_DEFERRED_GPU_AND_BENCH.md.
+
+## 2026-06-10 — CT-P2-01/CT-P2-02: branchless GPU OpenCL+Metal scalar_mul_mod_n + CT gate
+
+- **CT-P2-01 (P2)**: the OpenCL (`src/opencl/kernels/secp256k1_extended.cl`) and Metal
+  (`src/metal/shaders/secp256k1_extended.h`) `scalar_mul_mod_n` reduction (Solinas/NC
+  folding) contained secret-dependent control flow — `if (prod[i]==0) continue;`
+  skip-if-zero and data-dependent `&& carry` loop bounds — reachable from
+  `ct_ecdsa_sign`/`ct_schnorr_sign` (~256×/sig via the CT inverse). Same leak class the
+  CUDA backend already fixed (Barrett). Made branchless: multiply-by-zero is a no-op and
+  carry propagates over a fixed span (adding carry==0 is a no-op), so the result is
+  bit-identical. **Verified on RTX 5060 Ti: a direct OpenCL parity harness ran the
+  branchless `scalar_mul_mod_n` over 5081 inputs (random + edge cases incl. ≥ n) — all
+  5081 matched the CPU `(a*b) mod n` reference.** Metal uses the identical algebraic
+  transform (Apple-only; not runnable on the NVIDIA host) and is covered by the static
+  gate below.
+- **CT-P2-02 (P2)**: `ci/check_ct_branches.py` only scanned CUDA `.cuh` and its FORBIDDEN
+  regex missed `[...] == 0` skips (the loop index in the subscript tripped BENIGN). Added
+  a dedicated reduction-leak scan (skip-if-zero on a reduction limb + data-dependent
+  carry/borrow loop bound) over `secp256k1_extended.cl`, `secp256k1_extended.h`, and
+  `secp256k1.cuh`. Self-test (`ci/test_check_ct_branches.py`) extended with 5 reduction-leak
+  assertions; gate passes on the fixed sources and flags reintroduction.
+
+## 2026-06-10 — RT1-001 + PASS3-SHIM-CREATE-ZERO: secret-path + shim parity fixes
+
+- **RT1-001 (P2)**: removed dead `ellswift_xdh_fast` (src/cpu/src/ellswift.cpp +
+  src/cpu/include/secp256k1/ellswift.hpp). It did a variable-time variable-base
+  `scalar_mul` on a SECRET key against an attacker-controlled decoded point — a
+  side-channel foot-gun mislabelled "CT not required" — with zero callers, and it
+  duplicated the constant-time `ellswift_xdh`. All public XDH entry points already
+  route through `ct::ecmult_const_xonly`. Regression: `test_regression_ellswift_ct_path`
+  ECP-9 asserts the surviving CT XDH path is non-zero, symmetric, and deterministic.
+- **PASS3-SHIM-CREATE-ZERO (P3)**: `secp256k1_ec_pubkey_create` now `memset`s
+  `pubkey->data` to zero on both failure paths (invalid seckey, infinity), matching
+  upstream `memczero(pubkey, !ret)` and the shim's own keypair_create /
+  ec_pubkey_negate convention. Regression: `test_shim_security_edge_cases`
+  PASS3-SHIM-CREATE-ZERO case (0/n/0xff..ff seckeys → return 0 AND all-zero output).
+
+## 2026-06-10 — Doc reconciliation + CLAIM-GPU-ABI-COUNT gate (10-pass review)
+
+- **CLAIM-GPU-ABI-COUNT**: docs stated the GPU stable batch-op count four ways
+  (README 16/19, ASSURANCE_LEDGER 16, GPU_VALIDATION_MATRIX 19) while the
+  authoritative header `ufsecp_gpu.h` documents **13** (8 core + 5 extended). The
+  count-sync gate computed a lower-level 24 (error_t-returning decls) and printed it
+  but never enforced it — a false green. Reconciled all docs to 13 and added a
+  doc-scan to `check_count_sync` that extracts the header's documented number and
+  fails on any divergent doc claim.
+- **PR8-02 / footprint**: replaced the superseded "~1.3 MB vs ~400 KB" approximation
+  with the measured 2,310 KB vs 1,261 KB (1.83×) in the two PR drafts and
+  BENCHMARK_CROSS_LIBRARY.md (README/EVIDENCE were already correct).
+- **CLAIM-GPU-BENCH-INLINE**: README BIP-352 LUT+pretbl row 102.1 ns → canonical
+  91.3 ns / ~10.95 M/s (GLV 179.2 and LUT 91.0 were already within tolerance).
+- **PR8-01 / not-a-replacement**: README "drop-in … replacement" reworded to
+  "secondary backend … NOT a replacement"; the "GPU numbers not published" banner
+  scoped to verify/sign (the BIP-352 pipeline figures are measured + canonical).
+- **CLAIM-VERSION-STALE**: BACKEND_EVIDENCE/PR_BLOCKERS/PR_BODY/AUDIT_REPORT/README
+  version + module-count strings refreshed to 4.1.1 / 418; fixed
+  `sync_audit_report_version.py` which pointed at a non-existent repo-root path.
+- **RT1-002**: KB `RECOVER-PMN-GUARD` flipped open → fixed after re-verifying the
+  branchless r ≥ (p-n) reject at recovery.cpp:171-202.
+
+## 2026-06-10 — TQ7-03 / REL9: scanner idioms broadened + package-metadata version sync
+
+- **TQ7-03**: `audit_test_quality_scanner.py` recognised only `CHECK`/`check`, so a
+  vacuous assertion written with another idiom (`CHK`, `ASSERT_TRUE`, `EXPECT_TRUE`,
+  `VERIFY`, `REQUIRE`) evaded the A1/A2/A3 tautology checks, and the A4 bare-pass
+  rule was hardcoded to `g_pass` (missing `s_pass`/`n_pass`/`pass`). Parameterized
+  `_ASSERT_TOKENS`/`_MSG_ASSERT_TOKENS`, added an A1b bare-literal-true check
+  (`ASSERT_TRUE(true);`), and generalized A4. The broader A4 surfaced 6 advisory
+  (low, non-blocking) `++s_pass;` survival counters in `test_libfuzzer_unified.cpp`
+  — newly visible, not regressions. `check_test_assertions.py` was left unchanged:
+  it scans for non-asserting *printf* markers and has no assert-idiom dependency.
+- **REL9-001/002/003**: `conanfile.py`, `vcpkg.json`, `.zenodo.json` were stuck at
+  4.1.0 (no extractor in `check_version_sync.py` covered `.py`/`.json` package
+  files). Bumped to 4.1.1 and added `_extract_conanfile`/`_extract_vcpkg`/
+  `_extract_zenodo` so the version-sync gate now covers all three.
+- Source: 2026-06-09 10-pass review.
+
+## 2026-06-10 — CAAS6-01: Valgrind Memcheck required gate made fail-closed
+
+- `.github/workflows/security-audit.yml` `Valgrind Memcheck` job (a branch-protection
+  -required context, and the blocking authority MSan delegates to) decided its verdict
+  ONLY by grepping `MemoryChecker.*.log`. The `-T MemCheck || true` tolerated valgrind
+  timeout exits (intended) but also masked "memcheck produced no logs at all"; the grep
+  verdicts are silenced with `2>/dev/null`, so a non-running memcheck exited 0 — a
+  false green on a required gate.
+- Fix: added `--no-tests=error` to the ctest line and a `shopt -s nullglob` log-presence
+  guard that `exit 1`s when zero MemoryChecker logs exist.
+- New gate `ci/check_sanitizer_result_assertions.py` (+ `test_check_sanitizer_result_assertions.py`
+  self-test) wired into `run_fast_gates.sh` (MANDATORY_GATES): every `-T MemCheck`
+  block whose verdict is grep-based must contain a log-presence fail-closed guard.
+  Prevents reintroduction of the CAAS6-01 pattern. Source: 2026-06-09 10-pass review.
+
+## 2026-06-09 — Test consolidation: remove redundant exploit_hkdf_security (subsumed by exploit_hkdf_kat)
+
+- A parallel delete-safety verification (4-agent workflow reading the files end-to-end)
+  confirmed `test_exploit_hkdf_security.cpp` is fully redundant with
+  `test_exploit_hkdf_kat.cpp`: every one of its 8 property sub-tests (determinism,
+  IKM/salt/info sensitivity, non-trivial PRK, HMAC key/message sensitivity, 64-byte
+  expand) is a mathematical consequence of the exact RFC 5869 (TC1/TC2/TC3) and RFC 4231
+  (TV1/TV2) known-answer vectors the KAT file already verifies — exact-value KAT is
+  strictly stronger than the property checks. No grafting required.
+- Removed: ALL_MODULES entry + fwd decl, standalone CTest target, unified-runner source,
+  the shared CTest-name list entry; deleted the file. Catalog/matrix rows updated.
+  Module count -1 (exploit PoC 270->269, total 419->418). check_exploit_wiring +
+  check_doc_module_counts pass.
+- First of the verified module consolidations from the redundancy analysis (each test
+  owns its zone). Remaining verified-redundant modules (chacha20_poly1305, sha_kat,
+  3 of 5 batch-verify) each need a small unique sub-test grafted into their canonical
+  first — tracked for a focused follow-up.
+
+## 2026-06-09 — Test consolidation: remove duplicate regression_ct_ops_v2 (each test owns its zone)
+
+- A multi-agent redundancy review found `test_regression_ct_ops_2026_05_21.cpp`
+  (`regression_ct_ops_v2`) to be a byte-identical duplicate of
+  `test_regression_ct_ops.cpp` (`regression_ct_ops`): both ran the same six
+  2026-05-21 source-scan + functional sub-tests (FROST lagrange ct::scalar_mul,
+  batch_weight non-zero, adaptor fully-zero sentinel, BIP-32 strict-nonzero,
+  MuSig2 blinded nonce, ecdsa_sign_verified direct ct:: call). v1 already contained
+  SEC-002-EXTRACT; v2's only unique sub-test was a 10-random-key
+  `ecdsa_sign_verified` loop, now merged into v1.
+- Removed `regression_ct_ops_v2` from ALL_MODULES, the unified runner sources, the
+  standalone CTest target, and the MSan exclusion list; deleted the duplicate file.
+  Net audit module count −1. Coverage preserved (union of unique sub-tests merged).
+- Part of a broader "each test/stage covers only its own zone, no cross-stage
+  duplication" cleanup driven by the sanitizer-redundancy analysis (MSan failures
+  were 100% timeouts, not bugs; MSan's uninitialized-memory class overlaps Valgrind).
+
+## 2026-06-09 — GPU Bulletproof poly-check vs CPU prover differential (closes GPU ZK blind-spot)
+
+- Until now the GPU range-proof verifier `ufsecp_gpu_bulletproof_verify_batch` was only
+  ever exercised with malformed stub inputs (`test_gpu_host_api_negative`). No VALID,
+  CPU-generated range proof was ever fed to it, so the device polynomial check was never
+  proven to ACCEPT a genuine proof — only to reject garbage. This was the largest remaining
+  GPU correctness blind-spot.
+- New advisory module `gpu_zk_prove_verify_differential` (`differential` section): CPU
+  `range_prove` produces real Bulletproof range proofs over values spanning bit 0..63; the
+  324-byte polynomial part (`A‖S‖T1‖T2‖tau_x‖t_hat`) + 65-byte commitment + 65-byte H
+  generator are serialized and fed to the GPU verifier. CPU full `range_verify` is the
+  oracle: a genuinely-valid proof MUST verify on the GPU (verdict 1); a one-byte tamper of
+  a poly-part scalar (`tau_x`/`t_hat`), a wrong commitment, and a mixed valid/tampered batch
+  MUST be rejected per-slot. This proves the CPU prover and the GPU verifier agree on the
+  same Fiat-Shamir transcript and polynomial equation.
+- The GPU check is the t-polynomial identity only (NOT the inner-product argument); it is a
+  necessary, not sufficient, condition for validity. There is no standalone CPU
+  `range_proof_poly_check`, so this is an accept-valid / reject-tampered consistency test
+  rather than a symmetric CPU↔GPU differential.
+- Validated on an RTX 5060 Ti (CUDA, `SECP256K1_GPU_BUILD_ZK=ON`): 31/31 assertions pass,
+  0 skipped. Advisory=true (`ADVISORY_CEILING` 58→59): skips cleanly when no GPU backend is
+  present or the backend was built without the GPU ZK module
+  (`bulletproof_verify_batch → ERR_GPU_UNSUPPORTED`). Wired into `gpu-selfhosted.yml`.
+
+## 2026-06-08 — Build profiles: CAAS gates wired to named CMake presets (+ bch-gpu, embedded)
+
+- The CAAS gate build configs were ad-hoc inline cmake flags in the workflow. Codified
+  them as named presets in `CMakePresets.json` (single source of truth, locally
+  reproducible): `conformance` (shim BIP-340/341/327 vectors:
+  `BUILD_SHIM=OFF + SHIM_BUILD_TESTS=ON`) and `cross-libsecp` (in-process libsecp256k1
+  differential: `BUILD_CROSS_TESTS=ON`). `conformance-vectors.yml` now configures via
+  `cmake --preset` with compiler/march layered as environment overrides.
+- Filled the two remaining planned profiles: `bch-gpu` (bch-wallet + CUDA RPA scanning)
+  and `embedded` (minimal CPU-only, MinSizeRel, all optional modules off). The
+  `bitcoin-core`, `litecoin`, `dogecoin`, `bch-wallet`, `wallet`, `audit`, and
+  cuda/asan/tsan/cross-compile presets already existed.
+- Verified: `cmake --preset conformance` registers the shim vector tests and
+  `cmake --preset cross-libsecp` registers `cross_libsecp256k1`; both build + pass.
+
+## 2026-06-08 — CAAS: evidence-ledger honesty — credit the real libsecp256k1 differential
+
+- **`test_exploit_differential_libsecp` is a self-consistency harness, not a libsecp
+  differential** (it includes only `ufsecp/ufsecp.h`; no external library), yet three
+  traceability matrices credited it as "full differential parity vs libsecp256k1". A
+  self-consistency test credited as external-reference parity is exactly the over-claim
+  that lets a reviewer skip the real check — the kind of evidence-ledger drift that
+  erodes a bastion's credibility. Repointed `INTEROP_MATRIX.md`, `TEST_MATRIX.md`, and
+  `SPEC_TRACEABILITY_MATRIX.md` to the genuine in-process engine-vs-libsecp256k1 v0.6.0
+  differential (`audit/test_cross_libsecp256k1.cpp` — the `conformance-vectors.yml` CI
+  gate), and corrected the test's own header/printf to state it is self-consistency, not
+  a libsecp differential. (`EXPLOIT_TEST_CATALOG.md` already described it accurately.)
+- Found by the CAAS bastion review (naming/intent drift). Note: the review's proposed
+  ECDSA-recovery byte-match differential was reassessed — the engine's default RFC6979
+  nonce differs from libsecp's (libsecp mixes an "ECDSA" algo16 tag), so a recovery
+  differential must cross-recover (sign→recover→pubkey), not byte-compare; tracked.
+
+## 2026-06-08 — CAAS: close two silent-pass gaps (test-assertion scope, G-12 corrupt DB)
+
+- **`check_test_assertions.py` scanned only `audit/` + `tests/`.** The shim/bridge
+  conformance tests under `compat/*/tests/` and `src/cpu/tests/` were unscanned, so a
+  non-asserting "documented open" probe there could pass undetected. Now scans all four
+  roots (449 test files, 0 non-asserting probes).
+- **`audit_gate.py` G-12 downgraded a corrupt-but-present source-graph DB to WARN.** The
+  DB file's mtime is stat'd just above the query, so a connect/query exception means the
+  DB exists but is unqueryable — a real problem that silently bypassed the row-count
+  completeness FAIL. Now it FAILs ("present but unqueryable").
+- Both found by the CAAS bastion review (silent-pass / assurance-theater class).
+
+## 2026-06-08 — CAAS: advisory-skip ceiling re-tightened + frozen (meta-gate)
+
+- **P3 fix — the advisory-module ceiling had 4 slots of unreviewed slack.** Advisory
+  (`advisory=true`) audit modules skip silently in CI when their dependency (GPU, shim,
+  Python, …) is absent, so a growing advisory count is a growing silent-coverage gap.
+  `ci/check_advisory_skip_ceiling.py` allowed `count <= 62` while the actual count was
+  58 — four advisory modules could be added with zero review. Re-tightened the ceiling to
+  58 (== actual), added a frozen twin `ADVISORY_CEILING_FROZEN` with an import-time assert
+  (bumping the ceiling now requires touching both constants — a diff-visible, deliberate
+  change), added the gate to `SECURITY_CI_FILES` (so loosening it requires a test), and a
+  regression guard `ci/test_check_advisory_skip_ceiling.py` (ceiling tight + frozen-twin).
+  Found by the CAAS bastion review (meta-gate slack).
+
+## 2026-06-08 — CAAS: backend-parity gate is now fail-closed (was silent-skip-on-absent)
+
+- **P2 fix — the backend-parity gate read only 3 of 7 declared files and still PASSED.**
+  `ci/check_backend_parity.py` declared the OpenCL signing/ECDH kernels with stale paths
+  (`kernels/secp256k1_*.cl`) that did not resolve on disk (real:
+  `src/opencl/kernels/...`), so 4 files were silently absent and the gate passed having
+  inspected only the CUDA/Metal files — manufacturing false confidence for exactly the
+  GPU OpenCL kernels the Bulletproof-tag bug shipped in. Corrected the three OpenCL paths
+  and made the gate **fail-closed**: a declared backend file that cannot be read is now a
+  hard FAIL (`files_absent` must be 0), not a silent skip. Now reads all 7 files; 0
+  copy-paste divergences. Regression guard: `ci/test_check_backend_parity.py` (asserts
+  7/7 read + fail-closed when a declared path is absent).
+- Found by the CAAS bastion review — the canonical "silent-skip-on-absent" failure mode
+  (a gate that passes when its inputs are missing is worse than no gate).
+
+## 2026-06-08 — CAAS: in-process differential vs libsecp256k1 now gates CI
+
+- **Trust anchor activated.** `test_cross_libsecp256k1` links BOTH this engine and
+  bitcoin-core/secp256k1 v0.6.0 in one process (via `SECP256K1_BUILD_CROSS_TESTS`
+  FetchContent) and asserts byte-identical outputs for the same inputs across
+  `ec_pubkey_create`, `ecdsa_sign`+`verify`, `schnorrsig_sign`+`verify`, `xonly_pubkey`,
+  ECDH (SHA256-of-compressed shared secret), and MuSig2 key aggregation (random 2..4
+  signer sets — the BIP-327 KeyAgg math the bug fixes this cycle touched). It is the
+  gold-standard correctness check — if both libraries agree
+  on every input they implement the same math — but it was OFF by default
+  (`SECP256K1_BUILD_CROSS_TESTS=OFF`) and ran in no CI workflow.
+- **Fix:** added a `differential-libsecp` job to
+  `.github/workflows/conformance-vectors.yml` that configures with
+  `-DSECP256K1_BUILD_CROSS_TESTS=ON`, builds `test_cross_libsecp256k1` (which pulls and
+  builds libsecp256k1 v0.6.0 with schnorrsig/extrakeys/recovery/ecdh), and runs it as a
+  hard gate on every push/PR. No new workflow file (a second job in the conformance
+  workflow), so the canonical workflow count is unchanged.
+- **Verified:** the cross-library differential builds and passes locally — engine ==
+  libsecp256k1 v0.6.0, 100% (1.7s).
+
+## 2026-06-08 — CAAS: official shim conformance vectors now run in CI
+
+- **Gap fixed — the shim conformance tests were unreachable by the build system.**
+  `test_bip341_vectors`, `test_bip327_keyagg_vectors`, `test_bip327_tweak_sign`,
+  `test_bip327_sign_verify_vectors`, and `shim_test` exercise the libsecp256k1-compatible
+  shim ABI (the drop-in surface integrators such as Frigate consume) against the official
+  bitcoin/bips vectors + the bip-0327 reference.py oracle — they are the tests that catch
+  the "self-consistent but spec-divergent" bug class (the MuSig2 binding-factor and
+  infinity-aggnonce bugs fixed this cycle). They never ran in CI: the shim test block is
+  guarded by `NOT SECP256K1_BUILD_SHIM`, but the shim subdirectory was only added when
+  `SECP256K1_BUILD_SHIM=ON` — a contradiction that made the block unreachable. A latent
+  missing engine include in the Mode-A shim library compounded it.
+- **Fix:** (1) root `CMakeLists.txt` adds the shim subdirectory when
+  `SECP256K1_SHIM_BUILD_TESTS=ON` even with `BUILD_SHIM=OFF`; (2) the Mode-A shim library
+  now PUBLIC-exposes the CPU C++ include dir (`secp256k1.h` pulls in `secp256k1/ecdsa.hpp`
+  under `__cplusplus`); (3) new `.github/workflows/conformance-vectors.yml` builds with
+  that combo and runs the conformance ctests as a hard gate on every push/PR.
+  Backward-compatible: plain and `BUILD_SHIM=ON` builds are unchanged (verified).
+- **Verified:** the 5 conformance ctests build + pass with the new combo
+  (`BUILD_SHIM=OFF -DSECP256K1_SHIM_BUILD_TESTS=ON`); plain/BUILD_SHIM configures unaffected.
+
+## 2026-06-08 — CAAS: systemic tagged-hash tag-conformance gate
+
+- **New gate — `ci/check_tag_conformance.py`** (wired into `run_fast_gates` as
+  "Tagged-hash tag conformance (all tags)"). Closes the CAAS blind spot behind two
+  bugs shipped this cycle (MuSig2 `MuSig/nonceblinding` instead of `MuSig/noncecoef`;
+  GPU range-prove `BP/y|z|x|ip` instead of `Bulletproof/...`). Both were
+  self-consistent (roundtrip / self tests passed) yet diverged from the canonical
+  spec, so they were invisible to the existing self-consistency suite and only caught
+  by external differential testing.
+- **What it enforces:** every production tagged-hash tag literal across all backends
+  (CPU + CUDA + OpenCL + Metal) must be in a canonical registry (32 tags: BIP-340/341/
+  327/322/352/324 + engine ZK/FROST/coin-SP). A misspelled or unknown tag — exactly
+  what `MuSig/nonceblinding` was — fails the gate at commit time, before any external
+  test runs. Known-wrong variants (`MuSig/nonceblinding`, `BP/*`, casing/typo classes)
+  are named explicitly with their correct value. Adding a new tag requires registering
+  it here, forcing a deliberate review against the authoritative spec.
+- **Verified:** passes on the current tree (27 production tags found, all canonical);
+  unit-confirmed to catch both historical bugs (banned) and hypothetical typos
+  (unknown). Complements the earlier focused `ci/check_zk_tag_conformance.py`.
+
+## 2026-06-08 — MuSig2 infinity aggregate-nonce BIP-327 conformance (R=G)
+
+- **Conformance fix — infinity aggregate nonce.** `musig2_start_sign_session` previously
+  rejected an aggregate nonce whose R1 or R2 half was the point at infinity (returning a
+  degenerate session; the shim/ABI wrappers then failed `nonce_process`). That was a
+  misreading of BIP-327 (the same class as the binding-tag bug): BIP-327 §GetSessionValues
+  **accepts** infinity halves (`cpoint_ext` / 33-zero encoding), computes the effective
+  nonce `R = R1 + b·R2`, and substitutes **`R = G`** only when that combined nonce is
+  infinity. libsecp256k1 does exactly this (`if is_infinity(fin_nonce): fin_nonce = G`).
+  Now conformant: `musig2_start_sign_session` no longer rejects infinity halves and applies
+  the `R = G` substitution; the shim (`secp256k1_musig_nonce_process`) and native ABI
+  (`ufsecp_musig2_start_sign_session`) accept a 33-zero ("ext") half as infinity while
+  still rejecting a non-zero half that fails to decompress.
+- **Scope note.** Individual *pubnonces* are still rejected at `pubnonce_parse` (BIP-327
+  `cpoint`) — that layer is correct and unchanged. Only the *aggregate*-nonce layer changed.
+- **Verification.** Confirmed against the bip-0327 `reference.py` oracle and libsecp256k1:
+  the official `sign_verify_vectors.json` "both halves at infinity" valid case now verifies,
+  and reference-generated infinity-aggregate sessions (both-inf → R=G, R1-inf → R=b·G) have
+  their partial signatures verified by the engine. Tests updated to assert the conformant
+  behavior: `audit/test_regression_musig2_infinity_nonce.cpp` (MIN-2/3/4 now assert
+  acceptance + R=b·G / R=G), `audit/test_exploit_shim_musig_secnonce.cpp` (MSN-7 now asserts
+  all-zero aggnonce accepted), and `compat/libsecp256k1_shim/tests/test_bip327_sign_verify_vectors.cpp`.
+  Full MuSig2 + FROST sweep: 28/28, no regression. The prior `SHIM-MUSIG-INF` entry in
+  `docs/SHIM_KNOWN_DIVERGENCES.md` is removed (no longer a divergence).
+
+## 2026-06-08 — GPU Bulletproof Fiat-Shamir tag conformance (range-prove interop)
+
+- **P2 fix — GPU CT range-prove used abbreviated Fiat-Shamir tags.** The Metal CT
+  range-prove (`src/metal/shaders/secp256k1_ct_zk.h`) derived its y/z/x/inner-product
+  challenges with the tags `"BP/y"`,`"BP/z"`,`"BP/x"`,`"BP/ip"`, and the OpenCL CT
+  range-prove (`src/opencl/kernels/secp256k1_ct_zk.cl`) used `"BP/ip"`, while every
+  verifier (CPU, CUDA, OpenCL, Metal) and the CPU/CUDA provers recompute these
+  challenges with the canonical `"Bulletproof/y"`,`"Bulletproof/z"`,`"Bulletproof/x"`,
+  `"Bulletproof/ip"`. Because `sha256("BP/y") != sha256("Bulletproof/y")`, proofs
+  produced by the Metal/OpenCL CT range-prove paths derived different challenges than
+  any verifier and failed verification everywhere (the Metal prover did not even match
+  the Metal verifier — not self-consistent). All five sites corrected to the canonical
+  `"Bulletproof/<chal>"` tags.
+- **Discovery:** exhaustive tagged-hash conformance audit (multi-agent workflow) run
+  after the MuSig2 binding-tag fix. Every CUDA/OpenCL/Metal hardcoded BIP-340 /
+  BIP-352 / Bulletproof *verify* midstate was recomputed and all MATCH — only the
+  Metal/OpenCL CT *prove* tag literals diverged. CPU BIP-340/341/327/322/352/324 tags
+  all verified byte-identical to libsecp256k1 / reference.py.
+- **Regression guard:** new CI gate `ci/check_zk_tag_conformance.py` (wired into
+  `run_fast_gates` as "ZK Fiat-Shamir tag conformance") bans the abbreviated
+  `"BP/<chal>"` tag form across all backends.
+- **Testing caveat:** CUDA CT range-prove already used the canonical tags and is
+  unaffected. Metal and OpenCL are not runnable on the dev machine (CUDA-only); this
+  fix is verified by source conformance (prover tag == verifier tag, the verifier tags
+  validated against CPU/CUDA and recomputed midstates) plus the new CI guard — not by a
+  Metal/OpenCL hardware run.
+
+## 2026-06-08 — MuSig2 binding-factor tag (BIP-327 interop fix)
+
+- **P1 fix — MuSig2 nonce binding-factor tag.** `musig2_start_sign_session` computed the
+  nonce binding factor `b` with the tagged-hash tag `"MuSig/nonceblinding"`. BIP-327
+  (`reference.py`) and upstream libsecp256k1 use **`"MuSig/noncecoef"`**; the hashed input
+  (`R1‖R2‖Qx‖msg`, 130 bytes) was otherwise identical. The wrong tag is self-consistent
+  for a pure-engine session — sign and verify used the same tag, so roundtrips and the
+  BIP-327 key_agg vectors passed — but it produces a **different `b`**, so any MuSig2
+  session mixing this engine with a BIP-327 implementation fails and the engine rejected
+  every externally-produced partial signature. Fixed by changing the tag to
+  `"MuSig/noncecoef"` (midstate `g_musig_noncecoef_midstate`, recomputed from the string
+  at init — no hardcoded constant changes).
+- **Impact.** Cross-implementation MuSig2 interoperability — the core promise of a
+  libsecp256k1 drop-in. `b` only needs to be consistent within a session, so pure-engine
+  sessions already produced valid BIP-340 signatures; no previously-accepted signature
+  becomes invalid, and previously-impossible interop now works.
+- **Discovery + verification.** Found while wiring the official BIP-327
+  `sign_verify_vectors.json` verify-side test. Confirmed by three independent sources:
+  BIP-327 `reference.py`, upstream libsecp256k1 (`session_impl.h`), and an empirical
+  differential (after the fix the engine verifies reference-impl partial sigs for both
+  even-Y and odd-Y aggregates; before it rejected all of them). Regression test:
+  `compat/libsecp256k1_shim/tests/test_bip327_sign_verify_vectors.cpp`
+  (CTest `bip327_sign_verify_vectors`). Full MuSig2 + FROST suite: no regression.
+- **Related divergence documented.** The same official vector set exposed a pre-existing,
+  independent fail-closed divergence: the engine rejects an infinity aggregate nonce
+  instead of substituting `R = G` per BIP-327 (SHIM-MUSIG-INF in
+  `docs/SHIM_KNOWN_DIVERGENCES.md`).
+
+## 2026-06-08 — MuSig2 tweaked-signing fix (BIP-327 gacc/tacc)
+
+- **P1 fix — MuSig2 tweaked signing.** The keyagg cache (`MuSig2KeyAggCtx`) lacked the
+  BIP-327 `gacc`/`tacc` tweak accumulators: `secp256k1_musig_pubkey_{ec,xonly}_tweak_add`
+  baked the tweak into the aggregate `Q` but the additive/sign state never reached the
+  signer, so (a) the EC-tweaked aggregate pubkey was wrong for odd-Y aggregates and
+  (b) the aggregated signature failed to verify against any tweaked key. Added
+  `gacc`/`tacc` (default identity → untweaked path byte-identical), corrected the
+  tweak functions to operate on the actual aggregate, and threaded the state through
+  `musig2_partial_sign` (`d = g·gacc·d'`), `musig2_partial_sig_agg` (`s += e·g·tacc`),
+  `musig2_start_sign_session`, and `musig2_partial_verify`.
+- **Discovery + verification:** found via the new official-vector conformance tests;
+  confirmed against the bip-0327 `reference.py` oracle (tweaked-output KATs) and full
+  sign+verify / partial-verify roundtrips (no-tweak / EC / x-only / mixed) on an odd-Y
+  aggregate. Regression test: `compat/libsecp256k1_shim/tests/test_bip327_tweak_sign.cpp`
+  (CTest `bip327_tweak_sign`). No regression in BIP-327 keyagg or BIP-341 vectors.
+
+## 2026-06-06 — Minerva CVE timing regression macOS CI stability
+
+- **Minerva MC-3c timing gate:** `audit/test_exploit_minerva_cve_2024_23342.cpp`
+  now records all 64 repeated RFC6979 timings and gates on p95/p5 central spread
+  instead of `max/first`. This preserves the hard sign-success and deterministic
+  signature assertions while avoiding a false failure from a single macOS Release
+  scheduler/cold-cache outlier observed in push CI run 27074680522.
+- **Source graph context fallback:** `tools/source_graph_kit/source_graph.py context`
+  now prints matching `files` rows even when a Markdown/JSON/config file has no
+  function summary, so graph-first docs scoping can identify indexed documentation
+  files directly.
+
+## 2026-06-06 — GPU ABI fail-closed outputs and secret-buffer erasure parity
+
+- **GPU C ABI output clearing:** result-bearing `ufsecp_gpu_*` wrappers now clear
+  output buffers before processing and clear them again on backend non-OK returns.
+  This covers generator-mul, verify result arrays, ECDH secrets, Hash160, MSM,
+  FROST/ZK/Bulletproof results, ecrecover pubkeys/valid flags, BIP-324
+  plaintext/wire outputs, SNARK witness buffers, and BIP-352 prefix outputs.
+  The in-place collect APIs are intentionally excluded because their `key_buffer`
+  is an input marker buffer for caller fallback.
+- **BIP-352 strict scan-key handling:** `ufsecp_bip352_prepare_scan_plan` and
+  `ufsecp_gpu_bip352_scan_batch` now reject zero and order-or-larger scan keys
+  with zeroed outputs. CUDA and Metal BIP-352 backends now match OpenCL's strict
+  scan-key parsing, and CUDA now checks device decompression `ok` flags before
+  dispatching the scan kernel.
+- **Secret-buffer erasure parity:** OpenCL BIP-352 host/device scan plans are
+  zeroed on every error and success path. Metal ECDH, BIP-352, and BIP-324 shared
+  key buffers now use RAII erasure guards, matching the existing CUDA/OpenCL key
+  cleanup discipline.
+- **Tests:** extended `audit/test_gpu_bip352_scan.cpp` for zero/order scan-key
+  rejection plus prefix/plan zeroing, and extended
+  `audit/test_gpu_host_api_negative.cpp` for GPU wrapper fail-closed output
+  assertions on invalid ECDSA/Schnorr/ECDH/Hash160 calls.
+
+## 2026-06-06 — CPU ABI fail-closed signing, strict Taproot/BIP144 parsing, and shim opaque-key hardening
+
+- **Fail-closed C ABI outputs:** `ufsecp_btc_message_sign`, `ufsecp_eth_sign`,
+  `ufsecp_frost_sign`, `ufsecp_frost_aggregate`, `ufsecp_taproot_output_key`,
+  `ufsecp_taproot_tweak_seckey`, `ufsecp_bip39_to_seed`, and BIP144 txid/wtxid
+  wrappers now clear their output buffers before processing and return non-OK on
+  degenerate signer output (`r == 0`, `s == 0`, all-zero Schnorr/FROST output).
+  This prevents stale signatures, addresses, seeds, or Taproot keys from remaining
+  visible after a failure.
+- **Strict parsing and residue cleanup:** Taproot tweak scalars now use strict
+  scalar parsing (`t >= n` rejected, `t == 0` allowed per BIP-341). The BIP144
+  txid parser enforces minimal CompactSize encodings and consumes every witness
+  stack before locktime. BIP32 master/public derivation and BIP39 PBKDF2 erase
+  transient secret/salt material on success and failure.
+- **Shim hardening:** libsecp256k1 shim signing calls zero output signatures on
+  failure, opaque pubkey/xonly serialization validates curve membership, and failed
+  in-place pubkey/keypair mutations clear their target structs. These are
+  intentional security improvements for hostile FFI callers that bypass parser
+  constructors.
+- **Tests:** extended `audit/test_adversarial_protocol.cpp` for BTC/ETH/BIP39/FROST
+  output clearing and BIP144 strict witness parsing; extended
+  `audit/test_regression_p2_ct_shim_fixes.cpp` for shim fail-closed output behavior.
+- **Audit wiring:** added a shim-linked
+  `regression_p2_ct_shim_fixes` CTest target so the fail-closed shim assertions run
+  against `secp256k1_shim` instead of only passing through unified-runner stubs.
+- **Source graph coverage:** `tools/source_graph_kit/source_graph.toml` now indexes
+  audit CMake files so audit/CTest wiring can be included in graph-first reviews.
+
 ## 2026-06-02 — libbitcoin bridge: in-place "collect" verify + dedicated CUDA collect kernel
 
 - **What (additive):** new in-place collect verify for the libbitcoin bridge —
@@ -944,7 +1443,7 @@ No code issues found. Findings recorded in knowledge_base (CT-AUDIT-FROST/ADAPTO
 - **audit/test_exploit_frost_absent_signer_id.cpp (NEW — P1-SEC-001):** 3 sub-tests (FSI-1..3): absent signer → zero z_i; present signer → non-zero z_i; below-threshold → zero z_i. Wired to `unified_audit_runner` as `exploit_poc`, `advisory=false`.
 - **audit/test_regression_schnorr_sign_e_hash_erased.cpp (NEW — P1-SEC-002):** 4 sub-tests (SHE-1..4): sign+verify round-trip; 50 round-trips with varied messages; deterministic output; different messages → different sigs. Wired as `ct_analysis`, `advisory=false`.
 - **audit/test_exploit_musig2_infinity_pubnonce.cpp (NEW — P1-SEC-003):** 6 sub-tests (MIP-1..6): valid pubnonce accepted; zero input (prefix 0x00) rejected; uncompressed prefix (0x04) rejected; off-curve x handled; NULL args rejected; invalid second-point prefix rejected. Wired as `exploit_poc`, `advisory=true` (requires shim).
-- **ci/sync_module_count.py:** Module count propagated — 382 total (270 exploit-PoC, 115 non-exploit).
+- **ci/sync_module_count.py:** Module count propagated — 382 total (269 exploit-PoC, 115 non-exploit).
 
 ## 2026-05-21 — Fix: doc sync, stale paths, canonical benchmark JSON machine-generation (REL-001..011, BENCH-003/006, CI-001)
 
@@ -1421,7 +1920,7 @@ evidence upgrades, and changes to what the repository can honestly claim.
   FAST variable-time row now labeled `[diag FAST]` — clearly marked as not production-equivalent.
   This eliminates the invalid VT-Ultra vs CT-libsecp comparison from the ratio table.
 
-### Module count: 357 total (101 non-exploit + 270 exploit PoC)
+### Module count: 357 total (101 non-exploit + 269 exploit PoC)
 
 ---
 
@@ -1567,7 +2066,7 @@ evidence upgrades, and changes to what the repository can honestly claim.
 - `docs/SHIM_KNOWN_DIVERGENCES.md` created: complete list of intentional shim vs libsecp256k1 behavioral differences.
 - `CLAUDE.md` updated: Canonical Data Synchronization rules added (module counts via `sync_module_count.py`, benchmark data via canonical JSON, ConnectBlock claim wording rules).
 - `docs/BITCOIN_CORE_BACKEND_EVIDENCE.md`: GCC CT signing regression (0.82–0.85×) disclosed; commit SHA mismatch corrected.
-- Module counts synced via `sync_module_count.py`: 98 non-exploit + 270 exploit PoC = 350 total.
+- Module counts synced via `sync_module_count.py`: 98 non-exploit + 269 exploit PoC = 350 total.
 
 ---
 
@@ -2442,7 +2941,7 @@ All 4 wired into `unified_audit_runner.cpp` + `audit/CMakeLists.txt`.
 
 ### Documentation Sync
 
-- `sync_module_count.py` run: WHY/README updated to 270 exploit PoCs, 80 non-exploit, 312 total.
+- `sync_module_count.py` run: WHY/README updated to 269 exploit PoCs, 80 non-exploit, 312 total.
 - `sync_version_refs.py` run: 26 doc files updated from v3.60/v3.66 → v3.68.0.
 - CT pipeline count: "3" → "5" (LLVM ct-verif, Valgrind taint, ct-prover, dudect, ARM64 native) across README + WHY.
 - `docs/EXPLOIT_TEST_CATALOG.md`: `test_exploit_der_parsing_differential` updated to 13 tests.
@@ -4842,7 +5341,7 @@ tests PASS.**
   double-hash confusion (H(msg) ≠ H(H(msg))); domain prefix isolation (domain-A sig ≠ domain-B
   sig).  Committed `c843979c`.
 
-**Running total after this wave: 270 exploit PoC files, 59 new checks.**
+**Running total after this wave: 269 exploit PoC files, 59 new checks.**
 
 ---
 

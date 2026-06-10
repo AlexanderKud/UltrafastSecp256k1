@@ -262,7 +262,15 @@ struct BenchReport {
             if (e.is_ratio) {
                 fprintf(f, ", \"ratio\": %.4f", e.ratio);
             } else {
-                fprintf(f, ", \"ns\": %.2f", e.ns);
+                // BENCH-P5-01: emit an explicit unit so a JSON consumer cannot mis-scale.
+                // Most rows are nanoseconds, but the ConnectBlock diagnostic rows are named
+                // "*_ms" and store MILLISECONDS in this same field — without a unit a reader
+                // keying on "ns" would be off by 1e6. Additive (value unchanged; existing
+                // readers of "ns" are unaffected). Detect the "_ms" suffix without <cstring>.
+                size_t _L = 0; while (e.name[_L]) ++_L;
+                const bool _is_ms = (_L >= 3 && e.name[_L-3] == '_' &&
+                                     e.name[_L-2] == 'm' && e.name[_L-1] == 's');
+                fprintf(f, ", \"ns\": %.2f, \"unit\": \"%s\"", e.ns, _is_ms ? "ms" : "ns");
             }
             fprintf(f, "}%s\n", (i + 1 < count) ? "," : "");
         }

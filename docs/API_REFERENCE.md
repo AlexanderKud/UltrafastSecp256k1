@@ -57,6 +57,7 @@ Complete API documentation for CPU, CUDA, and WASM implementations.
     - [Taproot / BIP-341](#c-abi-taproot)
     - [BIP-39 Mnemonics](#c-abi-bip39)
     - [Batch Verification](#c-abi-batch)
+    - [Libbitcoin Bridge](#c-abi-libbitcoin-bridge)
     - [Multi-Scalar Multiplication](#c-abi-msm)
     - [MuSig2 / BIP-327](#c-abi-musig2)
     - [FROST Threshold Signatures](#c-abi-frost)
@@ -1965,11 +1966,15 @@ The stable C ABI is defined in `include/ufsecp/ufsecp.h`. All functions follow t
 - **Dual-layer CT**: signing/nonce/key-tweak always use the CT layer; verify/point-arith use the fast layer. No opt-in flag.
 - **Caller owns all buffers** -- library never allocates on behalf of caller (except `ctx_create`/`ctx_clone`)
 
-#### Security Properties (updated 2026-05-01)
+#### Security Properties (updated 2026-06-06)
 
 - **Strict private key parsing**: All functions accepting a private key use `Scalar::parse_bytes_strict_nonzero()`, which rejects keys `>= n` **and** `== 0`. `Scalar::from_bytes()` (silent mod-n reduction) is never used on secret inputs.
 - **CT pubkey derivation**: `ufsecp_pubkey_create` and all functions that derive a public key from a private key use `ct::generator_mul()`, not the variable-time `Point::generator().scalar_mul()`. No secret value touches the fast scalar-mul path.
 - **Degenerate output detection**: All signing functions (`ufsecp_ecdsa_sign`, `ufsecp_schnorr_sign`, their `_verified` and `_batch` variants) check for `r == 0`, `s == 0`, and all-zero Schnorr R x-coordinate after signing. On degenerate output the output buffer is zeroed and `UFSECP_ERR_INTERNAL` is returned — the zero signature is never serialized as success.
+- **Fail-closed output buffers**: Message-signing, FROST, Taproot, BIP39 seed, and BIP144 hash wrappers clear output buffers before processing. On any non-OK return, callers must treat the output as zeroed/invalid and must not reuse a previous value from the same buffer.
+- **BIP39 C ABI validation**: `ufsecp_bip39_to_seed` validates the mnemonic word list and checksum before PBKDF2. Invalid mnemonics return `UFSECP_ERR_BAD_INPUT` and leave `seed64_out` all zero.
+- **BIP144 strict parser**: `ufsecp_bip144_txid` enforces minimal CompactSize encodings and consumes all witness stacks before the 4-byte locktime. Extra bytes between witness data and locktime return `UFSECP_ERR_BAD_INPUT`.
+- **Taproot tweak parsing**: Taproot tweak scalars are parsed strictly; `t >= n` is rejected, while `t == 0` remains valid per BIP-341. A final infinity output key or zero tweaked private key returns a non-OK error.
 - **Batch fail-closed**: Batch sign functions clear all output slots before processing. A per-slot failure zeroes that slot's output bytes; partial success is not possible.
 - **Batch count == 0 rejected**: `ufsecp_ecdsa_sign_batch` and `ufsecp_schnorr_sign_batch` return `UFSECP_ERR_BAD_INPUT` when `count == 0`.
 
@@ -2140,6 +2145,10 @@ Opaque key type: `ufsecp_bip32_key` (82 bytes, contains 78-byte serialised key +
 | `ufsecp_taproot_tweak_seckey` | `(ctx, privkey[32], merkle_root, tweaked32_out[32]) -> error_t` | Tweak privkey for key-path spend |
 | `ufsecp_taproot_verify` | `(ctx, output_x, parity, internal_x, merkle_root, len) -> error_t` | Verify Taproot commitment |
 
+Taproot tweak helpers reject `merkle_root == NULL` when a positive root length is
+specified, reject roots longer than 32 bytes, strict-parse tweak scalars, and
+clear output buffers before returning input or internal errors.
+
 <a id="c-abi-bip39"></a>
 ### BIP-39 Mnemonics
 
@@ -2161,6 +2170,32 @@ Entropy sizes: 16 (12 words), 20 (15), 24 (18), 28 (21), 32 (24 words). Pass `en
 | `ufsecp_ecdsa_batch_verify` | `(ctx, entries, n) -> error_t` | Verify N ECDSA sigs. Entry: 32 msg + 33 pubkey + 64 sig = 129 bytes |
 | `ufsecp_schnorr_batch_identify_invalid` | `(ctx, entries, n, invalid_out, invalid_count*) -> error_t` | Find indices of invalid Schnorr sigs |
 | `ufsecp_ecdsa_batch_identify_invalid` | `(ctx, entries, n, invalid_out, invalid_count*) -> error_t` | Find indices of invalid ECDSA sigs |
+
+<a id="c-abi-libbitcoin-bridge"></a>
+### Libbitcoin Bridge
+
+The optional `compat/libbitcoin_bridge` C ABI exposes one controller and two
+script-signature batch layouts. Both layouts return identical per-row verdicts
+and keep ECDSA and Schnorr batches homogeneous.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ufsecp_lbtc_ctrl_create` | `(ctrl**, backend) -> error_t` | Create bridge controller; `AUTO` binds GPU when available, otherwise CPU |
+| `ufsecp_lbtc_verify_ecdsa` | `(ctrl, rows, n, key_size, results)` | Packed-row ECDSA verify; row = `hash32|pubkey33|sig64|opaque-key` |
+| `ufsecp_lbtc_verify_schnorr` | `(ctrl, rows, n, key_size, results)` | Packed-row Schnorr verify; row = `hash32|xonly32|sig64|opaque-key` |
+| `ufsecp_lbtc_verify_ecdsa_columns` | `(ctrl, hashes32, pubkeys33, sigs64, n, results)` | Columnar ECDSA verify; avoids bridge-side row-to-column de-interleave |
+| `ufsecp_lbtc_verify_schnorr_columns` | `(ctrl, hashes32, pubkeys_x32, sigs64, n, results)` | Columnar Schnorr verify; avoids bridge-side row-to-column de-interleave |
+| `ufsecp_lbtc_verify_ecdsa_collect` | `(ctrl, rows, n, key_size)` | Packed-row collect; valid rows zero the row tail, invalid rows keep it |
+| `ufsecp_lbtc_verify_schnorr_collect` | `(ctrl, rows, n, key_size)` | Packed-row Schnorr collect |
+| `ufsecp_lbtc_verify_ecdsa_columns_collect` | `(ctrl, hashes32, pubkeys33, sigs64, n, key_cells, key_size)` | Columnar collect; valid rows zero `key_cells[i]`, invalid rows keep it |
+| `ufsecp_lbtc_verify_schnorr_columns_collect` | `(ctrl, hashes32, pubkeys_x32, sigs64, n, key_cells, key_size)` | Columnar Schnorr collect |
+
+Use the packed-row API when the producer naturally stores `[record | key]`
+tuples. Use the columnar API when the producer already stores
+`hashes[]`, `pubkeys[]`, `sigs[]`, and optional `key_cells[]`; on GPU builds the
+bridge forwards these columns directly to the existing GPU C ABI instead of
+building temporary columns from rows. The opaque key bytes are correlation
+metadata only and are never interpreted by the bridge.
 
 <a id="c-abi-msm"></a>
 ### Multi-Scalar Multiplication
@@ -2299,6 +2334,20 @@ Backend-neutral GPU acceleration surface. All functions use opaque `ufsecp_gpu_c
 
 **GPU Error Codes** (100--106): `UFSECP_ERR_GPU_UNAVAILABLE` (100), `UFSECP_ERR_GPU_DEVICE` (101), `UFSECP_ERR_GPU_LAUNCH` (102), `UFSECP_ERR_GPU_MEMORY` (103), `UFSECP_ERR_GPU_UNSUPPORTED` (104), `UFSECP_ERR_GPU_BACKEND` (105), `UFSECP_ERR_GPU_QUEUE` (106).
 
+Current GPU C ABI failure semantics:
+
+- output buffers are cleared to their invalid/zero default before processing for
+  result-bearing batch operations, and cleared again if backend dispatch returns
+  non-OK
+- `ufsecp_bip352_prepare_scan_plan` and `ufsecp_gpu_bip352_scan_batch` reject
+  `scan_privkey32 == 0` and `scan_privkey32 >= n`; rejected scan keys leave
+  `plan264_out` / `prefix64_out` zeroed
+- secret-bearing GPU backends erase uploaded ECDH, BIP-352, and BIP-324 key
+  buffers before releasing host/shared/device storage
+- `ufsecp_gpu_*_verify_collect` is excluded from output pre-clearing because
+  its `key_buffer` is intentionally an in/out marker buffer used by fallback
+  callers
+
 #### Discovery
 
 | Function | Signature | Description |
@@ -2336,7 +2385,7 @@ Backend-neutral GPU acceleration surface. All functions use opaque `ufsecp_gpu_c
 | `ufsecp_gpu_zk_knowledge_verify_batch` | `(ctx, proofs64[], pubkeys65[], msgs32[], n, results[]) -> error_t` | Batch ZK knowledge proof verification (PUBLIC) |
 | `ufsecp_gpu_zk_dleq_verify_batch` | `(ctx, proofs64[], G65[], H65[], P65[], Q65[], n, results[]) -> error_t` | Batch DLEQ proof verification (PUBLIC) |
 | `ufsecp_gpu_bulletproof_verify_batch` | `(ctx, proofs324[], commits65[], H65, n, results[]) -> error_t` | Batch Bulletproof range proof verification (PUBLIC) |
-| `ufsecp_gpu_bip324_aead_encrypt_batch` | `(ctx, keys32[], nonces12[], plain[], sizes[], max_payload, n, wire_out[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD encrypt (PUBLIC) |
+| `ufsecp_gpu_bip324_aead_encrypt_batch` | `(ctx, keys32[], nonces12[], plain[], sizes[], max_payload, n, wire_out[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD encrypt (SECRET: keys sent to GPU) |
 | `ufsecp_gpu_bip324_aead_decrypt_batch` | `(ctx, keys32[], nonces12[], wire[], sizes[], max_payload, n, plain_out[], valid[]) -> error_t` | Batch BIP-324 ChaCha20-Poly1305 AEAD decrypt (SECRET) |
 | `ufsecp_gpu_zk_ecdsa_snark_witness_batch` | `(ctx, msgs32[], pubs33[], sigs64[], n, witnesses760_out[]) -> error_t` | Batch ECDSA SNARK witness generation — eprint 2025/695 (PUBLIC inputs) |
 | `ufsecp_gpu_zk_schnorr_snark_witness_batch` | `(ctx, msgs32[], pubkeys_x32[], sigs64[], n, witnesses472_out[]) -> error_t` | Batch BIP-340 Schnorr SNARK witness generation (PUBLIC inputs). GPU kernels pending — CPU fallback returns `Unsupported` via virtual dispatch. |
@@ -2346,7 +2395,7 @@ Backend-neutral GPU acceleration surface. All functions use opaque `ufsecp_gpu_c
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `ufsecp_bip352_prepare_scan_plan` | `(scan_privkey32, plan264_out) -> error_t` | Precompute 264-byte BIP-352 GLV wNAF scan plan for repeated GPU batch scans |
+| `ufsecp_bip352_prepare_scan_plan` | `(scan_privkey32, plan264_out) -> error_t` | Precompute 264-byte BIP-352 GLV wNAF scan plan for repeated GPU batch scans; rejects zero/order-or-larger scan keys and zeroes the plan on error |
 
 ---
 
@@ -2537,4 +2586,3 @@ void secp256k1_musig_keyagg_cache_clear(secp256k1_musig_keyagg_cache *keyagg_cac
 UltrafastSecp256k1 v4.1.1
 
 For more information, see the [README](../README.md) or [GitHub repository](https://github.com/shrec/UltrafastSecp256k1).
-

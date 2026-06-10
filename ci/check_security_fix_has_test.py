@@ -51,6 +51,9 @@ SECURITY_CI_FILES = frozenset({
     "ci/check_security_fix_has_test.py",
     "ci/run_fast_gates.sh",
     ".github/workflows/gate.yml",
+    # Meta-gate: loosening the advisory-skip ceiling silently grows CI coverage gaps,
+    # so a change here must come with a test (its paired ci/test_check_advisory_skip_ceiling.py).
+    "ci/check_advisory_skip_ceiling.py",
 })
 
 # If a commit touches only these directories/files, no test is required.
@@ -635,12 +638,42 @@ RETROACTIVELY_COVERED: dict[str, tuple[list[str], str]] = {
         "gate.yml workflow structure / CAAS gate integrity is exercised by "
         "ci/test_caas_integrity.py. Same class as the 7d094c7c09 retention-change entry.",
     ),
+    "02602cf420": (
+        ["ci/test_check_tag_conformance.py"],
+        "ci(caas): systemic tagged-hash tag-conformance gate. Flagged SOLELY because it "
+        "wires ci/check_tag_conformance.py into ci/run_fast_gates.sh (∈ SECURITY_CI_FILES). "
+        "The gate is a pure CI scanner (no executable crypto surface); its behavior is "
+        "exercised by the paired ci/test_check_tag_conformance.py unit test (added in the "
+        "immediately-following commit). Same class as the gate.yml SECURITY_CI_FILES "
+        "entries (7d094c7c09 / f0ea17663a) and the 8f5915c5b6 ZK-tag-gate entry.",
+    ),
+    "8f5915c5b6": (
+        ["ci/check_zk_tag_conformance.py"],
+        "fix(zk): GPU CT range-prove Fiat-Shamir tags corrected to Bulletproof/* (Metal "
+        "src/metal/shaders/secp256k1_ct_zk.h + OpenCL src/opencl/kernels/secp256k1_ct_zk.cl) "
+        "plus wiring the new gate into ci/run_fast_gates.sh. Flagged SOLELY because "
+        "ci/run_fast_gates.sh ∈ SECURITY_CI_FILES. The Metal/OpenCL shader tag fix is not "
+        "runnable on the CUDA-only dev box, so its regression guard IS the new "
+        "ci/check_zk_tag_conformance.py gate (added in the SAME commit), which bans the "
+        "abbreviated BP/<chal> tag across all backends. Same class as the gate.yml "
+        "SECURITY_CI_FILES entries (7d094c7c09 / f0ea17663a).",
+    ),
+    "0d2edda60b": (
+        ["ci/test_gen_build_options.py"],
+        "docs(build): wired the new ci/gen_build_options.py BUILD_OPTIONS.md drift gate "
+        "into ci/run_fast_gates.sh (∈ SECURITY_CI_FILES) + added docs/BUILD_OPTIONS.md. "
+        "Flagged SOLELY because run_fast_gates.sh ∈ SECURITY_CI_FILES; the gate is a "
+        "pure doc-drift scanner (no executable crypto surface). Its behaviour is "
+        "exercised by the paired ci/test_gen_build_options.py unit test (parser + "
+        "deterministic render + live --check), added in the immediately-following commit. "
+        "Same class as the gate-wiring entries 02602cf420 / 8f5915c5b6 / 7d094c7c09.",
+    ),
 }
 
 # Frozen count guard (CAAS-006): prevents silent whitelist growth.
 # When adding a new entry above, increment this constant too.
 # Unauthorized bypass (adding an entry without incrementing) → import-time assertion failure.
-RETROACTIVELY_COVERED_FROZEN_COUNT: int = 57
+RETROACTIVELY_COVERED_FROZEN_COUNT: int = 60
 assert len(RETROACTIVELY_COVERED) == RETROACTIVELY_COVERED_FROZEN_COUNT, (
     f"RETROACTIVELY_COVERED has {len(RETROACTIVELY_COVERED)} entries but "
     f"RETROACTIVELY_COVERED_FROZEN_COUNT={RETROACTIVELY_COVERED_FROZEN_COUNT}. "

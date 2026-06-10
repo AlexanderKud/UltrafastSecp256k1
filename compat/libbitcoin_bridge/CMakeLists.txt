@@ -17,6 +17,7 @@ project(ufsecp_libbitcoin_bridge LANGUAGES CXX)
 option(UFSECP_LBTC_WITH_GPU "Enable GPU dispatch (requires engine GPU ABI)" OFF)
 option(UFSECP_LBTC_BUILD_TESTS "Build the bridge correctness test" ON)
 option(UFSECP_LBTC_BUILD_EXAMPLE "Build the example harness" ON)
+option(UFSECP_LBTC_BUILD_BENCH "Build the bridge throughput benchmark" ON)
 
 add_library(ufsecp_lbtc_bridge STATIC src/ufsecp_libbitcoin.cpp)
 target_compile_features(ufsecp_lbtc_bridge PUBLIC cxx_std_17)
@@ -91,6 +92,28 @@ if(UFSECP_LBTC_BUILD_TESTS)
     target_link_libraries(test_lbtc_collect PRIVATE ufsecp_lbtc_bridge)
     add_test(NAME lbtc_collect COMMAND test_lbtc_collect)
 
+    # 4-table batching model (libbitcoin): multisig (ECDSA m-of-n) + threshold
+    # (Schnorr/tapscript m-of-n) verify/collect through the ECDSA/Schnorr cores
+    # with a 6-byte m|n+group+block-fk tail; proves tail-width independence and
+    # the canonical MultisigRow/ThresholdRow typed-span overloads.
+    add_executable(test_lbtc_multisig_threshold tests/test_lbtc_multisig_threshold.cpp)
+    target_compile_features(test_lbtc_multisig_threshold PRIVATE cxx_std_20)
+    target_link_libraries(test_lbtc_multisig_threshold PRIVATE ufsecp_lbtc_bridge)
+    add_test(NAME lbtc_multisig_threshold COMMAND test_lbtc_multisig_threshold)
+
+    # BIP-341 Taproot commitment batch (ufsecp_lbtc_verify_commitment). Generates
+    # ground truth with, and cross-checks against, the shim's native
+    # secp256k1_xonly_pubkey_tweak_add(_check), so it only builds when the shim
+    # target is present (libsecp parity build).
+    if(TARGET secp256k1_shim)
+        add_executable(test_lbtc_commitment tests/test_lbtc_commitment.cpp)
+        target_compile_features(test_lbtc_commitment PRIVATE cxx_std_20)
+        target_link_libraries(test_lbtc_commitment PRIVATE ufsecp_lbtc_bridge secp256k1_shim)
+        target_include_directories(test_lbtc_commitment PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../libsecp256k1_shim/include)
+        add_test(NAME lbtc_commitment COMMAND test_lbtc_commitment)
+    endif()
+
     # Same source, but the bridge is RECOMPILED with a tiny kChunk so the corpus
     # straddles chunk boundaries — exercises CollectSink's (base+i)*stride global
     # indexing across chunks deterministically (no 262k-row corpus needed).
@@ -111,4 +134,9 @@ endif()
 if(UFSECP_LBTC_BUILD_EXAMPLE)
     add_executable(lbtc_batch_demo example/lbtc_batch_demo.cpp)
     target_link_libraries(lbtc_batch_demo PRIVATE ufsecp_lbtc_bridge)
+endif()
+
+if(UFSECP_LBTC_BUILD_BENCH)
+    add_executable(bench_lbtc_batch bench/bench_lbtc_batch.cpp)
+    target_link_libraries(bench_lbtc_batch PRIVATE ufsecp_lbtc_bridge)
 endif()

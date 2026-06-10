@@ -16,6 +16,7 @@
 
 /* -- Secure erase for private key zeroization ------------------------------ */
 #include "secp256k1/detail/secure_erase.hpp"
+#include "secp256k1/scalar.hpp"
 
 /* -- CUDA runtime ---------------------------------------------------------- */
 #include <cuda_runtime.h>
@@ -360,6 +361,148 @@ __global__ void ecdh_batch_kernel(
         &privkeys[idx], &peer_pubs[idx], out_secrets + idx * 32);
 }
 #endif  // SECP256K1_GPU_HAS_ECDH
+
+/* ============================================================================
+ * libbitcoin-bridge per-item batch kernels (all PUBLIC data -> variable-time):
+ *   - lbtc_xonly_validate_kernel : x-only key on-curve check (lift_x per key)
+ *   - lbtc_commitment_kernel     : BIP-341 tweak-add-check, one thread per item
+ *   - lbtc_tagged_hash_kernel    : Taproot tagged hash (multi-block SHA-256;
+ *                                  the engine device sha256 caps at ~119B, and a
+ *                                  TapBranch preimage is 128B, so a self-contained
+ *                                  multi-block SHA-256 is used here)
+ * ============================================================================ */
+namespace {  // file-local
+
+__device__ __forceinline__ uint32_t lbtc_rr32(uint32_t x, int n) {
+    return (x >> n) | (x << (32 - n));
+}
+
+// Multi-block SHA-256 over inputs up to 320 bytes (tag_hash || tag_hash || msg).
+__device__ void lbtc_sha256(const uint8_t* data, int len, uint8_t out[32]) {
+    const uint32_t K[64] = {
+      0x428a2f98u,0x71374491u,0xb5c0fbcfu,0xe9b5dba5u,0x3956c25bu,0x59f111f1u,0x923f82a4u,0xab1c5ed5u,
+      0xd807aa98u,0x12835b01u,0x243185beu,0x550c7dc3u,0x72be5d74u,0x80deb1feu,0x9bdc06a7u,0xc19bf174u,
+      0xe49b69c1u,0xefbe4786u,0x0fc19dc6u,0x240ca1ccu,0x2de92c6fu,0x4a7484aau,0x5cb0a9dcu,0x76f988dau,
+      0x983e5152u,0xa831c66du,0xb00327c8u,0xbf597fc7u,0xc6e00bf3u,0xd5a79147u,0x06ca6351u,0x14292967u,
+      0x27b70a85u,0x2e1b2138u,0x4d2c6dfcu,0x53380d13u,0x650a7354u,0x766a0abbu,0x81c2c92eu,0x92722c85u,
+      0xa2bfe8a1u,0xa81a664bu,0xc24b8b70u,0xc76c51a3u,0xd192e819u,0xd6990624u,0xf40e3585u,0x106aa070u,
+      0x19a4c116u,0x1e376c08u,0x2748774cu,0x34b0bcb5u,0x391c0cb3u,0x4ed8aa4au,0x5b9cca4fu,0x682e6ff3u,
+      0x748f82eeu,0x78a5636fu,0x84c87814u,0x8cc70208u,0x90befffau,0xa4506cebu,0xbef9a3f7u,0xc67178f2u};
+    uint32_t h[8] = {0x6a09e667u,0xbb67ae85u,0x3c6ef372u,0xa54ff53au,
+                     0x510e527fu,0x9b05688cu,0x1f83d9abu,0x5be0cd19u};
+    uint8_t blk[384];
+    for (int i = 0; i < 384; ++i) blk[i] = 0;
+    for (int i = 0; i < len; ++i) blk[i] = data[i];
+    blk[len] = 0x80;
+    const uint64_t bl = static_cast<uint64_t>(len) * 8ULL;
+    const int nb   = (len + 1 + 8 + 63) / 64;   // blocks incl. padding
+    const int last = nb * 64;
+    for (int i = 0; i < 8; ++i) blk[last - 1 - i] = static_cast<uint8_t>(bl >> (i * 8));
+    for (int b = 0; b < nb; ++b) {
+        uint32_t w[64]; const int off = b * 64;
+        for (int i = 0; i < 16; ++i)
+            w[i] = (static_cast<uint32_t>(blk[off+i*4])<<24)|(static_cast<uint32_t>(blk[off+i*4+1])<<16)|
+                   (static_cast<uint32_t>(blk[off+i*4+2])<<8)|blk[off+i*4+3];
+        for (int i = 16; i < 64; ++i) {
+            uint32_t s0 = lbtc_rr32(w[i-15],7)^lbtc_rr32(w[i-15],18)^(w[i-15]>>3);
+            uint32_t s1 = lbtc_rr32(w[i-2],17)^lbtc_rr32(w[i-2],19)^(w[i-2]>>10);
+            w[i] = w[i-16]+s0+w[i-7]+s1;
+        }
+        uint32_t a=h[0],b2=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+        for (int i = 0; i < 64; ++i) {
+            uint32_t S1=lbtc_rr32(e,6)^lbtc_rr32(e,11)^lbtc_rr32(e,25); uint32_t ch=(e&f)^(~e&g);
+            uint32_t t1=hh+S1+ch+K[i]+w[i]; uint32_t S0=lbtc_rr32(a,2)^lbtc_rr32(a,13)^lbtc_rr32(a,22);
+            uint32_t mj=(a&b2)^(a&c)^(b2&c); uint32_t t2=S0+mj;
+            hh=g;g=f;f=e;e=d+t1;d=c;c=b2;b2=a;a=t1+t2;
+        }
+        h[0]+=a;h[1]+=b2;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=hh;
+    }
+    for (int i = 0; i < 8; ++i) {
+        out[i*4]=static_cast<uint8_t>(h[i]>>24); out[i*4+1]=static_cast<uint8_t>(h[i]>>16);
+        out[i*4+2]=static_cast<uint8_t>(h[i]>>8); out[i*4+3]=static_cast<uint8_t>(h[i]);
+    }
+}
+
+// x < field prime p ? (big-endian). The device lift_x reduces x mod p, but a valid
+// x-only key requires x < p (libsecp/ shim reject x >= p), so we gate on it explicitly.
+__device__ __forceinline__ bool lbtc_x_lt_p(const uint8_t* x) {
+    const uint8_t P[32] = {
+        0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+        0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfe,0xff,0xff,0xfc,0x2f};
+    for (int i = 0; i < 32; ++i) {
+        if (x[i] < P[i]) return true;
+        if (x[i] > P[i]) return false;
+    }
+    return false;  // x == p -> not < p
+}
+
+__global__ void lbtc_xonly_validate_kernel(
+    const uint8_t* __restrict__ keys, int n, uint8_t* __restrict__ res) {
+    const int i = blockIdx.x*blockDim.x + threadIdx.x; if (i >= n) return;
+    secp256k1::cuda::JacobianPoint p;
+    res[i] = (lbtc_x_lt_p(keys + i*32) &&
+              secp256k1::cuda::lift_x(keys + i*32, &p)) ? 1u : 0u;
+}
+
+__global__ void lbtc_commitment_kernel(
+    const uint8_t* __restrict__ ix, const uint8_t* __restrict__ tw,
+    const uint8_t* __restrict__ tx, const uint8_t* __restrict__ par,
+    int n, uint8_t* __restrict__ res) {
+    const int i = blockIdx.x*blockDim.x + threadIdx.x; if (i >= n) return;
+    secp256k1::cuda::JacobianPoint P;
+    if (!lbtc_x_lt_p(ix + i*32) ||
+        !secp256k1::cuda::lift_x(ix + i*32, &P)) { res[i] = 0; return; }   // even-y internal, x<p
+    secp256k1::cuda::FieldElement ax, ay;
+    secp256k1::cuda::jacobian_to_affine(&P, &ax, &ay);
+    secp256k1::cuda::AffinePoint Pa; Pa.x = ax; Pa.y = ay;
+    secp256k1::cuda::Scalar s; secp256k1::cuda::scalar_from_bytes(tw + i*32, &s);
+    secp256k1::cuda::JacobianPoint T; secp256k1::cuda::scalar_mul_generator_const(&s, &T);
+    secp256k1::cuda::JacobianPoint Q; secp256k1::cuda::jacobian_add_mixed(&T, &Pa, &Q);
+    uint8_t comp[33]; secp256k1::cuda::point_to_compressed(&Q, comp);
+    uint8_t ok = (comp[0] == (par[i] ? 0x03u : 0x02u)) ? 1u : 0u;          // y-parity
+    for (int j = 0; j < 32; ++j) if (comp[1+j] != tx[i*32 + j]) ok = 0;    // x(Q) == tweaked_x
+    res[i] = ok;
+}
+
+__global__ void lbtc_tagged_hash_kernel(
+    const uint8_t* __restrict__ th, const uint8_t* __restrict__ msgs,
+    int msg_len, int n, uint8_t* __restrict__ out) {
+    const int i = blockIdx.x*blockDim.x + threadIdx.x; if (i >= n) return;
+    uint8_t buf[320];
+    for (int j = 0; j < 32; ++j) { buf[j] = th[j]; buf[32+j] = th[j]; }   // SHA256(tag) twice
+    for (int j = 0; j < msg_len; ++j) buf[64+j] = msgs[i*msg_len + j];
+    lbtc_sha256(buf, 64 + msg_len, out + i*32);
+}
+
+__global__ void lbtc_pubkey_validate_kernel(
+    const uint8_t* __restrict__ pk33, int n, uint8_t* __restrict__ res) {
+    const int i = blockIdx.x*blockDim.x + threadIdx.x; if (i >= n) return;
+    const uint8_t* p = pk33 + i*33; const uint8_t pfx = p[0];
+    bool ok = (pfx == 0x02 || pfx == 0x03) && lbtc_x_lt_p(p + 1);
+    if (ok) { secp256k1::cuda::JacobianPoint J; ok = secp256k1::cuda::lift_x(p + 1, &J); }
+    res[i] = ok ? 1u : 0u;
+}
+
+__global__ void lbtc_tagged_hash_var_kernel(
+    const uint8_t* __restrict__ th, const uint8_t* __restrict__ msgs,
+    const uint32_t* __restrict__ lens, int stride, int n, uint8_t* __restrict__ out) {
+    const int i = blockIdx.x*blockDim.x + threadIdx.x; if (i >= n) return;
+    int L = (int)lens[i]; if (L > 256) L = 256;
+    uint8_t buf[320];
+    for (int j = 0; j < 32; ++j) { buf[j] = th[j]; buf[32+j] = th[j]; }
+    for (int j = 0; j < L; ++j) buf[64+j] = msgs[(size_t)i*stride + j];
+    lbtc_sha256(buf, 64 + L, out + i*32);
+}
+
+__global__ void lbtc_hash256_kernel(
+    const uint8_t* __restrict__ inputs, int input_len, int n, uint8_t* __restrict__ out) {
+    const int i = blockIdx.x*blockDim.x + threadIdx.x; if (i >= n) return;
+    uint8_t h1[32];
+    lbtc_sha256(inputs + (size_t)i*input_len, input_len, h1);   // SHA256(input)
+    lbtc_sha256(h1, 32, out + i*32);                            // SHA256(SHA256(input))
+}
+
+}  // anonymous namespace (libbitcoin-bridge kernels)
 
 /* ============================================================================
  * CudaBackend implementation
@@ -922,6 +1065,202 @@ gmb_cleanup:
 #else
         return set_error(GpuError::Unsupported, "GPU MSM module disabled at build time");
 #endif
+    }
+
+    /* libbitcoin-bridge: batch x-only key validation (lift_x per key). PUBLIC. */
+    GpuError xonly_validate(
+        const uint8_t* keys32, size_t n, uint8_t* results) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (n == 0) { clear_error(); return GpuError::Ok; }
+        if (!keys32 || !results) return set_error(GpuError::NullArg, "NULL buffer");
+
+        uint8_t* d_keys = nullptr;
+        uint8_t* d_res  = nullptr;
+        GpuError ret = GpuError::Ok;
+        const int n_int   = static_cast<int>(n);
+        const int threads = 256;
+        const int blocks  = (n_int + threads - 1) / threads;
+
+        if (cudaMalloc(&d_keys, n * 32) != cudaSuccess) {
+            ret = set_error(GpuError::Memory, "xonly_validate d_keys"); goto xv_cleanup; }
+        if (cudaMalloc(&d_res, n) != cudaSuccess) {
+            ret = set_error(GpuError::Memory, "xonly_validate d_res"); goto xv_cleanup; }
+        if (cudaMemcpy(d_keys, keys32, n * 32, cudaMemcpyHostToDevice) != cudaSuccess) {
+            ret = set_error(GpuError::Launch, "xonly_validate upload"); goto xv_cleanup; }
+        lbtc_xonly_validate_kernel<<<blocks, threads>>>(d_keys, n_int, d_res);
+        if (cudaGetLastError() != cudaSuccess) {
+            ret = set_error(GpuError::Launch, "xonly_validate kernel"); goto xv_cleanup; }
+        if (cudaDeviceSynchronize() != cudaSuccess) {
+            ret = set_error(GpuError::Launch, "xonly_validate sync"); goto xv_cleanup; }
+        if (cudaMemcpy(results, d_res, n, cudaMemcpyDeviceToHost) != cudaSuccess) {
+            ret = set_error(GpuError::Launch, "xonly_validate download"); goto xv_cleanup; }
+        clear_error();
+xv_cleanup:
+        if (d_keys) cudaFree(d_keys);
+        if (d_res)  cudaFree(d_res);
+        return ret;
+    }
+
+    /* libbitcoin-bridge: BIP-341 commitment tweak-add-check, one thread per item.
+     * accept iff x(lift_x(internal)+tweak*G)==tweaked_x AND its y-parity==parity. PUBLIC. */
+    GpuError commitment_verify(
+        const uint8_t* internal_x32, const uint8_t* tweak32,
+        const uint8_t* tweaked_x32, const uint8_t* parity,
+        size_t n, uint8_t* results) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (n == 0) { clear_error(); return GpuError::Ok; }
+        if (!internal_x32 || !tweak32 || !tweaked_x32 || !parity || !results)
+            return set_error(GpuError::NullArg, "NULL buffer");
+
+        uint8_t *d_ix=nullptr,*d_tw=nullptr,*d_tx=nullptr,*d_par=nullptr,*d_res=nullptr;
+        GpuError ret = GpuError::Ok;
+        const int n_int   = static_cast<int>(n);
+        const int threads = 256;
+        const int blocks  = (n_int + threads - 1) / threads;
+
+        if (cudaMalloc(&d_ix, n*32)!=cudaSuccess){ ret=set_error(GpuError::Memory,"commit d_ix"); goto cv_cleanup; }
+        if (cudaMalloc(&d_tw, n*32)!=cudaSuccess){ ret=set_error(GpuError::Memory,"commit d_tw"); goto cv_cleanup; }
+        if (cudaMalloc(&d_tx, n*32)!=cudaSuccess){ ret=set_error(GpuError::Memory,"commit d_tx"); goto cv_cleanup; }
+        if (cudaMalloc(&d_par, n)!=cudaSuccess){ ret=set_error(GpuError::Memory,"commit d_par"); goto cv_cleanup; }
+        if (cudaMalloc(&d_res, n)!=cudaSuccess){ ret=set_error(GpuError::Memory,"commit d_res"); goto cv_cleanup; }
+        if (cudaMemcpy(d_ix, internal_x32, n*32, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"commit up ix"); goto cv_cleanup; }
+        if (cudaMemcpy(d_tw, tweak32, n*32, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"commit up tw"); goto cv_cleanup; }
+        if (cudaMemcpy(d_tx, tweaked_x32, n*32, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"commit up tx"); goto cv_cleanup; }
+        if (cudaMemcpy(d_par, parity, n, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"commit up par"); goto cv_cleanup; }
+        lbtc_commitment_kernel<<<blocks,threads>>>(d_ix,d_tw,d_tx,d_par,n_int,d_res);
+        if (cudaGetLastError()!=cudaSuccess){ ret=set_error(GpuError::Launch,"commit kernel"); goto cv_cleanup; }
+        if (cudaDeviceSynchronize()!=cudaSuccess){ ret=set_error(GpuError::Launch,"commit sync"); goto cv_cleanup; }
+        if (cudaMemcpy(results, d_res, n, cudaMemcpyDeviceToHost)!=cudaSuccess){ ret=set_error(GpuError::Launch,"commit download"); goto cv_cleanup; }
+        clear_error();
+cv_cleanup:
+        if(d_ix)cudaFree(d_ix); if(d_tw)cudaFree(d_tw); if(d_tx)cudaFree(d_tx);
+        if(d_par)cudaFree(d_par); if(d_res)cudaFree(d_res);
+        return ret;
+    }
+
+    /* libbitcoin-bridge: Taproot tagged hash. tag_hash32 = SHA256(tag) (host-precomputed);
+     * out_i = SHA256(tag_hash||tag_hash||msg_i). PUBLIC. msg_len capped at 256. */
+    GpuError tagged_hash(
+        const uint8_t* tag_hash32, const uint8_t* msgs,
+        size_t msg_len, size_t n, uint8_t* out32) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (n == 0) { clear_error(); return GpuError::Ok; }
+        if (!tag_hash32 || !msgs || !out32) return set_error(GpuError::NullArg, "NULL buffer");
+        if (msg_len == 0 || msg_len > 256) return set_error(GpuError::BadInput, "msg_len out of range");
+
+        uint8_t *d_th=nullptr,*d_msgs=nullptr,*d_out=nullptr;
+        GpuError ret = GpuError::Ok;
+        const int n_int   = static_cast<int>(n);
+        const int ml      = static_cast<int>(msg_len);
+        const int threads = 256;
+        const int blocks  = (n_int + threads - 1) / threads;
+
+        if (cudaMalloc(&d_th, 32)!=cudaSuccess){ ret=set_error(GpuError::Memory,"tagged d_th"); goto th_cleanup; }
+        if (cudaMalloc(&d_msgs, n*msg_len)!=cudaSuccess){ ret=set_error(GpuError::Memory,"tagged d_msgs"); goto th_cleanup; }
+        if (cudaMalloc(&d_out, n*32)!=cudaSuccess){ ret=set_error(GpuError::Memory,"tagged d_out"); goto th_cleanup; }
+        if (cudaMemcpy(d_th, tag_hash32, 32, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagged up th"); goto th_cleanup; }
+        if (cudaMemcpy(d_msgs, msgs, n*msg_len, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagged up msgs"); goto th_cleanup; }
+        lbtc_tagged_hash_kernel<<<blocks,threads>>>(d_th,d_msgs,ml,n_int,d_out);
+        if (cudaGetLastError()!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagged kernel"); goto th_cleanup; }
+        if (cudaDeviceSynchronize()!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagged sync"); goto th_cleanup; }
+        if (cudaMemcpy(out32, d_out, n*32, cudaMemcpyDeviceToHost)!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagged download"); goto th_cleanup; }
+        clear_error();
+th_cleanup:
+        if(d_th)cudaFree(d_th); if(d_msgs)cudaFree(d_msgs); if(d_out)cudaFree(d_out);
+        return ret;
+    }
+
+    /* libbitcoin-bridge: batch full compressed-pubkey validation. PUBLIC. */
+    GpuError pubkey_validate(
+        const uint8_t* pubkeys33, size_t n, uint8_t* results) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (n == 0) { clear_error(); return GpuError::Ok; }
+        if (!pubkeys33 || !results) return set_error(GpuError::NullArg, "NULL buffer");
+
+        uint8_t* d_pk = nullptr; uint8_t* d_res = nullptr;
+        GpuError ret = GpuError::Ok;
+        const int n_int = static_cast<int>(n);
+        const int threads = 256;
+        const int blocks  = (n_int + threads - 1) / threads;
+
+        if (cudaMalloc(&d_pk, n*33)!=cudaSuccess){ ret=set_error(GpuError::Memory,"pkvalidate d_pk"); goto pv2_cleanup; }
+        if (cudaMalloc(&d_res, n)!=cudaSuccess){ ret=set_error(GpuError::Memory,"pkvalidate d_res"); goto pv2_cleanup; }
+        if (cudaMemcpy(d_pk, pubkeys33, n*33, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"pkvalidate up"); goto pv2_cleanup; }
+        lbtc_pubkey_validate_kernel<<<blocks,threads>>>(d_pk, n_int, d_res);
+        if (cudaGetLastError()!=cudaSuccess){ ret=set_error(GpuError::Launch,"pkvalidate kernel"); goto pv2_cleanup; }
+        if (cudaDeviceSynchronize()!=cudaSuccess){ ret=set_error(GpuError::Launch,"pkvalidate sync"); goto pv2_cleanup; }
+        if (cudaMemcpy(results, d_res, n, cudaMemcpyDeviceToHost)!=cudaSuccess){ ret=set_error(GpuError::Launch,"pkvalidate download"); goto pv2_cleanup; }
+        clear_error();
+pv2_cleanup:
+        if(d_pk)cudaFree(d_pk); if(d_res)cudaFree(d_res);
+        return ret;
+    }
+
+    /* libbitcoin-bridge: Taproot tagged hash, per-item length (TapLeaf). PUBLIC. */
+    GpuError tagged_hash_var(
+        const uint8_t* tag_hash32, const uint8_t* msgs, const uint32_t* msg_lens,
+        size_t stride, size_t n, uint8_t* out32) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (n == 0) { clear_error(); return GpuError::Ok; }
+        if (!tag_hash32 || !msgs || !msg_lens || !out32) return set_error(GpuError::NullArg, "NULL buffer");
+        if (stride == 0 || stride > 256) return set_error(GpuError::BadInput, "stride out of range");
+
+        uint8_t *d_th=nullptr,*d_msgs=nullptr,*d_out=nullptr; uint32_t* d_lens=nullptr;
+        GpuError ret = GpuError::Ok;
+        const int n_int = static_cast<int>(n);
+        const int st = static_cast<int>(stride);
+        const int threads = 256;
+        const int blocks  = (n_int + threads - 1) / threads;
+
+        if (cudaMalloc(&d_th, 32)!=cudaSuccess){ ret=set_error(GpuError::Memory,"tagvar d_th"); goto tv_cleanup; }
+        if (cudaMalloc(&d_msgs, n*stride)!=cudaSuccess){ ret=set_error(GpuError::Memory,"tagvar d_msgs"); goto tv_cleanup; }
+        if (cudaMalloc(&d_lens, n*sizeof(uint32_t))!=cudaSuccess){ ret=set_error(GpuError::Memory,"tagvar d_lens"); goto tv_cleanup; }
+        if (cudaMalloc(&d_out, n*32)!=cudaSuccess){ ret=set_error(GpuError::Memory,"tagvar d_out"); goto tv_cleanup; }
+        if (cudaMemcpy(d_th, tag_hash32, 32, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagvar up th"); goto tv_cleanup; }
+        if (cudaMemcpy(d_msgs, msgs, n*stride, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagvar up msgs"); goto tv_cleanup; }
+        if (cudaMemcpy(d_lens, msg_lens, n*sizeof(uint32_t), cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagvar up lens"); goto tv_cleanup; }
+        lbtc_tagged_hash_var_kernel<<<blocks,threads>>>(d_th,d_msgs,d_lens,st,n_int,d_out);
+        if (cudaGetLastError()!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagvar kernel"); goto tv_cleanup; }
+        if (cudaDeviceSynchronize()!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagvar sync"); goto tv_cleanup; }
+        if (cudaMemcpy(out32, d_out, n*32, cudaMemcpyDeviceToHost)!=cudaSuccess){ ret=set_error(GpuError::Launch,"tagvar download"); goto tv_cleanup; }
+        clear_error();
+tv_cleanup:
+        if(d_th)cudaFree(d_th); if(d_msgs)cudaFree(d_msgs); if(d_lens)cudaFree(d_lens); if(d_out)cudaFree(d_out);
+        return ret;
+    }
+
+    /* libbitcoin-bridge: batch HASH256 (double SHA-256) of fixed-length inputs. PUBLIC. */
+    GpuError hash256(
+        const uint8_t* inputs, size_t input_len, size_t n, uint8_t* out32) override
+    {
+        if (!ready_) return set_error(GpuError::Device, "context not initialised");
+        if (n == 0) { clear_error(); return GpuError::Ok; }
+        if (!inputs || !out32) return set_error(GpuError::NullArg, "NULL buffer");
+        if (input_len == 0 || input_len > 320) return set_error(GpuError::BadInput, "input_len out of range");
+
+        uint8_t *d_in=nullptr,*d_out=nullptr;
+        GpuError ret = GpuError::Ok;
+        const int n_int = static_cast<int>(n);
+        const int il = static_cast<int>(input_len);
+        const int threads = 256;
+        const int blocks  = (n_int + threads - 1) / threads;
+
+        if (cudaMalloc(&d_in, n*input_len)!=cudaSuccess){ ret=set_error(GpuError::Memory,"hash256 d_in"); goto h2_cleanup; }
+        if (cudaMalloc(&d_out, n*32)!=cudaSuccess){ ret=set_error(GpuError::Memory,"hash256 d_out"); goto h2_cleanup; }
+        if (cudaMemcpy(d_in, inputs, n*input_len, cudaMemcpyHostToDevice)!=cudaSuccess){ ret=set_error(GpuError::Launch,"hash256 up"); goto h2_cleanup; }
+        lbtc_hash256_kernel<<<blocks,threads>>>(d_in, il, n_int, d_out);
+        if (cudaGetLastError()!=cudaSuccess){ ret=set_error(GpuError::Launch,"hash256 kernel"); goto h2_cleanup; }
+        if (cudaDeviceSynchronize()!=cudaSuccess){ ret=set_error(GpuError::Launch,"hash256 sync"); goto h2_cleanup; }
+        if (cudaMemcpy(out32, d_out, n*32, cudaMemcpyDeviceToHost)!=cudaSuccess){ ret=set_error(GpuError::Launch,"hash256 download"); goto h2_cleanup; }
+        clear_error();
+h2_cleanup:
+        if(d_in)cudaFree(d_in); if(d_out)cudaFree(d_out);
+        return ret;
     }
 
     GpuError frost_verify_partial_batch(
@@ -1536,6 +1875,17 @@ dec_cleanup:
 
 #if SECP256K1_GPU_HAS_BIP352
         /* -- 1. Convert scan key to Scalar on CPU -- */
+        {
+            secp256k1::fast::Scalar scan_check;
+            if (!secp256k1::fast::Scalar::parse_bytes_strict_nonzero(
+                    scan_privkey32, scan_check)) {
+                secp256k1::detail::secure_erase(&scan_check, sizeof(scan_check));
+                return set_error(GpuError::BadKey,
+                                 "invalid scan key (zero or >= group order)");
+            }
+            secp256k1::detail::secure_erase(&scan_check, sizeof(scan_check));
+        }
+
         // Rule 10: RAII wrapper zeroes h_scan_k on all exit paths.
         struct ScanKeyGuard {
             cuda::Scalar k{};
@@ -1556,8 +1906,11 @@ dec_cleanup:
             cuda::JacobianPoint* d_pubs_tmp = nullptr;
             bool* d_ok_tmp = nullptr;
             CUDA_TRY(cudaMalloc(&d_pubs33_tmp, n_tweaks * 33));
+            CudaKeyGuard d_pubs33_tmp_guard(d_pubs33_tmp, n_tweaks * 33);
             CUDA_TRY(cudaMalloc(&d_pubs_tmp,   n_tweaks * sizeof(cuda::JacobianPoint)));
+            CudaKeyGuard d_pubs_tmp_guard(d_pubs_tmp, n_tweaks * sizeof(cuda::JacobianPoint));
             CUDA_TRY(cudaMalloc(&d_ok_tmp,     n_tweaks * sizeof(bool)));
+            CudaKeyGuard d_ok_tmp_guard(d_ok_tmp, n_tweaks * sizeof(bool));
             CUDA_TRY(cudaMemcpy(d_pubs33_tmp, tweak_pubkeys33, n_tweaks * 33, cudaMemcpyHostToDevice));
 
             int threads = 128;
@@ -1566,12 +1919,18 @@ dec_cleanup:
                 d_pubs33_tmp, d_pubs_tmp, d_ok_tmp, static_cast<int>(n_tweaks));
             CUDA_TRY(cudaGetLastError());
             CUDA_TRY(cudaDeviceSynchronize());
+            std::vector<uint8_t> h_ok_tmp(n_tweaks);
+            CUDA_TRY(cudaMemcpy(h_ok_tmp.data(), d_ok_tmp,
+                                n_tweaks * sizeof(bool),
+                                cudaMemcpyDeviceToHost));
+            for (size_t i = 0; i < n_tweaks; ++i) {
+                if (!h_ok_tmp[i]) {
+                    return set_error(GpuError::BadKey, "invalid tweak pubkey");
+                }
+            }
             CUDA_TRY(cudaMemcpy(h_tweaks.data(), d_pubs_tmp,
                                 n_tweaks * sizeof(cuda::JacobianPoint),
                                 cudaMemcpyDeviceToHost));
-            cudaFree(d_ok_tmp);
-            cudaFree(d_pubs_tmp);
-            cudaFree(d_pubs33_tmp);
         }
 
         /* -- 3. Decompress spend pubkey on GPU -> AffinePoint -- */
@@ -1581,17 +1940,22 @@ dec_cleanup:
             cuda::JacobianPoint* d_spend_jac = nullptr;
             bool* d_ok2 = nullptr;
             CUDA_TRY(cudaMalloc(&d_spend33,   33));
+            CudaKeyGuard d_spend33_guard(d_spend33, 33);
             CUDA_TRY(cudaMalloc(&d_spend_jac, sizeof(cuda::JacobianPoint)));
+            CudaKeyGuard d_spend_jac_guard(d_spend_jac, sizeof(cuda::JacobianPoint));
             CUDA_TRY(cudaMalloc(&d_ok2,       sizeof(bool)));
+            CudaKeyGuard d_ok2_guard(d_ok2, sizeof(bool));
             CUDA_TRY(cudaMemcpy(d_spend33, spend_pubkey33, 33, cudaMemcpyHostToDevice));
             batch_compressed_to_jac_kernel<<<1, 1>>>(d_spend33, d_spend_jac, d_ok2, 1);
             CUDA_TRY(cudaGetLastError());
             CUDA_TRY(cudaDeviceSynchronize());
             cuda::JacobianPoint h_jac{};
+            bool h_spend_ok = false;
+            CUDA_TRY(cudaMemcpy(&h_spend_ok, d_ok2, sizeof(bool), cudaMemcpyDeviceToHost));
+            if (!h_spend_ok) {
+                return set_error(GpuError::BadKey, "invalid spend pubkey");
+            }
             CUDA_TRY(cudaMemcpy(&h_jac, d_spend_jac, sizeof(cuda::JacobianPoint), cudaMemcpyDeviceToHost));
-            cudaFree(d_ok2);
-            cudaFree(d_spend_jac);
-            cudaFree(d_spend33);
             h_spend_aff.x = h_jac.x;
             h_spend_aff.y = h_jac.y;
         }
@@ -1602,6 +1966,7 @@ dec_cleanup:
         uint64_t*            d_prefixes = nullptr;
 
         CUDA_TRY(cudaMalloc(&d_tweaks,   n_tweaks * sizeof(cuda::JacobianPoint)));
+        CudaKeyGuard d_tweaks_guard(d_tweaks, n_tweaks * sizeof(cuda::JacobianPoint));
         // HIGH-3: scan private key must not remain in device memory after the operation completes.
         // CudaKeyGuard RAII wrapper calls cudaMemset(d_scan_k, 0, ...) + cudaFree on all exit paths.
         cuda::Scalar* d_scan_k = nullptr;
@@ -1609,7 +1974,9 @@ dec_cleanup:
         CudaKeyGuard d_scan_k_guard(d_scan_k, sizeof(cuda::Scalar));
 
         CUDA_TRY(cudaMalloc(&d_spend,    sizeof(cuda::AffinePoint)));
+        CudaKeyGuard d_spend_guard(d_spend, sizeof(cuda::AffinePoint));
         CUDA_TRY(cudaMalloc(&d_prefixes, n_tweaks * sizeof(uint64_t)));
+        CudaKeyGuard d_prefixes_guard(d_prefixes, n_tweaks * sizeof(uint64_t));
 
         CUDA_TRY(cudaMemcpy(d_tweaks, h_tweaks.data(),
                             n_tweaks * sizeof(cuda::JacobianPoint), cudaMemcpyHostToDevice));
@@ -1636,9 +2003,6 @@ dec_cleanup:
         // HIGH-3: zero host copy of scan private key (also done by ScanKeyGuard dtor).
         secp256k1::detail::secure_erase(&h_scan_k, sizeof(h_scan_k));
 
-        cudaFree(d_prefixes);
-        cudaFree(d_spend);
-        cudaFree(d_tweaks);
         // d_scan_k freed + zeroed by CudaKeyGuard dtor; h_scan_k zeroed by ScanKeyGuard dtor.
         clear_error();
         return GpuError::Ok;

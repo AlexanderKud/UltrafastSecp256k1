@@ -1,8 +1,93 @@
 # Secret Lifecycle Review
 
-**Last updated**: 2026-06-04 | **Version**: 4.1.1
+**Last updated**: 2026-06-08 | **Version**: 4.1.1
 
-### 2026-06-04 — P2-CT-001: bip32_derive_path erases intermediate child keys
+### 2026-06-08 - MuSig2 infinity aggregate-nonce conformance — secret handling unchanged
+
+`musig2_start_sign_session` now accepts an infinity aggregate-nonce half and substitutes
+`R = G` when the effective nonce is infinity (BIP-327 conformance). All affected values are
+PUBLIC: the aggregate nonce, the binding factor `b`, the session nonce `R`, and the
+challenge `e` are computed from public inputs only. No secret material enters this path and
+no `secure_erase`/lifecycle behavior changes — `musig2_partial_sign`'s signing-key and
+nonce erasure are untouched.
+
+### 2026-06-08 - MuSig2 binding-factor tag fix — secret handling unchanged
+
+`musig2_start_sign_session` now derives the nonce binding factor `b` with the BIP-327
+tag `"MuSig/noncecoef"` (was `"MuSig/nonceblinding"`). `b` is a PUBLIC value computed from
+the public aggregate nonce, the public aggregate pubkey `Q_x`, and the public message;
+no secret material enters the binding hash. The change is a tagged-hash tag string only —
+the signing-key and nonce `secure_erase` paths in `musig2_partial_sign` are untouched.
+No lifecycle impact.
+
+### 2026-06-08 - MuSig2 BIP-327 tweak fix (gacc/tacc) — secret handling unchanged
+
+The MuSig2 tweaked-signing fix added BIP-327 `gacc`/`tacc` accumulators to the keyagg
+cache and folds them into signing. Secret lifecycle is **unaffected**: `gacc`/`tacc` are
+PUBLIC (derived from public pubkeys + public tweaks). In `musig2_partial_sign` the signing
+key `d` is still `secure_erase`d after use — the new `d = ct::scalar_mul(d, gacc)` multiply
+by a public ±1 occurs before the existing erase of `d`, `k`, and the caller's secret nonce.
+No secret is added to the keyagg cache or the session; `tweak_s = e·g·tacc` is public.
+
+### 2026-06-06 - CPU ABI/shim fail-closed refresh and BIP32/BIP39 cleanup
+
+`src/cpu/src/bip32.cpp` now erases the temporary strict-parsed private
+scalar in `ExtendedKey::public_key()` on both invalid-key and success paths.
+`bip32_master_key()` erases `I`, `IL`, `IR`, the parsed `master_key`, and the
+temporary serialized `master_bytes` after copying the final master key and
+chain code into the returned `ExtendedKey`; the returned key remains caller
+owned and is not scrubbed. On strict-parse failure the same HMAC output buffers
+and scalar are erased before returning `{ExtendedKey{}, false}`.
+
+`src/cpu/src/bip39.cpp` `pbkdf2_hmac_sha512()` now erases each per-block
+`salt_block` after the block output is copied. The existing `result` and `u`
+erasure remains unchanged, so password-derived intermediate material no longer
+survives across PBKDF2 block iterations.
+
+The CPU ABI hardening in `src/cpu/src/impl/ufsecp_musig2.cpp`,
+`src/cpu/src/impl/ufsecp_taproot.cpp`, `src/cpu/src/impl/ufsecp_coins.cpp`,
+`src/cpu/src/eth_signing.cpp`, and the libsecp256k1 shim refresh is
+fail-closed: result buffers are zero-initialized before secret-bearing work or
+before parser dispatch, and internal zero/invalid signing results now return a
+non-OK error instead of serializing a zero signature/key as success. Unsupported
+custom nonce callbacks in the shim are rejected before signing dispatch and
+before output clearing, matching upstream-style pre-dispatch argument rejection.
+FROST signing continues to consume and erase caller nonce material on every
+non-NULL exit path; FROST aggregate rejects zero partial scalars and all-zero
+aggregate results before exposing a signature.
+
+Validation: `unified_audit_runner --section protocol_security`,
+`--section standard_vectors`, `--section memory_safety`, `--section
+ct_analysis`, `--section fuzzing`, `--section exploit_poc`, shim CTest targets,
+and `ci/check_exploit_wiring.py`.
+
+### 2026-06-06 - GPU ABI fail-closed outputs and secret-buffer erasure parity
+
+`src/cpu/src/ufsecp_gpu_impl.cpp` now clears result-bearing GPU C ABI output
+buffers before backend dispatch and clears them again after non-OK backend
+returns. This applies to generator multiplication, batch verification, ECDH,
+Hash160, MSM, FROST partial verification, ecrecover, ZK verification,
+Bulletproof verification, BIP-324 AEAD, SNARK witness helpers, and BIP-352
+scan. The in-place collect APIs are intentionally excluded because their
+`key_buffer` is caller-owned marker state used for CPU fallback.
+
+`ufsecp_bip352_prepare_scan_plan()` and `ufsecp_gpu_bip352_scan_batch()` now
+strict-parse the scan private key with `parse_bytes_strict_nonzero`; zero and
+order-or-larger keys fail with `UFSECP_ERR_BAD_KEY` / `GpuError::BadKey` and
+leave the plan or prefix outputs all-zero. CUDA, OpenCL, and Metal BIP-352 scan
+paths now reject invalid scan keys consistently. CUDA validates decompressed
+spend/tweak points before kernel use and guards device buffers so early returns
+zero key-derived device memory. OpenCL wraps the host `Bip352ScanPlan` and
+device `d_plan` in erasing guards, covering success and every error path. Metal
+wraps BIP-352 scan scalar buffers, ECDH scratch scalars, and BIP-324 AEAD shared
+key buffers with erase-on-exit guards.
+
+Validation: `audit/test_gpu_bip352_scan.cpp`,
+`audit/test_gpu_host_api_negative.cpp`,
+`audit/test_exploit_gpu_bip352_key_erase.cpp`, `unified_audit_runner --section
+memory_safety`, and `unified_audit_runner --section exploit_poc`.
+
+### 2026-06-04 - P2-CT-001: bip32_derive_path erases intermediate child keys
 
 `bip32_derive_path` (`src/cpu/src/bip32.cpp`) walks the path with `current = child`
 each iteration but did not scrub the redundant `child` copy of the intermediate
