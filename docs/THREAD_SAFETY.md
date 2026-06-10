@@ -1,6 +1,6 @@
 # Thread Safety
 
-**UltrafastSecp256k1 v4.2.0**
+**UltrafastSecp256k1 v4.2.1**
 
 ---
 

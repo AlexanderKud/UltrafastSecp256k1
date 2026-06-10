@@ -352,6 +352,19 @@ bool ecdsa_batch_verify(const ECDSABatchEntry* entries, std::size_t n) {
         if (!entries[i].signature.is_low_s()) {
             return false;
         }
+        // CA-001 (clang/arch UB fix): reject an invalid (off-curve / infinity)
+        // public key explicitly. The shim maps an off-curve pubkey to
+        // Point::infinity() (pubkey_data_to_point), and the single ecdsa_verify
+        // path — used by the small-batch fallback below — rejects it. The
+        // large-batch MSM path did not: it fed the infinity point into
+        // dual_scalar_mul_gen_point + the FE52 Z^2 x-coordinate check, whose
+        // behavior on an infinity operand is compiler-dependent (rejected under
+        // gcc, but accepted under clang on x86-64 and arm64). Rejecting up-front
+        // makes off-curve/infinity rejection identical to single verify on every
+        // compiler and architecture.
+        if (entries[i].public_key.is_infinity()) {
+            return false;
+        }
     }
 
     // Small-n fast path: individual verifies cheaper than batch inversion overhead
