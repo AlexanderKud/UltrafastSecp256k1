@@ -245,22 +245,21 @@ static void test_ecdsa_adaptor_degenerate_r_erases() {
           "adaptor.cpp: ecdsa_adaptor_sign retains r.is_zero() guard (precondition for RT-015 fix)");
     if (guard == std::string::npos) return;
 
-    size_t return_pos = body.find("return ECDSAAdaptorSig", guard);
+    size_t return_pos = body.find("return kZero", guard);
     CHECK(return_pos != std::string::npos,
-          "adaptor.cpp: ecdsa_adaptor_sign degenerate path returns ECDSAAdaptorSig sentinel");
+          "adaptor.cpp: ecdsa_adaptor_sign degenerate path returns the kZero sentinel");
     if (return_pos == std::string::npos) return;
 
     std::string guard_block = body.substr(guard, return_pos - guard);
 
-    // The guard block must erase k, binding, and R_x_bytes before returning.
-    bool erases_k       = (guard_block.find("secure_erase(&k") != std::string::npos);
-    bool erases_binding = (guard_block.find("secure_erase(&binding") != std::string::npos);
-    bool erases_R_x     = (guard_block.find("secure_erase(R_x_bytes") != std::string::npos);
+    // GHSA-c7q2-gv3g-rgxm removed the (broken) `binding` scalar entirely; the
+    // degenerate-r block now erases the secret nonce k and the R_x_bytes scratch
+    // before returning the pre-zeroed sentinel.
+    bool erases_k   = (guard_block.find("secure_erase(&k") != std::string::npos);
+    bool erases_R_x = (guard_block.find("secure_erase(R_x_bytes") != std::string::npos);
 
     CHECK(erases_k,
           "adaptor.cpp: ecdsa_adaptor_sign degenerate-r block erases &k (RT-015)");
-    CHECK(erases_binding,
-          "adaptor.cpp: ecdsa_adaptor_sign degenerate-r block erases &binding (RT-015)");
     CHECK(erases_R_x,
           "adaptor.cpp: ecdsa_adaptor_sign degenerate-r block erases R_x_bytes (RT-015)");
 }

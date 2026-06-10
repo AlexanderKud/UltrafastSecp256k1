@@ -71,11 +71,22 @@ schnorr_adaptor_extract(const SchnorrAdaptorSig& pre_sig,
 
 // -- ECDSA Adaptor Signatures -------------------------------------------------
 
-// Pre-signature for ECDSA adaptor
+// Pre-signature for ECDSA adaptor (GHSA-c7q2-gv3g-rgxm fix — DLEQ-bound).
+//
+// Soundness requires that `r` (the x-coordinate of k*T) be cryptographically bound
+// to the adaptor point T. The previous {R_hat,s_hat,r} layout left r unbound (a
+// malicious signer could substitute an arbitrary r' and adjust s_hat), so
+// adaptor_verify==OK did not imply the pre-signature was adaptable. The fix carries
+// the full point R = k*T plus a Chaum-Pedersen DLEQ proof that R_hat = k*G and
+// R = k*T share the same k. Verify then checks: the DLEQ, r == R.x, and the ECDSA
+// relation s_hat*R_hat == z*G + r*P. Together these bind r to T.
 struct ECDSAAdaptorSig {
-    fast::Point R_hat;    // R^ = k*G
-    fast::Scalar s_hat;   // Encrypted signature scalar
-    fast::Scalar r;       // r = x-coord of (R^ + T)
+    fast::Point R_hat;    // R^ = k*G   (nonce point in the standard generator)
+    fast::Point R;        // R  = k*T   (nonce point in the adaptor base T); r = R.x
+    fast::Scalar s_hat;   // encrypted signature scalar = k^-1 * (z + r*x)
+    fast::Scalar r;       // r = R.x mod n   (bound to T via the DLEQ proof)
+    fast::Scalar dleq_e;  // Chaum-Pedersen DLEQ challenge   (log_G R_hat == log_T R)
+    fast::Scalar dleq_s;  // Chaum-Pedersen DLEQ response = rho + e*k mod n
 };
 
 // Create ECDSA adaptor pre-signature

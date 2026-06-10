@@ -301,9 +301,11 @@ static void test_sec008_adaptor_sentinel() {
         bool old_partial =
             (src.find("ECDSAAdaptorSig{R_hat, Scalar::zero(), r}") != std::string::npos);
         CHECK(!old_partial, "SEC-008: partial-struct {R_hat,0,r} on r.is_zero() is gone");
-        bool new_sentinel =
-            (src.find("Point::infinity(), Scalar::zero(), Scalar::zero()") != std::string::npos);
-        CHECK(new_sentinel, "SEC-008: fully-zero sentinel {infinity,0,0} on r.is_zero()");
+        // GHSA-c7q2-gv3g-rgxm: degenerate paths now return the pre-zeroed `kZero`
+        // sentinel (all-infinity points + all-zero scalars) instead of any partial struct.
+        bool new_sentinel = (src.find("ECDSAAdaptorSig kZero") != std::string::npos)
+                         && (src.find("return kZero") != std::string::npos);
+        CHECK(new_sentinel, "SEC-008: degenerate r returns the fully-zero kZero sentinel");
     } else {
         std::printf("    [SKIP] adaptor.cpp not found\n");
     }

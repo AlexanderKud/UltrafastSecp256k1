@@ -75,44 +75,71 @@ static Scalar adaptor_nonce(const Scalar& privkey,
     return k;
 }
 
-static Scalar ecdsa_adaptor_binding(const Point& adaptor_point) {
-    // BIP-340 tagged hash: SHA256(SHA256(tag) || SHA256(tag) || data).
-    // Provides cross-protocol domain separation. Changed from "SHA256(tag || data)"
-    // in v2 — this is a wire-format change for ECDSA adaptor signatures.
-    // Protocol version: ecdsa_adaptor_bind_v2.
-    constexpr char tag[] = "ecdsa_adaptor_bind_v2";
+// -- ECDSA adaptor DLEQ (GHSA-c7q2-gv3g-rgxm) ---------------------------------
+// The pre-signature carries a Chaum-Pedersen proof that R_hat = k*G and R = k*T
+// share the same discrete log k (i.e. log_G(R_hat) == log_T(R)). This binds
+// r = R.x to the adaptor point T, which the old "binding scalar" did NOT do.
+
+// DLEQ Fiat-Shamir challenge e = H(tag, R_hat || R || T || A || B) reduced mod n.
+// All inputs are PUBLIC (this runs in both sign and the variable-time verify path),
+// so a non-CT reduction is correct. Binding the proof to the full statement
+// (R_hat, R, T) and both commitments (A, B) makes it non-malleable.
+static Scalar ecdsa_adaptor_dleq_challenge(const Point& R_hat, const Point& R,
+                                           const Point& T,
+                                           const Point& A, const Point& B) {
+    constexpr char tag[] = "ufsecp/ecdsa_adaptor_dleq_v1";
     auto tag_hash = SHA256::hash(reinterpret_cast<const std::uint8_t*>(tag),
                                  sizeof(tag) - 1);
-    auto adaptor_bytes = adaptor_point.to_compressed();
-
     SHA256 h;
     h.update(tag_hash.data(), 32);
     h.update(tag_hash.data(), 32);
-    h.update(adaptor_bytes.data(), adaptor_bytes.size());
+    const Point* pts[] = {&R_hat, &R, &T, &A, &B};
+    for (const Point* p : pts) {
+        auto c = p->to_compressed();
+        h.update(c.data(), c.size());
+    }
     auto hash = h.finalize();
+    // The challenge may be any value in [0, n); reduce mod n. (e == 0 has prob
+    // ~2^-256 and is still a valid Fiat-Shamir challenge.)
+    return Scalar::from_bytes(hash.data());
+}
 
-    // P2-CT-RT-004 (binding): same fixed 2-iteration CT select pattern applied
-    // here for consistency.  Note: adaptor_point is PUBLIC data (it is sent
-    // over the wire), so this function is NOT on a secret-bearing path.
-    // The CT fix is applied anyway to keep the nonce-generation pattern uniform
-    // and avoid future confusion if the data classification changes.
-    Scalar bcand1{};
-    bool const bok1 = Scalar::parse_bytes_strict_nonzero(hash.data(), bcand1);
-
-    hash[31] ^= std::uint8_t{0x01u};  // deterministic advance, unconditional
-
-    Scalar bcand2{};
-    bool const bok2 = Scalar::parse_bytes_strict_nonzero(hash.data(), bcand2);
-    (void)bok2;  // bcand2 is the fallback; bok2 is implicit via ct::scalar_select
-
-    std::uint64_t const bmask1 = static_cast<std::uint64_t>(
-        -static_cast<std::int64_t>(static_cast<int>(bok1)));
-    Scalar binding = ct::scalar_select(bcand1, bcand2, bmask1);
-
+// Deterministic DLEQ proof nonce rho (SECRET). Must be non-zero, unpredictable and
+// unique per pre-signature — a repeated or leaked rho across two statements would
+// expose k. Derived like adaptor_nonce with a DISTINCT domain and the secret nonce
+// k mixed in (so rho != k and is unique even for a fixed (x,msg,T)).
+static Scalar ecdsa_adaptor_dleq_nonce(const Scalar& privkey, const Scalar& k,
+                                       const Point& R_hat, const Point& R,
+                                       const Point& adaptor_point,
+                                       const std::uint8_t* msg, std::size_t msg_len) {
+    constexpr char domain[] = "ufsecp/ecdsa_adaptor_dleq_nonce_v1";
+    auto tag_hash = SHA256::hash(domain, sizeof(domain) - 1);
+    SHA256 h;
+    h.update(tag_hash.data(), 32);
+    h.update(tag_hash.data(), 32);
+    auto sk_bytes = privkey.to_bytes();
+    h.update(sk_bytes.data(), 32);
+    auto k_bytes = k.to_bytes();
+    h.update(k_bytes.data(), 32);
+    const Point* pts[] = {&R_hat, &R, &adaptor_point};
+    for (const Point* p : pts) { auto c = p->to_compressed(); h.update(c.data(), c.size()); }
+    h.update(msg, msg_len);
+    auto hash = h.finalize();
+    // Fixed 2-iteration CT-select strict-nonzero (same pattern as adaptor_nonce).
+    Scalar c1{};
+    bool const ok1 = Scalar::parse_bytes_strict_nonzero(hash.data(), c1);
+    hash[31] ^= std::uint8_t{0x01u};
+    Scalar c2{};
+    (void)Scalar::parse_bytes_strict_nonzero(hash.data(), c2);
+    std::uint64_t const mask1 = static_cast<std::uint64_t>(
+        -static_cast<std::int64_t>(static_cast<int>(ok1)));
+    Scalar rho = ct::scalar_select(c1, c2, mask1);
+    detail::secure_erase(sk_bytes.data(), sk_bytes.size());
+    detail::secure_erase(k_bytes.data(), k_bytes.size());
     detail::secure_erase(hash.data(), hash.size());
-    detail::secure_erase(&bcand1, sizeof(bcand1));
-    detail::secure_erase(&bcand2, sizeof(bcand2));
-    return binding;
+    detail::secure_erase(&c1, sizeof(c1));
+    detail::secure_erase(&c2, sizeof(c2));
+    return rho;
 }
 
 // -- Schnorr Adaptor Signatures -----------------------------------------------
@@ -291,83 +318,97 @@ ECDSAAdaptorSig
 ecdsa_adaptor_sign(const Scalar& private_key,
                    const std::array<std::uint8_t, 32>& msg_hash,
                    const Point& adaptor_point) {
-    // Generate nonce — must be non-const so secure_erase can zero them after use
+    static const ECDSAAdaptorSig kZero{Point::infinity(), Point::infinity(),
+                                       Scalar::zero(), Scalar::zero(),
+                                       Scalar::zero(), Scalar::zero()};
+    // Secret nonce k — non-const so secure_erase can zero it after use.
     Scalar k = adaptor_nonce(private_key, msg_hash.data(), 32, adaptor_point, nullptr, 0);
 
-    Scalar binding = ecdsa_adaptor_binding(adaptor_point);
-    // v9 RT-002 / TASK-002: k is the secret nonce — use DPA-blinded variant.
-    // binding is derived from the PUBLIC adaptor_point only and carries no
-    // secret data, so the unblinded primitive is correct (and cheaper) for it.
-    Point const base_nonce = ct::generator_mul_blinded(k);
-    Point const binding_point = ct::generator_mul(binding);  // PUBLIC scalar — unblinded OK
-
-    // Bind the pre-signature to the advertised adaptor point without
-    // changing the scalar k used for adaptation/extraction.
-    Point const R_hat = base_nonce.add(binding_point);
-
-    // R = k * T = (k*t) * G.  CT: k is secret nonce.
+    // R_hat = k*G (nonce point in G), R = k*T (nonce point in the adaptor base T).
+    // GHSA-c7q2-gv3g-rgxm: R_hat is now the bare k*G (no "binding" scalar — that
+    // mechanism cancelled in verify and bound nothing); r is bound to T below by a
+    // DLEQ proof that R_hat and R share the same k.
+    // CT: k is the secret nonce — DPA-blinded generator mul; variable-base mul on T.
+    Point const R_hat = ct::generator_mul_blinded(k);
     Point const R = ct::scalar_mul(adaptor_point, k);
 
     // r = R.x mod n
     auto R_x_bytes = R.x().to_bytes();
     Scalar const r = Scalar::from_bytes(R_x_bytes);
     if (r.is_zero()) {
-        // SEC-008: degenerate case — return fully-zero sentinel.
-        // Previously returned {R_hat, Scalar::zero(), r} which left a non-zero
-        // R_hat in the output struct, creating a partially-populated degenerate
-        // pre-signature that could mislead callers checking only r==0.
-        // v9 RT-015 / TASK-022: the success-path erase block (below, lines
-        // 329-331) is unreachable on this early return; mirror it here so
-        // k, binding, and R_x_bytes do not linger in the stack frame.
+        // SEC-008: degenerate — fully-zero sentinel (mirror the success-path erase).
         detail::secure_erase(&k, sizeof(k));
-        detail::secure_erase(&binding, sizeof(binding));
         detail::secure_erase(R_x_bytes.data(), R_x_bytes.size());
-        return ECDSAAdaptorSig{Point::infinity(), Scalar::zero(), Scalar::zero()};
+        return kZero;
     }
 
-    // s = k^-^1 * (z + r*x)  where z = msg_hash
-    // CT: do NOT branch on k.is_zero() here — fast::is_zero() has a secret-dependent
-    // early-exit. adaptor_nonce() guarantees k != 0 via strict-nonzero parsing; the
-    // r.is_zero() guard above also catches the k=0 degenerate path (R=infinity→r=0).
+    // s_hat = k^-1 * (z + r*x)  where z = msg_hash.  CT: k, private_key are secret.
+    // Do NOT branch on k.is_zero(): adaptor_nonce() returns a strict-nonzero k, and the
+    // r.is_zero() guard above already catches the k=0 degenerate path (R=∞ → r=0); the
+    // CT ct::scalar_inverse is itself is_zero-safe (SafeGCD, no data-dependent branch).
     Scalar const z = Scalar::from_bytes(msg_hash);
-    Scalar k_inv = ct::scalar_inverse(k);  // CT: k is secret; non-const for secure_erase
-    // CT: k_inv and private_key are secrets — use branchless CT arithmetic
+    Scalar k_inv = ct::scalar_inverse(k);  // CT: k secret; non-const for secure_erase
     Scalar s_hat = ct::scalar_mul(k_inv,
                        ct::scalar_add(z, ct::scalar_mul(r, private_key)));
 
+    // Chaum-Pedersen DLEQ proof that log_G(R_hat) == log_T(R) == k:
+    //   A = rho*G, B = rho*T ; e = H(R_hat, R, T, A, B) ; s_dleq = rho + e*k (mod n).
+    // CT: rho, k are secret nonces (A, B, s_dleq become public proof material). e is public.
+    Scalar rho = ecdsa_adaptor_dleq_nonce(private_key, k, R_hat, R, adaptor_point,
+                                          msg_hash.data(), 32);
+    Point const A = ct::generator_mul_blinded(rho);
+    Point const B = ct::scalar_mul(adaptor_point, rho);
+    Scalar const dleq_e = ecdsa_adaptor_dleq_challenge(R_hat, R, adaptor_point, A, B);
+    Scalar dleq_s = ct::scalar_add(rho, ct::scalar_mul(dleq_e, k));
+
     detail::secure_erase(&k, sizeof(k));
     detail::secure_erase(&k_inv, sizeof(k_inv));
-    detail::secure_erase(&binding, sizeof(binding));
+    detail::secure_erase(&rho, sizeof(rho));
     detail::secure_erase(R_x_bytes.data(), R_x_bytes.size());
 
     if (s_hat.is_zero_ct()) {
         detail::secure_erase(&s_hat, sizeof(s_hat));
-        return ECDSAAdaptorSig{Point::infinity(), Scalar::zero(), Scalar::zero()};
+        detail::secure_erase(&dleq_s, sizeof(dleq_s));
+        return kZero;
     }
-    return ECDSAAdaptorSig{R_hat, s_hat, r};
+    return ECDSAAdaptorSig{R_hat, R, s_hat, r, dleq_e, dleq_s};
 }
 
 bool ecdsa_adaptor_verify(const ECDSAAdaptorSig& pre_sig,
                           const Point& public_key,
                           const std::array<std::uint8_t, 32>& msg_hash,
                           const Point& adaptor_point) {
+    // All inputs are PUBLIC, so this whole path is correctly variable-time
+    // (CLAUDE.md CT-VERIFY boundary). The scalar muls below operate on public
+    // pre-signature / proof / message scalars, never on a secret.
     if (pre_sig.r.is_zero() || pre_sig.s_hat.is_zero()) return false;
+    if (pre_sig.R_hat.is_infinity() || pre_sig.R.is_infinity()) return false;
+    if (adaptor_point.is_infinity() || public_key.is_infinity()) return false;
 
-    // Verify: s*R^ == z*G + r*P (rearranged ECDSA equation)
+    // (1) r must equal R.x mod n — ties the published r to the proven point R.
+    auto Rx = pre_sig.R.x().to_bytes();
+    Scalar const r_from_R = Scalar::from_bytes(Rx);
+    if (!(r_from_R == pre_sig.r)) return false;
+
+    // (2) DLEQ: recompute the commitments and the challenge.
+    //   A' = s_dleq*G - e*R_hat ;  B' = s_dleq*T - e*R ;  e' = H(R_hat, R, T, A', B').
+    //   e' == e proves R_hat = k*G and R = k*T share the same k, so r = R.x is bound to T.
+    Point const A = Point::generator().scalar_mul(pre_sig.dleq_s)            // nosemgrep: secret-scalar-variable-time-mul
+                        .add(pre_sig.R_hat.scalar_mul(pre_sig.dleq_e).negate());  // nosemgrep: secret-scalar-variable-time-mul
+    Point const B = adaptor_point.scalar_mul(pre_sig.dleq_s)                 // nosemgrep: secret-scalar-variable-time-mul
+                        .add(pre_sig.R.scalar_mul(pre_sig.dleq_e).negate());      // nosemgrep: secret-scalar-variable-time-mul
+    if (A.is_infinity() || B.is_infinity()) return false;
+    Scalar const e_check = ecdsa_adaptor_dleq_challenge(pre_sig.R_hat, pre_sig.R,
+                                                        adaptor_point, A, B);
+    if (!(e_check == pre_sig.dleq_e)) return false;
+
+    // (3) ECDSA relation: s_hat*R_hat == z*G + r*P  (= (z + r*x)*G when s_hat = k^-1(z+rx)).
     Scalar const z = Scalar::from_bytes(msg_hash);
-    Scalar const s_inv = pre_sig.s_hat.inverse();
-
-    Point const u1G = Point::generator().scalar_mul(z * s_inv);
-    Point const u2P = public_key.scalar_mul(pre_sig.r * s_inv);  // nosemgrep: secret-scalar-variable-time-mul
-    Point const R_check = u1G.add(u2P);
-
-    Scalar const binding = ecdsa_adaptor_binding(adaptor_point);
-    Point const binding_point = ct::generator_mul(binding);
-    Point const base_nonce = pre_sig.R_hat.add(binding_point.negate());
-
-    auto r_hat_c = base_nonce.to_compressed();
-    auto r_chk_c = R_check.to_compressed();
-    return r_hat_c == r_chk_c;
+    Point const lhs = pre_sig.R_hat.scalar_mul(pre_sig.s_hat);               // nosemgrep: secret-scalar-variable-time-mul
+    Point const rhs = Point::generator().scalar_mul(z)                       // nosemgrep: secret-scalar-variable-time-mul
+                          .add(public_key.scalar_mul(pre_sig.r));            // nosemgrep: secret-scalar-variable-time-mul
+    if (lhs.is_infinity() || rhs.is_infinity()) return false;
+    return lhs.to_compressed() == rhs.to_compressed();
 }
 
 ECDSASignature

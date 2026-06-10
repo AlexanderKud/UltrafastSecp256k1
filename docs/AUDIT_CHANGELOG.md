@@ -1,5 +1,29 @@
 # Audit Changelog
 
+## 2026-06-10 — GHSA-c7q2-gv3g-rgxm: ECDSA adaptor DLEQ binding (signature-soundness fix)
+
+- **Vulnerability (medium, PoC-confirmed):** `ecdsa_adaptor_verify` accepted forged
+  pre-signatures whose `r` (= x-coord of k·T) was NOT cryptographically bound to the
+  adaptor point T. The old "binding" scalar was added to R_hat in sign and subtracted
+  in verify — it cancelled and bound nothing; a reserved DLEQ slot was zero-padded,
+  never produced or checked. A malicious signer could substitute an arbitrary r' and
+  adjust s_hat = s_hat·(z+r'x)·(z+rx)⁻¹, passing verify with a NON-adaptable pre-sig —
+  breaking adaptor soundness (verify==OK no longer implied adaptable).
+- **Fix:** replaced the binding scalar with a Chaum-Pedersen DLEQ proof that
+  R_hat = k·G and R = k·T share the same k. The pre-signature now carries R (= k·T)
+  and (dleq_e, dleq_s); verify checks the DLEQ, r == R.x, and the ECDSA relation
+  s_hat·R_hat == z·G + r·P. Files: src/cpu/src/adaptor.cpp (struct, sign, verify, two
+  DLEQ helpers; removed ecdsa_adaptor_binding), src/cpu/src/impl/ufsecp_zk.cpp (162-byte
+  wire: R_hat∥R∥s_hat∥dleq_e∥dleq_s; r derived as R.x), include/ufsecp/ufsecp.h
+  (UFSECP_ECDSA_ADAPTOR_SIG_LEN 130→162 — **breaking** wire/ABI change for ECDSA
+  adaptor sigs only; isolated — not used by libbitcoin or the Ethereum path).
+- **CT:** sign keeps k, x, and the new DLEQ nonce ρ on constant-time primitives
+  (generator_mul_blinded / ct::scalar_mul / ct::scalar_add); verify is public→VT.
+- **Tests:** test_regression_adaptor_binding_domain repurposed — ADB-5 honest full
+  roundtrip (sign→verify→adapt→ecdsa_verify→extract), ADB-6 forgery rejection
+  (substituted r' / tampered DLEQ / swapped R). 16/16; the 9 adaptor-touching audit
+  modules all pass (incl. 793-check adversarial_protocol).
+
 ## 2026-06-10 — BENCH-P5-01: bench_unified JSON emits an explicit unit
 
 - The canonical `bench_unified --json` artifact stored ConnectBlock rows (named

@@ -984,7 +984,12 @@ UFSECP_API ufsecp_error_t ufsecp_frost_aggregate(
  * =========================================================================== */
 
 #define UFSECP_SCHNORR_ADAPTOR_SIG_LEN 97  /**< 33 R_hat + 32 s_hat + 32 proof */
-#define UFSECP_ECDSA_ADAPTOR_SIG_LEN   130 /**< 33 R_hat + 32 s_hat + 33 r_proof + 32 dleq_e */
+/* GHSA-c7q2-gv3g-rgxm: DLEQ-bound layout. 33 R_hat(=k*G) + 33 R(=k*T) + 32 s_hat +
+ * 32 dleq_e + 32 dleq_s = 162. r is derived as R.x mod n (not transmitted). The
+ * DLEQ proof (e,s) binds r to the adaptor point; the previous 130-byte zero-padded
+ * "proof" was never produced/verified, so adaptor_verify==OK did not imply
+ * adaptability. This is a breaking wire-format change for ECDSA adaptor signatures. */
+#define UFSECP_ECDSA_ADAPTOR_SIG_LEN   162 /**< 33 R_hat + 33 R + 32 s_hat + 32 dleq_e + 32 dleq_s */
 
 /** BIP-340 Schnorr adaptor pre-sign. adaptor_point: 33-byte compressed. */
 UFSECP_API ufsecp_error_t ufsecp_schnorr_adaptor_sign(
