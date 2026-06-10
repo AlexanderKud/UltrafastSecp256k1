@@ -1,5 +1,17 @@
 # Audit Changelog
 
+## 2026-06-10 — BENCH-P5-01: bench_unified JSON emits an explicit unit
+
+- The canonical `bench_unified --json` artifact stored ConnectBlock rows (named
+  `*_ms`) in **milliseconds** under a field named `"ns"`, so a consumer keying on
+  `"ns"` would mis-scale them by 1e6. `write_json` now emits an additive `"unit"`
+  field (`"ms"` for `*_ms`-suffixed rows, else `"ns"`) — value unchanged, existing
+  readers unaffected, artifact now self-describing. Compiles; `check_bench_doc_consistency`
+  still passes (it reads the committed artifacts, which are unchanged).
+- BENCH-P5-02 (emit min/max/stddev dispersion) is a deferred follow-up — it needs a
+  `Harness::run`/`Stats` API change (benchmark_harness.hpp); tracked in
+  workingdocs/REVIEW_2026-06-10_DEFERRED_GPU_AND_BENCH.md.
+
 ## 2026-06-10 — CT-P2-01/CT-P2-02: branchless GPU OpenCL+Metal scalar_mul_mod_n + CT gate
 
 - **CT-P2-01 (P2)**: the OpenCL (`src/opencl/kernels/secp256k1_extended.cl`) and Metal
