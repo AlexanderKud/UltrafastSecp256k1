@@ -1,6 +1,14 @@
 # Bug Bounty Program
 
-**UltrafastSecp256k1** -- Vulnerability Disclosure & Rewards
+**UltrafastSecp256k1** -- Vulnerability Disclosure & Recognition
+
+> ⚠️ **Funding status: this program is NOT currently funded.**
+> There is no monetary bounty budget at this time. Valid reports receive **public
+> credit and a CVE** (see §2). The reward figures in §2 are **illustrative and
+> aspirational** — they would apply only *if and when* sponsorship is secured, entirely
+> at maintainer discretion, and are **not a commitment to pay**. This matches
+> `SECURITY.md` ("Funded bug bounty program — seeking sponsors"). Responsible reports
+> are genuinely appreciated regardless; we will credit you in the advisory and CVE.
 
 ---
 
@@ -34,9 +42,14 @@
 
 ---
 
-## 2. Reward Tiers
+## 2. Severity Tiers & Aspirational Reward Ranges
 
-| Severity | Description | Reward Range |
+> The dollar ranges below are **illustrative and contingent on the program being
+> funded** (see the funding-status notice at the top). They are **not** a current
+> payment commitment. Until the program is funded, valid reports receive public
+> credit + CVE.
+
+| Severity | Description | Reward Range *(if/when funded)* |
 |----------|-------------|-------------|
 | **Critical** | Private key recovery, signature forgery, nonce leak, CT bypass enabling key extraction | $2,000 - $10,000 |
 | **High** | Incorrect arithmetic producing wrong but non-exploitable results, FROST/MuSig2 protocol break, BIP-32 derivation error | $500 - $2,000 |
@@ -53,13 +66,14 @@
 | Affects CT layer with demonstrated timing measurement | 2x |
 | Found via formal methods / proof | 1.5x |
 
-### 2.2 Reward Conditions
+### 2.2 Recognition & Reward Conditions
 
-- First reporter of a unique vulnerability receives the reward
+- First reporter of a unique vulnerability receives public credit (and a reward only
+  *if/when* the program is funded — see the funding-status notice above)
 - Duplicate reports: first valid submission wins
-- Partial findings that lead to a full vulnerability are eligible for partial reward
-- Rewards are at maintainer discretion within the published ranges
-- Payment via cryptocurrency (BTC, ETH) or other agreed method
+- Partial findings that lead to a full vulnerability are recognised proportionally
+- Any reward is at maintainer discretion and **contingent on available funding**
+- If funded, payment via cryptocurrency (BTC, ETH) or other agreed method
 
 ---
 
