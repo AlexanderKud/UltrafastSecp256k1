@@ -1,5 +1,22 @@
 # Audit Changelog
 
+## 2026-06-10 — TQ7-03 / REL9: scanner idioms broadened + package-metadata version sync
+
+- **TQ7-03**: `audit_test_quality_scanner.py` recognised only `CHECK`/`check`, so a
+  vacuous assertion written with another idiom (`CHK`, `ASSERT_TRUE`, `EXPECT_TRUE`,
+  `VERIFY`, `REQUIRE`) evaded the A1/A2/A3 tautology checks, and the A4 bare-pass
+  rule was hardcoded to `g_pass` (missing `s_pass`/`n_pass`/`pass`). Parameterized
+  `_ASSERT_TOKENS`/`_MSG_ASSERT_TOKENS`, added an A1b bare-literal-true check
+  (`ASSERT_TRUE(true);`), and generalized A4. The broader A4 surfaced 6 advisory
+  (low, non-blocking) `++s_pass;` survival counters in `test_libfuzzer_unified.cpp`
+  — newly visible, not regressions. `check_test_assertions.py` was left unchanged:
+  it scans for non-asserting *printf* markers and has no assert-idiom dependency.
+- **REL9-001/002/003**: `conanfile.py`, `vcpkg.json`, `.zenodo.json` were stuck at
+  4.1.0 (no extractor in `check_version_sync.py` covered `.py`/`.json` package
+  files). Bumped to 4.1.1 and added `_extract_conanfile`/`_extract_vcpkg`/
+  `_extract_zenodo` so the version-sync gate now covers all three.
+- Source: 2026-06-09 10-pass review.
+
 ## 2026-06-10 — CAAS6-01: Valgrind Memcheck required gate made fail-closed
 
 - `.github/workflows/security-audit.yml` `Valgrind Memcheck` job (a branch-protection

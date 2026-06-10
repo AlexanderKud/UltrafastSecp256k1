@@ -14,6 +14,9 @@ Version checks (canonical: VERSION.txt):
     packaging/cocoapods/UltrafastSecp256k1.podspec
     packaging/rpm/libufsecp.spec
     packaging/arch/PKGBUILD
+    conanfile.py        (REL9-001: previously uncovered .py package metadata)
+    vcpkg.json          (REL9-002: previously uncovered .json package metadata)
+    .zenodo.json        (REL9-003: minted into the release DOI)
 
 Count checks (canonical: computed from source):
     Exploit PoC count  → count "exploit_poc" in audit/unified_audit_runner.cpp
@@ -132,6 +135,48 @@ def _extract_package_swift_example(root: Path) -> str | None:
     return m.group(1) if m else None
 
 
+def _extract_conanfile(root: Path) -> str | None:
+    # REL9-001: conanfile.py was stuck at 4.1.0 because no extractor covered .py
+    # package files. A `set_version()` that loads VERSION.txt is correct by
+    # construction (return canonical); otherwise read the static `version = "x.y.z"`.
+    p = root / 'conanfile.py'
+    if not p.exists():
+        return None
+    text = p.read_text(encoding='utf-8')
+    if re.search(r'def\s+set_version\b', text) and 'VERSION.txt' in text:
+        return _extract_version_txt(root)
+    m = re.search(r'^\s*version\s*=\s*"(\d+\.\d+\.\d+)"', text, re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def _extract_vcpkg(root: Path) -> str | None:
+    # REL9-002: vcpkg manifest version (JSON, was uncovered by .json scanning).
+    import json
+    p = root / 'vcpkg.json'
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    v = data.get('version') or data.get('version-semver') or data.get('version-string')
+    return str(v) if v else None
+
+
+def _extract_zenodo(root: Path) -> str | None:
+    # REL9-003: Zenodo deposition version (JSON) — minted into the DOI on release.
+    import json
+    p = root / '.zenodo.json'
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    v = data.get('version')
+    return str(v) if v else None
+
+
 # ---------------------------------------------------------------------------
 # Count extractors (from docs, to compare against authoritative source)
 # ---------------------------------------------------------------------------
@@ -200,6 +245,9 @@ def check_version_sync(root: Path) -> bool:
         ('arch PKGBUILD  pkgver',               _extract_pkgbuild(root)),
         ('docs/README.md  **Version** header',  _extract_docs_readme_header(root)),
         ('Package.swift  SPM example from:',     _extract_package_swift_example(root)),
+        ('conanfile.py  version',                _extract_conanfile(root)),
+        ('vcpkg.json  version',                  _extract_vcpkg(root)),
+        ('.zenodo.json  version',                _extract_zenodo(root)),
         ('rpm spec  soversion (expect major)',  _extract_rpm_soversion(root)),
     ]
 
