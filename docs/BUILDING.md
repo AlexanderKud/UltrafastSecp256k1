@@ -200,6 +200,10 @@ or CI-oriented build trees.
 
 ## Build Options
 
+> **📋 Complete reference:** [BUILD_OPTIONS.md](BUILD_OPTIONS.md) lists **every** build
+> flag (auto-generated from the CMake `option()` declarations — always complete and in
+> sync). The table below is a hand-picked quick subset of the most common flags.
+
 | Option | Default | Description |
 |--------|---------|-------------|
 | `SECP256K1_USE_ASM` | ON | Assembly optimizations (x64/RISC-V) |
