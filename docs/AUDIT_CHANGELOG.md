@@ -1,5 +1,27 @@
 # Audit Changelog
 
+## 2026-06-10 — CA-001 (clang): large-batch ECDSA verify accepted off-curve pubkey
+
+- **Vulnerability (clang-only, caught by v4.2.0 release CI):** `secp256k1_ecdsa_verify_batch`
+  with `n >= 8` (the large-batch MSM path in `ecdsa_batch_verify`) **accepted an
+  invalid-curve / infinity public key** when the library was built with **clang**
+  (both linux-x64 clang-17 and macOS arm64). gcc rejected it, so `ci_local`
+  (gcc-14) and every gcc CI leg passed; the regression test
+  `regression_ecdsa_batch_curve_check` BCK-4/5/6 failed only on the clang release legs.
+- **Root cause:** the shim maps an off-curve pubkey to `Point::infinity()`. The
+  single-verify path (and the small-batch fallback, `n < 8`) rejects it, but the
+  large-batch path fed the infinity point into `dual_scalar_mul_gen_point` + the
+  FE52 Z²-based x-coordinate check, whose behavior on an infinity operand is
+  compiler-dependent — rejected under gcc, accepted under clang.
+- **Fix:** `ecdsa_batch_verify` now rejects `entries[i].public_key.is_infinity()`
+  up-front in its pre-validation loop (alongside the zero-r/s and low-S checks),
+  making off-curve/infinity rejection identical to single verify on every compiler
+  and architecture. Files: `src/cpu/src/batch_verify.cpp`; test header note added to
+  `audit/test_regression_ecdsa_batch_curve_check.cpp`.
+- **Verified:** clang-17 Release 6/6 (was 3/6), gcc-14 Release 6/6 (no regression).
+- **Process gap:** `ci_local` builds with gcc only — a clang-specific correctness
+  bug slipped local gates (same class as the earlier `-Werror` gcc-only gap).
+
 ## 2026-06-10 — CI gap: local `-Werror` mirror + ellswift dead-code removal
 
 - **Gap found:** the GitHub Security Audit "Build with -Werror" job (the only step

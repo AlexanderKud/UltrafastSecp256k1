@@ -11,6 +11,17 @@
 // path. The large path's only guard was Point::from_affine(x,y) + is_infinity()
 // which does NOT reject off-curve points that aren't the point at infinity.
 //
+// 2026-06-10 (v4.2.0 release CI): BCK-4/5/6 re-manifested under CLANG only
+// (gcc passed). The shim maps an off-curve pubkey to Point::infinity(); the
+// single-verify path (small-batch fallback) rejects it, but the large-batch
+// MSM path fed the infinity point into dual_scalar_mul_gen_point + the FE52
+// Z^2 x-coordinate check, whose behavior on an infinity operand is
+// compiler-dependent (rejected under gcc, ACCEPTED under clang on x86-64 and
+// arm64). Fix: ecdsa_batch_verify now rejects entries[i].public_key.is_infinity()
+// up-front in its pre-validation loop, identical to single verify, on every
+// compiler/arch. (ci_local builds with gcc, so the clang-only path was missed
+// locally — caught by the release clang legs.)
+//
 // Tests:
 //   BCK-1  small-batch (n=1): valid pubkey → pass
 //   BCK-2  small-batch (n=1): invalid-curve pubkey → must return 0
