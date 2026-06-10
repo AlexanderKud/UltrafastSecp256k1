@@ -5,6 +5,28 @@ All notable changes to UltrafastSecp256k1 are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.1] - 2026-06-10
+
+> **Security patch.** Fixes a clang-only correctness bug in large-batch ECDSA
+> verification caught by the v4.2.0 release CI (the clang build legs). No ABI
+> change — patch bump per SemVer (`UFSECP_ABI_VERSION` stays 4; every 4.2.0 API and
+> build flag is unchanged). **Supersedes 4.2.0 — use 4.2.1.**
+
+### Security
+
+- **CA-001 — large-batch ECDSA verify accepted an off-curve public key (clang only).**
+  `secp256k1_ecdsa_verify_batch` with `n >= 8` (the large-batch MSM path in
+  `ecdsa_batch_verify`) accepted an invalid-curve / infinity public key when built
+  with **clang** (x86-64 and arm64); **gcc rejected it**, so the gcc build legs and
+  `ci_local` (gcc-14) passed. The shim maps an off-curve pubkey to
+  `Point::infinity()`; single verify and the small-batch (`n < 8`) fallback reject
+  it, but the large-batch path fed the infinity point into
+  `dual_scalar_mul_gen_point` + the FE52 Z²-based x-coordinate check, whose behavior
+  on an infinity operand is compiler-dependent. **Fix:** `ecdsa_batch_verify` now
+  rejects `public_key.is_infinity()` up-front in its pre-validation loop, identical
+  to single verify, on every compiler and architecture. Regression coverage:
+  `regression_ecdsa_batch_curve_check` BCK-4/5/6 (clang-17 6/6, gcc-14 6/6).
+
 ## [4.2.0] - 2026-06-10
 
 > **Security + conformance + libbitcoin/GPU batch release.** Headlined by the
