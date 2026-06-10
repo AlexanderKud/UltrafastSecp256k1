@@ -5290,6 +5290,21 @@ set_tests_properties(regression_secret_scalar_residue_erase PROPERTIES TIMEOUT 3
     LABELS "audit;regression;ct;security;frost-sign-residue;source-scan")
 target_sources(unified_audit_runner PRIVATE test_regression_secret_scalar_residue_erase.cpp)
 
+# PRECOMPUTE-GCONTEXT-UAF (2026-06-10)
+# advisory=false: source-scan + concurrent reconfigure/compute smoke; no shim/GPU dependency.
+# Threads -> link pthreads (Threads::Threads) for the concurrency smoke.
+add_executable(test_regression_precompute_gcontext_race_standalone
+    test_regression_precompute_gcontext_race.cpp)
+audit_target_defaults(test_regression_precompute_gcontext_race_standalone)
+target_compile_definitions(test_regression_precompute_gcontext_race_standalone PRIVATE STANDALONE_TEST)
+find_package(Threads REQUIRED)
+target_link_libraries(test_regression_precompute_gcontext_race_standalone PRIVATE Threads::Threads)
+add_test(NAME regression_precompute_gcontext_race
+    COMMAND test_regression_precompute_gcontext_race_standalone)
+set_tests_properties(regression_precompute_gcontext_race PROPERTIES TIMEOUT 60
+    LABELS "audit;regression;thread-safety;memory-safety;use-after-free;source-scan")
+target_sources(unified_audit_runner PRIVATE test_regression_precompute_gcontext_race.cpp)
+
 # DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
 # advisory=false: roundtrips only on C++ API (no shim, no GPU).
 add_executable(test_regression_dedup_refactors_2026_05_24_standalone

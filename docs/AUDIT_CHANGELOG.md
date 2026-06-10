@@ -1,5 +1,48 @@
 # Audit Changelog
 
+## 2026-06-10 — Narrow-scope thread-safety sweep: g_context UAF (P2) + comb-teeth race (P4) + tag-gate coverage
+
+- **PRECOMPUTE-GCONTEXT-UAF (P2, use-after-free / data race):** `scalar_mul_generator`
+  and `batch_scalar_mul_generator` (`src/cpu/src/precompute.cpp`) took `g_mutex`, bound a
+  raw reference `PrecomputeContext const& ctx = *g_context`, then **released the lock** and
+  used `ctx` for the whole scalar-mul loop. A concurrent `configure_fixed_base()` does
+  `g_context.reset()` under the lock — freeing the table the reader still referenced
+  (use-after-free). Hit only by runtime reconfiguration (autotune, `SECP256K1_MAX_WINDOWS`,
+  cache-path change) concurrent with signing/verifying; the configure-once-at-startup
+  pattern never triggers it.
+  - **Fix:** `g_context` is now a `std::shared_ptr`; the two unlock-then-read fast paths take
+    a local `shared_ptr` snapshot under the lock before unlocking, keeping the table alive
+    for the whole call. `build_context()` still returns `unique_ptr` (converts on assign).
+    The lock-held helpers (`save/load_precompute_cache_locked`, `ensure_built_locked`,
+    `scalar_mul_generator_glv_predecomposed`) read `*g_context` directly — safe, they never
+    unlock. `docs/THREAD_SAFETY.md` updated.
+- **g_comb_init_teeth (P4, benign data race → hardened):** `init_comb_gen` wrote a plain
+  `unsigned g_comb_init_teeth` outside the `std::call_once` guard (`ecmult_gen_comb.cpp`).
+  Made `std::atomic<unsigned>` so two threads racing different teeth is a defined value race,
+  not UB. The table is still built exactly once; in practice teeth is the constant 15.
+- **Tag-conformance coverage gap (LOW):** `ci/check_tag_conformance.py` did not scan the
+  adaptor tags (`adaptor_nonce_v1`, `ufsecp/ecdsa_adaptor_dleq_v1`,
+  `ufsecp/ecdsa_adaptor_dleq_nonce_v1`) — declared as `constexpr char domain[] = "..."` and
+  passed by variable to `SHA256::hash`, so the call-site patterns never saw the literal. A
+  future typo would have gone unguarded. Added a `DECL_PATTERN` (filtered through
+  `DOMAIN_PREFIX`) and registered the three tags as canonical. The tags themselves were
+  already correct and distinct (no live divergence).
+- **Not fixed — assessed as a NON-bug:** the "missing `<string.h>` include for
+  `explicit_bzero`" in `secure_erase.hpp` is an include-what-you-use nit only; `<cstring>`
+  already pulls the declaration in transitively, so the code compiles and the erase works.
+  Touching that header would force disproportionate secret-path doc-pairing for zero
+  functional change, so it was deliberately left.
+- **Test:** new `regression_precompute_gcontext_race`
+  (`audit/test_regression_precompute_gcontext_race.cpp`, section `memory_safety`): source-scan
+  of the `shared_ptr` declaration + the two reader snapshots, plus a concurrent
+  reconfigure-vs-compute smoke (4 reader threads vs `Point::generator().scalar_mul` reference
+  while a thread hammers `configure_fixed_base()`), which exercises the race under TSan/ASan
+  CI legs. Restores the default fixed-base config on exit. build-audit: 5/5.
+- **Provenance:** 2026-06-10 narrow-scope vuln sweep (5 classes: secure_erase effectiveness,
+  EC add/double exceptional cases, nonce determinism/reuse, tagged-hash domain separation,
+  thread-safety). EC, nonce, and domain-separation classes were clean; secure_erase is
+  correctly barrier-protected.
+
 ## 2026-06-10 — FROST-SIGN-RESIDUE: secret-derived scalar stack residue (P3, hardening)
 
 - **Finding (low severity, secret-erasure hygiene — not a timing leak):** three
