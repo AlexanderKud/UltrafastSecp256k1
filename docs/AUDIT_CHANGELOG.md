@@ -2,6 +2,8 @@
 
 ## 2026-06-10 — GHSA-c7q2-gv3g-rgxm: ECDSA adaptor DLEQ binding (signature-soundness fix)
 
+- **Reported by Damir** (responsible disclosure via GitHub private advisory
+  GHSA-c7q2-gv3g-rgxm, with a working PoC). Credited at the reporter's request.
 - **Vulnerability (medium, PoC-confirmed):** `ecdsa_adaptor_verify` accepted forged
   pre-signatures whose `r` (= x-coord of k·T) was NOT cryptographically bound to the
   adaptor point T. The old "binding" scalar was added to R_hat in sign and subtracted
