@@ -4,7 +4,7 @@
 # ============================================================================
 # Usage:
 #   ./ci/ci_local.sh           # quick gates only (~30s)
-#   ./ci/ci_local.sh --full    # quick + build + tests (~10min)
+#   ./ci/ci_local.sh --full    # quick + build + tests + -Werror prod build (~10min)
 #   ./ci/ci_local.sh --msan    # also runs no-ASM build (MSan path)
 #   ./ci/ci_local.sh --gpu     # also runs the local GPU CTest suite (CUDA/RTX)
 #
@@ -294,6 +294,16 @@ if [[ $FULL -eq 1 ]]; then
   fi
 
   rm -rf "$BUILD_DIR" 2>/dev/null || true
+  echo ""
+
+  # ── Production -Werror build (mirrors GitHub "Build with -Werror") ──────────
+  # The CI Security Audit gate compiles the production library with WERROR=ON
+  # (Release). The Debug no-ASM build above does NOT enable -Werror, so a
+  # warning-class regression — e.g. a static function orphaned when its last
+  # caller is removed (-Werror=unused-function) — would pass every local gate
+  # and fail only on CI. This mirror closes that gap. See ci/check_werror_build.sh.
+  echo -e "${BOLD}[7.5] Production -Werror Build (mirrors GitHub Security Audit)${NC}"
+  run_check "Production -Werror build"  bash ci/check_werror_build.sh
   echo ""
 fi
 

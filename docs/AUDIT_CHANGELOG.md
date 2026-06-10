@@ -1,5 +1,23 @@
 # Audit Changelog
 
+## 2026-06-10 — CI gap: local `-Werror` mirror + ellswift dead-code removal
+
+- **Gap found:** the GitHub Security Audit "Build with -Werror" job (the only step
+  that compiles the production library with `-DSECP256K1_WERROR=ON`) had no local
+  mirror. A static function (`xswiftec_fwd_point` in `src/cpu/src/ellswift.cpp`)
+  orphaned when the variable-time secret-key XDH path was removed (3612e143)
+  triggered `-Werror=unused-function` on CI but passed every `ci_local` gate.
+- **Fix:** removed the dead function (canonical `xswiftec_fwd` covers all decode;
+  CT XDH lifts Y from x); added ECP-10 to `test_regression_ellswift_ct_path.cpp`
+  guarding the surviving lift-from-x XDH path.
+- **Prevention:** added `ci/check_werror_build.sh` (Release · g++-14 · WERROR=ON ·
+  tests excluded · ccache · x86-64-v3 on x86_64) and wired it into `ci_local.sh --full`
+  as gate [7.5]. Self-tested: catches an injected unused static fn (exit 1), green
+  on clean tree.
+- **Bug-class scan:** no other production orphan (gcc-14 `-Werror` build green +
+  source-graph `deadmethods` clean). clang's stricter `-Wunknown-attributes` /
+  `-Wsign-conversion` are out of scope — the project's `-Werror` gate is gcc-14.
+
 ## 2026-06-10 — GHSA-c7q2-gv3g-rgxm: ECDSA adaptor DLEQ binding (signature-soundness fix)
 
 - **Reported by Damir** (responsible disclosure via GitHub private advisory
