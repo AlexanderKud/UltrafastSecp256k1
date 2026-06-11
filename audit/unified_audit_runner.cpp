@@ -234,6 +234,7 @@ int test_regression_secret_scalar_residue_erase_run(); // FROST-SIGN-RESIDUE: fr
 int test_regression_precompute_gcontext_race_run(); // PRECOMPUTE-GCONTEXT-UAF: shared_ptr snapshot of g_context prevents use-after-free vs concurrent configure_fixed_base (2026-06-10)
 int test_soundness_adaptor_dleq_forgery_run(); // SOUNDNESS-PROBE: negative test — forged ECDSA-adaptor pre-sig with mismatched dlog MUST be rejected by the DLEQ binding (GHSA-c7q2 regression) (2026-06-11)
 int test_metamorphic_adaptor_run(); // METAMORPHIC-PROBE: positive complement — adapt/extract algebraic relations (adapt-validity, extract inverts adapt to +/-t, r-invariant, witness correspondence) must hold across the transform (2026-06-11)
+int test_soundness_snark_witness_attestation_run(); // SOUNDNESS-PROBE: ecdsa/schnorr_snark_witness.valid==1 MUST IMPLY canonical verify==OK across forged inputs (r>=p, tampered/malleable scalars) — GHSA-c7q2 shape on SNARK attestations (2026-06-11)
 int test_regression_ecdh_xy64_erase_run();           // SEC-002: shim_ecdh xy64 erased after hashfp call (2026-05-23)
 int test_regression_ecdh_off_curve_run();            // SEC-005: ecdh_compute* reject off-curve and infinity pubkeys (2026-05-27)
 int test_regression_musig_xonly_zero_tweak_run();    // SHIM-001: xonly_tweak_add accepts zero tweak (2026-05-23)
@@ -1424,6 +1425,11 @@ static const AuditModule ALL_MODULES[] = {
 #if SECP256K1_HAS_ADAPTOR
     { "metamorphic_adaptor", "METAMORPHIC-PROBE: positive algebraic relations that must hold across the adaptor adapt/extract transform — MR1 adapt-validity (ecdsa_verify(adapt(pre,t))==OK), MR2 extract inverts adapt (recovers +/-t), MR3 r-invariant under adapt, MR4 pre-sig != sig validity-boundary crossing, MR5 adapt determinism, MR6 witness correspondence across distinct adaptors. Complements soundness_adaptor_dleq_forgery: a structural break in adapt/extract escapes a single honest roundtrip but breaks the relation family", "protocol_security", test_metamorphic_adaptor_run, false },
 #endif // SECP256K1_HAS_ADAPTOR
+    // === 2026-06-11 SOUNDNESS-PROBE: SNARK-witness attestation (blind-zone #1, P1) ===
+    // advisory=false: ECDSA/Schnorr-in-SNARK foreign-field witness; C++ API only.
+#if SECP256K1_HAS_ZK
+    { "soundness_snark_witness_attestation", "SOUNDNESS-PROBE (eprint 2025/695, GHSA-c7q2 class): ecdsa_snark_witness/schnorr_snark_witness reimplement the verify equation and their .valid flag is consumed by a SNARK circuit as ground truth. Asserts witness.valid==1 IFF the canonical ufsecp verifier accepts the SAME (msg,pubkey,sig) across forged inputs — tampered/malleable s, tampered r, non-canonical r>=p (schnorr_verify strict-rejects, the witness silent-reduces mod p), s==0, wrong message. A verifying-but-unsound attestation lets a prover attest an invalid signature", "protocol_security", test_soundness_snark_witness_attestation_run, false },
+#endif // SECP256K1_HAS_ZK
     // === 2026-05-24 DEDUP refactors (SonarCloud-driven, no security/ABI change) ===
     // advisory=false: deterministic roundtrips + tag-separation + cast-invariance.
     { "regression_dedup_refactors_2026_05_24", "DEDUP-2026-05-24: bip39 decode_bip39_words helper, sp_scanner+ltc_sp shared sp_scan_batch_impl, types.hpp to_data_cast<T> template, ellswift retry-loop helper -- invariant roundtrips proving no behavioural drift", "differential", test_regression_dedup_refactors_2026_05_24_run, false },

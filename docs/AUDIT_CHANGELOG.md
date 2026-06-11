@@ -1,5 +1,33 @@
 # Audit Changelog
 
+## 2026-06-11 — Blind-zone lantern #1: SNARK-witness attestation soundness + self-deriving soundness scope
+
+- **Root-cause fix (the bastion's deepest blind spot):** `ci/check_soundness_coverage.py`
+  no longer scans a hardcoded 4-file list. It now SELF-DERIVES over all `src/cpu/src/*.cpp`
+  and additionally detects **struct-returning attestation producers** (`*Witness <name>(`),
+  with an explicit `STANDARD_VERIFIERS` allowlist for differential-covered public verifiers.
+  This immediately surfaced **5 previously-invisible soundness surfaces** the 4-file scope
+  hid: `ecdsa_snark_witness`, `schnorr_snark_witness` (struct-returning, no "verify" in
+  name → the bool-regex never saw them), `taproot_verify_commitment` (taproot.cpp was
+  unscanned), `pedersen_verify`, `pedersen_verify_sum` (pedersen.cpp was unscanned).
+- **Blind-zone #1 (P1) lit:** `audit/test_soundness_snark_witness_attestation.cpp`
+  (`soundness_snark_witness_attestation`, protocol_security, advisory=false). The SNARK
+  foreign-field witnesses (eprint 2025/695) reimplement the verify equation and their
+  `.valid` flag is consumed by a SNARK circuit as ground truth — the GHSA-c7q2 shape on
+  attestations. The probe asserts `witness.valid == canonical ufsecp verify` across honest
+  + forged inputs (tampered/malleable s, tampered r, non-canonical r≥p where schnorr_verify
+  strict-rejects but the witness silent-reduces mod p, s==0, wrong msg). **Result: 9/9 —
+  the witnesses are SOUND** (valid IFF verify); the suspected divergence does not manifest,
+  and a standing probe now guards against any future regression. Module count 422 → 423.
+- New ledger entries in `docs/SOUNDNESS_INVARIANTS.json`: snark-witness attestations
+  (covered → the new probe); taproot-commitment-binding + pedersen-commitment-binding +
+  pedersen-sum-balance (roadmap — now visible, probes pending).
+- **DON'T TRUST, VERIFY:** `ci/test_check_soundness_coverage.py` gains a SCOPE-EXHAUSTIVENESS
+  case proving a verifier OR a struct-returning attestation injected into a BRAND-NEW file
+  is discovered (and a standard verifier / `_device` variant is not) — so a future entry
+  point cannot ship outside the soundness ledger.
+- Tracker for the full 24-finding blind-zone audit: `workingdocs/BLINDZONE_LANTERNS_2026-06-11.md`.
+
 ## 2026-06-11 — Fault-injection countermeasure gate — threat-gate matrix reaches 0 gaps
 
 - **New gate `ci/check_fault_countermeasure_coverage.py`** + ledger

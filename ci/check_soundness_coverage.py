@@ -40,22 +40,59 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER = os.path.join(ROOT, "docs", "SOUNDNESS_INVARIANTS.json")
 RUNNER = os.path.join(ROOT, "audit", "unified_audit_runner.cpp")
 
-# Custom-protocol source files whose verify/proof functions need a soundness invariant.
-PROTOCOL_SOURCES = [
-    "src/cpu/src/adaptor.cpp",
-    "src/cpu/src/zk.cpp",
-    "src/cpu/src/musig2.cpp",
-    "src/cpu/src/frost.cpp",
-]
-# A `bool NAME(` definition at namespace scope (column 0) whose name carries "verify".
+# Soundness scope is SELF-DERIVING: scan the WHOLE engine core, not a hardcoded file
+# list. A 4-file allowlist was the original blind spot — a verifier/attestation added to
+# any other file (pedersen.cpp, taproot.cpp, ...) or a struct-returning attestation
+# producer (*_snark_witness) escaped mandatory classification while the gate stayed green.
+SCAN_DIR = "src/cpu/src"  # globbed for *.cpp at runtime
+# A `bool NAME(` definition at namespace scope whose name carries "verify".
 VERIFY_DEF = re.compile(r"^bool\s+([A-Za-z_]\w*verify\w*)\s*\(", re.MULTILINE)
+# An ATTESTATION producer: a function returning a *Witness type (e.g.
+# `EcdsaSnarkWitness ecdsa_snark_witness(`). Its `valid` field is consumed downstream as
+# ground truth, so it is a verify-equivalent and MUST be soundness-classified (the GHSA-c7q2
+# shape: a verifying-but-unsound attestation that the bool-verify regex never sees).
+ATTEST_DEF = re.compile(r"^[A-Za-z_][\w:]*Witness\s+([A-Za-z_]\w*)\s*\(", re.MULTILINE)
 # Internal/variant verifiers that are not the primary public soundness surface.
 VARIANT_MARKERS = ("_base", "_impl", "_device", "_kernel", "_var")
 VARIANT_PREFIXES = ("batch_",)
+# STANDARD verifiers are intentionally OUT of the custom-soundness ledger: they verify
+# only PUBLIC data and are anchored by a differential oracle vs libsecp256k1 (and/or are
+# not EC-protocol soundness at all — MAC/checksum). Exempting them is a conscious, reviewed
+# act; the differential gate covers them. Anything NOT here must be cataloged.
+STANDARD_VERIFIERS = {
+    "ecdsa_verify", "schnorr_verify",            # standard sig verify — differential oracle
+    "ecdsa_batch_verify", "schnorr_batch_verify",  # batch of the above
+    "bitcoin_verify_message", "eth_personal_verify",  # message-sig = ecdsa recover + compare
+    "eip55_verify",                               # address checksum, not curve soundness
+    "poly1305_verify",                            # MAC tag compare, not EC soundness
+}
 
 
 def fail(msg, out):
     out.append("  \033[91mFAIL\033[0m  " + msg)
+
+
+def scan_soundness_symbols(root, scan_dir=None):
+    """Self-deriving discovery: every custom-protocol verifier (bool *verify*) AND every
+    attestation producer (*Witness returning fn) across the engine core, MINUS internal
+    variants and MINUS the STANDARD_VERIFIERS allowlist. Returns {symbol: relpath}.
+    Pure (takes root) so the self-test can prove scope-exhaustiveness on a temp tree."""
+    sd = scan_dir or os.path.join(root, SCAN_DIR)
+    found = {}
+    if not os.path.isdir(sd):
+        return found
+    for f in sorted(os.listdir(sd)):
+        if not f.endswith(".cpp"):
+            continue
+        rel = os.path.relpath(os.path.join(sd, f), root)
+        text = open(os.path.join(sd, f), encoding="utf-8", errors="replace").read()
+        for name in VERIFY_DEF.findall(text) + ATTEST_DEF.findall(text):
+            if any(m in name for m in VARIANT_MARKERS) or name.startswith(VARIANT_PREFIXES):
+                continue  # internal variant of a primary verifier
+            if name in STANDARD_VERIFIERS:
+                continue  # standard public-data verifier — differential-oracle covered
+            found.setdefault(name, rel)
+    return found
 
 
 def main() -> int:
@@ -89,25 +126,17 @@ def main() -> int:
             fail(f"covered probe module \"{mod}\" not registered in ALL_MODULES (unified_audit_runner.cpp)", out)
             blocking += 1
 
-    # (2) Every custom-protocol verify function in the source must be in the ledger.
-    scanned = {}
-    for rel in PROTOCOL_SOURCES:
-        p = os.path.join(ROOT, rel)
-        if not os.path.exists(p):
-            continue
-        text = open(p, encoding="utf-8", errors="replace").read()
-        for name in VERIFY_DEF.findall(text):
-            scanned.setdefault(name, rel)
-    uncataloged = []
-    for name, rel in sorted(scanned.items()):
-        if any(m in name for m in VARIANT_MARKERS) or name.startswith(VARIANT_PREFIXES):
-            continue  # internal variant of a primary verifier
-        if name not in by_fn:
-            uncataloged.append((name, rel))
+    # (2) Every custom-protocol verifier AND attestation producer in the WHOLE engine
+    #     core must be in the ledger. Self-deriving scope: glob src/cpu/src/*.cpp so a new
+    #     file or a struct-returning *_snark_witness cannot escape classification.
+    scanned = scan_soundness_symbols(ROOT)
+    uncataloged = [(n, r) for n, r in sorted(scanned.items()) if n not in by_fn]
     for name, rel in uncataloged:
-        fail(f"verify function '{name}' ({rel}) has NO soundness invariant in "
+        fail(f"soundness-bearing symbol '{name}' ({rel}) has NO invariant in "
              f"docs/SOUNDNESS_INVARIANTS.json — add a forge-probe ('covered') or "
-             f"classify it ('roadmap'). A claim with no negative test is a GHSA-c7q2-class hole.", out)
+             f"classify it ('roadmap'). A verifier/attestation with no negative test is a "
+             f"GHSA-c7q2-class hole. (If it is a standard public-data verifier with a "
+             f"differential oracle, add it to STANDARD_VERIFIERS with justification.)", out)
         blocking += 1
 
     # Report

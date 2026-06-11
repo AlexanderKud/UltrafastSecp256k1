@@ -59,6 +59,29 @@ def main() -> int:
     if _run_with_ledger(m, bad2) == 0:
         fails.append("a 'covered' invariant with no probe MUST block (expected exit 1)")
 
+    # 4. SCOPE-EXHAUSTIVENESS (the root-cause fix): the discovery must NOT be a hardcoded
+    #    file list. A verifier OR a struct-returning attestation injected into a BRAND-NEW
+    #    file must be found; a standard-verifier name and an internal _device variant must
+    #    NOT; this proves a future entry point cannot ship outside the soundness ledger.
+    import tempfile
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "newproto.cpp"), "w").write(
+        "bool newproto_verify(const X& a){return true;}\n"
+        "FooSnarkWitness newproto_snark_witness(const X& a){FooSnarkWitness w; return w;}\n"
+        "bool newproto_verify_device(const X& a){return true;}\n"   # internal variant -> ignored
+        "bool ecdsa_verify(const X& a){return true;}\n")            # standard verifier -> exempt
+    found = m.scan_soundness_symbols(ROOT, scan_dir=d)
+    if "newproto_verify" not in found:
+        fails.append("scope-exhaustiveness: a 'bool *verify*' in a NEW file MUST be discovered")
+    if "newproto_snark_witness" not in found:
+        fails.append("scope-exhaustiveness: a struct-returning '*SnarkWitness' attestation MUST be discovered")
+    if "newproto_verify_device" in found:
+        fails.append("internal _device variant must NOT be flagged")
+    if "ecdsa_verify" in found:
+        fails.append("a STANDARD_VERIFIERS-listed verifier must be exempt (differential-covered)")
+    import shutil
+    shutil.rmtree(d, ignore_errors=True)
+
     print("=" * 60)
     if fails:
         print("  check_soundness_coverage SELF-TEST: FAILED")

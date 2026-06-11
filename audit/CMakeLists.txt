@@ -5329,6 +5329,18 @@ set_tests_properties(metamorphic_adaptor PROPERTIES TIMEOUT 30
     LABELS "audit;metamorphic;adaptor;protocol-security;positive-invariant")
 target_sources(unified_audit_runner PRIVATE test_metamorphic_adaptor.cpp)
 
+# SOUNDNESS-PROBE — SNARK-witness attestation (blind-zone #1, P1, 2026-06-11)
+# advisory=false: ecdsa/schnorr_snark_witness.valid==1 MUST IMPLY canonical verify==OK.
+add_executable(test_soundness_snark_witness_attestation_standalone
+    test_soundness_snark_witness_attestation.cpp)
+audit_target_defaults(test_soundness_snark_witness_attestation_standalone)
+target_compile_definitions(test_soundness_snark_witness_attestation_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME soundness_snark_witness_attestation
+    COMMAND test_soundness_snark_witness_attestation_standalone)
+set_tests_properties(soundness_snark_witness_attestation PROPERTIES TIMEOUT 30
+    LABELS "audit;soundness;snark;witness;attestation;protocol-security;negative-test")
+target_sources(unified_audit_runner PRIVATE test_soundness_snark_witness_attestation.cpp)
+
 # DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
 # advisory=false: roundtrips only on C++ API (no shim, no GPU).
 add_executable(test_regression_dedup_refactors_2026_05_24_standalone
