@@ -5386,6 +5386,17 @@ set_tests_properties(regression_abi_invalid_reject PROPERTIES TIMEOUT 30
     LABELS "audit;regression;memory-safety;valid-invalid;abi;reject")
 target_sources(unified_audit_runner PRIVATE test_regression_abi_invalid_reject.cpp)
 
+# EXTERNAL-ANCHOR KAT — NIST SHA-512 + official BIP-341 vectors (common-mode defence, 2026-06-11)
+add_executable(test_external_anchor_kat_standalone
+    test_external_anchor_kat.cpp)
+audit_target_defaults(test_external_anchor_kat_standalone)
+target_compile_definitions(test_external_anchor_kat_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME external_anchor_kat
+    COMMAND test_external_anchor_kat_standalone)
+set_tests_properties(external_anchor_kat PROPERTIES TIMEOUT 30
+    LABELS "audit;standard-vectors;external-anchor;nist;bip341;common-mode")
+target_sources(unified_audit_runner PRIVATE test_external_anchor_kat.cpp)
+
 # DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
 # advisory=false: roundtrips only on C++ API (no shim, no GPU).
 add_executable(test_regression_dedup_refactors_2026_05_24_standalone

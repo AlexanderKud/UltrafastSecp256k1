@@ -1,5 +1,22 @@
 # Audit Changelog
 
+## 2026-06-11 — External-anchor KAT: defeat common-mode self-anchoring (NIST + BIP-341 official)
+
+- **Common-mode defence:** the valid/invalid coverage audit found 25 ops gated only against
+  values the SAME engine re-derives — a shared-primitive error passes BOTH the valid and the
+  invalid gate. New module `external_anchor_kat` (standard_vectors) pins ops to authorities
+  that did NOT come from this engine:
+  - **`ufsecp_sha512` vs NIST FIPS 180-4** (`""`/`"abc"`) — the SHA-512 ABI was KAT-checked
+    only against the internal C++ impl, never the ABI surface. SHA-512 underlies BIP-32
+    HMAC-SHA512, so an external anchor here catches a shared-primitive error in HD derivation.
+  - **`ufsecp_taproot_output_key` vs the OFFICIAL BIP-341 wallet-test-vectors**
+    (scriptPubKey[0], keypath-only): internal key `d6889cb0…` → tweaked `53a1f6e4…`. The
+    native taproot path was self-roundtrip only; this pins `H_TapTweak(P)` to the **Bitcoin
+    spec reference**, directly addressing the consensus-relevant common-mode. 4/4 — both match.
+- Module 427 → 428. This is the external-reference-anchoring lever for the previously
+  self-anchored consensus surface; remaining roadmap: BIP-143/341/342/144 sighash known-answer
+  digests (need a fixed Bitcoin Core reference tx per op).
+
 ## 2026-06-11 — VALID/INVALID coverage: live ABI reject branches now exercised (wrong-accept trap)
 
 - **Methodology:** a 21-agent valid/invalid gate-coverage audit enumerated 69 engine
