@@ -721,6 +721,13 @@ jobs:
             -R "regression_shim|regression_ecdsa_batch_curve|exploit_shim|test_shim" \
             --output-on-failure -j"$(nproc)" --timeout 120
 
+      - name: Run libsecp shim API compatibility test
+        # Builds the normal standalone shim mode because secp256k1_shim_test is
+        # intentionally not emitted when SECP256K1_BUILD_SHIM=ON. This catches
+        # opaque ECDSA signature-layout regressions that downstream projects
+        # such as libbitcoin-system observe through secp256k1_ecdsa_signature.data.
+        run: bash ci/run_libsecp_shim_api_test.sh out/ci-gate-shim-api
+
       - name: Upload shim audit report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

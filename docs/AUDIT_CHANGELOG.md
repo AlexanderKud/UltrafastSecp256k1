@@ -1,5 +1,14 @@
 # Audit Changelog
 
+## 2026-06-11 — CAAS gate covers libsecp shim opaque ECDSA layout
+
+- Added a hard CAAS/preflight and PR-push shim gate that builds the standalone
+  libsecp256k1 shim API test and runs `secp256k1_shim_test`.
+- Tightened `ci/check_libsecp_shim_parity.py` so `parse_compact` must convert
+  public compact big-endian ECDSA scalars into the libsecp-compatible opaque
+  scalar layout after strict parsing. This prevents regressions where DER and
+  verification still pass but libbitcoin-system raw signature fixtures fail.
+
 ## 2026-06-11 — libbitcoin ECDSA opaque-signature parity fixed
 
 - **Confirmed compatibility regression fixed:** the libsecp256k1 shim stored

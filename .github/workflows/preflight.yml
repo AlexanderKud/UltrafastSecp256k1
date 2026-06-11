@@ -206,6 +206,9 @@ jobs:
       - name: CAAS Stage 2b — Shim Parser Parity (hard-fail)
         run: python3 ci/check_libsecp_shim_parity.py
 
+      - name: CAAS Stage 2f — Libsecp Shim API Compatibility (hard-fail)
+        run: bash ci/run_libsecp_shim_api_test.sh out/ci-preflight-shim-api
+
       - name: CAAS Stage 2c — Core Build Mode (hard-fail)
         run: python3 ci/check_core_build_mode.py
 
