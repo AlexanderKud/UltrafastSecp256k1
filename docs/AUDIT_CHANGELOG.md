@@ -1,5 +1,22 @@
 # Audit Changelog
 
+## 2026-06-11 — Blind-zone lantern #5: BIP-39 fail-closed CSPRNG + entropy-source-integrity gate
+
+- **Confirmed fail-open entropy source fixed:** `src/cpu/src/bip39.cpp` shipped a local
+  `static bool csprng_fill` (returned `false` on `/dev/urandom` open failure / short read) —
+  a duplicate that both violated single-source and could let a caller proceed past an RNG
+  failure. It now uses the canonical **fail-closed** `detail::csprng_fill` (`std::abort` on
+  RNG failure), so a BIP-39 mnemonic is never generated from degraded entropy.
+- **New gate `ci/check_entropy_source_integrity.py`** (in run_fast_gates): `csprng_fill` may
+  be DEFINED only in `detail/csprng.hpp` and must be fail-closed (return void + abort/terminate
+  on failure — not a bool a caller can ignore). New threat class `entropy-source-integrity`
+  → verified. Weak RNG (`random_device`/`mt19937`/`rand`) in the secret core is reported with a
+  triaged allowlist (batch-verify public weights, shim aux_rand hedging).
+- **DON'T TRUST, VERIFY:** `ci/test_check_entropy_source_integrity.py` proves a second local
+  `csprng_fill` and a fail-open (bool, no abort) canonical both block. New module
+  `regression_bip39_csprng_failclosed` source-scans the fix + functionally generates/validates
+  a CSPRNG mnemonic (Guardrail #7). Module count 424 → 425.
+
 ## 2026-06-11 — Blind-zone lantern #4: shim MuSig2 keyagg-cache UAF fixed + handle-lifetime gate
 
 - **Confirmed UAF fixed:** `compat/libsecp256k1_shim/src/shim_musig.cpp` `ka_get`/`ka_get_by_token`

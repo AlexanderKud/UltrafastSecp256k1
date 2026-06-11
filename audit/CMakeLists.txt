@@ -5353,6 +5353,17 @@ set_tests_properties(regression_musig_keyagg_lifetime PROPERTIES TIMEOUT 30
     LABELS "audit;regression;memory-safety;use-after-free;shim;musig2")
 target_sources(unified_audit_runner PRIVATE test_regression_musig_keyagg_lifetime.cpp)
 
+# ENTROPY-SOURCE — BIP-39 fail-closed single-source CSPRNG (blind-zone #5, 2026-06-11)
+add_executable(test_regression_bip39_csprng_failclosed_standalone
+    test_regression_bip39_csprng_failclosed.cpp)
+audit_target_defaults(test_regression_bip39_csprng_failclosed_standalone)
+target_compile_definitions(test_regression_bip39_csprng_failclosed_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_bip39_csprng_failclosed
+    COMMAND test_regression_bip39_csprng_failclosed_standalone)
+set_tests_properties(regression_bip39_csprng_failclosed PROPERTIES TIMEOUT 30
+    LABELS "audit;regression;entropy;csprng;bip39;fail-closed")
+target_sources(unified_audit_runner PRIVATE test_regression_bip39_csprng_failclosed.cpp)
+
 # DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
 # advisory=false: roundtrips only on C++ API (no shim, no GPU).
 add_executable(test_regression_dedup_refactors_2026_05_24_standalone
