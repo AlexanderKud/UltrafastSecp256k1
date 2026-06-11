@@ -1,5 +1,22 @@
 # Audit Changelog
 
+## 2026-06-11 — dudect binary-CT probe (verified leak detector; advisory live measurement)
+
+- **New gate `ci/dudect_ct_probe.py`** — the binary-level constant-time layer that
+  `ci/check_ct_branches.py` (a SOURCE lint) cannot reach: it catches a timing leak the
+  COMPILER introduces (cmov lowered to a branch, data-dependent table lookup, specialised
+  div). Welch t-test (dudect, ePrint 2016/1123) over cycle samples for two input classes,
+  with upper-tail cropping; |t|>=10 = leak, 5..10 = borderline (advisory), <5 = clean.
+  Flips threat class `ct-binary-timing` `gap → verified`.
+- **Two honestly-separated layers:** the DETECTOR (Welch t-test + classifier) is VERIFIED;
+  the LIVE measurement against a real CT-timing binary is ADVISORY (CI DVFS/SMT noise →
+  returns 77 without a samples file). The audit suite's `exploit_eucleak_inversion_timing`
+  already measures `ct::scalar_inverse` cycles the same way.
+- **DON'T TRUST, VERIFY:** `ci/test_dudect_ct_probe.py` proves the detector blocks — it
+  flags a synthetic +12-cycle leak (|t|≈94) and passes uniform timing (|t|≈0.6) on
+  deterministic LCG data; the live `--samples` path was validated end-to-end
+  (uniform→exit 0, leaky→exit 1). Self-test wired into `run_fast_gates.sh`.
+
 ## 2026-06-11 — Fuzz-harness liveness gate + smoke gate (the fuzzing layer is real, not dead)
 
 - **Discovery:** the repo already has coverage-guided libFuzzer fuzzing — 11 harnesses

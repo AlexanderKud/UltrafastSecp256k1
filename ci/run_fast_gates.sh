@@ -164,6 +164,7 @@ run "Metamorphic coverage (positive-invariant ledger)" ci/check_metamorphic_cove
 run "Metamorphic-gate self-test (proof-it-blocks)" ci/test_check_metamorphic_coverage.py
 run "Fuzz-harness wiring/liveness" ci/check_fuzz_harness_wiring.py
 run "Fuzz-wiring self-test (proof-it-blocks)" ci/test_check_fuzz_harness_wiring.py
+run "dudect binary-CT detector self-test" ci/test_dudect_ct_probe.py
 run "Nonce erase coverage (BIP-327)"           ci/check_nonce_erase_coverage.py
 run "Doc drift (badges, removed files)"        ci/check_doc_drift.py
 run "Bench/doc consistency (banned patterns)" ci/check_bench_doc_consistency.py
