@@ -5341,6 +5341,18 @@ set_tests_properties(soundness_snark_witness_attestation PROPERTIES TIMEOUT 30
     LABELS "audit;soundness;snark;witness;attestation;protocol-security;negative-test")
 target_sources(unified_audit_runner PRIVATE test_soundness_snark_witness_attestation.cpp)
 
+# UAF-REGRESSION — shim MuSig2 keyagg-cache lifetime (blind-zone #4, 2026-06-11)
+# advisory=false: source-scan of shim_musig.cpp; no shim link required.
+add_executable(test_regression_musig_keyagg_lifetime_standalone
+    test_regression_musig_keyagg_lifetime.cpp)
+audit_target_defaults(test_regression_musig_keyagg_lifetime_standalone)
+target_compile_definitions(test_regression_musig_keyagg_lifetime_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_musig_keyagg_lifetime
+    COMMAND test_regression_musig_keyagg_lifetime_standalone)
+set_tests_properties(regression_musig_keyagg_lifetime PROPERTIES TIMEOUT 30
+    LABELS "audit;regression;memory-safety;use-after-free;shim;musig2")
+target_sources(unified_audit_runner PRIVATE test_regression_musig_keyagg_lifetime.cpp)
+
 # DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
 # advisory=false: roundtrips only on C++ API (no shim, no GPU).
 add_executable(test_regression_dedup_refactors_2026_05_24_standalone

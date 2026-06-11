@@ -1,5 +1,23 @@
 # Audit Changelog
 
+## 2026-06-11 — Blind-zone lantern #4: shim MuSig2 keyagg-cache UAF fixed + handle-lifetime gate
+
+- **Confirmed UAF fixed:** `compat/libsecp256k1_shim/src/shim_musig.cpp` `ka_get`/`ka_get_by_token`
+  returned a RAW `it->second.get()` from the mutex-guarded `g_ka` map (`unique_ptr<KAEntry>`),
+  so a caller dereferenced it AFTER the lock was released while a concurrent `ka_remove` /
+  `partial_sig_agg` could free the secret-adjacent `KAEntry` — the same unlock-then-use class
+  as PRECOMPUTE-GCONTEXT-UAF. Fix: `g_ka` now holds `shared_ptr<KAEntry>` and the accessors
+  return a shared_ptr SNAPSHOT (`return it->second`), so a caller keeps the entry alive for the
+  whole op. 7 call sites updated to `auto` (shared_ptr); shim compiles clean.
+- **New standing gate `ci/check_locked_map_handle_escape.py`** (the lantern, in run_fast_gates):
+  a function holding `std::lock_guard`/`scoped_lock`/`unique_lock` must not `return it->second.get()`
+  (a raw owning-pointer handle escaping the critical section). Scans the shim + core; would have
+  caught both confirmed UAFs. New threat class `memory-safety-handle-lifetime` → verified.
+- **DON'T TRUST, VERIFY:** `ci/test_check_locked_map_handle_escape.py` proves the gate flags the
+  bug shape and passes the shared_ptr-snapshot fix. New audit module `regression_musig_keyagg_lifetime`
+  (`audit/test_regression_musig_keyagg_lifetime.cpp`, memory_safety, advisory=false) source-scans the
+  fix in place. Module count 423 → 424.
+
 ## 2026-06-11 — Blind-zone lantern #1: SNARK-witness attestation soundness + self-deriving soundness scope
 
 - **Root-cause fix (the bastion's deepest blind spot):** `ci/check_soundness_coverage.py`

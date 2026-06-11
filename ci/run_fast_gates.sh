@@ -169,6 +169,8 @@ run "Backend value-differential coverage" ci/check_backend_value_differential.py
 run "Backend value-diff self-test (proof-it-blocks)" ci/test_check_backend_value_differential.py
 run "Fault-countermeasure coverage (sign-then-verify)" ci/check_fault_countermeasure_coverage.py
 run "Fault-countermeasure self-test (proof-it-blocks)" ci/test_check_fault_countermeasure_coverage.py
+run "Locked-map handle-escape (UAF class)" ci/check_locked_map_handle_escape.py
+run "Handle-escape self-test (proof-it-blocks)" ci/test_check_locked_map_handle_escape.py
 run "Nonce erase coverage (BIP-327)"           ci/check_nonce_erase_coverage.py
 run "Doc drift (badges, removed files)"        ci/check_doc_drift.py
 run "Bench/doc consistency (banned patterns)" ci/check_bench_doc_consistency.py
