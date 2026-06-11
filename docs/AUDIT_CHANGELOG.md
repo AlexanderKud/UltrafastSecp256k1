@@ -1,5 +1,17 @@
 # Audit Changelog
 
+## 2026-06-11 — Blind-zone lantern #9: secret-parse gate now catches the Scalar::from_bytes silent reduce
+
+- **CVE-class hole closed:** `ci/check_secret_parse_strictness.py` caught only
+  `scalar_parse_strict` (non-_nonzero) on a secret — it was blind to `Scalar::from_bytes`,
+  the silent mod-n reduce that Rule 11 names FIRST (`seckey==n -> 0`, leaking the nonce).
+  The gate now also flags `(Scalar::)from_bytes(<secret>)` applied to a secret-bearing
+  parameter. The impl layer is clean (0 violations) — this closes the future-regression hole.
+- **Threat class `secret-parse-strictness` trusted → verified.** New self-test
+  `ci/test_check_secret_parse_strictness.py` proves the gate flags BOTH banned forms on a
+  secret (scalar_parse_strict + Scalar::from_bytes) and passes the strict-nonzero parse and
+  a from_bytes on public data. Wired into `run_fast_gates.sh`.
+
 ## 2026-06-11 — Blind-zone lantern #8: canonical-encoding / malleability coverage gate + class
 
 - **New threat class made explicit:** the matrix is closed-world, so canonical-encoding
