@@ -173,6 +173,8 @@ run "Locked-map handle-escape (UAF class)" ci/check_locked_map_handle_escape.py
 run "Handle-escape self-test (proof-it-blocks)" ci/test_check_locked_map_handle_escape.py
 run "Entropy-source integrity (single-source CSPRNG)" ci/check_entropy_source_integrity.py
 run "Entropy-source self-test (proof-it-blocks)" ci/test_check_entropy_source_integrity.py
+run "Canonical-encoding malleability coverage" ci/check_canonical_encoding_coverage.py
+run "Canonical-encoding self-test (proof-it-blocks)" ci/test_check_canonical_encoding_coverage.py
 run "Nonce erase coverage (BIP-327)"           ci/check_nonce_erase_coverage.py
 run "Doc drift (badges, removed files)"        ci/check_doc_drift.py
 run "Bench/doc consistency (banned patterns)" ci/check_bench_doc_consistency.py

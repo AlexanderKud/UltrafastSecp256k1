@@ -1,5 +1,21 @@
 # Audit Changelog
 
+## 2026-06-11 — Blind-zone lantern #8: canonical-encoding / malleability coverage gate + class
+
+- **New threat class made explicit:** the matrix is closed-world, so canonical-encoding
+  malleability (a decoder accepting a second valid encoding of the same value — txid/tx
+  malleability; BIP-66/146/340 consensus) was structurally invisible. New gate
+  `ci/check_canonical_encoding_coverage.py` + ledger `docs/CANONICAL_ENCODING_LEDGER.json`
+  enumerate every consensus-relevant decoder and require a non-canonical-rejection probe.
+- **6 covered** (institutionalizing existing coverage): ECDSA DER strict
+  (`exploit_ecdsa_der_confusion`), DER differential (`exploit_der_parse_diff`), compact r,s
+  bounds (`exploit_rs_zero_check`), Schnorr BIP-340 strict (`bip340_strict`), point
+  serialization (`exploit_point_serialization`), fe_set_b32 overflow (`exploit_fe_set_b32_limit_uninit`).
+  **3 roadmap**: MuSig2 pubnonce, BIP-32 xkey, ZK proof encoding.
+- New threat class `canonical-encoding-malleability` → verified.
+- **DON'T TRUST, VERIFY:** `ci/test_check_canonical_encoding_coverage.py` proves the gate
+  blocks an unwired covered probe. Both wired into `run_fast_gates.sh`.
+
 ## 2026-06-11 — Blind-zone lantern #7: secret-erase gate now covers the ufsecp ABI impl layer
 
 - **Scope blind spot closed:** `ci/check_secret_erase_coverage.py` was hard-pinned to 2 shim
