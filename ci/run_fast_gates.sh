@@ -157,6 +157,9 @@ run "GPU/CPU CT-branch lint (GPU-CT-001)"      ci/check_ct_branches.py
 run "CT-branch lint self-test"                 ci/test_check_ct_branches.py
 run "Protocol invariants (FROST threshold)"    ci/check_protocol_invariants.py
 run "Soundness coverage (negative-test ledger)" ci/check_soundness_coverage.py
+run "Soundness-gate self-test (proof-it-blocks)" ci/test_check_soundness_coverage.py
+run "Threat-gate coverage (don't trust verify)" ci/check_threat_gate_coverage.py
+run "Threat-gate self-test (proof-it-blocks)"  ci/test_check_threat_gate_coverage.py
 run "Nonce erase coverage (BIP-327)"           ci/check_nonce_erase_coverage.py
 run "Doc drift (badges, removed files)"        ci/check_doc_drift.py
 run "Bench/doc consistency (banned patterns)" ci/check_bench_doc_consistency.py

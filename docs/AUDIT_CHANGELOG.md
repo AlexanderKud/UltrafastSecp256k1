@@ -1,5 +1,27 @@
 # Audit Changelog
 
+## 2026-06-11 — Threat-gate coverage matrix (META gate) + DON'T-TRUST-VERIFY self-tests
+
+- **The apex gate:** `ci/check_threat_gate_coverage.py` backed by
+  `docs/THREAT_GATE_MATRIX.json` answers "what gate are we missing?" structurally.
+  Every threat class maps to a gate + (when verified) a self-test that PROVES the gate
+  blocks (inject a violation → the gate goes red). Status: `verified` (gate + proof),
+  `trusted` (gate exists, never proven to block), `gap` (no gate). Enforcement: a
+  `verified` claim with a missing gate/self-test file BLOCKS; a `trusted` claim whose
+  gate file is absent BLOCKS; `trusted`/`gap` sets are reported loudly.
+- **DON'T TRUST, VERIFY made structural.** The matrix immediately surfaced the real
+  state: of 38 `ci/check_*` gates only 6 had a proof-it-blocks self-test — i.e. 32 gates
+  we *trusted* but had never *verified*. The matrix tracks this backlog (12 trusted
+  threat-classes) so it is closed incrementally; new `verified` entries REQUIRE a
+  self-test.
+- **Led by example:** added self-tests for the two gates built this session —
+  `ci/test_check_soundness_coverage.py` (proves the soundness gate blocks unwired/
+  undeclared probes) and `ci/test_check_threat_gate_coverage.py` (proves the meta-gate
+  blocks false `verified`/`trusted` claims). Both wired into `run_fast_gates.sh`.
+- **Declared gaps (being built):** binary-level CT (dudect/ctgrind), runtime
+  cross-backend value-differential, protocol metamorphic positive-invariants,
+  coverage-guided fuzzing, fault-injection countermeasure coverage.
+
 ## 2026-06-11 — dev_bug_scanner secret-residue check hardened → found 3 MuSig2 residues
 
 - **Improved `ci/dev_bug_scanner.py::check_secret_unerased`** (the static dev-bug
