@@ -5364,6 +5364,17 @@ set_tests_properties(regression_bip39_csprng_failclosed PROPERTIES TIMEOUT 30
     LABELS "audit;regression;entropy;csprng;bip39;fail-closed")
 target_sources(unified_audit_runner PRIVATE test_regression_bip39_csprng_failclosed.cpp)
 
+# RESOURCE-EXHAUSTION — batch-sign DoS count ceiling (blind-zone #15, 2026-06-11)
+add_executable(test_regression_batch_dos_cap_standalone
+    test_regression_batch_dos_cap.cpp)
+audit_target_defaults(test_regression_batch_dos_cap_standalone)
+target_compile_definitions(test_regression_batch_dos_cap_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_batch_dos_cap
+    COMMAND test_regression_batch_dos_cap_standalone)
+set_tests_properties(regression_batch_dos_cap PROPERTIES TIMEOUT 30
+    LABELS "audit;regression;memory-safety;dos;resource-exhaustion;batch")
+target_sources(unified_audit_runner PRIVATE test_regression_batch_dos_cap.cpp)
+
 # DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
 # advisory=false: roundtrips only on C++ API (no shim, no GPU).
 add_executable(test_regression_dedup_refactors_2026_05_24_standalone

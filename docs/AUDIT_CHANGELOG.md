@@ -1,5 +1,18 @@
 # Audit Changelog
 
+## 2026-06-11 — Blind-zone lantern #15: batch-sign DoS ceiling tested + resource-exhaustion class
+
+- **Untested DoS ceiling now tested + gated:** the batch sign ABI
+  (`ufsecp_ecdsa_sign_batch` / `ufsecp_schnorr_sign_batch`) enforces a hard count ceiling
+  `kMaxBatchN = 1<<20` BEFORE any `count*size` allocation, so a hostile `count` cannot drive an
+  unbounded malloc/DoS. The cap existed but was untested/ungated — one refactor from silent
+  regression. New audit module `regression_batch_dos_cap` asserts `count>kMaxBatchN` and
+  `count==0` → `BAD_INPUT` (no allocation), and a small valid batch still succeeds. Module 425 → 426.
+- New threat class `resource-exhaustion` → verified. The DoS test is name-pinned in
+  `docs/REQUIRED_EXPLOIT_MODULES.json` so it cannot silently vanish (the floor gate's self-test
+  proves a vanished pin blocks). Roadmap: internal C++ core + GPU C++ layer batch entry points
+  have no caller-facing ceiling.
+
 ## 2026-06-11 — Blind-zone lantern #17: named coverage-floor for adversarial-research attack classes
 
 - **Silent-deletion hole closed:** `check_exploit_wiring` is presence-driven — a clean

@@ -237,6 +237,7 @@ int test_metamorphic_adaptor_run(); // METAMORPHIC-PROBE: positive complement �
 int test_soundness_snark_witness_attestation_run(); // SOUNDNESS-PROBE: ecdsa/schnorr_snark_witness.valid==1 MUST IMPLY canonical verify==OK across forged inputs (r>=p, tampered/malleable scalars) — GHSA-c7q2 shape on SNARK attestations (2026-06-11)
 int test_regression_musig_keyagg_lifetime_run(); // UAF-REGRESSION (blind-zone #4): shim g_ka holds shared_ptr<KAEntry> + ka_get returns a snapshot, not raw it->second.get() — unlock-then-use UAF class (2026-06-11)
 int test_regression_bip39_csprng_failclosed_run(); // ENTROPY-SOURCE (blind-zone #5): bip39.cpp uses canonical fail-closed detail::csprng_fill, not a local fail-open duplicate (2026-06-11)
+int test_regression_batch_dos_cap_run(); // RESOURCE-EXHAUSTION (blind-zone #15): batch sign ABI rejects count>kMaxBatchN (1<<20) before allocation — DoS ceiling (2026-06-11)
 int test_regression_ecdh_xy64_erase_run();           // SEC-002: shim_ecdh xy64 erased after hashfp call (2026-05-23)
 int test_regression_ecdh_off_curve_run();            // SEC-005: ecdh_compute* reject off-curve and infinity pubkeys (2026-05-27)
 int test_regression_musig_xonly_zero_tweak_run();    // SHIM-001: xonly_tweak_add accepts zero tweak (2026-05-23)
@@ -1439,6 +1440,8 @@ static const AuditModule ALL_MODULES[] = {
     // === 2026-06-11 ENTROPY-SOURCE-INTEGRITY: BIP-39 fail-closed CSPRNG (blind-zone #5) ===
     { "regression_bip39_csprng_failclosed", "ENTROPY-SOURCE (blind-zone #5): bip39.cpp shipped a local fail-OPEN csprng_fill (returned false on /dev/urandom failure) duplicating + weakening the single canonical fail-CLOSED detail::csprng_fill (std::abort on RNG failure). Fixed to use the canonical helper; source-scan asserts no local csprng_fill + detail::csprng_fill usage; functional smoke generates+validates a CSPRNG mnemonic and a deterministic fixed-entropy one", "memory_safety", test_regression_bip39_csprng_failclosed_run, false },
 #endif // SECP256K1_HAS_WALLET
+    // === 2026-06-11 RESOURCE-EXHAUSTION: batch-sign DoS count ceiling (blind-zone #15) ===
+    { "regression_batch_dos_cap", "RESOURCE-EXHAUSTION (blind-zone #15): ufsecp_ecdsa_sign_batch / ufsecp_schnorr_sign_batch enforce a hard count ceiling kMaxBatchN=1<<20 BEFORE any count*size allocation, so a hostile count cannot drive an unbounded malloc/DoS. The cap existed but was untested/ungated. Asserts count>kMaxBatchN and count==0 -> BAD_INPUT (no alloc), and a small valid batch still succeeds", "memory_safety", test_regression_batch_dos_cap_run, false },
     // === 2026-05-24 DEDUP refactors (SonarCloud-driven, no security/ABI change) ===
     // advisory=false: deterministic roundtrips + tag-separation + cast-invariance.
     { "regression_dedup_refactors_2026_05_24", "DEDUP-2026-05-24: bip39 decode_bip39_words helper, sp_scanner+ltc_sp shared sp_scan_batch_impl, types.hpp to_data_cast<T> template, ellswift retry-loop helper -- invariant roundtrips proving no behavioural drift", "differential", test_regression_dedup_refactors_2026_05_24_run, false },
