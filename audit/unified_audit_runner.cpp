@@ -232,6 +232,7 @@ int test_regression_dedup_refactors_2026_05_24_run(); // DEDUP-2026-05-24: bip39
 int test_regression_adaptor_ct_secret_extract_run(); // SEC-001/CT-001: adaptor extract uses ct::scalar_mul + erases s_inv (2026-05-23)
 int test_regression_secret_scalar_residue_erase_run(); // FROST-SIGN-RESIDUE: frost_sign rho_ei/lambda_s_e + schnorr_keypair_create d_prime secure_erase (2026-06-10)
 int test_regression_precompute_gcontext_race_run(); // PRECOMPUTE-GCONTEXT-UAF: shared_ptr snapshot of g_context prevents use-after-free vs concurrent configure_fixed_base (2026-06-10)
+int test_soundness_adaptor_dleq_forgery_run(); // SOUNDNESS-PROBE: negative test — forged ECDSA-adaptor pre-sig with mismatched dlog MUST be rejected by the DLEQ binding (GHSA-c7q2 regression) (2026-06-11)
 int test_regression_ecdh_xy64_erase_run();           // SEC-002: shim_ecdh xy64 erased after hashfp call (2026-05-23)
 int test_regression_ecdh_off_curve_run();            // SEC-005: ecdh_compute* reject off-curve and infinity pubkeys (2026-05-27)
 int test_regression_musig_xonly_zero_tweak_run();    // SHIM-001: xonly_tweak_add accepts zero tweak (2026-05-23)
@@ -1414,6 +1415,9 @@ static const AuditModule ALL_MODULES[] = {
     // === 2026-06-10 PRECOMPUTE-GCONTEXT-UAF ===
     // advisory=false: source-scan + concurrent reconfigure/compute smoke (no shim/GPU dependency).
     { "regression_precompute_gcontext_race", "PRECOMPUTE-GCONTEXT-UAF: g_context is shared_ptr; scalar_mul_generator/batch_scalar_mul_generator snapshot it under g_mutex so a concurrent configure_fixed_base()->g_context.reset() cannot free the table mid-read (use-after-free) -- source-scan + concurrent reconfigure/compute-vs-reference smoke", "memory_safety", test_regression_precompute_gcontext_race_run, false },
+    // === 2026-06-11 SOUNDNESS-PROBE (negative-soundness gate seed) ===
+    // advisory=false: forges a verifying-but-unbound adaptor pre-sig; the DLEQ MUST reject it.
+    { "soundness_adaptor_dleq_forgery", "SOUNDNESS-PROBE (GHSA-c7q2): forge an ECDSA-adaptor pre-signature with log_G(R_hat) != log_T(R) that still satisfies r==R.x AND the ECDSA relation s_hat*R_hat==z*G+r*P; the Chaum-Pedersen DLEQ binding MUST reject it (else the adaptor is unbindable). The 'test the WRONG case' invariant inversion that a positive roundtrip cannot catch", "protocol_security", test_soundness_adaptor_dleq_forgery_run, false },
     // === 2026-05-24 DEDUP refactors (SonarCloud-driven, no security/ABI change) ===
     // advisory=false: deterministic roundtrips + tag-separation + cast-invariance.
     { "regression_dedup_refactors_2026_05_24", "DEDUP-2026-05-24: bip39 decode_bip39_words helper, sp_scanner+ltc_sp shared sp_scan_batch_impl, types.hpp to_data_cast<T> template, ellswift retry-loop helper -- invariant roundtrips proving no behavioural drift", "differential", test_regression_dedup_refactors_2026_05_24_run, false },

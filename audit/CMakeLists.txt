@@ -5305,6 +5305,18 @@ set_tests_properties(regression_precompute_gcontext_race PROPERTIES TIMEOUT 60
     LABELS "audit;regression;thread-safety;memory-safety;use-after-free;source-scan")
 target_sources(unified_audit_runner PRIVATE test_regression_precompute_gcontext_race.cpp)
 
+# SOUNDNESS-PROBE (GHSA-c7q2) — negative-soundness gate seed (2026-06-11)
+# advisory=false: forged adaptor pre-sig with mismatched dlog must be rejected by the DLEQ.
+add_executable(test_soundness_adaptor_dleq_forgery_standalone
+    test_soundness_adaptor_dleq_forgery.cpp)
+audit_target_defaults(test_soundness_adaptor_dleq_forgery_standalone)
+target_compile_definitions(test_soundness_adaptor_dleq_forgery_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME soundness_adaptor_dleq_forgery
+    COMMAND test_soundness_adaptor_dleq_forgery_standalone)
+set_tests_properties(soundness_adaptor_dleq_forgery PROPERTIES TIMEOUT 30
+    LABELS "audit;soundness;adaptor;dleq;protocol-security;negative-test;ghsa-c7q2")
+target_sources(unified_audit_runner PRIVATE test_soundness_adaptor_dleq_forgery.cpp)
+
 # DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
 # advisory=false: roundtrips only on C++ API (no shim, no GPU).
 add_executable(test_regression_dedup_refactors_2026_05_24_standalone

@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0.0",
+  "purpose": "Soundness-coverage ledger. Every cryptographic verify/proof function declares its SECURITY INVARIANT (what 'verify==OK' must imply) and a NEGATIVE-SOUNDNESS probe: a test that forges an input VIOLATING the invariant and asserts the verifier REJECTS it. A function with a claim but no wired probe is a potential hole of the GHSA-c7q2 class (a verifying-but-unsound input that every positive roundtrip test misses). Enforced by ci/check_soundness_coverage.py.",
+  "methodology": "Invert the invariant: do not test that correct inputs are accepted (roundtrip) — test that INCORRECT inputs are blocked. If the system cannot block the wrong case, that is the hole.",
+  "invariants": [
+    {
+      "id": "adaptor-ecdsa-dleq-binding",
+      "protocol": "ECDSA adaptor signature",
+      "verify_function": "ecdsa_adaptor_verify",
+      "claim": "verify==OK => log_G(R_hat) == log_T(R): the pre-signature's two nonce points share the same secret k, so r=R.x is bound to the adaptor base T and the pre-signature is adaptable.",
+      "forge": "Construct R_hat=k1*G, R=k2*T with k1!=k2 that still satisfies r==R.x AND the ECDSA relation s_hat*R_hat==z*G+r*P (choose s_hat=(z+r*x)*k1^-1). Only the Chaum-Pedersen DLEQ can reject it.",
+      "probe_module": "soundness_adaptor_dleq_forgery",
+      "probe_run_symbol": "test_soundness_adaptor_dleq_forgery_run",
+      "status": "covered",
+      "ref": "GHSA-c7q2-gv3g-rgxm"
+    },
+    {
+      "id": "dleq-standalone-binding",
+      "protocol": "standalone Chaum-Pedersen DLEQ (zk::dleq_verify)",
+      "verify_function": "dleq_verify",
+      "claim": "verify==OK => log_G(P) == log_H(Q): the prover knows a single x with P=x*G and Q=x*H.",
+      "forge": "Construct P=x1*G, Q=x2*H with x1!=x2 and any (e,s); a sound verifier recomputes e'=H(G,H,P,Q,R1,R2) and rejects (e'!=e).",
+      "probe_module": null,
+      "probe_run_symbol": null,
+      "status": "roadmap",
+      "ref": ""
+    },
+    {
+      "id": "zk-knowledge-pok-soundness",
+      "protocol": "Schnorr proof-of-knowledge (zk::knowledge_verify)",
+      "verify_function": "knowledge_verify",
+      "claim": "verify==OK => the prover knows the discrete log x of the public point P=x*base.",
+      "forge": "A proof (rx, s) for a P whose discrete log the forger does not know must fail s*base - e*P reconstructing to rx with even Y.",
+      "probe_module": null,
+      "probe_run_symbol": null,
+      "status": "roadmap",
+      "ref": ""
+    },
+    {
+      "id": "schnorr-adaptor-binding",
+      "protocol": "Schnorr adaptor signature",
+      "verify_function": "schnorr_adaptor_verify",
+      "claim": "verify==OK => adapt(pre, t) yields a valid BIP-340 signature for T=t*G, and extract(pre, full) recovers t.",
+      "forge": "Pre-signature whose R_hat/T relationship is inconsistent with the challenge e=H((R_hat+T).x||P.x||m) must fail s*G==R_hat+e*P.",
+      "probe_module": null,
+      "probe_run_symbol": null,
+      "status": "roadmap",
+      "ref": ""
+    },
+    {
+      "id": "musig2-partial-binding",
+      "protocol": "MuSig2 partial signature",
+      "verify_function": "musig2_partial_verify",
+      "claim": "verify==OK => s_i*G == R_i + b*R2_i + e*a_i*g*gacc*P_i, binding the partial sig to (aggnonce, aggpk, msg) so the Wagner/ROS forgery cannot complete.",
+      "forge": "Partial sig with a nonce/binding-coefficient not derived from H('MuSig/noncecoef', R1||R2||Q_x||msg) must be rejected.",
+      "probe_module": null,
+      "probe_run_symbol": null,
+      "status": "roadmap",
+      "ref": ""
+    },
+    {
+      "id": "frost-partial-binding",
+      "protocol": "FROST partial signature",
+      "verify_function": "frost_verify_partial",
+      "claim": "verify==OK => z_i*G == R_i + lambda_i*e*Y_i, binding z_i to the group commitment R, verification share Y_i, Lagrange coeff and message.",
+      "forge": "Partial sig with a binding factor rho_i not derived from the full commitment list, or an absent-signer share, must be rejected.",
+      "probe_module": null,
+      "probe_run_symbol": null,
+      "status": "roadmap",
+      "ref": ""
+    },
+    {
+      "id": "range-proof-soundness",
+      "protocol": "Bulletproof range proof",
+      "verify_function": "range_verify",
+      "claim": "verify==OK => the Pedersen-committed value lies in [0, 2^n): a prover cannot prove a commitment to an out-of-range value.",
+      "forge": "A proof for a commitment to value >= 2^n (or negative) must be rejected; also fuzz the Fiat-Shamir transcript (see kb BP-FS-IP-CHAIN).",
+      "probe_module": null,
+      "probe_run_symbol": null,
+      "status": "roadmap",
+      "ref": "BP-FS-IP-CHAIN"
+    }
+  ]
+}

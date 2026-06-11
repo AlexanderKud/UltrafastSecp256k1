@@ -1,5 +1,31 @@
 # Audit Changelog
 
+## 2026-06-11 — Soundness-coverage gate: negative-soundness probes for the GHSA-c7q2 class
+
+- **Why:** GHSA-c7q2-gv3g-rgxm (adaptor DLEQ binding was vacuous) slipped every review
+  and every CAAS gate because the whole stack asserts *correct* inputs are ACCEPTED
+  (honest sign→verify roundtrips). The hole was a *verifying-but-unsound* input — only a
+  test built on the INVERTED invariant (forge a violating input, assert rejection) can
+  catch that class.
+- **New gate `ci/check_soundness_coverage.py`** (wired into `run_fast_gates.sh`) backed by
+  the ledger `docs/SOUNDNESS_INVARIANTS.json`. Every custom-protocol verify/proof function
+  (adaptor, DLEQ, ZK PoK, MuSig2, FROST, range) declares its security invariant and, when
+  covered, a wired negative-soundness probe. The gate **blocks** if (1) a `covered` probe
+  is unwired, or (2) a verify function exists in the engine source with **no** ledger entry
+  (a new soundness surface must be classified) — the `check_security_fix_has_test` analogue
+  for soundness. Standard signature verifies are out of scope (they have a libsecp
+  differential oracle).
+- **Seed probe `soundness_adaptor_dleq_forgery`** (`audit/test_soundness_adaptor_dleq_forgery.cpp`,
+  section `protocol_security`): forges an ECDSA-adaptor pre-signature with
+  `log_G(R_hat) != log_T(R)` that still satisfies `r==R.x` AND the ECDSA relation
+  `s_hat*R_hat == z*G + r*P` (so only the Chaum-Pedersen DLEQ can reject it), plus an
+  R-shifted-by-T forge and a tampered-`dleq_s` forge. All must be REJECTED. build-audit: 4/4.
+  This is the durable regression that would have caught GHSA-c7q2.
+- **Roadmap (declared holes, forge-probes pending):** `dleq_verify`, `knowledge_verify`,
+  `schnorr_adaptor_verify`, `musig2_partial_verify`, `frost_verify_partial`, `range_verify`
+  (see kb `BP-FS-IP-CHAIN` for the range-proof Fiat-Shamir angle). Closed incrementally;
+  each flips `roadmap`→`covered` and becomes blocking-protected.
+
 ## 2026-06-10 — Narrow-scope thread-safety sweep: g_context UAF (P2) + comb-teeth race (P4) + tag-gate coverage
 
 - **PRECOMPUTE-GCONTEXT-UAF (P2, use-after-free / data race):** `scalar_mul_generator`
