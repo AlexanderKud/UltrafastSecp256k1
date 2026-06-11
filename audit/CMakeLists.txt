@@ -5317,6 +5317,18 @@ set_tests_properties(soundness_adaptor_dleq_forgery PROPERTIES TIMEOUT 30
     LABELS "audit;soundness;adaptor;dleq;protocol-security;negative-test;ghsa-c7q2")
 target_sources(unified_audit_runner PRIVATE test_soundness_adaptor_dleq_forgery.cpp)
 
+# METAMORPHIC-PROBE — positive complement to the negative-soundness gate (2026-06-11)
+# advisory=false: ECDSA-adaptor adapt/extract algebraic relations on the C++ API.
+add_executable(test_metamorphic_adaptor_standalone
+    test_metamorphic_adaptor.cpp)
+audit_target_defaults(test_metamorphic_adaptor_standalone)
+target_compile_definitions(test_metamorphic_adaptor_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME metamorphic_adaptor
+    COMMAND test_metamorphic_adaptor_standalone)
+set_tests_properties(metamorphic_adaptor PROPERTIES TIMEOUT 30
+    LABELS "audit;metamorphic;adaptor;protocol-security;positive-invariant")
+target_sources(unified_audit_runner PRIVATE test_metamorphic_adaptor.cpp)
+
 # DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
 # advisory=false: roundtrips only on C++ API (no shim, no GPU).
 add_executable(test_regression_dedup_refactors_2026_05_24_standalone

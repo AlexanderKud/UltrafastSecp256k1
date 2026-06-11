@@ -1,5 +1,27 @@
 # Audit Changelog
 
+## 2026-06-11 — Metamorphic-relation coverage gate (positive complement to soundness)
+
+- **New gate `ci/check_metamorphic_coverage.py`** backed by
+  `docs/METAMORPHIC_RELATIONS.json`. The POSITIVE complement to the negative-soundness
+  gate: soundness forges a violating input and asserts rejection; metamorphic asserts an
+  algebraic identity that must hold for ALL valid inputs across a protocol transform.
+  Flips threat class `protocol-metamorphic-positive` in the threat-gate matrix `gap → verified`.
+- **New probe `metamorphic_adaptor`** (`audit/test_metamorphic_adaptor.cpp`,
+  `test_metamorphic_adaptor_run`, section `protocol_security`, advisory=false): the
+  ECDSA-adaptor adapt/extract relation family — MR1 adapt-validity, MR2 extract inverts
+  adapt (recovers ±t), MR3 r-invariant under adapt, MR4 pre-sig≠sig validity-boundary
+  crossing, MR5 adapt determinism, MR6 witness correspondence across distinct adaptors.
+  10/10 relations hold. The positive twin of `soundness_adaptor_dleq_forgery` (GHSA-c7q2):
+  a structural break in adapt/extract escapes a single honest roundtrip but breaks the
+  relation. Module count 421 → 422 (153 non-exploit + 269 exploit PoCs).
+- **Ledger also institutionalizes existing coverage:** `pedersen-additive-homomorphism`
+  marked `covered` → existing `exploit_pedersen_homomorphism` module; MuSig2 aggregate≡single
+  and FROST threshold-reconstruction equivalence declared `roadmap`.
+- **DON'T TRUST, VERIFY:** `ci/test_check_metamorphic_coverage.py` proves the gate blocks
+  unwired/undeclared probes (clean ledger passes). Both gate + self-test wired into
+  `run_fast_gates.sh`.
+
 ## 2026-06-11 — Threat-gate coverage matrix (META gate) + DON'T-TRUST-VERIFY self-tests
 
 - **The apex gate:** `ci/check_threat_gate_coverage.py` backed by

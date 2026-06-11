@@ -57,7 +57,7 @@ lags behind the generated validation surfaces, prefer the generated counts.
 | `test_frost_kat.cpp` | -- | FROST t-of-n threshold signing known-answer tests |
 | `test_wycheproof_ecdsa.cpp` | -- | Wycheproof ECDSA: Google Project Wycheproof test vectors |
 | `test_wycheproof_ecdh.cpp` | -- | Wycheproof ECDH: Google Project Wycheproof test vectors |
-| `unified_audit_runner.cpp` | 421 modules (152 non-exploit + 269 exploit PoCs) | Unified audit: all current modules in single binary (includes GPU null-guard paths) |
+| `unified_audit_runner.cpp` | 422 modules (153 non-exploit + 269 exploit PoCs) | Unified audit: all current modules in single binary (includes GPU null-guard paths) |
 
 ### CPU Unit Tests (`src/cpu/tests/`)
 
@@ -104,13 +104,13 @@ lags behind the generated validation surfaces, prefer the generated counts.
 |------|---------|-------|
 | `opencl/tests/test_opencl.cpp` | OpenCL | Kernel correctness |
 | `opencl/tests/opencl_extended_test.cpp` | OpenCL | Extended operations |
-| `opencl/src/opencl_audit_runner.cpp` | OpenCL | Unified GPU audit ( 421 modules, 8 sections) |
+| `opencl/src/opencl_audit_runner.cpp` | OpenCL | Unified GPU audit ( 422 modules, 8 sections) |
 | `metal/tests/test_metal_host.cpp` | Metal | Metal shader correctness |
-| `metal/src/metal_audit_runner.mm` | Metal | `secp256k1_metal_audit`: unified GPU audit ( 421 modules, 8 sections) |
+| `metal/src/metal_audit_runner.mm` | Metal | `secp256k1_metal_audit`: unified GPU audit ( 422 modules, 8 sections) |
 | `src/cuda/src/test_ct_smoke.cu` | CUDA | CT smoke tests incl. ZK knowledge + DLEQ prove/verify (9 tests) |
 | `src/cuda/src/gpu_ct_leakage_probe.cu` | CUDA | Fixed-vs-random device-cycle Welch t-test for CT generator/signing kernels with JSON evidence output |
 | `src/cuda/src/test_suite.cu` | CUDA | `cuda_selftest`: kernel correctness, field + scalar + point ops |
-| `src/cuda/src/gpu_audit_runner.cu` | CUDA | `gpu_audit`: unified GPU audit ( 421 modules, 8 sections) |
+| `src/cuda/src/gpu_audit_runner.cu` | CUDA | `gpu_audit`: unified GPU audit ( 422 modules, 8 sections) |
 | `metal/app/metal_test.mm` | Metal | `secp256k1_metal_test`: shader correctness, compute pipeline |
 | `metal/app/bench_metal.mm` | Metal | `secp256k1_metal_bench_full`: comprehensive Metal benchmark |
 | `compat/libsecp256k1_shim/tests/shim_test.cpp` | CPU | `secp256k1_shim_test`: libsecp256k1 API compatibility shim |
@@ -886,6 +886,7 @@ ctest --test-dir build-audit -R "exploit" --output-on-failure
 | `regression_secret_scalar_residue_erase` | `audit/test_regression_secret_scalar_residue_erase.cpp` | FROST-SIGN-RESIDUE: frost_sign secure_erase of secret-derived rho_ei/lambda_s_e (binding nonce ei + share s_i); schnorr_keypair_create erases d_prime private-key copy — source-scan (3 sites) + keypair sign/verify round-trip |
 | `regression_precompute_gcontext_race` | `audit/test_regression_precompute_gcontext_race.cpp` | PRECOMPUTE-GCONTEXT-UAF: g_context shared_ptr snapshot under g_mutex prevents use-after-free vs concurrent configure_fixed_base reset — source-scan + concurrent reconfigure/compute-vs-reference smoke |
 | `soundness_adaptor_dleq_forgery` | `audit/test_soundness_adaptor_dleq_forgery.cpp` | SOUNDNESS-PROBE (GHSA-c7q2): negative-soundness test — forge an ECDSA-adaptor pre-sig with log_G(R_hat)≠log_T(R) that still satisfies r==R.x and the ECDSA relation; the Chaum-Pedersen DLEQ binding MUST reject it. Seed of the soundness-coverage gate (ci/check_soundness_coverage.py) |
+| `metamorphic_adaptor` | `audit/test_metamorphic_adaptor.cpp` | METAMORPHIC-PROBE: positive complement to soundness_adaptor_dleq_forgery — ECDSA-adaptor adapt/extract algebraic relations (MR1 adapt-validity, MR2 extract inverts adapt to ±t, MR3 r-invariant, MR4 pre-sig≠sig boundary, MR5 adapt determinism, MR6 witness correspondence). Seed of the metamorphic-coverage gate (ci/check_metamorphic_coverage.py) |
 | `regression_nonce_candidate_erase` | `audit/test_regression_nonce_candidate_erase.cpp` | P2-CT-001/002/003/007: cand1+cand2 secure_erase after ct::scalar_select in rfc6979_nonce, rfc6979_nonce_hedged, musig2_nonce_gen (k1+k2), derive_scalar_from_hash; NCER-1..5: 200 ECDSA roundtrips, determinism, uniqueness, 50 hedged roundtrips, source scan |
 | `regression_shim_null_callback` | `audit/test_regression_shim_null_callback.cpp` | SHIM-A01/A02/A03/A07/A08: secp256k1 shim fires illegal_callback on NULL args matching libsecp256k1 ARG_CHECK; SNC-1..5: normalize(NULL sigin), pubkey_sort(NULL ctx), tagged_sha256(NULL msg+len=0 OK), pubkey_negate(NULL pubkey), tagged_sha256(NULL msg+len>0) |
 | `exploit_frost_absent_signer_id` | `audit/test_exploit_frost_absent_signer_id.cpp` | P1-SEC-001: frost_sign returns zero partial sig when caller ID absent from nonce_commitments signing set (FSI-1..3) |

@@ -233,6 +233,7 @@ int test_regression_adaptor_ct_secret_extract_run(); // SEC-001/CT-001: adaptor 
 int test_regression_secret_scalar_residue_erase_run(); // FROST-SIGN-RESIDUE: frost_sign rho_ei/lambda_s_e + schnorr_keypair_create d_prime secure_erase (2026-06-10)
 int test_regression_precompute_gcontext_race_run(); // PRECOMPUTE-GCONTEXT-UAF: shared_ptr snapshot of g_context prevents use-after-free vs concurrent configure_fixed_base (2026-06-10)
 int test_soundness_adaptor_dleq_forgery_run(); // SOUNDNESS-PROBE: negative test — forged ECDSA-adaptor pre-sig with mismatched dlog MUST be rejected by the DLEQ binding (GHSA-c7q2 regression) (2026-06-11)
+int test_metamorphic_adaptor_run(); // METAMORPHIC-PROBE: positive complement — adapt/extract algebraic relations (adapt-validity, extract inverts adapt to +/-t, r-invariant, witness correspondence) must hold across the transform (2026-06-11)
 int test_regression_ecdh_xy64_erase_run();           // SEC-002: shim_ecdh xy64 erased after hashfp call (2026-05-23)
 int test_regression_ecdh_off_curve_run();            // SEC-005: ecdh_compute* reject off-curve and infinity pubkeys (2026-05-27)
 int test_regression_musig_xonly_zero_tweak_run();    // SHIM-001: xonly_tweak_add accepts zero tweak (2026-05-23)
@@ -1418,6 +1419,11 @@ static const AuditModule ALL_MODULES[] = {
     // === 2026-06-11 SOUNDNESS-PROBE (negative-soundness gate seed) ===
     // advisory=false: forges a verifying-but-unbound adaptor pre-sig; the DLEQ MUST reject it.
     { "soundness_adaptor_dleq_forgery", "SOUNDNESS-PROBE (GHSA-c7q2): forge an ECDSA-adaptor pre-signature with log_G(R_hat) != log_T(R) that still satisfies r==R.x AND the ECDSA relation s_hat*R_hat==z*G+r*P; the Chaum-Pedersen DLEQ binding MUST reject it (else the adaptor is unbindable). The 'test the WRONG case' invariant inversion that a positive roundtrip cannot catch", "protocol_security", test_soundness_adaptor_dleq_forgery_run, false },
+    // === 2026-06-11 METAMORPHIC-PROBE (positive complement to the negative-soundness gate) ===
+    // advisory=false: ECDSA-adaptor C++ API only, no shim/GPU dependency.
+#if SECP256K1_HAS_ADAPTOR
+    { "metamorphic_adaptor", "METAMORPHIC-PROBE: positive algebraic relations that must hold across the adaptor adapt/extract transform — MR1 adapt-validity (ecdsa_verify(adapt(pre,t))==OK), MR2 extract inverts adapt (recovers +/-t), MR3 r-invariant under adapt, MR4 pre-sig != sig validity-boundary crossing, MR5 adapt determinism, MR6 witness correspondence across distinct adaptors. Complements soundness_adaptor_dleq_forgery: a structural break in adapt/extract escapes a single honest roundtrip but breaks the relation family", "protocol_security", test_metamorphic_adaptor_run, false },
+#endif // SECP256K1_HAS_ADAPTOR
     // === 2026-05-24 DEDUP refactors (SonarCloud-driven, no security/ABI change) ===
     // advisory=false: deterministic roundtrips + tag-separation + cast-invariance.
     { "regression_dedup_refactors_2026_05_24", "DEDUP-2026-05-24: bip39 decode_bip39_words helper, sp_scanner+ltc_sp shared sp_scan_batch_impl, types.hpp to_data_cast<T> template, ellswift retry-loop helper -- invariant roundtrips proving no behavioural drift", "differential", test_regression_dedup_refactors_2026_05_24_run, false },
