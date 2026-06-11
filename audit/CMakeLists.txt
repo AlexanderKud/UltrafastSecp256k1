@@ -5375,6 +5375,17 @@ set_tests_properties(regression_batch_dos_cap PROPERTIES TIMEOUT 30
     LABELS "audit;regression;memory-safety;dos;resource-exhaustion;batch")
 target_sources(unified_audit_runner PRIVATE test_regression_batch_dos_cap.cpp)
 
+# VALID/INVALID coverage — live ABI reject branches never exercised (2026-06-11)
+add_executable(test_regression_abi_invalid_reject_standalone
+    test_regression_abi_invalid_reject.cpp)
+audit_target_defaults(test_regression_abi_invalid_reject_standalone)
+target_compile_definitions(test_regression_abi_invalid_reject_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_abi_invalid_reject
+    COMMAND test_regression_abi_invalid_reject_standalone)
+set_tests_properties(regression_abi_invalid_reject PROPERTIES TIMEOUT 30
+    LABELS "audit;regression;memory-safety;valid-invalid;abi;reject")
+target_sources(unified_audit_runner PRIVATE test_regression_abi_invalid_reject.cpp)
+
 # DEDUP-2026-05-24: pure code-shape refactors, behavioural-freeze invariants
 # advisory=false: roundtrips only on C++ API (no shim, no GPU).
 add_executable(test_regression_dedup_refactors_2026_05_24_standalone

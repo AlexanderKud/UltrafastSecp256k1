@@ -1,5 +1,28 @@
 # Audit Changelog
 
+## 2026-06-11 — VALID/INVALID coverage: live ABI reject branches now exercised (wrong-accept trap)
+
+- **Methodology:** a 21-agent valid/invalid gate-coverage audit enumerated 69 engine
+  operations and checked each for BOTH a valid-acceptance gate AND an invalid-rejection
+  gate (the thesis: a consensus operation is bug-proof only with both). Result: **0 ops
+  missing a valid gate; 8 missing the invalid gate; 25 self-anchored (common-mode)**.
+  Matrix: `workingdocs/VALID_INVALID_COVERAGE_2026-06-11.md`.
+- **The "live reject branch, no invalid-gate" trap closed:** 3 ABI operations had a
+  rejection branch in `src/cpu/src/impl` that the WIRED/blocking suite never fed an invalid
+  input — so a regression dropping the strict check (a wrong-ACCEPT) would have passed every
+  gate. New module `regression_abi_invalid_reject` (memory_safety) exercises them:
+  - `ufsecp_seckey_negate`: privkey `0` / `== n` / `0xff..ff` → `BAD_KEY` (buffer left intact).
+  - `ufsecp_shamir_trick`: scalar `a == n` → `BAD_INPUT`; invalid point → `BAD_PUBKEY`.
+  - `ufsecp_multi_scalar_mul`: scalar `== n` → `BAD_INPUT`; off-curve point → `BAD_PUBKEY`;
+    `n == 0` → `BAD_INPUT`.
+  Each with a valid control so the reject path is not vacuous. 15/15. Module 426 → 427;
+  name-pinned in `REQUIRED_EXPLOIT_MODULES.json`.
+- **Recorded common-mode finding (roadmap):** `exploit_differential_libsecp` self-labels
+  "(not a libsecp differential)" and the real cross-libsecp `edge_cases` slot is an
+  ADVISORY_SKIP stub — so 25 ops (incl. all consensus sighashes BIP-143/341/342/144) are
+  anchored only to our own re-derivation, with NO Bitcoin Core known-answer digest. The next
+  structural lever is wiring a real byte-exact libsecp/Core differential at the ABI.
+
 ## 2026-06-11 — Blind-zone lantern #15: batch-sign DoS ceiling tested + resource-exhaustion class
 
 - **Untested DoS ceiling now tested + gated:** the batch sign ABI

@@ -238,6 +238,7 @@ int test_soundness_snark_witness_attestation_run(); // SOUNDNESS-PROBE: ecdsa/sc
 int test_regression_musig_keyagg_lifetime_run(); // UAF-REGRESSION (blind-zone #4): shim g_ka holds shared_ptr<KAEntry> + ka_get returns a snapshot, not raw it->second.get() — unlock-then-use UAF class (2026-06-11)
 int test_regression_bip39_csprng_failclosed_run(); // ENTROPY-SOURCE (blind-zone #5): bip39.cpp uses canonical fail-closed detail::csprng_fill, not a local fail-open duplicate (2026-06-11)
 int test_regression_batch_dos_cap_run(); // RESOURCE-EXHAUSTION (blind-zone #15): batch sign ABI rejects count>kMaxBatchN (1<<20) before allocation — DoS ceiling (2026-06-11)
+int test_regression_abi_invalid_reject_run(); // VALID/INVALID coverage: live ABI reject branches (seckey_negate >=n, shamir/MSM scalar>=n + off-curve) that the blocking suite never exercised — wrong-accept trap (2026-06-11)
 int test_regression_ecdh_xy64_erase_run();           // SEC-002: shim_ecdh xy64 erased after hashfp call (2026-05-23)
 int test_regression_ecdh_off_curve_run();            // SEC-005: ecdh_compute* reject off-curve and infinity pubkeys (2026-05-27)
 int test_regression_musig_xonly_zero_tweak_run();    // SHIM-001: xonly_tweak_add accepts zero tweak (2026-05-23)
@@ -1442,6 +1443,8 @@ static const AuditModule ALL_MODULES[] = {
 #endif // SECP256K1_HAS_WALLET
     // === 2026-06-11 RESOURCE-EXHAUSTION: batch-sign DoS count ceiling (blind-zone #15) ===
     { "regression_batch_dos_cap", "RESOURCE-EXHAUSTION (blind-zone #15): ufsecp_ecdsa_sign_batch / ufsecp_schnorr_sign_batch enforce a hard count ceiling kMaxBatchN=1<<20 BEFORE any count*size allocation, so a hostile count cannot drive an unbounded malloc/DoS. The cap existed but was untested/ungated. Asserts count>kMaxBatchN and count==0 -> BAD_INPUT (no alloc), and a small valid batch still succeeds", "memory_safety", test_regression_batch_dos_cap_run, false },
+    // === 2026-06-11 VALID/INVALID coverage: live ABI reject branches never exercised ===
+    { "regression_abi_invalid_reject", "VALID/INVALID COVERAGE: the 'live reject branch, no invalid-gate' wrong-accept trap. ufsecp_seckey_negate (>=n/0 -> BAD_KEY, buffer intact), ufsecp_shamir_trick + ufsecp_multi_scalar_mul (scalar>=n -> BAD_INPUT, invalid/off-curve point -> BAD_PUBKEY, n==0 -> BAD_INPUT) all have live rejection branches in src/cpu/src/impl that the blocking suite never fed an invalid input — a regression dropping the strict check (wrong-accept) would have passed every gate. Feeds each branch an invalid input + a valid control so the reject path is not vacuous", "memory_safety", test_regression_abi_invalid_reject_run, false },
     // === 2026-05-24 DEDUP refactors (SonarCloud-driven, no security/ABI change) ===
     // advisory=false: deterministic roundtrips + tag-separation + cast-invariance.
     { "regression_dedup_refactors_2026_05_24", "DEDUP-2026-05-24: bip39 decode_bip39_words helper, sp_scanner+ltc_sp shared sp_scan_batch_impl, types.hpp to_data_cast<T> template, ellswift retry-loop helper -- invariant roundtrips proving no behavioural drift", "differential", test_regression_dedup_refactors_2026_05_24_run, false },
