@@ -1,5 +1,26 @@
 # Audit Changelog
 
+## 2026-06-11 — Fuzz-harness liveness gate + smoke gate (the fuzzing layer is real, not dead)
+
+- **Discovery:** the repo already has coverage-guided libFuzzer fuzzing — 11 harnesses
+  (5 ClusterFuzzLite `src/cpu/fuzz/fuzz_*.cpp` with seed corpora + 6 audit-CTest
+  `audit/fuzz_*.cpp`), a `.clusterfuzzlite/build.sh` OSS-Fuzz build, and
+  `ci/fuzz_campaign_manager.py`. The `memory-safety-fuzzing` threat-matrix entry was
+  stale (claimed "not coverage-guided libFuzzer"); corrected `gap → verified`.
+- **New fast gate `ci/check_fuzz_harness_wiring.py`** (analogue of check_exploit_wiring):
+  every libFuzzer harness on disk MUST be wired into its build (ClusterFuzzLite `build.sh`
+  for src/cpu/fuzz, the `_FUZZ_HARNESSES` list in `audit/CMakeLists.txt` for audit), and
+  every build reference MUST resolve to a harness on disk. Catches the silently-dead
+  harness (added but never built → never runs → never finds a bug) and the dangling
+  reference (deleted harness breaks the next campaign). All 11 harnesses wired.
+- **New smoke gate `ci/check_fuzz_smoke.sh`** (heavier, advisory/--full): builds ONE
+  harness with `clang -fsanitize=fuzzer,address` against the current tree and runs it
+  against the seed corpus — proves the fuzzing layer is ALIVE (compiles vs current API,
+  no crash on seeds). Validated locally: `fuzz_scalar` built + ran 8000 iterations clean.
+- **DON'T TRUST, VERIFY:** `ci/test_check_fuzz_harness_wiring.py` proves the wiring gate
+  blocks a dead harness + a dangling reference (and passes a fully-wired set). Both wiring
+  gate + self-test wired into `run_fast_gates.sh`.
+
 ## 2026-06-11 — Metamorphic-relation coverage gate (positive complement to soundness)
 
 - **New gate `ci/check_metamorphic_coverage.py`** backed by

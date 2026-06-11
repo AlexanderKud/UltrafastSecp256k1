@@ -162,6 +162,8 @@ run "Threat-gate coverage (don't trust verify)" ci/check_threat_gate_coverage.py
 run "Threat-gate self-test (proof-it-blocks)"  ci/test_check_threat_gate_coverage.py
 run "Metamorphic coverage (positive-invariant ledger)" ci/check_metamorphic_coverage.py
 run "Metamorphic-gate self-test (proof-it-blocks)" ci/test_check_metamorphic_coverage.py
+run "Fuzz-harness wiring/liveness" ci/check_fuzz_harness_wiring.py
+run "Fuzz-wiring self-test (proof-it-blocks)" ci/test_check_fuzz_harness_wiring.py
 run "Nonce erase coverage (BIP-327)"           ci/check_nonce_erase_coverage.py
 run "Doc drift (badges, removed files)"        ci/check_doc_drift.py
 run "Bench/doc consistency (banned patterns)" ci/check_bench_doc_consistency.py
