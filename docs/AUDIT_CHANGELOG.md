@@ -1,5 +1,22 @@
 # Audit Changelog
 
+## 2026-06-11 — Fault-injection countermeasure gate — threat-gate matrix reaches 0 gaps
+
+- **New gate `ci/check_fault_countermeasure_coverage.py`** + ledger
+  `docs/FAULT_COUNTERMEASURE_LEDGER.json` — closes the LAST declared gap in the threat-gate
+  matrix (`fault-injection` `gap → verified`; matrix now **9 verified / 12 trusted / 0 gap**).
+- **What it enforces:** a single induced fault (skipped branch, flipped bit, glitched
+  compare) can turn an invalid signature into an emitted success (Boneh-DeMillo-Lipton / DFA).
+  The countermeasure is sign-then-verify (FIPS 186-4). The gate verifies, per critical signing
+  path, that (1) the countermeasure function still EXISTS and the file re-verifies — catching a
+  *deleted* or *hollowed-out* `*_sign_verified` (still named, but no longer calls verify) — and
+  (2) the fault-injection probe is wired into the runner. 4 covered (`ecdsa_sign_verified`,
+  `schnorr_sign_verified`, 2 DFA probes), 1 roadmap (MuSig2/FROST partial-sign).
+- **DON'T TRUST, VERIFY:** `ci/test_check_fault_countermeasure_coverage.py` proves the gate
+  blocks a hollowed-out countermeasure (symbol present, no verify call), a deleted
+  countermeasure, and an unwired probe — and that the sign-then-verify model catches a
+  fault-corrupted signature. Gate + self-test wired into `run_fast_gates.sh`.
+
 ## 2026-06-11 — Cross-backend value-differential gate (CPU<->GPU runtime equality)
 
 - **New gate `ci/check_backend_value_differential.py`** + ledger
