@@ -618,6 +618,69 @@ def check_research_monitor_resilience() -> None:
             fail(tag, f"source error was not compacted: {compact_error!r}")
             return
 
+        rss = """<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+  <channel>
+    <item>
+      <title>ECDSA nonce bias lattice attack on elliptic curve signatures</title>
+      <link>https://eprint.iacr.org/2026/999</link>
+      <description>New secp256k1 attack surface for biased nonces.</description>
+      <guid isPermaLink="true">https://eprint.iacr.org/2026/999</guid>
+      <category>Attacks and cryptanalysis</category>
+      <pubDate>Fri, 12 Jun 2026 12:00:00 +0000</pubDate>
+      <dc:creator>A. Researcher</dc:creator>
+    </item>
+    <item>
+      <title>Unrelated post-quantum KEM note</title>
+      <link>https://eprint.iacr.org/2026/998</link>
+      <description>Code-based cryptography only.</description>
+      <guid isPermaLink="true">https://eprint.iacr.org/2026/998</guid>
+      <category>Public-key cryptography</category>
+      <pubDate>Fri, 12 Jun 2026 12:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
+"""
+        old_http_get_text = module.http_get_text
+        try:
+            module.http_get_text = lambda *args, **kwargs: rss
+            eprint_items = module.fetch_eprint(
+                "ecdsa nonce bias lattice",
+                5,
+                module.datetime(2026, 1, 1, tzinfo=module.timezone.utc),
+            )
+        finally:
+            module.http_get_text = old_http_get_text
+        if len(eprint_items) != 1 or eprint_items[0].source != "IACR ePrint":
+            fail(tag, f"IACR ePrint RSS filtering failed: {eprint_items!r}")
+            return
+
+        bio_item = module.SourceItem(
+            source="Crossref",
+            item_id="10.1101/gr.281517.125",
+            title="Elevated DNA insertion rate in Cyanophora paradoxa reveals unique repair signature",
+            summary="Spontaneous mutation rates have been estimated in approximately 200 species.",
+            published=module.datetime(2026, 6, 12, tzinfo=module.timezone.utc),
+            updated=module.datetime(2026, 6, 12, tzinfo=module.timezone.utc),
+            url="https://doi.org/10.1101/gr.281517.125",
+        )
+        ros_signal = module.SignalClass(
+            signal_id="ros_concurrent_schnorr_forgery",
+            status="covered",
+            priority="high",
+            action="monitor",
+            keywords=("ROS", "blind Schnorr"),
+            repo_evidence=("audit/test_exploit_ros_concurrent_schnorr.cpp",),
+            reason="covered regression fixture",
+        )
+        if module.term_matches(bio_item.summary, "ecies") or module.term_matches(bio_item.title, "ROS"):
+            fail(tag, "crypto terms matched inside unrelated biological words")
+            return
+        bio_classification = module.classify_item(bio_item, [ros_signal])
+        if bio_classification["bucket"] != "discard":
+            fail(tag, f"biological repair signature false-positive was not discarded: {bio_classification}")
+            return
+
         published = module.datetime(2026, 6, 12, tzinfo=module.timezone.utc)
         item = module.SourceItem(
             source="Crossref",
@@ -647,7 +710,15 @@ def check_research_monitor_resilience() -> None:
                 fail(tag, "source error is missing query context")
                 return
 
-        ok(tag, "Crossref dates, source errors, and query-aware reports are covered")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "github-output.txt"
+            module.write_github_outputs(output, report)
+            output_text = output.read_text(encoding="utf-8")
+        if "research_signal_count=1" not in output_text:
+            fail(tag, "GitHub output is missing research_signal_count")
+            return
+
+        ok(tag, "ePrint RSS, term boundaries, Crossref dates, source errors, and query-aware reports are covered")
     except Exception as exc:
         fail(tag, str(exc))
 

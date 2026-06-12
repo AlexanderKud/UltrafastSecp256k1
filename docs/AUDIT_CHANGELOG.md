@@ -1,5 +1,21 @@
 # Audit Changelog
 
+## 2026-06-12 — research monitor ePrint early-warning escalation
+
+- Added IACR Cryptology ePrint RSS as a first-class `ci/research_monitor.py`
+  source, with local RSS parsing and query-aware filtering for expanded
+  secp256k1 attack/bug research searches.
+- Added `research_signal_count` GitHub workflow output and an
+  `open_review_issue` workflow input so scheduled early-warning runs can open a
+  GitHub issue for needs-review research signals, not only high-confidence
+  signals.
+- Replaced substring matching in relevance scoring, query filtering, hard-focus
+  detection, and signal-matrix matching with term/phrase-boundary matching so
+  short crypto keywords cannot match unrelated biological or general prose.
+- Updated research monitor self-tests to cover synthetic ePrint RSS parsing,
+  source filtering, biological false-positive suppression, and GitHub output
+  escalation counters.
+
 ## 2026-06-12 — research monitor source resilience
 
 - Hardened `ci/research_monitor.py` against malformed Crossref `date-parts` so

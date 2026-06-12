@@ -3,10 +3,11 @@
 
 Three-tier triage:
   high_confidence  — score >= THRESHOLD_HIGH and passes crypto relevance gate
-  needs_review     — score >= THRESHOLD_REVIEW (log only, no issue)
+  needs_review     — score >= THRESHOLD_REVIEW (review queue)
   discarded        — score < THRESHOLD_REVIEW or dominated by negative terms
 
-GitHub issues are opened ONLY for high_confidence items.
+GitHub issues are opened for high_confidence items by default. The optional
+review-escalation mode also opens an issue when only needs_review items exist.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from email.utils import format_datetime
+from email.utils import format_datetime, parsedate_to_datetime
 from html import unescape
 from pathlib import Path
 from typing import Iterable
@@ -33,12 +34,21 @@ LIB_ROOT = SCRIPT_DIR.parent
 DEFAULT_OUTPUT_DIR = LIB_ROOT / 'out' / 'research_monitor'
 DEFAULT_MATRIX = LIB_ROOT / 'docs' / 'RESEARCH_SIGNAL_MATRIX.json'
 USER_AGENT = 'UltrafastSecp256k1ResearchMonitor/1.0 (+https://github.com/shrec/UltrafastSecp256k1)'
+EPRINT_RSS_URL = 'https://eprint.iacr.org/rss/rss.xml'
 ARXIV_NS = {'atom': 'http://www.w3.org/2005/Atom'}
+RSS_DC_NS = {'dc': 'http://purl.org/dc/elements/1.1/'}
+QUERY_STOP_WORDS = {
+    'a', 'an', 'and', 'for', 'from', 'in', 'of', 'on', 'or', 'the', 'to', 'with',
+}
+PREFIX_TERMS = {
+    'cve-',
+    'pharmacolog',
+}
 
 # Minimum score thresholds for triage buckets.
 # Score is computed by relevance_score() over title + abstract.
 THRESHOLD_HIGH   = 10   # high_confidence: score >= this AND mapped or hard focus term
-THRESHOLD_REVIEW = 4    # needs_review:    score >= this (logged but no issue)
+THRESHOLD_REVIEW = 4    # needs_review:    score >= this (review queue)
 # Below THRESHOLD_REVIEW → discarded (not shown in issue, only in JSON artifact).
 
 # ---------------------------------------------------------------------------
@@ -238,6 +248,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--open-issue', action='store_true',
                         help='Open a GitHub issue via `gh` when high-confidence items are found. '
                              'Requires `gh` CLI authenticated to the repo.')
+    parser.add_argument('--open-review-issue', action='store_true',
+                        help='With --open-issue, also open an issue when needs-review items exist.')
     return parser.parse_args()
 
 
@@ -258,6 +270,13 @@ def parse_timestamp(raw: str) -> datetime:
     if text.endswith('Z'):
         text = text[:-1] + '+00:00'
     parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def parse_rss_timestamp(raw: str) -> datetime:
+    parsed = parsedate_to_datetime(raw.strip())
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
@@ -328,6 +347,37 @@ def source_report_label(record: dict) -> str:
     return source
 
 
+def term_matches(text: str, term: str) -> bool:
+    haystack = normalize_title(text)
+    needle = normalize_title(term)
+    if not needle:
+        return False
+    if needle in PREFIX_TERMS or needle.endswith('-'):
+        pattern = rf'(?<![a-z0-9]){re.escape(needle)}'
+    else:
+        pattern = rf'(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])'
+    return re.search(pattern, haystack) is not None
+
+
+def source_query_match(query: str, text: str) -> bool:
+    query_text = normalize_title(query)
+    haystack = normalize_title(text)
+    if not query_text:
+        return True
+    if term_matches(haystack, query_text):
+        return True
+
+    terms = [
+        term for term in re.split(r'[^a-z0-9]+', query_text)
+        if len(term) >= 3 and term not in QUERY_STOP_WORDS
+    ]
+    if not terms:
+        return True
+    hits = sum(1 for term in terms if term_matches(haystack, term))
+    required = 1 if len(terms) <= 2 else 2
+    return hits >= required
+
+
 def relevance_score(item: SourceItem) -> int:
     """Compute a relevance score for item based on positive/negative term weighting.
 
@@ -338,10 +388,10 @@ def relevance_score(item: SourceItem) -> int:
     haystack = (item.title + ' ' + item.summary).lower()
     score = 0
     for term, weight in POSITIVE_TERMS.items():
-        if term in haystack:
+        if term_matches(haystack, term):
             score += weight
     for term, weight in NEGATIVE_TERMS.items():
-        if term in haystack:
+        if term_matches(haystack, term):
             score += weight  # weight is already negative
     # NVD items (CVEs) get a baseline boost — any matching CVE is worth reviewing.
     if item.source == 'NVD':
@@ -352,7 +402,7 @@ def relevance_score(item: SourceItem) -> int:
 def has_hard_focus(item: SourceItem) -> bool:
     """Return True if the item title/summary contains a hard-focus crypto term."""
     haystack = (item.title + ' ' + item.summary).lower()
-    return any(term in haystack for term in HARD_FOCUS_TERMS)
+    return any(term_matches(haystack, term) for term in HARD_FOCUS_TERMS)
 
 
 def load_signal_matrix(path: Path) -> list[SignalClass]:
@@ -414,6 +464,57 @@ def fetch_arxiv(query: str, max_results: int) -> list[SourceItem]:
                 url=item_id,
             )
         )
+    return items
+
+
+def fetch_eprint(query: str, max_results: int, cutoff: datetime) -> list[SourceItem]:
+    xml_text = http_get_text(EPRINT_RSS_URL, accept='application/rss+xml,application/xml,text/xml,text/plain')
+    root = ET.fromstring(xml_text)
+    items: list[SourceItem] = []
+    for entry in root.findall('./channel/item'):
+        title = strip_markup(entry.findtext('title', default=''))
+        summary = strip_markup(entry.findtext('description', default=''))
+        link = entry.findtext('link', default='').strip()
+        guid = entry.findtext('guid', default=link).strip() or link or title
+        categories = [
+            strip_markup(category.text or '')
+            for category in entry.findall('category')
+            if (category.text or '').strip()
+        ]
+        creators = [
+            strip_markup(creator.text or '')
+            for creator in entry.findall('dc:creator', RSS_DC_NS)
+            if (creator.text or '').strip()
+        ]
+        pub_raw = entry.findtext('pubDate', default='Thu, 01 Jan 1970 00:00:00 +0000')
+        published = parse_rss_timestamp(pub_raw)
+        if published < cutoff:
+            continue
+
+        searchable = ' '.join([title, summary, *categories, *creators])
+        if not source_query_match(query, searchable):
+            continue
+
+        details = []
+        if categories:
+            details.append('Categories: ' + ', '.join(categories))
+        if creators:
+            details.append('Authors: ' + ', '.join(creators))
+        details.append(summary)
+
+        items.append(
+            SourceItem(
+                source='IACR ePrint',
+                item_id=guid,
+                title=title,
+                summary=' '.join(part for part in details if part).strip(),
+                published=published,
+                updated=published,
+                url=link or guid,
+            )
+        )
+        if len(items) >= max_results:
+            break
     return items
 
 
@@ -498,6 +599,7 @@ def collect_items(query: str, max_results: int, cutoff: datetime) -> tuple[list[
     source_stats: list[dict] = []
     source_errors: list[dict] = []
     fetchers = [
+        ('IACR ePrint', lambda: fetch_eprint(query, max_results, cutoff)),
         ('arXiv', lambda: fetch_arxiv(query, max_results)),
         ('Crossref', lambda: fetch_crossref(query, max_results, cutoff)),
         ('NVD', lambda: fetch_nvd(query, max_results, cutoff)),
@@ -540,7 +642,7 @@ def classify_item(item: SourceItem, classes: Iterable[SignalClass]) -> dict:
     # Match against signal matrix
     matched: list[SignalClass] = []
     for signal in classes:
-        if any(keyword in haystack for keyword in signal.keywords):
+        if any(term_matches(haystack, keyword) for keyword in signal.keywords):
             matched.append(signal)
 
     # Determine signal-matrix status
@@ -727,7 +829,7 @@ def render_markdown(report: dict) -> str:
         lines.append(f"- **Summary:** {item['summary']}")
         lines.append('')
 
-    lines.extend(['## Needs Review (log only — no issue)', ''])
+    lines.extend(['## Needs Review (review queue)', ''])
     if not review:
         lines.append('_None._')
     for item in review:
@@ -755,7 +857,7 @@ def render_text(report: dict) -> str:
         '',
         'Triage:',
         f"  high_confidence (issue-worthy): {counts['high_confidence']}",
-        f"  needs_review    (log only):     {counts['needs_review']}",
+        f"  needs_review    (review queue): {counts['needs_review']}",
         f"  discarded       (noise):        {counts['discarded']}",
         f"  total fetched:                  {counts['total_fetched']}",
         '',
@@ -795,7 +897,7 @@ def render_mail_body(report: dict) -> str:
         f"Lookback: {report['lookback_days']} days",
         '',
         f"High-confidence (issue-worthy): {counts['high_confidence']}",
-        f"Needs review (log only):        {counts['needs_review']}",
+        f"Needs review (review queue):    {counts['needs_review']}",
         f"Discarded as noise:             {counts['discarded']}",
         '',
     ]
@@ -822,22 +924,28 @@ def render_mail_body(report: dict) -> str:
     return '\n'.join(lines).rstrip() + '\n'
 
 
-def open_github_issue(report: dict) -> None:
-    """Open a GitHub issue ONLY for high-confidence findings."""
+def open_github_issue(report: dict, include_review: bool = False) -> None:
+    """Open a GitHub issue for high-confidence, optionally needs-review, findings."""
     counts = report['counts']
     hc = counts['high_confidence']
-    if hc == 0:
+    nr = counts['needs_review']
+    if hc == 0 and (not include_review or nr == 0):
         return
     date_str = report['generated_at'][:10]
-    title = f"[Research Monitor] {hc} high-confidence signal(s) — {date_str}"
+    if include_review:
+        title = f"[Research Monitor] {hc} high-confidence / {nr} needs-review signal(s) — {date_str}"
+    else:
+        title = f"[Research Monitor] {hc} high-confidence signal(s) — {date_str}"
 
     body_lines = [
         '> Auto-opened by `ci/research_monitor.py --open-issue`.',
-        '> Only **high-confidence** items appear here (score ≥ 10 + crypto focus term).',
-        '> Needs-review and discarded items are in the build artifact only.',
-        '',
-        render_markdown(report),
+        '> High-confidence items are immediate action signals.',
     ]
+    if include_review:
+        body_lines.append('> Needs-review items are included because review escalation is enabled.')
+    else:
+        body_lines.append('> Needs-review and discarded items are in the build artifact only.')
+    body_lines.extend(['', render_markdown(report)])
     body = '\n'.join(body_lines)
 
     cmd = [
@@ -879,6 +987,7 @@ def write_github_outputs(path: Path, report: dict) -> None:
         f"high_confidence_count={counts['high_confidence']}",
         f"needs_review_count={counts['needs_review']}",
         f"discarded_count={counts['discarded']}",
+        f"research_signal_count={counts['high_confidence'] + counts['needs_review']}",
         # Legacy key for any downstream parsers
         f"actionable_count={counts['high_confidence']}",
         f"total_count={counts['total_fetched']}",
@@ -894,9 +1003,9 @@ def print_console_summary(report: dict) -> None:
     print(
         textwrap.dedent(
             f"""
-            Research monitor completed.
+              Research monitor completed.
               high-confidence (issue-worthy): {counts['high_confidence']}
-              needs-review    (log only):     {counts['needs_review']}
+              needs-review    (review queue): {counts['needs_review']}
               discarded       (noise):        {counts['discarded']}
               total fetched:                  {counts['total_fetched']}
             """
@@ -949,8 +1058,8 @@ def main() -> int:
         write_github_outputs(args.github_output, report)
     print_console_summary(report)
 
-    if args.open_issue and report['counts']['high_confidence'] > 0:
-        open_github_issue(report)
+    if args.open_issue:
+        open_github_issue(report, include_review=args.open_review_issue)
     if args.fail_on_actionable and report['counts']['high_confidence'] > 0:
         return 3
     return 0
