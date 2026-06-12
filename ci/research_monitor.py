@@ -263,6 +263,39 @@ def parse_timestamp(raw: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _bounded_date_part(values: object, index: int, default: int, low: int, high: int) -> int:
+    if not isinstance(values, (list, tuple)) or index >= len(values):
+        return default
+    try:
+        value = int(values[index])
+    except (TypeError, ValueError):
+        return default
+    if value < low or value > high:
+        return default
+    return value
+
+
+def parse_crossref_date_parts(date_parts: object) -> datetime:
+    """Parse Crossref date-parts defensively.
+
+    Crossref occasionally returns partial or malformed arrays. A single bad
+    date should not make the whole source fail.
+    """
+    values = date_parts
+    if isinstance(date_parts, (list, tuple)) and date_parts:
+        first = date_parts[0]
+        if isinstance(first, (list, tuple)):
+            values = first
+
+    year = _bounded_date_part(values, 0, 1970, 1, 9999)
+    month = _bounded_date_part(values, 1, 1, 1, 12)
+    day = _bounded_date_part(values, 2, 1, 1, 31)
+    try:
+        return datetime(year, month, day, tzinfo=timezone.utc)
+    except ValueError:
+        return datetime(year, month, 1, tzinfo=timezone.utc)
+
+
 def strip_markup(text: str) -> str:
     no_tags = re.sub(r'<[^>]+>', ' ', text)
     compact = re.sub(r'\s+', ' ', unescape(no_tags))
@@ -278,6 +311,21 @@ def short_summary(text: str, limit: int = 280) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 3].rstrip() + '...'
+
+
+def compact_report_error(error: object, limit: int = 240) -> str:
+    compact = re.sub(r'\s+', ' ', str(error)).strip()
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3].rstrip() + '...'
+
+
+def source_report_label(record: dict) -> str:
+    source = str(record.get('source', 'unknown'))
+    query = str(record.get('query', '')).strip()
+    if query:
+        return f'{source} [{query}]'
+    return source
 
 
 def relevance_score(item: SourceItem) -> int:
@@ -390,12 +438,13 @@ def fetch_crossref(query: str, max_results: int, cutoff: datetime) -> list[Sourc
             continue
         doi = item.get('DOI', title)
         published_parts = item.get('published-print') or item.get('published-online') or item.get('issued') or {}
-        date_parts = published_parts.get('date-parts', [[1970, 1, 1]])[0]
-        year = int(date_parts[0])
-        month = int(date_parts[1]) if len(date_parts) > 1 else 1
-        day = int(date_parts[2]) if len(date_parts) > 2 else 1
-        published = datetime(year, month, day, tzinfo=timezone.utc)
-        updated_raw = item.get('indexed', {}).get('date-time') or item.get('created', {}).get('date-time') or published.isoformat()
+        date_parts = published_parts.get('date-parts') if isinstance(published_parts, dict) else None
+        published = parse_crossref_date_parts(date_parts)
+        indexed = item.get('indexed') or {}
+        created = item.get('created') or {}
+        indexed_time = indexed.get('date-time') if isinstance(indexed, dict) else None
+        created_time = created.get('date-time') if isinstance(created, dict) else None
+        updated_raw = indexed_time or created_time or published.isoformat()
         updated = parse_timestamp(updated_raw)
         url = item.get('URL') or f'https://doi.org/{doi}'
         items.append(
@@ -457,10 +506,10 @@ def collect_items(query: str, max_results: int, cutoff: datetime) -> tuple[list[
         try:
             items = fetcher()
             all_items.extend(items)
-            source_stats.append({'source': name, 'count': len(items), 'status': 'ok'})
+            source_stats.append({'source': name, 'query': query, 'count': len(items), 'status': 'ok'})
         except Exception as exc:
-            source_errors.append({'source': name, 'error': str(exc)})
-            source_stats.append({'source': name, 'count': 0, 'status': 'error'})
+            source_errors.append({'source': name, 'query': query, 'error': compact_report_error(exc)})
+            source_stats.append({'source': name, 'query': query, 'count': 0, 'status': 'error'})
     return all_items, source_stats, source_errors
 
 
@@ -649,12 +698,12 @@ def render_markdown(report: dict) -> str:
         '',
     ]
     for source in report['sources']:
-        lines.append(f"- {source['source']}: {source['status']} ({source['count']} raw items)")
+        lines.append(f"- {source_report_label(source)}: {source['status']} ({source['count']} raw items)")
 
     if report['source_errors']:
         lines.extend(['', '## Source Errors', ''])
         for error in report['source_errors']:
-            lines.append(f"- {error['source']}: {error['error']}")
+            lines.append(f"- {source_report_label(error)}: {error['error']}")
 
     high_conf = [item for item in report['items'] if item['bucket'] == 'high_confidence']
     review    = [item for item in report['items'] if item['bucket'] == 'needs_review']
@@ -724,7 +773,7 @@ def render_text(report: dict) -> str:
     if report['source_errors']:
         lines.extend(['', 'Source errors:'])
         for error in report['source_errors']:
-            lines.append(f"- {error['source']}: {error['error']}")
+            lines.append(f"- {source_report_label(error)}: {error['error']}")
     return '\n'.join(lines).rstrip() + '\n'
 
 
@@ -769,7 +818,7 @@ def render_mail_body(report: dict) -> str:
     if report['source_errors']:
         lines.append('Source errors:')
         for error in report['source_errors']:
-            lines.append(f"- {error['source']}: {error['error']}")
+            lines.append(f"- {source_report_label(error)}: {error['error']}")
     return '\n'.join(lines).rstrip() + '\n'
 
 
@@ -856,7 +905,7 @@ def print_console_summary(report: dict) -> None:
     if report['source_errors']:
         print('Source errors:')
         for error in report['source_errors']:
-            print(f"  - {error['source']}: {error['error']}")
+            print(f"  - {source_report_label(error)}: {error['error']}")
 
 
 def main() -> int:

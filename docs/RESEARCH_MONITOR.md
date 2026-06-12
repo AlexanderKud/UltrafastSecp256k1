@@ -26,6 +26,16 @@ The monitor runs `ci/research_monitor.py` and:
    - mail subject/body files
 5. optionally sends an SMTP email when actionable items are found
 
+Source status and source errors are recorded per expanded query, for example
+`Crossref [secp256k1]` versus `Crossref [libsecp256k1]`. This keeps failures
+or empty result windows attributable to the exact source/query pair instead of
+collapsing all expanded searches into repeated source names.
+
+Crossref metadata is parsed defensively: partial or malformed `date-parts`
+arrays are normalized to a valid UTC date before filtering, and source error
+messages are whitespace-compacted and bounded before they are written into
+reports.
+
 "Actionable" currently means:
 
 - matched to a `gap`

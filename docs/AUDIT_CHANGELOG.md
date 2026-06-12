@@ -1,5 +1,17 @@
 # Audit Changelog
 
+## 2026-06-12 — research monitor source resilience
+
+- Hardened `ci/research_monitor.py` against malformed Crossref `date-parts` so
+  a single partial or invalid publication date cannot fail the whole Crossref
+  source pass.
+- Added per-query source status/error labels to research reports, mail bodies,
+  console summaries, and JSON records so expanded searches identify the exact
+  source/query pair that produced results or failed.
+- Compacted source exception text before report emission and added Python audit
+  self-test coverage for Crossref date normalization, bounded source errors, and
+  query-aware report rendering.
+
 ## 2026-06-12 — dev bug scanner crypto-pattern expansion
 
 - Extended `ci/dev_bug_scanner.py` with three high-signal crypto development

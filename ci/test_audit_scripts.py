@@ -588,6 +588,70 @@ int secp256k1_cache_then_clear(const void*, unsigned char* output32, int hit, in
         fail(tag, str(exc))
 
 
+def check_research_monitor_resilience() -> None:
+    """Unit-smoke: research monitor should tolerate malformed source metadata."""
+    tag = "QUALITY:research_monitor_resilience"
+    path = SCRIPT_DIR / "research_monitor.py"
+    try:
+        spec = importlib.util.spec_from_file_location("research_monitor_selftest", str(path))
+        if spec is None or spec.loader is None:
+            fail(tag, "could not load research_monitor.py module spec")
+            return
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        zero_month = module.parse_crossref_date_parts([[2026, 0, 0]])
+        if (zero_month.year, zero_month.month, zero_month.day) != (2026, 1, 1):
+            fail(tag, f"Crossref zero month/day was not sanitized: {zero_month!r}")
+            return
+
+        invalid_day = module.parse_crossref_date_parts([[2025, 2, 31]])
+        if (invalid_day.year, invalid_day.month, invalid_day.day) != (2025, 2, 1):
+            fail(tag, f"Crossref invalid calendar day was not clamped: {invalid_day!r}")
+            return
+
+        long_error = "socket timeout\n" * 40
+        compact_error = module.compact_report_error(long_error, limit=80)
+        if "\n" in compact_error or len(compact_error) > 80:
+            fail(tag, f"source error was not compacted: {compact_error!r}")
+            return
+
+        published = module.datetime(2026, 6, 12, tzinfo=module.timezone.utc)
+        item = module.SourceItem(
+            source="Crossref",
+            item_id="10.0000/demo",
+            title="secp256k1 ECDSA nonce bias",
+            summary="lattice attack against biased ECDSA nonces",
+            published=published,
+            updated=published,
+            url="https://doi.org/10.0000/demo",
+        )
+        report = module.build_report(
+            [item],
+            [],
+            "secp256k1",
+            14,
+            [{"source": "Crossref", "query": "secp256k1", "count": 1, "status": "ok"}],
+            [{"source": "NVD", "query": "libsecp256k1", "error": "timeout"}],
+        )
+        markdown = module.render_markdown(report)
+        text = module.render_text(report)
+        mail = module.render_mail_body(report)
+        if "Crossref [secp256k1]: ok (1 raw items)" not in markdown:
+            fail(tag, "markdown source status is missing query context")
+            return
+        for rendered in (markdown, text, mail):
+            if "NVD [libsecp256k1]: timeout" not in rendered:
+                fail(tag, "source error is missing query context")
+                return
+
+        ok(tag, "Crossref dates, source errors, and query-aware reports are covered")
+    except Exception as exc:
+        fail(tag, str(exc))
+
+
 def check_preflight_step_count() -> None:
     """Verify preflight.py uses contiguous [i/N] step markers."""
     tag = "STEPS"
@@ -1019,6 +1083,7 @@ def main() -> int:
     check_category_coverage()
     check_preflight_step_count()
     check_caas_integrity_json_purity()
+    check_research_monitor_resilience()
 
     # Phase 4: Smoke tests
     print(f"\n{BOLD}[4/4] Smoke Tests{RESET}")
