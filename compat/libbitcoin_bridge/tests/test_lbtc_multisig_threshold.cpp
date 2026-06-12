@@ -54,6 +54,54 @@ void make_msg(uint8_t msg[32], uint32_t seed) {
     for (int i = 0; i < 32; ++i) msg[i] = (uint8_t)(seed * 2654435761u >> (i % 24));
 }
 
+static constexpr uint8_t kScalarOrder[32] = {
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+    0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b,
+    0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41
+};
+
+static constexpr uint8_t kScalarHalfOrder[32] = {
+    0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d,
+    0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0
+};
+
+int cmp32_be(const uint8_t* a, const uint8_t* b) {
+    for (size_t i = 0; i < 32; ++i) {
+        if (a[i] < b[i]) return -1;
+        if (a[i] > b[i]) return 1;
+    }
+    return 0;
+}
+
+void scalar_order_minus(uint8_t out[32], const uint8_t x[32]) {
+    uint16_t borrow = 0;
+    for (int i = 31; i >= 0; --i) {
+        const uint16_t lhs = kScalarOrder[(size_t)i];
+        const uint16_t rhs = (uint16_t)x[i] + borrow;
+        if (lhs < rhs) {
+            out[i] = (uint8_t)(lhs + 256u - rhs);
+            borrow = 1;
+        } else {
+            out[i] = (uint8_t)(lhs - rhs);
+            borrow = 0;
+        }
+    }
+}
+
+bool ecdsa_s_is_high(const uint8_t* sig64) {
+    return cmp32_be(sig64 + 32, kScalarOrder) < 0 &&
+           cmp32_be(sig64 + 32, kScalarHalfOrder) > 0;
+}
+
+void make_high_s(uint8_t* sig64) {
+    uint8_t high_s[32];
+    scalar_order_minus(high_s, sig64 + 32);
+    std::memcpy(sig64 + 32, high_s, 32);
+}
+
 /* Seed a non-zero, distinct m|n+group+block-fk tag across `ks` tail bytes so a
  * surviving cell (rejected) is always distinguishable from a zeroed (valid) one,
  * even for row 0. Encodes (i+1) little-endian. */
@@ -168,6 +216,19 @@ void test_table(ufsecp_lbtc_ctrl* ctrl, ufsecp_ctx* sctx, Kind k) {
         return false;
     };
     char buf[112];
+
+    /* Consensus ECDSA permits high-S signatures; the multisig table must accept
+     * them even though the engine's internal batch verifier is low-S-only. */
+    if (k == ECDSA) {
+        auto high_rows = build(sctx, k, N, KS_MULTI);
+        uint8_t* high_sig = high_rows.data() + 7 * stride + 65;
+        make_high_s(high_sig);
+        std::vector<uint8_t> high_res(N, 0xAA);
+        verify_tbl(ctrl, k, high_rows.data(), N, KS_MULTI, high_res.data());
+        bool high_ok = ecdsa_s_is_high(high_sig);
+        for (uint8_t v : high_res) if (v != 1) high_ok = false;
+        CHECK(high_ok, "multisig(ecdsa): all-valid accepts high-S with 6-byte tail");
+    }
 
     /* (A) results[] with the 6-byte tail */
     auto rows = build(sctx, k, N, KS_MULTI);

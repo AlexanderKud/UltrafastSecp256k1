@@ -46,6 +46,10 @@
  *       * column API:  msg_hashes[], pubkeys[], sigs[] plus optional key column,
  *                      for callers that already maintain vertical mmap columns and
  *                      want to avoid bridge-side row de-interleave.
+ *   - ECDSA consensus-valid high-S signatures are accepted. The bridge
+ *     normalizes them into scratch before calling the engine's low-S batch
+ *     verifier, preserving libsecp256k1/fallback verification semantics without
+ *     rewriting caller-owned rows or columns.
  *
  * Consensus note:
  *   For block validation the GPU path is used as a consensus-bearing
@@ -139,7 +143,9 @@ const char*       ufsecp_lbtc_ctrl_device_name(const ufsecp_lbtc_ctrl* ctrl);
  *             struct carrying a trailing id this is sizeof(id) (e.g. 3).
  *   results   OUT, n bytes. results[i] == 1 if row i's signature is valid,
  *             0 if invalid (structurally malformed rows — off-curve pubkey,
- *             s >= n, R.x >= p — verify to 0, never abort the batch). The
+ *             s >= n, R.x >= p — verify to 0, never abort the batch). ECDSA
+ *             high-S signatures with s < n are consensus-valid and verify to 1;
+ *             they are normalized internally without mutating the row. The
  *             caller maps a failing row back to its block/tx via the opaque
  *             tag at rows[i] (or its own table) — no second side table needed.
  *
@@ -169,9 +175,10 @@ void ufsecp_lbtc_verify_schnorr(ufsecp_lbtc_ctrl* ctrl,
  *
  * The per-row verdict is byte-identical to the packed-row API. On GPU builds the
  * bridge forwards these columns directly to the existing GPU C ABI, avoiding the
- * row->column de-interleave scratch used by the packed-row path. On CPU fallback
- * rows are verified one by one from the columns without rebuilding a packed
- * table. Degenerate calls are no-ops; callers should zero-initialize results for
+ * row->column de-interleave scratch used by the packed-row path. ECDSA high-S
+ * signatures are normalized in scratch before GPU dispatch. On CPU fallback rows
+ * are verified one by one from the columns without rebuilding a packed table.
+ * Degenerate calls are no-ops; callers should zero-initialize results for
  * fail-closed behavior.
  */
 void ufsecp_lbtc_verify_ecdsa_columns(ufsecp_lbtc_ctrl* ctrl,
@@ -572,7 +579,8 @@ public:
     // buffer is fully determined by count * (RECORD + key_size) bytes, so it can
     // never mismatch and there is no size-related error condition. Returns void —
     // results[i] (1=valid/0=invalid) is the only output; the caller maps a failing
-    // row back to its block/tx via the opaque tag at rows[i]. (Per evoskuil: the
+    // row back to its block/tx via the opaque tag at rows[i]. ECDSA high-S rows
+    // are normalized in scratch, never in the caller buffer. (Per evoskuil: the
     // buffer size is redundant with count+key_size, and there is no calling failure
     // mode — controller-init is the only recoverable error, checked via ok().)
     void verify_ecdsa(const uint8_t* rows, size_t count, size_t key_size,

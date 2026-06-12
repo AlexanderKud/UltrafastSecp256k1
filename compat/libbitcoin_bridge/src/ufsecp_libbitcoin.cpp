@@ -85,11 +85,88 @@ inline std::size_t pubkey_size(Kind k) {
     return k == Kind::Ecdsa ? 33u : 32u;
 }
 
+/* secp256k1 group order and half-order, big-endian. These are public signature
+ * normalization constants used only at the libbitcoin bridge boundary. */
+static constexpr uint8_t kScalarOrder[32] = {
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+    0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b,
+    0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41
+};
+
+static constexpr uint8_t kScalarHalfOrder[32] = {
+    0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d,
+    0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0
+};
+
+inline int cmp32_be(const uint8_t* a, const uint8_t* b) noexcept {
+    for (std::size_t i = 0; i < 32; ++i) {
+        if (a[i] < b[i]) return -1;
+        if (a[i] > b[i]) return 1;
+    }
+    return 0;
+}
+
+inline bool is_zero32(const uint8_t* v) noexcept {
+    uint8_t acc = 0;
+    for (std::size_t i = 0; i < 32; ++i) acc |= v[i];
+    return acc == 0;
+}
+
+inline void scalar_order_minus(uint8_t out[32], const uint8_t x[32]) noexcept {
+    uint16_t borrow = 0;
+    for (int i = 31; i >= 0; --i) {
+        const uint16_t lhs = kScalarOrder[static_cast<std::size_t>(i)];
+        const uint16_t rhs = static_cast<uint16_t>(x[i]) + borrow;
+        if (lhs < rhs) {
+            out[i] = static_cast<uint8_t>(lhs + 256u - rhs);
+            borrow = 1;
+        } else {
+            out[i] = static_cast<uint8_t>(lhs - rhs);
+            borrow = 0;
+        }
+    }
+}
+
+inline bool ecdsa_s_is_high(const uint8_t* sig64) noexcept {
+    const uint8_t* s = sig64 + 32;
+    return !is_zero32(s) &&
+           cmp32_be(s, kScalarOrder) < 0 &&
+           cmp32_be(s, kScalarHalfOrder) > 0;
+}
+
+inline void normalize_ecdsa_sig_low_s(uint8_t sig64[64]) noexcept {
+    if (!ecdsa_s_is_high(sig64)) return;
+    uint8_t low_s[32];
+    scalar_order_minus(low_s, sig64 + 32);
+    std::memcpy(sig64 + 32, low_s, 32);
+}
+
+inline bool ecdsa_chunk_needs_marshal(const uint8_t* rows, std::size_t cnt,
+                                      std::size_t stride) noexcept {
+    if (stride != UFSECP_LBTC_ECDSA_RECORD) return true;
+    for (std::size_t i = 0; i < cnt; ++i) {
+        if (ecdsa_s_is_high(rows + i * stride + 65)) return true;
+    }
+    return false;
+}
+
+inline void copy_ecdsa_record_normalized(const uint8_t* row, uint8_t* out) noexcept {
+    std::memcpy(out, row, UFSECP_LBTC_ECDSA_RECORD);
+    normalize_ecdsa_sig_low_s(out + 65);
+}
+
 inline ufsecp_error_t cpu_verify_one(ufsecp_ctx* ctx, Kind k, const uint8_t* rec) {
     /* For n == 1 the packed verify reads exactly record_size() bytes, so the
      * row's opaque key tail (if any) is never touched. */
-    return k == Kind::Ecdsa ? ufsecp_ecdsa_batch_verify(ctx, rec, 1)
-                            : ufsecp_schnorr_batch_verify(ctx, rec, 1);
+    if (k == Kind::Ecdsa) {
+        uint8_t normalized[UFSECP_LBTC_ECDSA_RECORD];
+        copy_ecdsa_record_normalized(rec, normalized);
+        return ufsecp_ecdsa_batch_verify(ctx, normalized, 1);
+    }
+    return ufsecp_schnorr_batch_verify(ctx, rec, 1);
 }
 
 inline ufsecp_error_t cpu_verify_run(ufsecp_ctx* ctx, Kind k,
@@ -171,7 +248,7 @@ struct KeyColumnSink {
  * `out` must hold record_size(k) bytes. */
 inline void to_engine_record(Kind k, const uint8_t* row, uint8_t* out) {
     if (k == Kind::Ecdsa) {
-        std::memcpy(out, row, UFSECP_LBTC_ECDSA_RECORD);   /* identical layout */
+        copy_ecdsa_record_normalized(row, out);
     } else {
         std::memcpy(out,      row + 32, 32);  /* xonly <- libbitcoin offset 32 */
         std::memcpy(out + 32, row,      32);  /* msg   <- libbitcoin offset 0  */
@@ -188,18 +265,28 @@ void cpu_chunk(ufsecp_ctx* ctx, Kind k, const uint8_t* rows,
                Sink& sink) {
     const std::size_t rec = record_size(k);
 
-    /* ECDSA: the libbitcoin row IS the engine record, so verify in place. The
-     * fast all-valid path applies when rows are contiguous (no opaque key
-     * column splitting the stride). */
+    /* ECDSA: libbitcoin and engine records have the same field order, but
+     * libbitcoin consensus-valid high-S signatures must be normalized before
+     * calling the core batch verifier, which intentionally enforces low-S.
+     * key_size > 0 rows are also marshalled to recover the contiguous CPU batch
+     * path instead of degrading to one verify per row. */
     if (k == Kind::Ecdsa) {
-        if (stride == rec &&
-            cpu_verify_run(ctx, k, rows + base * stride, cnt) == UFSECP_OK) {
+        const uint8_t* verify_rows = rows + base * stride;
+        std::vector<uint8_t> eng;
+        if (ecdsa_chunk_needs_marshal(verify_rows, cnt, stride)) {
+            eng.resize(cnt * rec);
+            for (std::size_t i = 0; i < cnt; ++i)
+                copy_ecdsa_record_normalized(verify_rows + i * stride,
+                                             eng.data() + i * rec);
+            verify_rows = eng.data();
+        }
+
+        if (cpu_verify_run(ctx, k, verify_rows, cnt) == UFSECP_OK) {
             sink.mark_all_valid(base, cnt);
             return;
         }
         for (std::size_t i = 0; i < cnt; ++i)
-            sink.mark(base + i,
-                      cpu_verify_one(ctx, k, rows + (base + i) * stride) == UFSECP_OK);
+            sink.mark(base + i, cpu_verify_one(ctx, k, verify_rows + i * rec) == UFSECP_OK);
         return;
     }
 
@@ -266,6 +353,7 @@ bool gpu_chunk(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
             std::memcpy(msg.data() + i * 32, r, 32);
             std::memcpy(pub.data() + i * 33, r + 32, 33);
             std::memcpy(sig.data() + i * 64, r + 65, 64);
+            normalize_ecdsa_sig_low_s(sig.data() + i * 64);
         } else {
             /* libbitcoin row: 32 msg | 32 xonly | 64 sig. The engine GPU ABI
              * takes (msg, pubkey_x, sig) — extract at the libbitcoin offsets. */
@@ -314,6 +402,7 @@ bool gpu_chunk_collect(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
             std::memcpy(msg.data() + i * 32, r, 32);
             std::memcpy(pub.data() + i * 33, r + 32, 33);
             std::memcpy(sig.data() + i * 64, r + 65, 64);
+            normalize_ecdsa_sig_low_s(sig.data() + i * 64);
         } else {
             std::memcpy(msg.data() + i * 32, r, 32);       /* msg   @ 0  */
             std::memcpy(pub.data() + i * 32, r + 32, 32);  /* xonly @ 32 */
@@ -346,14 +435,24 @@ bool gpu_columns_results(ufsecp_gpu_ctx* gpu, Kind k,
         out = scratch.data();
     }
 
+    std::vector<uint8_t> sig_norm;
+    const uint8_t* sig_ptr = sigs64 + base * 64;
+    if (k == Kind::Ecdsa) {
+        sig_norm.resize(cnt * 64);
+        std::memcpy(sig_norm.data(), sig_ptr, cnt * 64);
+        for (std::size_t i = 0; i < cnt; ++i)
+            normalize_ecdsa_sig_low_s(sig_norm.data() + i * 64);
+        sig_ptr = sig_norm.data();
+    }
+
     const ufsecp_error_t rc =
         k == Kind::Ecdsa
             ? ufsecp_gpu_ecdsa_verify_batch(gpu, msgs32 + base * 32,
                                             pubs + base * pub,
-                                            sigs64 + base * 64, cnt, out)
+                                            sig_ptr, cnt, out)
             : ufsecp_gpu_schnorr_verify_batch(gpu, msgs32 + base * 32,
                                               pubs + base * pub,
-                                              sigs64 + base * 64, cnt, out);
+                                              sig_ptr, cnt, out);
     return rc == UFSECP_OK;
 }
 
@@ -366,15 +465,24 @@ bool gpu_columns_collect(ufsecp_gpu_ctx* gpu, Kind k,
      * also 1 byte. That keeps the caller-owned key cells untouched until the
      * backend reports success, so a device failure can safely fall back to CPU. */
     std::vector<uint8_t> markers(cnt, 1u);
+    std::vector<uint8_t> sig_norm;
+    const uint8_t* sig_ptr = sigs64 + base * 64;
+    if (k == Kind::Ecdsa) {
+        sig_norm.resize(cnt * 64);
+        std::memcpy(sig_norm.data(), sig_ptr, cnt * 64);
+        for (std::size_t i = 0; i < cnt; ++i)
+            normalize_ecdsa_sig_low_s(sig_norm.data() + i * 64);
+        sig_ptr = sig_norm.data();
+    }
     const ufsecp_error_t rc =
         k == Kind::Ecdsa
             ? ufsecp_gpu_ecdsa_verify_collect(gpu, msgs32 + base * 32,
                                               pubs + base * pub,
-                                              sigs64 + base * 64, cnt,
+                                              sig_ptr, cnt,
                                               markers.data())
             : ufsecp_gpu_schnorr_verify_collect(gpu, msgs32 + base * 32,
                                                 pubs + base * pub,
-                                                sigs64 + base * 64, cnt,
+                                                sig_ptr, cnt,
                                                 markers.data());
     if (rc != UFSECP_OK) return false;
 

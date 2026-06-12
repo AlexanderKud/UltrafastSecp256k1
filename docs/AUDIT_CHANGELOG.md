@@ -1,5 +1,19 @@
 # Audit Changelog
 
+## 2026-06-12 — libbitcoin bridge ECDSA high-S batch parity
+
+- Fixed the libbitcoin bridge ECDSA row and column paths to accept
+  consensus-valid high-S signatures by normalizing `s` into low-S scratch before
+  calling the engine's low-S batch/GPU verifiers. Caller-owned rows, columns, and
+  opaque correlation tails are not mutated.
+- Restored contiguous CPU batch verification for ECDSA rows with `key_size > 0`
+  by marshalling `[record|opaque-tail]` rows into engine records instead of
+  falling back to one verification per row. This keeps libbitcoin multisig/tail
+  rows on the batch path while preserving per-row invalid detection.
+- Added bridge regressions covering high-S ECDSA in all-valid batches, high-S
+  beside a single corrupted row, C++ typed-span rows, and 6-byte multisig
+  correlation tails.
+
 ## 2026-06-12 — libbitcoin bridge header include root normalized
 
 - Fixed `compat/libbitcoin_bridge/include/ufsecp_libbitcoin.h` to include
