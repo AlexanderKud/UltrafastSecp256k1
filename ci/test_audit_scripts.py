@@ -691,8 +691,17 @@ def check_research_monitor_resilience() -> None:
             updated=published,
             url="https://doi.org/10.0000/demo",
         )
+        review_item = module.SourceItem(
+            source="IACR ePrint",
+            item_id="https://eprint.iacr.org/2026/1000",
+            title="Curve25519 implementation note",
+            summary="Portability update for elliptic-curve software.",
+            published=published,
+            updated=published,
+            url="https://eprint.iacr.org/2026/1000",
+        )
         report = module.build_report(
-            [item],
+            [item, review_item],
             [],
             "secp256k1",
             14,
@@ -709,12 +718,15 @@ def check_research_monitor_resilience() -> None:
             if "NVD [libsecp256k1]: timeout" not in rendered:
                 fail(tag, "source error is missing query context")
                 return
+            if "Curve25519 implementation note" not in rendered:
+                fail(tag, "needs-review item details are missing from rendered output")
+                return
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "github-output.txt"
             module.write_github_outputs(output, report)
             output_text = output.read_text(encoding="utf-8")
-        if "research_signal_count=1" not in output_text:
+        if "research_signal_count=2" not in output_text:
             fail(tag, "GitHub output is missing research_signal_count")
             return
 

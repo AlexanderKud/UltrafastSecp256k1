@@ -29,7 +29,7 @@ The monitor runs `ci/research_monitor.py` and:
    - Markdown and text reports
    - mail subject/body files
 5. opens a GitHub issue for escalated findings
-6. optionally sends an SMTP email when actionable items are found
+6. optionally sends an SMTP email when escalated findings are found
 
 Source status and source errors are recorded per expanded query, for example
 `Crossref [secp256k1]` versus `Crossref [libsecp256k1]`. This keeps failures
@@ -68,7 +68,7 @@ Default behavior:
 - writes a summary into the GitHub Actions job summary
 - opens an issue when high-confidence findings exist
 - opens an issue for needs-review findings when `open_review_issue` is enabled
-- sends email only when high-confidence findings exist and SMTP secrets are configured
+- sends email for the same escalated finding set when SMTP secrets are configured
 
 ## Signal Matrix
 

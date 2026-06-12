@@ -792,7 +792,7 @@ def render_markdown(report: dict) -> str:
         f"| Bucket | Count |",
         f"|--------|-------|",
         f"| High confidence (issue-worthy) | {counts['high_confidence']} |",
-        f"| Needs review (log only) | {counts['needs_review']} |",
+        f"| Needs review (review queue) | {counts['needs_review']} |",
         f"| Discarded (noise) | {counts['discarded']} |",
         f"| **Total fetched** | **{counts['total_fetched']}** |",
         '',
@@ -863,6 +863,7 @@ def render_text(report: dict) -> str:
         '',
     ]
     high_conf = [item for item in report['items'] if item['bucket'] == 'high_confidence']
+    review = [item for item in report['items'] if item['bucket'] == 'needs_review']
     if high_conf:
         lines.append('High-confidence findings:')
         for item in high_conf:
@@ -872,6 +873,15 @@ def render_text(report: dict) -> str:
             lines.append(f"  why: {item['reason']}")
     else:
         lines.append('High-confidence findings: none')
+    if review:
+        lines.extend(['', 'Needs-review findings:'])
+        for item in review:
+            lines.append(f"- [{item['score']:+d}] {item['title']} ({item['source']})")
+            lines.append(f"  action: {item['action']}")
+            lines.append(f"  url: {item['url']}")
+            lines.append(f"  why: {item['reason']}")
+    else:
+        lines.extend(['', 'Needs-review findings: none'])
     if report['source_errors']:
         lines.extend(['', 'Source errors:'])
         for error in report['source_errors']:
@@ -889,6 +899,7 @@ def render_mail_subject(report: dict) -> str:
 def render_mail_body(report: dict) -> str:
     counts = report['counts']
     high_conf = [item for item in report['items'] if item['bucket'] == 'high_confidence']
+    review = [item for item in report['items'] if item['bucket'] == 'needs_review']
     lines = [
         'UltrafastSecp256k1 external research monitor',
         '',
@@ -917,6 +928,24 @@ def render_mail_body(report: dict) -> str:
                 '',
             ]
         )
+    if review:
+        lines.extend(['Needs-review findings:', ''])
+        for index, item in enumerate(review, start=1):
+            lines.extend(
+                [
+                    f"{index}. {item['title']}",
+                    f"   Source: {item['source']}  Score: {item['score']}",
+                    f"   Status: {item['status']}",
+                    f"   Action: {item['action']}",
+                    f"   Published: {item['published']}",
+                    f"   URL: {item['url']}",
+                    f"   Why: {item['reason']}",
+                    f"   Summary: {item['summary']}",
+                    '',
+                ]
+            )
+    else:
+        lines.append('No needs-review items were detected in this window.')
     if report['source_errors']:
         lines.append('Source errors:')
         for error in report['source_errors']:

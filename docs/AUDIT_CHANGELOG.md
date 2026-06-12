@@ -1,5 +1,17 @@
 # Audit Changelog
 
+## 2026-06-12 — research monitor notification completeness
+
+- Extended text and mail report rendering so `needs_review` findings include
+  title, source, score, action, URL, reason, and summary instead of appearing
+  only as aggregate counts.
+- Aligned SMTP notification gating with GitHub issue escalation: high-confidence
+  findings always notify, and needs-review findings notify when review
+  escalation is enabled and SMTP secrets are configured.
+- Added Python audit self-test coverage proving rendered reports include
+  needs-review finding details and that `research_signal_count` includes both
+  high-confidence and needs-review items.
+
 ## 2026-06-12 — research monitor ePrint early-warning escalation
 
 - Added IACR Cryptology ePrint RSS as a first-class `ci/research_monitor.py`

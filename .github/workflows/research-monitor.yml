@@ -131,7 +131,21 @@ jobs:
           fi
 
       - name: Send actionable report by email
-        if: always() && steps.monitor.outputs.high_confidence_count != '' && steps.monitor.outputs.high_confidence_count != '0' && env.RESEARCH_SMTP_HOST != '' && env.RESEARCH_SMTP_USERNAME != '' && env.RESEARCH_SMTP_PASSWORD != '' && env.RESEARCH_REPORT_FROM != '' && env.RESEARCH_REPORT_TO != ''
+        if: |
+          always() &&
+          steps.monitor.outputs.research_signal_count != '' &&
+          (
+            steps.monitor.outputs.high_confidence_count != '0' ||
+            (
+              steps.monitor.outputs.review_escalation_enabled == 'true' &&
+              steps.monitor.outputs.needs_review_count != '0'
+            )
+          ) &&
+          env.RESEARCH_SMTP_HOST != '' &&
+          env.RESEARCH_SMTP_USERNAME != '' &&
+          env.RESEARCH_SMTP_PASSWORD != '' &&
+          env.RESEARCH_REPORT_FROM != '' &&
+          env.RESEARCH_REPORT_TO != ''
         env:
           RESEARCH_SMTP_HOST: ${{ secrets.RESEARCH_SMTP_HOST }}
           RESEARCH_SMTP_PORT: ${{ secrets.RESEARCH_SMTP_PORT }}
