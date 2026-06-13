@@ -3,8 +3,8 @@
     {
       "exists": true,
       "path": "docs/AUDIT_MANIFEST.md",
-      "sha256": "e57f0dd9933162b0c9e51d59ad5970e9ab3a74907f6fd7e9e405675857e03c2b",
-      "size": 29845
+      "sha256": "f080c865c9d1b1649f1d733dbc5c9008e989c862caf4e6c7236970c87b02f9c4",
+      "size": 31320
     },
     {
       "exists": true,
@@ -462,7 +462,7 @@
           {
             "findings": [
               {
-                "message": "P21 semantic map: 19 requirements (13 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
+                "message": "P21 semantic map: 20 requirements (14 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
                 "severity": "PASS"
               },
               {
@@ -540,6 +540,10 @@
               {
                 "message": "G-19: gated by --evidence-refresh-coverage (registered)",
                 "severity": "PASS"
+              },
+              {
+                "message": "G-20: gated by --package-provenance-binding (registered)",
+                "severity": "PASS"
               }
             ],
             "name": "P21: External-Audit Replacement Gate",
@@ -612,7 +616,7 @@
                 "severity": "INFO"
               },
               {
-                "message": "Source graph \"files\" has 1629 rows (threshold: 200)",
+                "message": "Source graph \"files\" has 1632 rows (threshold: 200)",
                 "severity": "PASS"
               }
             ],
@@ -718,6 +722,16 @@
             ],
             "name": "G-19: Evidence Refresh Coverage",
             "status": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "message": "5 package surfaces bound (2 template, 0 bound, 3 owner_gated)",
+                "severity": "PASS"
+              }
+            ],
+            "name": "G-20: Package Provenance Binding",
+            "status": "PASS"
           }
         ],
         "commit": {
@@ -726,11 +740,11 @@
           "value": {
             "dirty": false,
             "ref": "dev",
-            "sha": "669d04355f3d0010961d78e1aa96941dbd7aee10",
-            "short": "669d04355f"
+            "sha": "3394cd6ce44c56d57fe467834db457d7780de5a9",
+            "short": "3394cd6ce4"
           }
         },
-        "generated_at": "2026-06-13T15:46:22.132989+00:00",
+        "generated_at": "2026-06-13T16:25:06.312398+00:00",
         "platform": "Linux",
         "provenance": {
           "build_flags": {
@@ -747,12 +761,12 @@
             },
             "flags_hash": "f6054a07e934d755"
           },
-          "collected_at": "2026-06-13T15:46:22.132942+00:00",
+          "collected_at": "2026-06-13T16:25:06.312357+00:00",
           "git": {
             "dirty": false,
             "ref": "dev",
-            "sha": "669d04355f3d0010961d78e1aa96941dbd7aee10",
-            "short": "669d04355f"
+            "sha": "3394cd6ce44c56d57fe467834db457d7780de5a9",
+            "short": "3394cd6ce4"
           },
           "platform": {
             "machine": "x86_64",
@@ -773,7 +787,7 @@
           },
           "version": "4.2.1"
         },
-        "run_id": "audit_gate-669d04355f-20260613T154622",
+        "run_id": "audit_gate-3394cd6ce4-20260613T162506",
         "runner": "audit_gate",
         "schema_version": "1.0.0",
         "sections": [
@@ -1239,7 +1253,7 @@
               {
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
-                "title": "P21 semantic map: 19 requirements (13 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
+                "title": "P21 semantic map: 20 requirements (14 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
               },
               {
                 "check_id": "p21__external-audit_replacement_gate",
@@ -1335,6 +1349,11 @@
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
                 "title": "G-19: gated by --evidence-refresh-coverage (registered)"
+              },
+              {
+                "check_id": "p21__external-audit_replacement_gate",
+                "severity": "pass",
+                "title": "G-20: gated by --package-provenance-binding (registered)"
               }
             ],
             "name": "P21: External-Audit Replacement Gate",
@@ -1422,7 +1441,7 @@
               {
                 "check_id": "g-12__source_graph_quality",
                 "severity": "pass",
-                "title": "Source graph \"files\" has 1629 rows (threshold: 200)"
+                "title": "Source graph \"files\" has 1632 rows (threshold: 200)"
               }
             ],
             "name": "G-12: Source Graph Quality",
@@ -1543,15 +1562,26 @@
             ],
             "name": "G-19: Evidence Refresh Coverage",
             "verdict": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "check_id": "g-20__package_provenance_binding",
+                "severity": "pass",
+                "title": "5 package surfaces bound (2 template, 0 bound, 3 owner_gated)"
+              }
+            ],
+            "name": "G-20: Package Provenance Binding",
+            "verdict": "PASS"
           }
         ],
         "summary": {
           "advisory": 57,
           "blocking": 0,
           "info": 52,
-          "sections": 32,
+          "sections": 33,
           "skipped_sections": 0,
-          "total_findings": 115,
+          "total_findings": 117,
           "warnings": 5
         },
         "verdict": "PASS with advisory"
@@ -1559,8 +1589,8 @@
       "passing": true,
       "required": true,
       "returncode": 0,
-      "stderr_sha256": "66af22134ca2d3ed6aa147e50d7182b7621655582ace83302c3a70757715e5f6",
-      "stdout_sha256": "cc98b01fb63c4993cbdbf9a9e4c2dd447b3279edf64191f2f0ac44ad08bfc42f"
+      "stderr_sha256": "62706229276e6017415fbbe7ea9be0f8fe265e29458ebcaca54df4c4a645b075",
+      "stdout_sha256": "3083cd70617190ee3616348c3480f2e310efd8b17174da81a4e2be956bbf64eb"
     },
     {
       "name": "audit_gap_report_strict",
@@ -1862,13 +1892,13 @@
         "gates_skipped": 0,
         "gates_total": 8,
         "overall_pass": true,
-        "timestamp": "2026-06-13T15:46:23.858954+00:00"
+        "timestamp": "2026-06-13T16:25:08.007788+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "5d7360c408959616f1fea435ae04a37c01f619661b031b59cf348e39020ec17a"
+      "stdout_sha256": "1512b0226b73d3ea48d5078b0aaa3c0af985b6e6494f1ce3221aa82dcb97505a"
     },
     {
       "name": "supply_chain_gate",
@@ -1914,19 +1944,19 @@
         "checks_total": 5,
         "failing_checks": [],
         "overall_pass": true,
-        "timestamp": "2026-06-13T15:46:23.898038+00:00"
+        "timestamp": "2026-06-13T16:25:08.045666+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "39ffc9f18a25683a3252fcab48f02cac0b8eb921efc2f14248f8427882584d69"
+      "stdout_sha256": "051324aba46125e127a3a4f02c2780e7b1f00dbb4b6d2b0cf757f470c764e3d1"
     }
   ],
-  "generated_at": "2026-06-13T15:46:23.912286+00:00",
+  "generated_at": "2026-06-13T16:25:08.061032+00:00",
   "git": {
     "branch": "dev",
-    "commit": "669d04355f3d0010961d78e1aa96941dbd7aee10",
+    "commit": "3394cd6ce44c56d57fe467834db457d7780de5a9",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
