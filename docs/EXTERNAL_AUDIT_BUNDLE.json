@@ -3,8 +3,8 @@
     {
       "exists": true,
       "path": "docs/AUDIT_MANIFEST.md",
-      "sha256": "242abe650e4faec964b8445cd067268011776a4a09a27dfa5a88e72096259736",
-      "size": 27599
+      "sha256": "dc09397ca930fedf44787917734f914e71eb22744739b783ce3bc7117444dd1c",
+      "size": 28630
     },
     {
       "exists": true,
@@ -200,7 +200,7 @@
           {
             "findings": [
               {
-                "message": "18 files modified/deleted since graph build (2026-06-13T10:58:08)",
+                "message": "20 files modified/deleted since graph build (2026-06-13T10:58:08)",
                 "severity": "WARN"
               },
               {
@@ -462,7 +462,7 @@
           {
             "findings": [
               {
-                "message": "P21 semantic map: 17 requirements (11 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
+                "message": "P21 semantic map: 18 requirements (12 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
                 "severity": "PASS"
               },
               {
@@ -531,6 +531,10 @@
               },
               {
                 "message": "G-17: gated by script ci/check_bench_target_context.py",
+                "severity": "PASS"
+              },
+              {
+                "message": "G-18: gated by --research-signal-matrix (registered)",
                 "severity": "PASS"
               }
             ],
@@ -604,7 +608,7 @@
                 "severity": "INFO"
               },
               {
-                "message": "Source graph \"files\" has 1627 rows (threshold: 200)",
+                "message": "Source graph \"files\" has 1628 rows (threshold: 200)",
                 "severity": "PASS"
               }
             ],
@@ -690,6 +694,16 @@
             ],
             "name": "G-16: GPU/Hardware Evidence",
             "status": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "message": "45 signal classes fully routed (attack_class + expected_evidence + expected_gate)",
+                "severity": "PASS"
+              }
+            ],
+            "name": "G-18: Research Signal Matrix",
+            "status": "PASS"
           }
         ],
         "commit": {
@@ -698,11 +712,11 @@
           "value": {
             "dirty": false,
             "ref": "dev",
-            "sha": "8009d13e9327ec07b5cbf2ec9745c18cfeec5a04",
-            "short": "8009d13e93"
+            "sha": "ce3c3f6f50e6eb28e38ffb0db89a3c9b7b229386",
+            "short": "ce3c3f6f50"
           }
         },
-        "generated_at": "2026-06-13T14:32:39.010084+00:00",
+        "generated_at": "2026-06-13T15:10:47.007315+00:00",
         "platform": "Linux",
         "provenance": {
           "build_flags": {
@@ -719,12 +733,12 @@
             },
             "flags_hash": "f6054a07e934d755"
           },
-          "collected_at": "2026-06-13T14:32:39.009973+00:00",
+          "collected_at": "2026-06-13T15:10:47.007254+00:00",
           "git": {
             "dirty": false,
             "ref": "dev",
-            "sha": "8009d13e9327ec07b5cbf2ec9745c18cfeec5a04",
-            "short": "8009d13e93"
+            "sha": "ce3c3f6f50e6eb28e38ffb0db89a3c9b7b229386",
+            "short": "ce3c3f6f50"
           },
           "platform": {
             "machine": "x86_64",
@@ -745,7 +759,7 @@
           },
           "version": "4.2.1"
         },
-        "run_id": "audit_gate-8009d13e93-20260613T143239",
+        "run_id": "audit_gate-ce3c3f6f50-20260613T151047",
         "runner": "audit_gate",
         "schema_version": "1.0.0",
         "sections": [
@@ -900,7 +914,7 @@
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "advisory:medium",
-                "title": "18 files modified/deleted since graph build (2026-06-13T10:58:08)"
+                "title": "20 files modified/deleted since graph build (2026-06-13T10:58:08)"
               },
               {
                 "check_id": "p6__graph_freshness",
@@ -1211,7 +1225,7 @@
               {
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
-                "title": "P21 semantic map: 17 requirements (11 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
+                "title": "P21 semantic map: 18 requirements (12 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
               },
               {
                 "check_id": "p21__external-audit_replacement_gate",
@@ -1297,6 +1311,11 @@
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
                 "title": "G-17: gated by script ci/check_bench_target_context.py"
+              },
+              {
+                "check_id": "p21__external-audit_replacement_gate",
+                "severity": "pass",
+                "title": "G-18: gated by --research-signal-matrix (registered)"
               }
             ],
             "name": "P21: External-Audit Replacement Gate",
@@ -1384,7 +1403,7 @@
               {
                 "check_id": "g-12__source_graph_quality",
                 "severity": "pass",
-                "title": "Source graph \"files\" has 1627 rows (threshold: 200)"
+                "title": "Source graph \"files\" has 1628 rows (threshold: 200)"
               }
             ],
             "name": "G-12: Source Graph Quality",
@@ -1483,15 +1502,26 @@
             ],
             "name": "G-16: GPU/Hardware Evidence",
             "verdict": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "check_id": "g-18__research_signal_matrix",
+                "severity": "pass",
+                "title": "45 signal classes fully routed (attack_class + expected_evidence + expected_gate)"
+              }
+            ],
+            "name": "G-18: Research Signal Matrix",
+            "verdict": "PASS"
           }
         ],
         "summary": {
           "advisory": 57,
           "blocking": 0,
           "info": 52,
-          "sections": 30,
+          "sections": 31,
           "skipped_sections": 0,
-          "total_findings": 111,
+          "total_findings": 113,
           "warnings": 5
         },
         "verdict": "PASS with advisory"
@@ -1499,8 +1529,8 @@
       "passing": true,
       "required": true,
       "returncode": 0,
-      "stderr_sha256": "87e24f77c43c2377980ab64df8cc69b92e3c0071e06654ceb2d1f6b11323be0b",
-      "stdout_sha256": "447ae86b6e44a9594107daf61e6fcdc2c2bd957ce1359b7f4cc3be1d4558a86a"
+      "stderr_sha256": "6b75c59c43804b03ce2201a3940e1db53e7a87a5089b998859184bc5aaaf50a0",
+      "stdout_sha256": "312ab7aea38ea5ef9cd0391dc8ce4b5e3dfc09bcee8b1572ab7a825300683276"
     },
     {
       "name": "audit_gap_report_strict",
@@ -1802,13 +1832,13 @@
         "gates_skipped": 0,
         "gates_total": 8,
         "overall_pass": true,
-        "timestamp": "2026-06-13T14:32:40.770973+00:00"
+        "timestamp": "2026-06-13T15:10:48.814526+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "2b11d67ed06a1225d4fa82453f5a76f5ec93370efc6b9d0488bc0b8d0e416d54"
+      "stdout_sha256": "7917eecfc25ce3ee20dc605f5a704fcd9502edd59cd8366be27b19716a095e15"
     },
     {
       "name": "supply_chain_gate",
@@ -1854,19 +1884,19 @@
         "checks_total": 5,
         "failing_checks": [],
         "overall_pass": true,
-        "timestamp": "2026-06-13T14:32:40.810713+00:00"
+        "timestamp": "2026-06-13T15:10:48.867829+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "3dad067d6e561453c62c46ebacafb2167f53e4820eb162917a186423280fb34d"
+      "stdout_sha256": "961f9dcff358a49ced753469387491dac8f910b3b6afa5bd46815e1901065db2"
     }
   ],
-  "generated_at": "2026-06-13T14:32:40.831929+00:00",
+  "generated_at": "2026-06-13T15:10:48.883049+00:00",
   "git": {
     "branch": "dev",
-    "commit": "8009d13e9327ec07b5cbf2ec9745c18cfeec5a04",
+    "commit": "ce3c3f6f50e6eb28e38ffb0db89a3c9b7b229386",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
