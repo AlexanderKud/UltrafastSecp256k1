@@ -110,6 +110,13 @@ FOCUS_GOLDENS: list[tuple[str, str]] = [
     ("caas", "workflows/caas.yml"),
     ("external_audit_bundle", "external_audit_bundle.py"),
     ("test_caas_integrity", "test_caas_integrity.py"),
+    # Bastion B2: route the CAAS gate symbols that back P21, freshness, and the
+    # research monitor so a stale/misbuilt graph cannot silently misroute them.
+    # NOTE: bare "P21" is a principle label, not a graph symbol, so it correctly
+    # has no node — route via the function symbol check_external_audit_replacement.
+    ("external_audit_replacement", "audit_gate.py"),
+    ("audit_sla", "audit_sla_check.py"),
+    ("research_monitor", "research_monitor.py"),
 ]
 
 # Minimum total rows across all tables

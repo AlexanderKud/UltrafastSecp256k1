@@ -1,5 +1,18 @@
 # Audit Changelog
 
+## 2026-06-13 — source-graph CAAS focus-routing goldens (Bastion B2)
+
+- Added three focus-routing goldens to `ci/check_source_graph_quality.py` so a
+  stale or misbuilt source graph cannot silently misroute the CAAS gate symbols:
+  `external_audit_replacement -> audit_gate.py` (the symbol backing P21),
+  `audit_sla -> audit_sla_check.py`, and `research_monitor -> research_monitor.py`.
+- Documented that bare `P21` is a principle label, not a graph symbol, so it
+  correctly resolves no node; routing is asserted via the function symbol.
+- Confirmed the dual-graph design is intentional: `tools/source_graph_kit/
+  source_graph.db` is the canonical semantic graph (gated for freshness/commit by
+  this script); `.project_graph.db` remains the ABI/coverage metadata graph used
+  by the other `audit_gate.py` checks.
+
 ## 2026-06-13 — P21 semantic requirement map (Bastion B1)
 
 - Added `docs/CAAS_BASTION_REQUIREMENTS.json`: a machine-readable map binding each
