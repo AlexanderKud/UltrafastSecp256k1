@@ -1,5 +1,14 @@
 # Audit Changelog
 
+## 2026-06-13 — CAAS determinism golden freshness refresh
+
+- Regenerated `docs/DETERMINISM_GOLDEN.json` from
+  `ci/check_determinism_gate.py --json --repeat 5` after the SLA gate crossed
+  the 30-day determinism golden freshness threshold.
+- Added a `generated_at` timestamp to determinism gate JSON output so refreshed
+  golden evidence carries an explicit generation time in addition to the git
+  commit freshness used by `ci/audit_sla_check.py`.
+
 ## 2026-06-13 — libsecp shim ECDSA same-X cache identity
 
 - Fixed `ShimEcdsaCache` identity for ECDSA verify prebuilt-key entries to
