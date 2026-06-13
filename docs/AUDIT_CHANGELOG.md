@@ -1,5 +1,25 @@
 # Audit Changelog
 
+## 2026-06-13 — CAAS status-doc reconciliation (Bastion B0)
+
+- Reconciled `docs/CAAS_COMPLETENESS_GAP_ANALYSIS.md` (was dated 2026-04-27)
+  against the live gates. All six structural gaps it listed as missing/partial
+  are confirmed **closed and CI-gated** with file + live-verdict evidence:
+  - P21 registered + gated (`audit_gate.py --external-audit-replacement`, PASS).
+  - G-9b exploit-traceability gated (`--exploit-traceability`, PASS).
+  - G-7 multi-CI (`multi-ci-repro.yml` + `ci/multi_ci_repro_check.py`).
+  - G-8 two-tool CT (`ct-independence.yml` + `ci/ct_independence_check.py`,
+    `--ct-tool-agreement` PASS).
+  - H-9 audit dashboard (`docs/AUDIT_DASHBOARD.md`, nightly-refreshed).
+  - C ABI thread safety (`docs/THREAD_SAFETY.md`).
+- Added an explicit **Bastion Final Mile** section enumerating the residual
+  hardening (B1 semantic P21, B3 pre-alert freshness, B4 strict bundle, B5
+  negative fixtures, B8 perf co-gate, B9 real drills) so future work is not
+  built from stale "missing" prose. Wording rule recorded: green gates are not
+  the same as a finished Bastion.
+- Updated `docs/CAAS_GAP_CLOSURE_ROADMAP.md` header (v1.2) and checked its
+  structural done-criteria.
+
 ## 2026-06-13 — CAAS determinism golden freshness refresh
 
 - Regenerated `docs/DETERMINISM_GOLDEN.json` from
