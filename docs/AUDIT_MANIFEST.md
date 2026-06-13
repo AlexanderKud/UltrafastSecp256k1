@@ -381,17 +381,35 @@ Local enforcement: install with `python3 ci/install_caas_hooks.py` (pre-push hoo
 
 **Automated gate:** `audit_gate.py --external-audit-replacement` (included in `ALL_CHECKS`)
 
-Checks:
-- All 15 CAAS auditor-replacement documents present (CAAS_PROTOCOL.md, RESIDUAL_RISK_REGISTER.md,
-  SECURITY_CLAIMS.md, EXPLOIT_TEST_CATALOG.md, EXTERNAL_AUDIT_BUNDLE.{json,sha256},
-  CAAS_REVIEWER_QUICKSTART.md, CAAS_FAQ.md, CAAS_THREAT_MODEL.md,
-  NEGATIVE_RESULTS_LEDGER.md, THREAD_SAFETY.md, ABI_VERSIONING.md,
-  SECURITY_INCIDENT_TIMELINE.md, AUDIT_PHILOSOPHY.md,
-  `ci/verify_external_audit_bundle.py`)
-- Failure: any required document absent blocks the pipeline.
+**Semantic requirement map (Bastion B1, 2026-06-13).** The gate is no longer a
+presence-only file list. It loads `docs/CAAS_BASTION_REQUIREMENTS.json` — a
+machine-readable map binding each known review gap (P21-CORE, G-1..G-10, G-9b) to
+its `artifact_paths`, enforcing `gate`, `status`, `residual_risk`, and
+`last_verified`. A closed gap may no longer point only to prose: it must name a
+gate that actually exists.
 
-**Status:** All 15 required documents present as of 2026-04-28.
-See `docs/CAAS_GAP_CLOSURE_ROADMAP.md` and `docs/CAAS_HARDENING_TODO.md`.
+Checks (per requirement row):
+- **Artifacts present** — every path in `artifact_paths` must exist (includes the
+  15 CAAS auditor-replacement documents under the `P21-CORE` row).
+- **Gate callable** — a `gated` row must name either an `audit_gate.py` sub-check
+  registered in `CHECK_MAP`, or a standalone `ci/*.py` gate script that exists.
+  A named gate that is not registered blocks.
+- **Residual discipline** — a `documented_residual` row must carry a non-empty
+  `residual_risk` and `docs/RESIDUAL_RISK_REGISTER.md` must exist; a
+  `presence_only` row must explain (via `residual_risk`) why no behavioral gate
+  applies.
+- **Verification freshness** — `last_verified` must be a valid date within the
+  embedded SLA (warn ≥180d, fail ≥540d).
+- Failure: a missing/invalid map, a missing artifact, an unregistered gate, a
+  stale binding, or an empty documented residual blocks the pipeline.
+
+**Negative proof:** `ci/test_audit_scripts.py::check_p21_semantic_requirement_map`
+asserts the gate fails closed on missing artifact, unregistered gate, stale
+`last_verified`, empty residual, and missing map, and passes on the real map.
+
+**Status:** 12 requirement rows (6 gated, 5 presence, 1 documented-residual), all
+bound, as of 2026-06-13. See `docs/CAAS_BASTION_REQUIREMENTS.json`,
+`docs/CAAS_GAP_CLOSURE_ROADMAP.md`, and `docs/CAAS_HARDENING_TODO.md`.
 
 ---
 
@@ -558,3 +576,4 @@ To add a new audit principle:
 | 2026-04-14 | Added reproducible evidence bundle producer/validator (`external_audit_bundle.py`, `verify_external_audit_bundle.py`) and spec doc | P19 reproducibility principle added; evidence bundles can be independently hash-verified and replay-validated |
 | 2026-04-14 | Added CAAS infrastructure: `caas_runner.py`, `install_caas_hooks.py`, `.github/workflows/caas.yml`; added CAAS stages to `preflight.yml` | P20 added — all five audit stages now run automatically on every push and PR; pre-push hook available for local enforcement |
 | 2026-04-28 | Registered P21 External-Audit Replacement Completeness; created `docs/CAAS_HARDENING_TODO.md` (H-1..H-12 all closed); `check_external_audit_replacement` gate in ALL_CHECKS | P21 added — all 15 CAAS auditor-replacement documents verified present; CAAS hardening backlog formally documented and closed |
+| 2026-06-13 | Upgraded P21 from presence-only to a **semantic requirement map** (Bastion B1): `docs/CAAS_BASTION_REQUIREMENTS.json` binds each known review gap (P21-CORE, G-1..G-10, G-9b) to its artifact(s), enforcing gate, status, residual risk, and last_verified date. `check_external_audit_replacement` now verifies artifacts exist, every `gated` row names a gate registered in `CHECK_MAP` (or a standalone gate script that exists), every `documented_residual` carries a non-empty residual, and `last_verified` is within SLA. Negative fixture `P21:semantic_requirement_map` proves fail-closed on missing artifact / unregistered gate / stale date / empty residual / missing map | P21 became semantic — a closed gap may no longer point only to prose; it must name a live gate or declare an explicit residual |

@@ -1182,45 +1182,140 @@ def check_ct_tool_agreement(_conn):
 # ---------------------------------------------------------------------------
 # P21 — External-Audit Replacement Gate
 # ---------------------------------------------------------------------------
+REQUIREMENTS_PATH = LIB_ROOT / 'docs' / 'CAAS_BASTION_REQUIREMENTS.json'
+
+
 def check_external_audit_replacement(conn):
-    """P21: verify all required CAAS docs are present to replace verifiable
-    parts of a traditional external audit."""
+    """P21: External-Audit Replacement Gate — SEMANTIC requirement map.
+
+    Loads docs/CAAS_BASTION_REQUIREMENTS.json and verifies that every known
+    review gap binds to (a) all of its required artifacts present, AND (b) a
+    live, callable gate -- either an audit_gate.py sub-check registered in
+    CHECK_MAP, or a standalone ci/*.py gate script that exists -- OR is an
+    explicitly documented residual with a non-empty residual_risk tracked in
+    RESIDUAL_RISK_REGISTER.md. Bindings carry a last_verified date that warns
+    (and eventually fails) per the embedded SLA.
+
+    This is the Bastion upgrade of the former presence-only file list: a closed
+    gap may no longer point only to prose -- it must name a gate that exists, or
+    declare itself a residual. CHECK_MAP is resolved at call time (defined later
+    in this module)."""
     findings = []
 
-    required = [
-        'docs/CAAS_PROTOCOL.md',
-        'docs/AUDIT_PHILOSOPHY.md',
-        'docs/RESIDUAL_RISK_REGISTER.md',
-        'docs/SECURITY_CLAIMS.md',
-        'docs/EXPLOIT_TEST_CATALOG.md',
-        'docs/EXTERNAL_AUDIT_BUNDLE.json',
-        'docs/EXTERNAL_AUDIT_BUNDLE.sha256',
-        'docs/CAAS_REVIEWER_QUICKSTART.md',
-        'docs/CAAS_FAQ.md',
-        'docs/CAAS_THREAT_MODEL.md',
-        'docs/NEGATIVE_RESULTS_LEDGER.md',
-        'docs/THREAD_SAFETY.md',
-        'docs/ABI_VERSIONING.md',
-        'docs/SECURITY_INCIDENT_TIMELINE.md',
-        'ci/verify_external_audit_bundle.py',
-    ]
+    if not REQUIREMENTS_PATH.exists():
+        findings.append(('FAIL', 'docs/CAAS_BASTION_REQUIREMENTS.json missing — '
+                                 'P21 requirement map is the single source of truth'))
+        return 'P21: External-Audit Replacement Gate', findings
+    try:
+        reqmap = json.loads(REQUIREMENTS_PATH.read_text())
+    except Exception as exc:
+        findings.append(('FAIL', f'CAAS_BASTION_REQUIREMENTS.json is not valid JSON: {exc}'))
+        return 'P21: External-Audit Replacement Gate', findings
 
-    missing = []
-    for rel in required:
-        path = LIB_ROOT / rel
-        if path.exists():
-            findings.append(('PASS', f'{rel} present'))
+    requirements = reqmap.get('requirements')
+    if not isinstance(requirements, list) or not requirements:
+        findings.append(('FAIL', 'CAAS_BASTION_REQUIREMENTS.json has no requirements[] rows'))
+        return 'P21: External-Audit Replacement Gate', findings
+
+    sla = reqmap.get('sla', {})
+    try:
+        warn_days = int(sla.get('last_verified_warn_days', 180))
+        fail_days = int(sla.get('last_verified_fail_days', 540))
+    except (TypeError, ValueError):
+        warn_days, fail_days = 180, 540
+
+    valid_flags = set(CHECK_MAP.keys())
+    today = datetime.now(timezone.utc).date()
+
+    blocking = 0
+    n_gated = n_presence = n_residual = 0
+
+    for row in requirements:
+        rid = row.get('id', '<no-id>')
+        status = row.get('status', '')
+        gate = row.get('gate', '') or ''
+        gate_kind = row.get('gate_kind', '')
+        residual = (row.get('residual_risk') or '').strip()
+        artifacts = row.get('artifact_paths') or []
+
+        if status not in ('gated', 'presence_only', 'documented_residual'):
+            findings.append(('FAIL', f'{rid}: invalid status {status!r}'))
+            blocking += 1
+            continue
+
+        # (1) every required artifact must exist
+        if not artifacts:
+            findings.append(('FAIL', f'{rid}: no artifact_paths declared'))
+            blocking += 1
         else:
-            findings.append(('FAIL', f'{rel} missing'))
-            missing.append(rel)
+            missing = [a for a in artifacts if not (LIB_ROOT / a).exists()]
+            if missing:
+                findings.append(('FAIL', f'{rid}: missing artifact(s): {missing}'))
+                blocking += 1
 
-    # Summarise
-    n_total = len(required)
-    n_missing = len(missing)
-    if n_missing == 0:
-        findings.insert(0, ('PASS', f'P21: all required CAAS docs present ({n_total} files)'))
+        # (2) gate must resolve to something callable, or be a documented residual
+        if status == 'gated':
+            n_gated += 1
+            if gate_kind == 'audit_gate':
+                flag = next((tok for tok in gate.split() if tok.startswith('--')), None)
+                if flag is None:
+                    findings.append(('FAIL', f'{rid}: gated audit_gate row has no --flag in gate {gate!r}'))
+                    blocking += 1
+                elif flag not in valid_flags:
+                    findings.append(('FAIL', f'{rid}: named gate {flag} is NOT registered in audit_gate CHECK_MAP'))
+                    blocking += 1
+                else:
+                    findings.append(('PASS', f'{rid}: gated by {flag} (registered)'))
+            elif gate_kind == 'script':
+                if not (LIB_ROOT / gate).exists():
+                    findings.append(('FAIL', f'{rid}: gate script {gate} does not exist'))
+                    blocking += 1
+                else:
+                    findings.append(('PASS', f'{rid}: gated by script {gate}'))
+            else:
+                findings.append(('FAIL', f'{rid}: status=gated but gate_kind={gate_kind!r} '
+                                         f'is not executable (expected audit_gate|script)'))
+                blocking += 1
+        elif status == 'presence_only':
+            n_presence += 1
+            if gate_kind != 'presence':
+                findings.append(('FAIL', f'{rid}: presence_only must have gate_kind=presence (got {gate_kind!r})'))
+                blocking += 1
+            elif not residual:
+                findings.append(('WARN', f'{rid}: presence_only without a residual_risk note '
+                                         f'explaining why no behavioral gate applies'))
+            else:
+                findings.append(('PASS', f'{rid}: presence-gated ({len(artifacts)} artifact(s))'))
+        else:  # documented_residual
+            n_residual += 1
+            if not residual:
+                findings.append(('FAIL', f'{rid}: documented_residual requires a non-empty residual_risk'))
+                blocking += 1
+            elif not (LIB_ROOT / 'docs' / 'RESIDUAL_RISK_REGISTER.md').exists():
+                findings.append(('FAIL', f'{rid}: documented_residual but docs/RESIDUAL_RISK_REGISTER.md missing'))
+                blocking += 1
+            else:
+                findings.append(('PASS', f'{rid}: documented residual (tracked in RESIDUAL_RISK_REGISTER.md)'))
+
+        # (3) last_verified freshness SLA
+        lv = row.get('last_verified', '')
+        try:
+            age = (today - datetime.strptime(lv, '%Y-%m-%d').date()).days
+            if age > fail_days:
+                findings.append(('FAIL', f'{rid}: last_verified {lv} is {age}d old (> {fail_days}d SLA) — re-verify binding'))
+                blocking += 1
+            elif age > warn_days:
+                findings.append(('WARN', f'{rid}: last_verified {lv} is {age}d old (> {warn_days}d) — re-verify soon'))
+        except (ValueError, TypeError):
+            findings.append(('FAIL', f'{rid}: last_verified {lv!r} is not a valid YYYY-MM-DD date'))
+            blocking += 1
+
+    summary = (f'P21 semantic map: {len(requirements)} requirements '
+               f'({n_gated} gated, {n_presence} presence, {n_residual} documented-residual)')
+    if blocking == 0:
+        findings.insert(0, ('PASS', summary + ' — all bound to a live gate or documented residual'))
     else:
-        findings.insert(0, ('FAIL', f'P21: missing {n_missing} required docs: {missing}'))
+        findings.insert(0, ('FAIL', summary + f' — {blocking} binding failure(s)'))
 
     return 'P21: External-Audit Replacement Gate', findings
 

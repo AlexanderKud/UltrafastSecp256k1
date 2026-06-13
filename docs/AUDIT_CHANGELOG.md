@@ -1,5 +1,28 @@
 # Audit Changelog
 
+## 2026-06-13 — P21 semantic requirement map (Bastion B1)
+
+- Added `docs/CAAS_BASTION_REQUIREMENTS.json`: a machine-readable map binding each
+  known review gap (P21-CORE doc set, G-1..G-10, G-9b) to its `artifact_paths`,
+  enforcing `gate`, `gate_kind`, `status`, `residual_risk`, and `last_verified`.
+- Upgraded `check_external_audit_replacement` (P21) in `ci/audit_gate.py` from a
+  presence-only file list to a **semantic check**: every artifact must exist;
+  every `gated` row must name an `audit_gate.py` flag registered in `CHECK_MAP` or
+  an existing `ci/*.py` gate script; every `documented_residual` must carry a
+  non-empty residual (and `RESIDUAL_RISK_REGISTER.md` must exist); `last_verified`
+  must be within the embedded SLA (warn 180d, fail 540d). A closed gap can no
+  longer point only to prose.
+- Honest reconciliation surfaced by the map: of the 12 rows, 6 are `gated`
+  (G-1 `--threat-model`, G-5 `--spec-traceability`, G-7 `multi_ci_repro_check.py`,
+  G-8 `--ct-tool-agreement`, G-9b `--exploit-traceability`, G-10 `--disclosure-sla`),
+  5 are `presence_only` published stance/spec documents, and 1 (G-3 hardware
+  side-channel) is a `documented_residual`.
+- Added `ci/test_audit_scripts.py::check_p21_semantic_requirement_map` (runs in the
+  always-on Structural Integrity phase) proving the gate fails closed on missing
+  artifact, unregistered gate, stale date, empty residual, and missing map, and
+  passes on the committed map. Self-test now 143 pass.
+- Updated `docs/AUDIT_MANIFEST.md` P21 section + changelog row.
+
 ## 2026-06-13 — CAAS status-doc reconciliation (Bastion B0)
 
 - Reconciled `docs/CAAS_COMPLETENESS_GAP_ANALYSIS.md` (was dated 2026-04-27)

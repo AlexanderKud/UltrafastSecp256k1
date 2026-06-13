@@ -1179,6 +1179,123 @@ def check_caas_integrity_json_purity() -> None:
     ok(tag, "test_caas_integrity.py --json emits pure passing JSON")
 
 
+def _load_audit_gate_module():
+    """Import audit_gate.py in-process for white-box negative testing."""
+    path = SCRIPT_DIR / "audit_gate.py"
+    if str(SCRIPT_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_DIR))
+    spec = importlib.util.spec_from_file_location("audit_gate_p21_selftest", str(path))
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not build module spec for audit_gate.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def check_p21_semantic_requirement_map() -> None:
+    """B1/P21: the external-audit-replacement gate must be SEMANTIC, not
+    presence-only. It must FAIL closed on a bad requirement map — missing
+    artifact, gate not registered in CHECK_MAP, stale last_verified, empty
+    documented-residual, missing map file — and PASS on a well-formed one and on
+    the real committed docs/CAAS_BASTION_REQUIREMENTS.json. This is the negative
+    proof that P21 binds each closed gap to a live gate, not to prose."""
+    from datetime import datetime, timezone, timedelta
+
+    tag = "P21:semantic_requirement_map"
+    try:
+        module = _load_audit_gate_module()
+    except Exception as exc:
+        fail(tag, f"could not import audit_gate.py: {exc}")
+        return
+
+    if not hasattr(module, "REQUIREMENTS_PATH") or not hasattr(module, "check_external_audit_replacement"):
+        fail(tag, "audit_gate.py is missing REQUIREMENTS_PATH / check_external_audit_replacement (presence-only?)")
+        return
+
+    today = datetime.now(timezone.utc).date()
+    fresh = today.isoformat()
+    stale = (today - timedelta(days=10_000)).isoformat()
+
+    def has_fail(reqmap_obj_or_none, point_at_missing=False) -> bool:
+        saved = module.REQUIREMENTS_PATH
+        tmp = None
+        try:
+            if point_at_missing:
+                module.REQUIREMENTS_PATH = Path(tempfile.gettempdir()) / "p21_does_not_exist_xyz.json"
+            else:
+                tf = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+                json.dump(reqmap_obj_or_none, tf)
+                tf.close()
+                tmp = Path(tf.name)
+                module.REQUIREMENTS_PATH = tmp
+            _, findings = module.check_external_audit_replacement(None)
+            return any(f[0] == "FAIL" for f in findings)
+        finally:
+            module.REQUIREMENTS_PATH = saved
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
+
+    def good_map():
+        return {
+            "schema_version": "1.0.0",
+            "sla": {"last_verified_warn_days": 180, "last_verified_fail_days": 540},
+            "requirements": [
+                {
+                    "id": "T-1", "claim": "gated row",
+                    "artifact_paths": ["docs/THREAT_MODEL.md"],
+                    "gate": "audit_gate.py --threat-model", "gate_kind": "audit_gate",
+                    "status": "gated", "residual_risk": "", "last_verified": fresh,
+                }
+            ],
+        }
+
+    failures = []
+
+    # (0) well-formed crafted map must PASS (no FAIL findings)
+    if has_fail(good_map()):
+        failures.append("well-formed map produced a FAIL")
+
+    # (1) missing artifact -> FAIL
+    m = good_map(); m["requirements"][0]["artifact_paths"] = ["docs/__p21_nonexistent__.md"]
+    if not has_fail(m):
+        failures.append("missing artifact did not FAIL")
+
+    # (2) gate not registered in CHECK_MAP -> FAIL
+    m = good_map(); m["requirements"][0]["gate"] = "audit_gate.py --not-a-real-gate-xyz"
+    if not has_fail(m):
+        failures.append("unregistered gate flag did not FAIL")
+
+    # (3) status=gated but gate_kind not executable -> FAIL
+    m = good_map(); m["requirements"][0]["gate_kind"] = "presence"
+    if not has_fail(m):
+        failures.append("gated row with non-executable gate_kind did not FAIL")
+
+    # (4) stale last_verified beyond SLA -> FAIL
+    m = good_map(); m["requirements"][0]["last_verified"] = stale
+    if not has_fail(m):
+        failures.append("stale last_verified did not FAIL")
+
+    # (5) documented_residual with empty residual_risk -> FAIL
+    m = good_map()
+    m["requirements"][0].update({"status": "documented_residual", "gate_kind": "presence",
+                                 "gate": "presence:x", "residual_risk": ""})
+    if not has_fail(m):
+        failures.append("empty documented_residual did not FAIL")
+
+    # (6) missing requirement-map file -> FAIL
+    if not has_fail(None, point_at_missing=True):
+        failures.append("missing CAAS_BASTION_REQUIREMENTS.json did not FAIL")
+
+    # (7) the REAL committed map must PASS
+    if has_fail(json.loads((LIB_ROOT / "docs" / "CAAS_BASTION_REQUIREMENTS.json").read_text())):
+        failures.append("the committed CAAS_BASTION_REQUIREMENTS.json produced a FAIL")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "P21 fails closed on 6 bad-map cases and passes the real + well-formed maps")
+
+
 def main() -> int:
     quick = "--quick" in sys.argv
 
@@ -1214,6 +1331,7 @@ def main() -> int:
     check_preflight_step_count()
     check_caas_integrity_json_purity()
     check_research_monitor_resilience()
+    check_p21_semantic_requirement_map()
 
     # Phase 4: Smoke tests
     print(f"\n{BOLD}[4/4] Smoke Tests{RESET}")
