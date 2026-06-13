@@ -674,10 +674,16 @@ def check_gpu_parity(conn):
     if missing:
         findings.append(('FAIL', f'{len(missing)} GPU header functions not in graph: {", ".join(missing)}'))
 
-    # Scan for undocumented Unsupported returns
+    # Scan for undocumented Unsupported *returns* in GPU backend SOURCE.
+    # Precision matters: the old heuristic matched any line containing the token
+    # 'Unsupported' (doc comments, enum declarations) across overlapping scan
+    # dirs and generated build trees, producing ~128 noise hits that drowned the
+    # real signal. We now (1) scan source extensions only, (2) prune build/
+    # generated dirs, (3) de-duplicate files, and (4) match an actual
+    # `return ...Unsupported` so the WARN means "a backend silently returns
+    # Unsupported without a documented parity exception".
     gpu_dirs = [
         LIB_ROOT / 'src' / 'gpu',
-        LIB_ROOT / 'src' / 'gpu' / 'src',
         LIB_ROOT / 'src' / 'opencl',
         LIB_ROOT / 'src' / 'metal',
         LIB_ROOT / 'src' / 'cuda',
@@ -685,32 +691,45 @@ def check_gpu_parity(conn):
         LIB_ROOT / 'opencl',
         LIB_ROOT / 'metal',
     ]
-    unsupported_dirs = [d for d in gpu_dirs if d.exists()]
-    unsup_re = re.compile(r'Unsupported')
+    src_exts = {'.cpp', '.cc', '.cu', '.cuh', '.cl', '.metal', '.mm', '.hpp', '.h'}
+    prune_dirs = {'build', 'build_bench', 'build-audit', 'CMakeFiles', '.git',
+                  'out', 'tmp', 'node_modules', 'third_party', 'external'}
+    unsup_return_re = re.compile(r'return\s+[\w:]*Unsupported')
     todo_re = re.compile(r'TODO\(parity\)|PARITY-EXCEPTION')
 
     undocumented = []
-    for scan_dir in unsupported_dirs:
-        if not scan_dir.exists():
-            continue
+    seen_files: set = set()
+    for scan_dir in (d for d in gpu_dirs if d.exists()):
         for root, dirs, files in os.walk(scan_dir):
+            # Prune generated/build subtrees in place.
+            dirs[:] = [d for d in dirs if d not in prune_dirs and not d.startswith('build')]
             for fname in files:
                 fpath = Path(root) / fname
+                if fpath.suffix not in src_exts:
+                    continue
+                try:
+                    resolved = fpath.resolve()
+                except OSError:
+                    continue
+                if resolved in seen_files:
+                    continue
+                seen_files.add(resolved)
                 try:
                     lines = fpath.read_text(errors='replace').splitlines()
                 except Exception:
                     continue
                 for i, line in enumerate(lines):
-                    if unsup_re.search(line):
-                        # Check preceding 3 lines for TODO or PARITY-EXCEPTION
+                    if unsup_return_re.search(line):
+                        # Documented if a parity marker is in the preceding 3 lines.
                         context = '\n'.join(lines[max(0, i-3):i+1])
                         if not todo_re.search(context):
                             rel = str(fpath.relative_to(LIB_ROOT))
                             undocumented.append(f'{rel}:{i+1}')
 
     if undocumented:
-        findings.append(('WARN', f'{len(undocumented)} undocumented Unsupported returns'))
-        for loc in undocumented[:5]:
+        findings.append(('WARN', f'{len(undocumented)} undocumented "return Unsupported" site(s) '
+                                 f'(backend silently unimplemented without a TODO(parity)/PARITY-EXCEPTION marker)'))
+        for loc in undocumented[:8]:
             findings.append(('INFO', f'  {loc}'))
 
     if not findings:

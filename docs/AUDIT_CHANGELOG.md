@@ -1,5 +1,22 @@
 # Audit Changelog
 
+## 2026-06-13 — GPU parity exceptions documented + precise gate (Bastion B10)
+
+- Marked the 15 intentional default-`Unsupported` stubs in
+  `src/gpu/include/gpu_backend.hpp` (libbitcoin-bridge specializations:
+  `*_verify_collect`, `xonly_validate`, `commitment_verify`, `tagged_hash`,
+  `pubkey_validate`, `hash256`, etc.) with inline `PARITY-EXCEPTION` markers —
+  CUDA-native ops with deterministic host/CPU fallback on OpenCL/Metal (public
+  data; a perf residual, not a correctness parity gap).
+- Tightened `audit_gate.py` `check_gpu_parity`: it previously matched any line
+  containing the token `Unsupported` (doc comments, enum declarations) across
+  overlapping scan dirs and generated build trees — ~128 noise hits. It now scans
+  source extensions only, prunes build/generated dirs, de-duplicates files, and
+  matches an actual `return ...Unsupported`. Result: the GPU-parity check now
+  PASSES (0 undocumented sites) and the WARN, when it fires, is meaningful.
+- Documented the default-stub parity exceptions in
+  `docs/BACKEND_ASSURANCE_MATRIX.md`.
+
 ## 2026-06-13 — incident drills as real fault injection (Bastion B9)
 
 - `ci/incident_drills.py`: the CI-poisoning and dependency-compromise drills are

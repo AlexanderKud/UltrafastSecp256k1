@@ -175,6 +175,25 @@ benchmark JSON, audit output, driver metadata, and a real AMD device record
 per `docs/GPU_BACKEND_EVIDENCE.json`. CUDA source-sharing is not acceptable
 evidence for ROCm/HIP promotion.
 
+### Default-stub parity exceptions (libbitcoin-bridge specializations)
+
+Beyond the 16 public ABI ops, the `GpuBackend` interface exposes optional
+**libbitcoin-bridge specialization** virtual methods (`ecdsa_verify_collect`,
+`schnorr_verify_collect`, `xonly_validate`, `commitment_verify`, `tagged_hash`,
+`tagged_hash_var`, `pubkey_validate`, `hash256`, and the ZK/AEAD/BIP-352 batch
+variants). These are **CUDA-native** and intentionally default to
+`GpuError::Unsupported` on OpenCL/Metal, where the caller transparently falls
+back to the host/CPU path (e.g. `*_verify_batch` + a host collapse). All inputs
+on these paths are **public data**, and the fallback is deterministic, so this is
+a **performance residual, not a correctness parity gap**.
+
+Each such return in `src/gpu/include/gpu_backend.hpp` carries an inline
+`PARITY-EXCEPTION` marker, and the `audit_gate.py --gpu-parity` gate enforces that
+**every `return ...Unsupported` in GPU backend source is either implemented or
+carries a `TODO(parity)`/`PARITY-EXCEPTION` marker** — a backend may not silently
+return Unsupported without a documented exception. The gate scans source files
+only (build/generated trees are pruned) so the signal is precise.
+
 ---
 
 ## Audit Coverage
