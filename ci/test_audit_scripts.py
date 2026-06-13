@@ -1716,6 +1716,38 @@ def check_bench_artifact_sanity_fixtures() -> None:
         ok(tag, "rejects zero/neg/inf/nan/non-numeric/sub-physical ns + non-list results; accepts clean")
 
 
+def check_incident_drills_real_injection() -> None:
+    """B9: the CI-poisoning and dependency-compromise drills must perform REAL
+    fault injection and assert the corresponding gate DETECTS it (detected=True
+    with injected_fault + detection_gate provenance) — not just check that a
+    script exists. A drill that cannot fail is not a drill."""
+    tag = "B9:incident_drills_real_injection"
+    try:
+        module = _load_ci_module("incident_drills.py", "incident_drills_selftest")
+    except Exception as exc:
+        fail(tag, f"import failed: {exc}")
+        return
+
+    failures = []
+    for fn_name in ("drill_ci_poisoning", "drill_dependency_compromise"):
+        fn = getattr(module, fn_name, None)
+        if fn is None:
+            failures.append(f"{fn_name} missing")
+            continue
+        r = fn()
+        if not r.get("detected"):
+            failures.append(f"{r.get('drill', fn_name)} did not DETECT its injected fault")
+        if not r.get("passing"):
+            failures.append(f"{r.get('drill', fn_name)} drill did not pass")
+        if not r.get("injected_fault") or not r.get("detection_gate"):
+            failures.append(f"{r.get('drill', fn_name)} missing injected_fault/detection_gate provenance")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "ci_poisoning + dependency_compromise inject real faults and the gate detects them")
+
+
 def check_caas_gate_negative_fixture_coverage() -> None:
     """B5 completeness critic: every high-value CAAS gate must have a registered
     negative fixture in this file. A green gate without a proof that it fails on
@@ -1731,9 +1763,8 @@ def check_caas_gate_negative_fixture_coverage() -> None:
         "supply_chain_gate.py": "check_supply_chain_negative_fixtures",
         "check_source_graph_quality.py": "check_source_graph_quality_negative_fixtures",
         "check_bench_doc_consistency.py": "check_bench_artifact_sanity_fixtures",
+        "incident_drills.py": "check_incident_drills_real_injection",
         "research_monitor.py": "check_research_monitor_resilience",
-        # incident_drills.py negative coverage is added by Bastion B9
-        # (real fault-injection drills), tracked there.
     }
     g = globals()
     missing = [f"{gate} -> {fn}" for gate, fn in required.items()
@@ -1788,6 +1819,7 @@ def main() -> int:
     check_supply_chain_negative_fixtures()
     check_source_graph_quality_negative_fixtures()
     check_bench_artifact_sanity_fixtures()
+    check_incident_drills_real_injection()
     check_caas_gate_negative_fixture_coverage()
 
     # Phase 4: Smoke tests

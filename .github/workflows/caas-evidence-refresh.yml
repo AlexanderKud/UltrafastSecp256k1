@@ -284,6 +284,7 @@ jobs:
                      docs/SECURITY_AUTONOMY_KPI.json \
                      docs/AUDIT_DASHBOARD.md \
                      docs/EXPLOIT_TRACEABILITY_JOIN.md \
+                     docs/INCIDENT_DRILL_LOG.json \
                      docs/EVIDENCE_CHAIN.json; do
               if [ -f "$f" ] && ! git diff --quiet -- "$f"; then
                 git add "$f"

@@ -171,7 +171,7 @@ It does not require a build — it reads already-generated artifacts.
 | Stage 1 findings > 0 | Vacuous test, polarity bug, ignored return | Fix the audit/test_*.cpp |
 | Stage 2 P6 freshness WARN | Source modified after graph build | `python3 ci/build_project_graph.py --rebuild` |
 | Stage 3 score = 90 | `audit_sla` sub-gate failed (stale/missing evidence) | `python3 ci/audit_sla_check.py` to see which artifact + `days_until_block`; refresh per the Evidence Freshness & Refresh Contract (e.g. `ci/export_assurance.py -o ../../assurance_report.json`, or re-snapshot `audit/ci-evidence`) |
-| Stage 3 incident_drills WARN | Drill cadence exceeded | `python3 ci/incident_drills.py --record-all` |
+| Stage 3 incident_drills WARN | Drill cadence exceeded (stale `docs/INCIDENT_DRILL_LOG.json`) | `python3 ci/incident_drills.py` (each run injects faults, asserts gate detection, and rewrites the drill log) |
 | Stage 5 bundle digest mismatch | Manual edit of bundle file | Re-run Stage 4 |
 
 ## Evidence Freshness & Refresh Contract

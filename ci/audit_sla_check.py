@@ -301,13 +301,47 @@ def check_determinism_golden_freshness(sla_defs: dict) -> tuple[list[dict], list
     return [], statuses
 
 
+def check_incident_drill_freshness(sla_defs: dict) -> tuple[list[dict], list[dict]]:
+    """Check that incident drills are still running (Bastion B9).
+
+    Reads the git commit date of docs/INCIDENT_DRILL_LOG.json (written every
+    incident_drills.py run, refreshed nightly). If drills stop running the log
+    goes stale and this surfaces it. Advisory (warning) for now — see the SLO
+    note in AUDIT_SLA.json."""
+    slo = "incident_drill_freshness_days"
+    threshold = sla_defs.get("slos", {}).get(slo, {}).get("threshold", 14)
+    severity = sla_defs.get("slos", {}).get(slo, {}).get("severity", "warning")
+    buffer = _pre_alert_buffer(sla_defs, slo)
+    log = LIB_ROOT / "docs" / "INCIDENT_DRILL_LOG.json"
+    age = _file_age_days(log)
+    statuses = [_status_row("incident_drill_log", slo, age, threshold, buffer)]
+
+    if age is None:
+        return [], statuses  # not yet committed; absence is not a violation here
+    if age > threshold:
+        return [{
+            "slo": slo, "evidence": "incident_drill_log", "status": "stale",
+            "age_days": round(age, 1), "threshold_days": threshold,
+            "days_until_block": round(threshold - age, 1), "severity": severity,
+            "detail": f"Incident-drill log is {round(age, 1)} days old (max {threshold}) — drills may have stopped running",
+        }], statuses
+    if age > (threshold - buffer):
+        return [{
+            "slo": slo, "evidence": "incident_drill_log", "status": "pre_alert",
+            "age_days": round(age, 1), "threshold_days": threshold,
+            "days_until_block": round(threshold - age, 1), "severity": "warning",
+            "detail": f"PRE-ALERT: incident-drill log is {round(age, 1)} days old; stales at {threshold} — re-run drills",
+        }], statuses
+    return [], statuses
+
+
 def run(json_mode: bool, out_file: str | None) -> int:
     sla_defs = _load_sla_defs()
 
     all_findings: list[dict] = []
     evidence_status: list[dict] = []
     for check in (check_evidence_staleness, check_critical_freshness,
-                  check_determinism_golden_freshness):
+                  check_determinism_golden_freshness, check_incident_drill_freshness):
         findings, statuses = check(sla_defs)
         all_findings.extend(findings)
         evidence_status.extend(statuses)

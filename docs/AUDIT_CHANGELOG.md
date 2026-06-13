@@ -1,5 +1,28 @@
 # Audit Changelog
 
+## 2026-06-13 — incident drills as real fault injection (Bastion B9)
+
+- `ci/incident_drills.py`: the CI-poisoning and dependency-compromise drills are
+  now **real injection → detection** drills, not presence checks:
+  - `ci_poisoning`: builds a tampered cross-provider hash pair and RUNS
+    `multi_ci_repro_check.py`, requiring it to DETECT the mismatch (non-zero exit).
+  - `dependency_compromise`: synthesizes a `CMakeLists.txt` with no
+    `cmake_minimum_required` and requires `supply_chain_gate.check_build_input_pinning`
+    to DETECT the unpinned manifest.
+  Each drill result carries `injected_fault`, `detection_gate`, and `detected`.
+- Added a machine-readable drill log `docs/INCIDENT_DRILL_LOG.json` (timestamp,
+  commit, per-drill injection provenance) written on every run; added it to the
+  nightly `caas-evidence-refresh.yml` commit list so cadence stays fresh.
+- `ci/audit_sla_check.py` + `docs/AUDIT_SLA.json`: new
+  `incident_drill_freshness_days` SLO with `days_until_block`/pre-alert. Advisory
+  (warning) for now to avoid a self-inflicted recurring block; promote to blocking
+  after the nightly auto-commit loop is observed (cf. H-1).
+- Added `ci/test_audit_scripts.py::check_incident_drills_real_injection` proving
+  both drills detect their injected faults; added to the coverage critic (now 11
+  high-value gates). Self-test 153 pass.
+- Fixed the stale `incident_drills.py --record-all` reference in
+  `docs/CAAS_PROTOCOL.md` (the flag never existed).
+
 ## 2026-06-13 — performance claims evidence-gated (Bastion B8)
 
 - `ci/perf_security_cogate.py` now co-gates **benchmark-artifact integrity**: a

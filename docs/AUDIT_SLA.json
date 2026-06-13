@@ -50,6 +50,13 @@
       "severity": "blocking",
       "measurement": "now - last_verified_timestamp for DETERMINISM_GOLDEN.json"
     },
+    "incident_drill_freshness_days": {
+      "description": "Maximum age of the incident-drill log (docs/INCIDENT_DRILL_LOG.json) before drills are considered stale. Advisory for now: drills must keep running, but until the nightly auto-commit loop is observed for a full window (cf. H-1) this is a warning, not a release block, to avoid a self-inflicted recurring block. Promote to blocking after the observation window.",
+      "threshold": 14,
+      "pre_alert_buffer_days": 4,
+      "severity": "warning",
+      "measurement": "now - git_commit_date(docs/INCIDENT_DRILL_LOG.json)"
+    },
     "review_queue_max_open_days": {
       "description": "Maximum age in days that an item may sit in the source-graph review queue without being addressed or explicitly deferred",
       "threshold": 90,
