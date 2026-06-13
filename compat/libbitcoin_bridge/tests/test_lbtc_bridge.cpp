@@ -297,7 +297,7 @@ int main() {
         for (size_t k = 0; k < KS; ++k) invalid_kept &= keys[12 * KS + k] != 0;
         CHECK(high_zero, "ecdsa columns collect: high-S valid row key is zeroed");
         CHECK(invalid_kept, "ecdsa columns collect: invalid row key survives");
-        CHECK(ecdsa_s_is_high(high_sig), "ecdsa columns collect: source high-S sig is not rewritten");
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "ecdsa columns collect: source high-S sig is not rewritten");
     }
 
     /* --- Schnorr, all valid + corrupt one --- */

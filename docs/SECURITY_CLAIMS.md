@@ -2,6 +2,31 @@
 
 **UltrafastSecp256k1 v4.2.1** -- FAST / CT Dual-Layer Architecture (CPU + GPU)
 
+### 2026-06-13 - Opaque ECDSA verify compatibility for libsecp-style consumers
+
+The public CPU C ABI now supports copied libsecp-compatible
+`secp256k1_ecdsa_signature` scalar storage as an explicit ECDSA input format.
+Compact `ufsecp_ecdsa_verify` remains strict compact `r||s`; the new opaque
+verify APIs parse the opaque scalar limbs, reject zero/out-of-range scalars,
+low-S normalize internally, and then verify. Batch/row variants return per-row
+verdict bytes, so malformed public rows fail closed without aborting unrelated
+rows.
+
+The GPU C ABI adds `ufsecp_gpu_ecdsa_verify_opaque_rows` with
+`ufsecp_gpu_ecdsa_verify_lbtc_rows` as a compatibility alias. CUDA, OpenCL, and
+Metal parse the same strided public rows on device and apply low-S normalization
+before ECDSA verify. These are PUBLIC-DATA verification paths: they do not carry
+private keys, nonces, or secret scalars.
+
+**Claim:** libbitcoin-style consumers can keep their existing opaque
+`ec_signature` storage and still receive libsecp-compatible
+normalize-then-verify behavior without bridge-side compact row repacking. Caller
+owned signatures and rows are not mutated.
+
+Validation: `audit/test_ffi_round_trip.cpp`,
+`audit/test_c_abi_negative.cpp`, `audit/test_gpu_abi_gate.cpp`, and
+`compat/libbitcoin_bridge/tests/test_lbtc_bridge.cpp`.
+
 ### 2026-06-11 - MuSig2 partial-sign secret-erasure hardening
 
 `musig2_partial_sign` now scrubs every secret-derived stack local: `neg_k` (-k),

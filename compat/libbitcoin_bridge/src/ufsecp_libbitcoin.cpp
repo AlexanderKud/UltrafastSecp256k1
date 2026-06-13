@@ -5,13 +5,14 @@
  * and, when built with GPU support and a device is available, a GPU context.
  * It reuses the engine's existing, tested public primitives:
  *
- *   CPU:  ufsecp_ecdsa_batch_verify / ufsecp_schnorr_batch_verify
- *           (packed records; ECDSA signatures are marshalled from libsecp's
- *            opaque in-memory scalar layout into compact r||s before verify)
- *         ufsecp_ecdsa_verify / ufsecp_schnorr_verify
- *           (columnar fallback: one signature per row, no row re-pack)
- *   GPU:  ufsecp_gpu_ecdsa_verify_batch / ufsecp_gpu_schnorr_verify_batch
- *           (per-item results — one signature per thread)
+ *   CPU:  ufsecp_ecdsa_verify_opaque_rows / ufsecp_schnorr_batch_verify
+ *           (libbitcoin ECDSA rows are passed directly to the engine's opaque
+ *            row C ABI; no intermediate compact row table is built)
+ *         ufsecp_ecdsa_verify_opaque_batch / ufsecp_schnorr_verify
+ *           (columnar fallback: no row re-pack)
+ *   GPU:  ufsecp_gpu_ecdsa_verify_opaque_rows / ufsecp_gpu_schnorr_verify_batch
+ *           (ECDSA reads the caller's libbitcoin rows directly; per-item
+ *            results — one signature per thread)
  *   SP :  ufsecp_gpu_bip352_scan_batch
  *
  * GPU dispatch is compile-time optional: define UFSECP_LBTC_WITH_GPU to link the
@@ -77,6 +78,7 @@ constexpr std::size_t kChunk = UFSECP_LBTC_CHUNK_OVERRIDE;
 #endif
 
 enum class Kind { Ecdsa, Schnorr };
+enum class EcdsaSigFormat { Compact, Opaque };
 
 inline std::size_t record_size(Kind k) {
     return k == Kind::Ecdsa ? UFSECP_LBTC_ECDSA_RECORD : UFSECP_LBTC_SCHNORR_RECORD;
@@ -160,42 +162,27 @@ inline void normalize_ecdsa_sig_low_s(uint8_t sig64[64]) noexcept {
     std::memcpy(sig64 + 32, low_s, 32);
 }
 
-inline bool ecdsa_chunk_needs_marshal(const uint8_t* rows, std::size_t cnt,
-                                      std::size_t stride) noexcept {
-    (void)rows;
-    (void)cnt;
-    (void)stride;
-    /* ECDSA always needs a signature-layout marshal at the libbitcoin boundary:
-     * the row carries an opaque secp256k1_ecdsa_signature, while the engine
-     * batch verifier consumes compact big-endian r||s. */
-    return true;
-}
-
 inline void copy_ecdsa_signature_normalized(const uint8_t* opaque,
-                                            uint8_t compact[64]) noexcept {
-    ecdsa_opaque_sig_to_compact(opaque, compact);
+                                            uint8_t compact[64],
+                                            EcdsaSigFormat format) noexcept {
+    if (format == EcdsaSigFormat::Opaque)
+        ecdsa_opaque_sig_to_compact(opaque, compact);
+    else
+        std::memcpy(compact, opaque, 64);
     normalize_ecdsa_sig_low_s(compact);
-}
-
-inline void copy_ecdsa_record_normalized(const uint8_t* row, uint8_t* out) noexcept {
-    std::memcpy(out, row, 65);
-    copy_ecdsa_signature_normalized(row + 65, out + 65);
 }
 
 inline ufsecp_error_t cpu_verify_one(ufsecp_ctx* ctx, Kind k, const uint8_t* rec) {
     /* For n == 1 the packed verify reads exactly record_size() bytes, so the
      * row's opaque key tail (if any) is never touched. */
     if (k == Kind::Ecdsa) {
-        uint8_t normalized[UFSECP_LBTC_ECDSA_RECORD];
-        copy_ecdsa_record_normalized(rec, normalized);
-        return ufsecp_ecdsa_batch_verify(ctx, normalized, 1);
+        uint8_t result = 0;
+        const auto rc = ufsecp_ecdsa_verify_opaque_rows(
+            ctx, rec, UFSECP_LBTC_ECDSA_RECORD, 1, &result);
+        return (rc == UFSECP_OK && result != 0) ? UFSECP_OK
+                                                : UFSECP_ERR_VERIFY_FAIL;
     }
     return ufsecp_schnorr_batch_verify(ctx, rec, 1);
-}
-
-inline ufsecp_error_t cpu_verify_engine_one(ufsecp_ctx* ctx, Kind k, const uint8_t* rec) {
-    return k == Kind::Ecdsa ? ufsecp_ecdsa_batch_verify(ctx, rec, 1)
-                            : ufsecp_schnorr_batch_verify(ctx, rec, 1);
 }
 
 inline ufsecp_error_t cpu_verify_run(ufsecp_ctx* ctx, Kind k,
@@ -275,9 +262,11 @@ struct KeyColumnSink {
  *           but the engine record is     32 xonly | 32 msg  | 64 sig — so the
  *           first two fields are swapped on the way in.
  * `out` must hold record_size(k) bytes. */
-inline void to_engine_record(Kind k, const uint8_t* row, uint8_t* out) {
+inline void to_engine_record(Kind k, const uint8_t* row, uint8_t* out,
+                             EcdsaSigFormat format) {
     if (k == Kind::Ecdsa) {
-        copy_ecdsa_record_normalized(row, out);
+        std::memcpy(out, row, 65);
+        copy_ecdsa_signature_normalized(row + 65, out + 65, format);
     } else {
         std::memcpy(out,      row + 32, 32);  /* xonly <- libbitcoin offset 32 */
         std::memcpy(out + 32, row,      32);  /* msg   <- libbitcoin offset 0  */
@@ -291,34 +280,21 @@ inline void to_engine_record(Kind k, const uint8_t* row, uint8_t* out) {
 template <class Sink>
 void cpu_chunk(ufsecp_ctx* ctx, Kind k, const uint8_t* rows,
                std::size_t base, std::size_t cnt, std::size_t stride,
-               Sink& sink) {
+               EcdsaSigFormat format, Sink& sink) {
     const std::size_t rec = record_size(k);
 
-    /* ECDSA: libbitcoin and engine records have the same field order, but
-     * libbitcoin stores ec_signature as libsecp's opaque in-memory signature
-     * object, not compact r||s. Marshal every ECDSA row to engine compact form
-     * and normalize consensus-valid high-S signatures before calling the core
-     * batch verifier, which intentionally enforces low-S.
-     * key_size > 0 rows are also marshalled to recover the contiguous CPU batch
-     * path instead of degrading to one verify per row. */
+    /* ECDSA: libbitcoin rows are read in place, including any caller key tail.
+     * The engine's opaque-row C ABI parses each row directly into the batch
+     * verifier and low-S normalizes internally. This preserves batch speed while
+     * avoiding the previous extra cnt*129 compact-byte scratch table. */
     if (k == Kind::Ecdsa) {
-        const uint8_t* verify_rows = rows + base * stride;
-        std::vector<uint8_t> eng;
-        if (ecdsa_chunk_needs_marshal(verify_rows, cnt, stride)) {
-            eng.resize(cnt * rec);
-            for (std::size_t i = 0; i < cnt; ++i)
-                copy_ecdsa_record_normalized(verify_rows + i * stride,
-                                             eng.data() + i * rec);
-            verify_rows = eng.data();
+        (void)format;
+        std::vector<uint8_t> verdicts(cnt, 0);
+        const auto rc = ufsecp_ecdsa_verify_opaque_rows(
+            ctx, rows + base * stride, stride, cnt, verdicts.data());
+        for (std::size_t i = 0; i < cnt; ++i) {
+            sink.mark(base + i, rc == UFSECP_OK && verdicts[i] != 0);
         }
-
-        if (cpu_verify_run(ctx, k, verify_rows, cnt) == UFSECP_OK) {
-            sink.mark_all_valid(base, cnt);
-            return;
-        }
-        for (std::size_t i = 0; i < cnt; ++i)
-            sink.mark(base + i,
-                      cpu_verify_engine_one(ctx, k, verify_rows + i * rec) == UFSECP_OK);
         return;
     }
 
@@ -327,7 +303,8 @@ void cpu_chunk(ufsecp_ctx* ctx, Kind k, const uint8_t* rows,
      * and reuse the same fast/per-row engine verify. */
     std::vector<uint8_t> eng(cnt * rec);
     for (std::size_t i = 0; i < cnt; ++i)
-        to_engine_record(k, rows + (base + i) * stride, eng.data() + i * rec);
+        to_engine_record(k, rows + (base + i) * stride, eng.data() + i * rec,
+                         format);
 
     if (cpu_verify_run(ctx, k, eng.data(), cnt) == UFSECP_OK) {
         sink.mark_all_valid(base, cnt);
@@ -340,10 +317,11 @@ void cpu_chunk(ufsecp_ctx* ctx, Kind k, const uint8_t* rows,
 inline ufsecp_error_t cpu_verify_columns_one(ufsecp_ctx* ctx, Kind k,
                                              const uint8_t* msg,
                                              const uint8_t* pub,
-                                             const uint8_t* sig) {
+                                             const uint8_t* sig,
+                                             EcdsaSigFormat format) {
     if (k == Kind::Ecdsa) {
         uint8_t sig_norm[64];
-        copy_ecdsa_signature_normalized(sig, sig_norm);
+        copy_ecdsa_signature_normalized(sig, sig_norm, format);
         return ufsecp_ecdsa_verify(ctx, msg, sig_norm, pub);
     }
     return ufsecp_schnorr_verify(ctx, msg, sig, pub);
@@ -355,15 +333,32 @@ template <class Sink>
 void cpu_columns_chunk(ufsecp_ctx* ctx, Kind k,
                        const uint8_t* msgs32, const uint8_t* pubs,
                        const uint8_t* sigs64, std::size_t base,
-                       std::size_t cnt, Sink& sink) {
+                       std::size_t cnt, EcdsaSigFormat format, Sink& sink) {
     const std::size_t pub = pubkey_size(k);
+    if (k == Kind::Ecdsa) {
+        (void)format;
+        std::vector<uint8_t> verdicts(cnt, 0);
+        const auto rc = ufsecp_ecdsa_verify_opaque_batch(
+            ctx,
+            msgs32 + base * 32,
+            pubs + base * pub,
+            sigs64 + base * 64,
+            cnt,
+            verdicts.data());
+        for (std::size_t i = 0; i < cnt; ++i) {
+            sink.mark(base + i, rc == UFSECP_OK && verdicts[i] != 0);
+        }
+        return;
+    }
+
     for (std::size_t i = 0; i < cnt; ++i) {
         const std::size_t idx = base + i;
         sink.mark(idx,
                   cpu_verify_columns_one(ctx, k,
                                          msgs32 + idx * 32,
                                          pubs + idx * pub,
-                                         sigs64 + idx * 64) == UFSECP_OK);
+                                         sigs64 + idx * 64,
+                                         format) == UFSECP_OK);
     }
 }
 
@@ -378,7 +373,18 @@ void cpu_columns_chunk(ufsecp_ctx* ctx, Kind k,
 template <class Sink>
 bool gpu_chunk(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
                std::size_t base, std::size_t cnt, std::size_t stride,
-               Sink& sink) {
+               EcdsaSigFormat format, Sink& sink) {
+    if (k == Kind::Ecdsa && format == EcdsaSigFormat::Opaque) {
+        std::vector<uint8_t> res(cnt);
+        const ufsecp_error_t rc =
+            ufsecp_gpu_ecdsa_verify_opaque_rows(
+                gpu, rows + base * stride, stride, cnt, res.data());
+        if (rc != UFSECP_OK) return false;
+        for (std::size_t i = 0; i < cnt; ++i)
+            sink.mark(base + i, res[i] != 0);
+        return true;
+    }
+
     std::vector<uint8_t> msg(cnt * 32), sig(cnt * 64), res(cnt);
     std::vector<uint8_t> pub(cnt * (k == Kind::Ecdsa ? 33u : 32u));
 
@@ -388,7 +394,8 @@ bool gpu_chunk(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
             /* record: 32 msg | 33 pubkey | 64 sig */
             std::memcpy(msg.data() + i * 32, r, 32);
             std::memcpy(pub.data() + i * 33, r + 32, 33);
-            copy_ecdsa_signature_normalized(r + 65, sig.data() + i * 64);
+            copy_ecdsa_signature_normalized(r + 65, sig.data() + i * 64,
+                                            format);
         } else {
             /* libbitcoin row: 32 msg | 32 xonly | 64 sig. The engine GPU ABI
              * takes (msg, pubkey_x, sig) — extract at the libbitcoin offsets. */
@@ -426,7 +433,10 @@ bool gpu_chunk(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
 template <class Sink>
 bool gpu_chunk_collect(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
                        std::size_t base, std::size_t cnt, std::size_t stride,
-                       Sink& sink) {
+                       EcdsaSigFormat format, Sink& sink) {
+    if (k == Kind::Ecdsa && format == EcdsaSigFormat::Opaque)
+        return gpu_chunk(gpu, k, rows, base, cnt, stride, format, sink);
+
     std::vector<uint8_t> msg(cnt * 32), sig(cnt * 64);
     std::vector<uint8_t> pub(cnt * (k == Kind::Ecdsa ? 33u : 32u));
     std::vector<uint8_t> keys(cnt, 1u); /* seed non-zero → unwritten rows = rejected */
@@ -436,7 +446,8 @@ bool gpu_chunk_collect(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
         if (k == Kind::Ecdsa) {
             std::memcpy(msg.data() + i * 32, r, 32);
             std::memcpy(pub.data() + i * 33, r + 32, 33);
-            copy_ecdsa_signature_normalized(r + 65, sig.data() + i * 64);
+            copy_ecdsa_signature_normalized(r + 65, sig.data() + i * 64,
+                                            format);
         } else {
             std::memcpy(msg.data() + i * 32, r, 32);       /* msg   @ 0  */
             std::memcpy(pub.data() + i * 32, r + 32, 32);  /* xonly @ 32 */
@@ -460,7 +471,8 @@ bool gpu_chunk_collect(ufsecp_gpu_ctx* gpu, Kind k, const uint8_t* rows,
 bool gpu_columns_results(ufsecp_gpu_ctx* gpu, Kind k,
                          const uint8_t* msgs32, const uint8_t* pubs,
                          const uint8_t* sigs64, std::size_t base,
-                         std::size_t cnt, uint8_t* results) {
+                         std::size_t cnt, EcdsaSigFormat format,
+                         uint8_t* results) {
     const std::size_t pub = pubkey_size(k);
     std::vector<uint8_t> scratch;
     uint8_t* out = results ? results + base : nullptr;
@@ -475,7 +487,8 @@ bool gpu_columns_results(ufsecp_gpu_ctx* gpu, Kind k,
         sig_norm.resize(cnt * 64);
         for (std::size_t i = 0; i < cnt; ++i)
             copy_ecdsa_signature_normalized(sig_ptr + i * 64,
-                                            sig_norm.data() + i * 64);
+                                            sig_norm.data() + i * 64,
+                                            format);
         sig_ptr = sig_norm.data();
     }
 
@@ -493,7 +506,8 @@ bool gpu_columns_results(ufsecp_gpu_ctx* gpu, Kind k,
 bool gpu_columns_collect(ufsecp_gpu_ctx* gpu, Kind k,
                          const uint8_t* msgs32, const uint8_t* pubs,
                          const uint8_t* sigs64, std::size_t base,
-                         std::size_t cnt, KeyColumnSink& sink) {
+                         std::size_t cnt, EcdsaSigFormat format,
+                         KeyColumnSink& sink) {
     const std::size_t pub = pubkey_size(k);
     /* Use a 1-byte temporary verdict column even when the caller's key column is
      * also 1 byte. That keeps the caller-owned key cells untouched until the
@@ -505,7 +519,8 @@ bool gpu_columns_collect(ufsecp_gpu_ctx* gpu, Kind k,
         sig_norm.resize(cnt * 64);
         for (std::size_t i = 0; i < cnt; ++i)
             copy_ecdsa_signature_normalized(sig_ptr + i * 64,
-                                            sig_norm.data() + i * 64);
+                                            sig_norm.data() + i * 64,
+                                            format);
         sig_ptr = sig_norm.data();
     }
     const ufsecp_error_t rc =
@@ -539,7 +554,8 @@ bool gpu_columns_collect(ufsecp_gpu_ctx* gpu, Kind k,
  * falsely accepted. */
 template <class Sink>
 void verify_core(ufsecp_lbtc_ctrl* ctrl, Kind k, const uint8_t* rows,
-                 std::size_t n, std::size_t stride, Sink& sink) {
+                 std::size_t n, std::size_t stride,
+                 EcdsaSigFormat format, Sink& sink) {
     try {
         for (std::size_t base = 0; base < n; base += kChunk) {
             const std::size_t cnt = (n - base) < kChunk ? (n - base) : kChunk;
@@ -552,15 +568,17 @@ void verify_core(ufsecp_lbtc_ctrl* ctrl, Kind k, const uint8_t* rows,
                  * TEST/BENCH seam that forces the host-collapse control arm. */
                 if constexpr (std::is_same_v<Sink, CollectSink>) {
 #ifndef UFSECP_LBTC_DISABLE_DEDICATED
-                    if (gpu_chunk_collect(ctrl->gpu, k, rows, base, cnt, stride, sink))
+                    if (gpu_chunk_collect(ctrl->gpu, k, rows, base, cnt, stride,
+                                          format, sink))
                         continue;
 #endif
                 }
-                if (gpu_chunk(ctrl->gpu, k, rows, base, cnt, stride, sink)) continue;
+                if (gpu_chunk(ctrl->gpu, k, rows, base, cnt, stride, format, sink))
+                    continue;
                 /* device-level failure → mandatory CPU fallback for this chunk */
             }
 #endif
-            cpu_chunk(ctrl->cpu, k, rows, base, cnt, stride, sink);
+            cpu_chunk(ctrl->cpu, k, rows, base, cnt, stride, format, sink);
         }
     } catch (...) {
         return; /* fail-closed: unprocessed rows remain at caller initial state */
@@ -570,14 +588,15 @@ void verify_core(ufsecp_lbtc_ctrl* ctrl, Kind k, const uint8_t* rows,
 /* results[] variant — original behavior, unchanged for existing callers. */
 void verify_results_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
                          const uint8_t* rows, std::size_t n,
-                         std::size_t key_size, uint8_t* results) {
+                         std::size_t key_size, EcdsaSigFormat format,
+                         uint8_t* results) {
     /* No-op on a degenerate call: a NULL ctrl/rows or empty batch leaves results
      * exactly as the caller initialized it. Callers zero-initialize results, so a
      * degenerate call reads as "all invalid" (fail-closed), never falsely valid. */
     if (!ctrl || n == 0 || !rows) return;
     const std::size_t stride = record_size(k) + key_size;
     ResultSink sink{results};
-    verify_core(ctrl, k, rows, n, stride, sink);
+    verify_core(ctrl, k, rows, n, stride, format, sink);
 }
 
 /* In-place "collect" variant — verdict collapsed into each row's key cell.
@@ -585,14 +604,16 @@ void verify_results_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
  * reported → fail-closed: every id survives = all rejected, never falsely
  * accepted). rows MUST be writable (the C++ span overload enforces non-const). */
 void verify_collect_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
-                         uint8_t* rows, std::size_t n, std::size_t key_size) {
+                         uint8_t* rows, std::size_t n, std::size_t key_size,
+                         EcdsaSigFormat format) {
     if (!ctrl || n == 0 || !rows || key_size == 0) return;
     const std::size_t rec    = record_size(k);
     const std::size_t stride = rec + key_size;
     CollectSink sink{rows, stride, rec, key_size};
     /* rows passed twice: as the const read view to verify_core, and (inside the
      * sink) as the mutable write target. No aliasing — see CollectSink. */
-    verify_core(ctrl, k, static_cast<const uint8_t*>(rows), n, stride, sink);
+    verify_core(ctrl, k, static_cast<const uint8_t*>(rows), n, stride, format,
+                sink);
 }
 
 /* Vertical/columnar results[] variant. This is the copy-avoidance path for a
@@ -600,7 +621,7 @@ void verify_collect_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
 void verify_columns_results_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
                                  const uint8_t* msgs32, const uint8_t* pubs,
                                  const uint8_t* sigs64, std::size_t n,
-                                 uint8_t* results) {
+                                 EcdsaSigFormat format, uint8_t* results) {
     if (!ctrl || n == 0 || !msgs32 || !pubs || !sigs64) return;
     ResultSink sink{results};
     try {
@@ -608,10 +629,12 @@ void verify_columns_results_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
             const std::size_t cnt = (n - base) < kChunk ? (n - base) : kChunk;
 #ifdef UFSECP_LBTC_WITH_GPU
             if (ctrl->gpu &&
-                gpu_columns_results(ctrl->gpu, k, msgs32, pubs, sigs64, base, cnt, results))
+                gpu_columns_results(ctrl->gpu, k, msgs32, pubs, sigs64, base, cnt,
+                                    format, results))
                 continue;
 #endif
-            cpu_columns_chunk(ctrl->cpu, k, msgs32, pubs, sigs64, base, cnt, sink);
+            cpu_columns_chunk(ctrl->cpu, k, msgs32, pubs, sigs64, base, cnt,
+                              format, sink);
         }
     } catch (...) {
         return; /* fail-closed: caller-initialized result bytes remain untouched */
@@ -623,7 +646,8 @@ void verify_columns_results_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
 void verify_columns_collect_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
                                  const uint8_t* msgs32, const uint8_t* pubs,
                                  const uint8_t* sigs64, std::size_t n,
-                                 uint8_t* key_cells, std::size_t key_size) {
+                                 uint8_t* key_cells, std::size_t key_size,
+                                 EcdsaSigFormat format) {
     if (!ctrl || n == 0 || !msgs32 || !pubs || !sigs64 || !key_cells || key_size == 0)
         return;
     KeyColumnSink sink{key_cells, key_size};
@@ -632,10 +656,12 @@ void verify_columns_collect_impl(ufsecp_lbtc_ctrl* ctrl, Kind k,
             const std::size_t cnt = (n - base) < kChunk ? (n - base) : kChunk;
 #ifdef UFSECP_LBTC_WITH_GPU
             if (ctrl->gpu &&
-                gpu_columns_collect(ctrl->gpu, k, msgs32, pubs, sigs64, base, cnt, sink))
+                gpu_columns_collect(ctrl->gpu, k, msgs32, pubs, sigs64, base, cnt,
+                                    format, sink))
                 continue;
 #endif
-            cpu_columns_chunk(ctrl->cpu, k, msgs32, pubs, sigs64, base, cnt, sink);
+            cpu_columns_chunk(ctrl->cpu, k, msgs32, pubs, sigs64, base, cnt,
+                              format, sink);
         }
     } catch (...) {
         return; /* fail-closed: unprocessed key cells stay non-zero/rejected */
@@ -726,25 +752,29 @@ const char* ufsecp_lbtc_ctrl_device_name(const ufsecp_lbtc_ctrl* ctrl) {
 void ufsecp_lbtc_verify_ecdsa(ufsecp_lbtc_ctrl* ctrl,
                               const uint8_t* rows, size_t n,
                               size_t key_size, uint8_t* results) {
-    verify_results_impl(ctrl, Kind::Ecdsa, rows, n, key_size, results);
+    verify_results_impl(ctrl, Kind::Ecdsa, rows, n, key_size,
+                        EcdsaSigFormat::Opaque, results);
 }
 
 void ufsecp_lbtc_verify_schnorr(ufsecp_lbtc_ctrl* ctrl,
                                 const uint8_t* rows, size_t n,
                                 size_t key_size, uint8_t* results) {
-    verify_results_impl(ctrl, Kind::Schnorr, rows, n, key_size, results);
+    verify_results_impl(ctrl, Kind::Schnorr, rows, n, key_size,
+                        EcdsaSigFormat::Compact, results);
 }
 
 void ufsecp_lbtc_verify_ecdsa_collect(ufsecp_lbtc_ctrl* ctrl,
                                       uint8_t* rows, size_t n,
                                       size_t key_size) {
-    verify_collect_impl(ctrl, Kind::Ecdsa, rows, n, key_size);
+    verify_collect_impl(ctrl, Kind::Ecdsa, rows, n, key_size,
+                        EcdsaSigFormat::Opaque);
 }
 
 void ufsecp_lbtc_verify_schnorr_collect(ufsecp_lbtc_ctrl* ctrl,
                                         uint8_t* rows, size_t n,
                                         size_t key_size) {
-    verify_collect_impl(ctrl, Kind::Schnorr, rows, n, key_size);
+    verify_collect_impl(ctrl, Kind::Schnorr, rows, n, key_size,
+                        EcdsaSigFormat::Compact);
 }
 
 void ufsecp_lbtc_verify_ecdsa_columns(ufsecp_lbtc_ctrl* ctrl,
@@ -754,7 +784,7 @@ void ufsecp_lbtc_verify_ecdsa_columns(ufsecp_lbtc_ctrl* ctrl,
                                       size_t n,
                                       uint8_t* results) {
     verify_columns_results_impl(ctrl, Kind::Ecdsa, msg_hashes32, pubkeys33, sigs64,
-                                n, results);
+                                n, EcdsaSigFormat::Opaque, results);
 }
 
 void ufsecp_lbtc_verify_schnorr_columns(ufsecp_lbtc_ctrl* ctrl,
@@ -764,7 +794,7 @@ void ufsecp_lbtc_verify_schnorr_columns(ufsecp_lbtc_ctrl* ctrl,
                                         size_t n,
                                         uint8_t* results) {
     verify_columns_results_impl(ctrl, Kind::Schnorr, msg_hashes32, pubkeys_x32,
-                                sigs64, n, results);
+                                sigs64, n, EcdsaSigFormat::Compact, results);
 }
 
 void ufsecp_lbtc_verify_ecdsa_columns_collect(ufsecp_lbtc_ctrl* ctrl,
@@ -775,7 +805,7 @@ void ufsecp_lbtc_verify_ecdsa_columns_collect(ufsecp_lbtc_ctrl* ctrl,
                                               uint8_t* key_cells,
                                               size_t key_size) {
     verify_columns_collect_impl(ctrl, Kind::Ecdsa, msg_hashes32, pubkeys33, sigs64,
-                                n, key_cells, key_size);
+                                n, key_cells, key_size, EcdsaSigFormat::Opaque);
 }
 
 void ufsecp_lbtc_verify_schnorr_columns_collect(ufsecp_lbtc_ctrl* ctrl,
@@ -786,7 +816,8 @@ void ufsecp_lbtc_verify_schnorr_columns_collect(ufsecp_lbtc_ctrl* ctrl,
                                                 uint8_t* key_cells,
                                                 size_t key_size) {
     verify_columns_collect_impl(ctrl, Kind::Schnorr, msg_hashes32, pubkeys_x32,
-                                sigs64, n, key_cells, key_size);
+                                sigs64, n, key_cells, key_size,
+                                EcdsaSigFormat::Compact);
 }
 
 /* ---------------------------------------------------------------------------

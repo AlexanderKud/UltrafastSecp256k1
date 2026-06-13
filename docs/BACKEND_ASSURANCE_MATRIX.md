@@ -54,6 +54,19 @@ A native OpenCL/Metal collect kernel is a documented follow-up, gated on those
 backends gaining local/CI hardware coverage (a consensus-bearing accept/reject
 device kernel must never ship unverified).
 
+### libbitcoin opaque ECDSA row verify (Added 2026-06-13)
+
+`ufsecp_gpu_ecdsa_verify_opaque_rows` is the native GPU row-format entry point
+for copied `secp256k1_ecdsa_signature` payloads, including libbitcoin's
+existing ECDSA batch rows:
+`32-byte sighash | 33-byte compressed pubkey | 64-byte opaque
+secp256k1_ecdsa_signature | optional tail`. CUDA, OpenCL, and Metal read the
+strided rows directly, parse the opaque scalar limbs on device, normalize high-S
+signatures before verification, and return per-row verdict bytes. This avoids
+bridge-side msg/pub/sig column staging for the packed-row API while preserving
+libsecp-compatible verification semantics. `ufsecp_gpu_ecdsa_verify_lbtc_rows`
+is retained as a compatibility alias.
+
 ### Non-GPU Product Profile Assurance (Added 2026-05-01)
 
 Full taxonomy: [docs/PRODUCT_PROFILES.md](PRODUCT_PROFILES.md).
@@ -85,12 +98,13 @@ The table below distinguishes between the **public GPU ABI** (functions exposed 
 compiled into the device code but not directly callable through the stable C ABI).
 A kernel being present internally does not imply a public API exists for it.
 
-### Public GPU ABI operations (16 functions, backend-neutral)
+### Public GPU ABI operations (17 functions, backend-neutral)
 
 | Function | CPU (fast) | CPU (CT) | CUDA | OpenCL | Metal |
 |---|---|---|---|---|---|
 | `ufsecp_gpu_generator_mul_batch` (k·G) | Y | - | Y | Y | Y |
 | `ufsecp_gpu_ecdsa_verify_batch` | Y | - | Y | Y | Y |
+| `ufsecp_gpu_ecdsa_verify_opaque_rows` / `ufsecp_gpu_ecdsa_verify_lbtc_rows` alias | Y | - | Y | Y | Y |
 | `ufsecp_gpu_schnorr_verify_batch` | Y | - | Y | Y | Y |
 | `ufsecp_gpu_ecdh_batch` ¹ | Y | Y | Y | Y | Y |
 | `ufsecp_gpu_hash160_pubkey_batch` | Y | - | Y | Y | Y |
@@ -171,8 +185,9 @@ through `ufsecp_gpu.h`.
 > immediately by the parity audit workflow. The numbers below reflect the current
 > HEAD — they are not a manually maintained snapshot.
 
-All 16 public GPU ABI operations are implemented natively on CUDA, OpenCL, and Metal.
-No partial stubs or CPU fallbacks remain for any of them. Last resolved: 2026-04-24.
+All 17 public GPU ABI operations are implemented natively on CUDA, OpenCL, and Metal.
+No partial stubs or CPU fallbacks remain for any of them. Last resolved:
+2026-06-13 (`ufsecp_gpu_ecdsa_verify_opaque_rows`).
 
 `ufsecp_gpu_zk_schnorr_snark_witness_batch` (added 2026-04-15; GPU-native kernels
 added 2026-04-24): native device kernels now exist on all three backends

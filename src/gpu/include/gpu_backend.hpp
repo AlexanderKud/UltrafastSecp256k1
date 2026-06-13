@@ -89,6 +89,15 @@ public:
         const uint8_t* sigs64, size_t count,
         uint8_t* out_results) = 0;
 
+    /* Libbitcoin ECDSA row path:
+     *   row = 32 msg | 33 compressed pubkey | 64 opaque secp256k1_ecdsa_signature
+     *         | optional caller tail.
+     * PUBLIC-DATA. Backends read the strided rows directly so the bridge does not
+     * build msg/pub/sig staging columns or compact signature tables. */
+    virtual GpuError ecdsa_verify_lbtc_rows(
+        const uint8_t* rows, size_t stride, size_t count,
+        uint8_t* out_results) = 0;
+
     virtual GpuError schnorr_verify_batch(
         const uint8_t* msg_hashes32, const uint8_t* pubkeys_x32,
         const uint8_t* sigs64, size_t count,

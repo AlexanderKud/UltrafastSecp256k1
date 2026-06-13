@@ -4,18 +4,35 @@
 
 - Fixed the libbitcoin batch bridge ECDSA ABI boundary: `libbitcoin::ec_signature`
   is a copied `secp256k1_ecdsa_signature` object in libsecp-compatible opaque
-  scalar storage, not public compact `r||s`. The bridge now marshals that opaque
-  64-byte field into compact big-endian `r||s` scratch before CPU/GPU batch,
-  columnar, collect, and per-row fallback verification.
+  scalar storage, not public compact `r||s`. The bridge now treats that opaque
+  64-byte field as the libbitcoin row contract instead of requiring callers to
+  translate it first.
 - Preserved consensus behavior for high-S ECDSA signatures by applying low-S
-  normalization after opaque→compact marshalling and before calling the engine's
-  low-S batch verifier; caller-owned rows/columns are not mutated.
+  normalization during opaque signature parse before calling the engine's low-S
+  batch verifier; caller-owned rows/columns are not mutated.
 - Added regression coverage for the exact libbitcoin unit-test shapes:
   `ecdsa::batch` 3-row all-valid, `ecdsa::batch` one-invalid row 2, and
   `multisig::batch` 3-row all-valid with the 6-byte `pair|group|id` tail.
 - Updated libbitcoin bridge tests so ECDSA fixtures store the same opaque
   libsecp-compatible signature layout that libbitcoin passes at runtime, instead
   of engine-native compact signatures.
+- Follow-up performance correction: the CPU bridge no longer builds a `cnt*129`
+  intermediate compact row table for libbitcoin opaque ECDSA rows. It now parses
+  the existing `hash|point|ec_signature` rows through the engine's opaque-row
+  C ABI, which feeds the same ECDSA batch verifier internally, preserving the
+  libbitcoin data contract without bridge-side row repacking.
+- Added reusable C ABI opaque ECDSA support for consumers that intentionally keep
+  copied libsecp-compatible `secp256k1_ecdsa_signature` scalar storage as their
+  public signature payload: compact↔opaque conversion, opaque low-S normalize,
+  single verify, column batch verify, and strided-row verify. Compact verify
+  remains strict compact `r||s`; opaque verify mirrors libsecp's
+  `normalize(...)+verify(...)` path.
+- GPU row-path correction: added generic `ufsecp_gpu_ecdsa_verify_opaque_rows`
+  (`ufsecp_gpu_ecdsa_verify_lbtc_rows` remains a compatibility alias) and native
+  CUDA/OpenCL/Metal kernels so opaque-signature ECDSA rows are uploaded as-is
+  (`hash|compressed-pubkey|opaque-signature|tail`). The device parses the opaque
+  scalar limbs and low-S normalizes before verify, avoiding bridge-side
+  msg/pub/sig column staging for the packed-row API.
 
 ## 2026-06-13 — package / release provenance binding gate (Bastion B20)
 

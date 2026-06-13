@@ -48,9 +48,13 @@
  *                      want to avoid bridge-side row de-interleave.
  *   - ECDSA rows mirror libbitcoin's ec_signature storage, which is a copied
  *     secp256k1_ecdsa_signature object (opaque libsecp-compatible scalar
- *     layout), not public compact r||s. The bridge marshals that opaque 64-byte
- *     field into compact r||s scratch before calling the engine. Consensus-valid
- *     high-S signatures are accepted and normalized in scratch, preserving
+ *     layout), not public compact r||s. This is the accepted bridge contract:
+ *     libbitcoin can pass its existing rows unchanged. On the CPU batch path the
+ *     bridge passes those bytes to the engine's opaque-row C ABI; on the GPU row
+ *     path the backend receives the same strided rows and parses the opaque
+ *     scalars on device. No intermediate compact row table or msg/pub/sig staging
+ *     columns are built for the row API. Consensus-valid high-S signatures are
+ *     accepted and normalized during parse, preserving
  *     libsecp256k1/fallback verification semantics without rewriting caller-owned
  *     rows or columns.
  *
@@ -149,9 +153,11 @@ const char*       ufsecp_lbtc_ctrl_device_name(const ufsecp_lbtc_ctrl* ctrl);
  *             s >= n, R.x >= p — verify to 0, never abort the batch). ECDSA
  *             signature bytes are libsecp-compatible opaque scalar storage, as
  *             used by libbitcoin::ec_signature when libsecp256k1 is the backing
- *             ABI; the bridge converts them to compact r||s internally. High-S
- *             signatures with s < n are consensus-valid and verify to 1; they
- *             are normalized internally without mutating the row. The
+ *             ABI. The CPU batch path parses that existing layout directly into
+ *             engine batch entries; the GPU row path parses the same row layout
+ *             on device, avoiding bridge-side compact/signature-column staging.
+ *             High-S signatures with s < n are consensus-valid and verify to 1;
+ *             they are normalized internally without mutating the row. The
  *             caller maps a failing row back to its block/tx via the opaque
  *             tag at rows[i] (or its own table) — no second side table needed.
  *
@@ -181,10 +187,11 @@ void ufsecp_lbtc_verify_schnorr(ufsecp_lbtc_ctrl* ctrl,
  *
  * The per-row verdict is byte-identical to the packed-row API. ECDSA signature
  * column entries use the same libsecp-compatible opaque layout as the packed-row
- * API and are marshalled into compact scratch before CPU or GPU verification.
- * High-S signatures are normalized in scratch; the caller-owned signature column
- * is not mutated. Degenerate calls are no-ops; callers should zero-initialize
- * results for fail-closed behavior.
+ * API. CPU verification parses them directly into batch entries; GPU verification
+ * still stages compact signature columns for device upload. High-S signatures are
+ * normalized in the parsed/staged entry; the caller-owned signature column is not
+ * mutated. Degenerate calls are no-ops; callers should zero-initialize results
+ * for fail-closed behavior.
  */
 void ufsecp_lbtc_verify_ecdsa_columns(ufsecp_lbtc_ctrl* ctrl,
                                       const uint8_t* msg_hashes32,

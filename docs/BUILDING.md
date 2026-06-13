@@ -719,6 +719,23 @@ target_link_libraries(your_target PRIVATE secp256k1::fastsecp256k1)
 pkg-config --cflags --libs secp256k1-fast
 ```
 
+### libbitcoin Compatibility Bridge
+
+The libbitcoin bridge links against the public `ufsecp` C ABI and no longer
+requires private C++ engine headers. Standalone bridge builds should point CMake
+at the built C ABI library and header directory:
+
+```bash
+cmake -S compat/libbitcoin_bridge -B out/lbtc-bridge -G Ninja \
+  -DUFSECP_LIBRARY=/absolute/path/to/libufsecp.so \
+  -DUFSECP_INCLUDE_DIR=/absolute/path/to/include/ufsecp
+cmake --build out/lbtc-bridge
+```
+
+ECDSA batch rows in the bridge use the public opaque-row verification ABI, so
+libbitcoin-style `msg32 || pubkey33 || copied secp256k1_ecdsa_signature64`
+records can be passed without bridge-side compact table staging.
+
 ---
 
 ## Verification
