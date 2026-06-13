@@ -3,8 +3,8 @@
     {
       "exists": true,
       "path": "docs/AUDIT_MANIFEST.md",
-      "sha256": "7341aa23065c5e001f81cfde036f9f958ae71595ff64919e773e1c785206ad28",
-      "size": 26801
+      "sha256": "242abe650e4faec964b8445cd067268011776a4a09a27dfa5a88e72096259736",
+      "size": 27599
     },
     {
       "exists": true,
@@ -200,7 +200,7 @@
           {
             "findings": [
               {
-                "message": "13 files modified/deleted since graph build (2026-06-13T10:58:08)",
+                "message": "18 files modified/deleted since graph build (2026-06-13T10:58:08)",
                 "severity": "WARN"
               },
               {
@@ -462,7 +462,7 @@
           {
             "findings": [
               {
-                "message": "P21 semantic map: 16 requirements (10 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
+                "message": "P21 semantic map: 17 requirements (11 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
                 "severity": "PASS"
               },
               {
@@ -527,6 +527,10 @@
               },
               {
                 "message": "G-16: gated by --gpu-hardware-evidence (registered)",
+                "severity": "PASS"
+              },
+              {
+                "message": "G-17: gated by script ci/check_bench_target_context.py",
                 "severity": "PASS"
               }
             ],
@@ -600,7 +604,7 @@
                 "severity": "INFO"
               },
               {
-                "message": "Source graph \"files\" has 1625 rows (threshold: 200)",
+                "message": "Source graph \"files\" has 1627 rows (threshold: 200)",
                 "severity": "PASS"
               }
             ],
@@ -694,11 +698,11 @@
           "value": {
             "dirty": false,
             "ref": "dev",
-            "sha": "6d7583003431a4735e3c614bdfa87ac37dddcb91",
-            "short": "6d75830034"
+            "sha": "8009d13e9327ec07b5cbf2ec9745c18cfeec5a04",
+            "short": "8009d13e93"
           }
         },
-        "generated_at": "2026-06-13T13:57:22.066963+00:00",
+        "generated_at": "2026-06-13T14:32:39.010084+00:00",
         "platform": "Linux",
         "provenance": {
           "build_flags": {
@@ -715,12 +719,12 @@
             },
             "flags_hash": "f6054a07e934d755"
           },
-          "collected_at": "2026-06-13T13:57:22.066852+00:00",
+          "collected_at": "2026-06-13T14:32:39.009973+00:00",
           "git": {
             "dirty": false,
             "ref": "dev",
-            "sha": "6d7583003431a4735e3c614bdfa87ac37dddcb91",
-            "short": "6d75830034"
+            "sha": "8009d13e9327ec07b5cbf2ec9745c18cfeec5a04",
+            "short": "8009d13e93"
           },
           "platform": {
             "machine": "x86_64",
@@ -741,7 +745,7 @@
           },
           "version": "4.2.1"
         },
-        "run_id": "audit_gate-6d75830034-20260613T135722",
+        "run_id": "audit_gate-8009d13e93-20260613T143239",
         "runner": "audit_gate",
         "schema_version": "1.0.0",
         "sections": [
@@ -896,7 +900,7 @@
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "advisory:medium",
-                "title": "13 files modified/deleted since graph build (2026-06-13T10:58:08)"
+                "title": "18 files modified/deleted since graph build (2026-06-13T10:58:08)"
               },
               {
                 "check_id": "p6__graph_freshness",
@@ -1207,7 +1211,7 @@
               {
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
-                "title": "P21 semantic map: 16 requirements (10 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
+                "title": "P21 semantic map: 17 requirements (11 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
               },
               {
                 "check_id": "p21__external-audit_replacement_gate",
@@ -1288,6 +1292,11 @@
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
                 "title": "G-16: gated by --gpu-hardware-evidence (registered)"
+              },
+              {
+                "check_id": "p21__external-audit_replacement_gate",
+                "severity": "pass",
+                "title": "G-17: gated by script ci/check_bench_target_context.py"
               }
             ],
             "name": "P21: External-Audit Replacement Gate",
@@ -1375,7 +1384,7 @@
               {
                 "check_id": "g-12__source_graph_quality",
                 "severity": "pass",
-                "title": "Source graph \"files\" has 1625 rows (threshold: 200)"
+                "title": "Source graph \"files\" has 1627 rows (threshold: 200)"
               }
             ],
             "name": "G-12: Source Graph Quality",
@@ -1482,7 +1491,7 @@
           "info": 52,
           "sections": 30,
           "skipped_sections": 0,
-          "total_findings": 110,
+          "total_findings": 111,
           "warnings": 5
         },
         "verdict": "PASS with advisory"
@@ -1490,8 +1499,8 @@
       "passing": true,
       "required": true,
       "returncode": 0,
-      "stderr_sha256": "24a78898c7d7975551ec312441b269deb00b24e04cfb46ad1c1b2d746622e94e",
-      "stdout_sha256": "e7b8e0fc941d4f69e7f83e7f15f9b772d036293d43d5142dd734cfb19655779e"
+      "stderr_sha256": "87e24f77c43c2377980ab64df8cc69b92e3c0071e06654ceb2d1f6b11323be0b",
+      "stdout_sha256": "447ae86b6e44a9594107daf61e6fcdc2c2bd957ce1359b7f4cc3be1d4558a86a"
     },
     {
       "name": "audit_gap_report_strict",
@@ -1793,13 +1802,13 @@
         "gates_skipped": 0,
         "gates_total": 8,
         "overall_pass": true,
-        "timestamp": "2026-06-13T13:57:23.860828+00:00"
+        "timestamp": "2026-06-13T14:32:40.770973+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "98e78d9f6377f176a6e9f753a378d718820f17629edfb922caa162dfab09555b"
+      "stdout_sha256": "2b11d67ed06a1225d4fa82453f5a76f5ec93370efc6b9d0488bc0b8d0e416d54"
     },
     {
       "name": "supply_chain_gate",
@@ -1845,19 +1854,19 @@
         "checks_total": 5,
         "failing_checks": [],
         "overall_pass": true,
-        "timestamp": "2026-06-13T13:57:23.904878+00:00"
+        "timestamp": "2026-06-13T14:32:40.810713+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "94e9e03863e179ae07c4fe4ac418e1f90b7f0b00e65ccb9747ed86609979627f"
+      "stdout_sha256": "3dad067d6e561453c62c46ebacafb2167f53e4820eb162917a186423280fb34d"
     }
   ],
-  "generated_at": "2026-06-13T13:57:23.925982+00:00",
+  "generated_at": "2026-06-13T14:32:40.831929+00:00",
   "git": {
     "branch": "dev",
-    "commit": "6d7583003431a4735e3c614bdfa87ac37dddcb91",
+    "commit": "8009d13e9327ec07b5cbf2ec9745c18cfeec5a04",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
