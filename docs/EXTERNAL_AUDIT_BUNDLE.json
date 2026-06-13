@@ -3,8 +3,8 @@
     {
       "exists": true,
       "path": "docs/AUDIT_MANIFEST.md",
-      "sha256": "3a9e56fd1c07984bcd5c2f656fed87f0057a81810ce18cc2425722428c2e70fd",
-      "size": 25341
+      "sha256": "66dfe09ad2ce8f28e4958c41f988850647cc8b04629b05cf7d24c918bbe7bce5",
+      "size": 26028
     },
     {
       "exists": true,
@@ -15,8 +15,8 @@
     {
       "exists": true,
       "path": "docs/AUDIT_SLA.json",
-      "sha256": "4415ee992c4a67adf9a0a36447c580078e5ed09cc2e056637a01f1f49374ca86",
-      "size": 6092
+      "sha256": "82719a7eb0bb4e2f2dcd50b861c3b6c6f03786b7cc1c9acfcf899f1bea0a3f19",
+      "size": 7194
     },
     {
       "exists": true,
@@ -382,11 +382,11 @@
           {
             "findings": [
               {
-                "message": "Mutation report age: 60.2 days (threshold: 14)",
+                "message": "Mutation report age: 60.3 days (threshold: 14)",
                 "severity": "INFO"
               },
               {
-                "message": "Mutation report is stale (60.2 > 14 days) \u2014 rerun recommended",
+                "message": "Mutation report is stale (60.3 > 14 days) \u2014 rerun recommended",
                 "severity": "WARN"
               }
             ],
@@ -462,7 +462,7 @@
           {
             "findings": [
               {
-                "message": "P21 semantic map: 14 requirements (8 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
+                "message": "P21 semantic map: 15 requirements (9 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
                 "severity": "PASS"
               },
               {
@@ -519,6 +519,10 @@
               },
               {
                 "message": "G-14: gated by --ct-evidence-status (registered)",
+                "severity": "PASS"
+              },
+              {
+                "message": "G-15: gated by --fuzz-campaign-status (registered)",
                 "severity": "PASS"
               }
             ],
@@ -592,7 +596,7 @@
                 "severity": "INFO"
               },
               {
-                "message": "Source graph \"files\" has 1620 rows (threshold: 200)",
+                "message": "Source graph \"files\" has 1623 rows (threshold: 200)",
                 "severity": "PASS"
               }
             ],
@@ -638,6 +642,24 @@
             ],
             "name": "G-14: CT Evidence Freshness",
             "status": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "message": "7 fuzz surfaces (4 blocking, 1 warning, 2 owner-gated); no missing/stale/unconverted-crash",
+                "severity": "PASS"
+              },
+              {
+                "message": "FUZZ-LIBBITCOIN-BRIDGE-DIFF: owner-gated, not current evidence (last_verified 2026-06-02)",
+                "severity": "INFO"
+              },
+              {
+                "message": "FUZZ-GPU-PUBLIC-DATA: owner-gated, not current evidence (last_verified 2026-06-09)",
+                "severity": "INFO"
+              }
+            ],
+            "name": "G-15: Fuzz Campaign Evidence",
+            "status": "PASS"
           }
         ],
         "commit": {
@@ -646,11 +668,11 @@
           "value": {
             "dirty": false,
             "ref": "dev",
-            "sha": "b02d65a9bf6579ec9d6ed2f949e428a20b1bc33b",
-            "short": "b02d65a9bf"
+            "sha": "b44ff904639c856c0d64c58e20d55771d4298e98",
+            "short": "b44ff90463"
           }
         },
-        "generated_at": "2026-06-13T13:11:03.143886+00:00",
+        "generated_at": "2026-06-13T13:34:48.348385+00:00",
         "platform": "Linux",
         "provenance": {
           "build_flags": {
@@ -667,12 +689,12 @@
             },
             "flags_hash": "f6054a07e934d755"
           },
-          "collected_at": "2026-06-13T13:11:03.143814+00:00",
+          "collected_at": "2026-06-13T13:34:48.348323+00:00",
           "git": {
             "dirty": false,
             "ref": "dev",
-            "sha": "b02d65a9bf6579ec9d6ed2f949e428a20b1bc33b",
-            "short": "b02d65a9bf"
+            "sha": "b44ff904639c856c0d64c58e20d55771d4298e98",
+            "short": "b44ff90463"
           },
           "platform": {
             "machine": "x86_64",
@@ -693,7 +715,7 @@
           },
           "version": "4.2.1"
         },
-        "run_id": "audit_gate-b02d65a9bf-20260613T131103",
+        "run_id": "audit_gate-b44ff90463-20260613T133448",
         "runner": "audit_gate",
         "schema_version": "1.0.0",
         "sections": [
@@ -1068,12 +1090,12 @@
               {
                 "check_id": "p2__mutation_evidence_freshness",
                 "severity": "info",
-                "title": "Mutation report age: 60.2 days (threshold: 14)"
+                "title": "Mutation report age: 60.3 days (threshold: 14)"
               },
               {
                 "check_id": "p2__mutation_evidence_freshness",
                 "severity": "advisory:medium",
-                "title": "Mutation report is stale (60.2 > 14 days) \u2014 rerun recommended"
+                "title": "Mutation report is stale (60.3 > 14 days) \u2014 rerun recommended"
               }
             ],
             "name": "P2: Mutation Evidence Freshness",
@@ -1159,7 +1181,7 @@
               {
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
-                "title": "P21 semantic map: 14 requirements (8 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
+                "title": "P21 semantic map: 15 requirements (9 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
               },
               {
                 "check_id": "p21__external-audit_replacement_gate",
@@ -1230,6 +1252,11 @@
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
                 "title": "G-14: gated by --ct-evidence-status (registered)"
+              },
+              {
+                "check_id": "p21__external-audit_replacement_gate",
+                "severity": "pass",
+                "title": "G-15: gated by --fuzz-campaign-status (registered)"
               }
             ],
             "name": "P21: External-Audit Replacement Gate",
@@ -1317,7 +1344,7 @@
               {
                 "check_id": "g-12__source_graph_quality",
                 "severity": "pass",
-                "title": "Source graph \"files\" has 1620 rows (threshold: 200)"
+                "title": "Source graph \"files\" has 1623 rows (threshold: 200)"
               }
             ],
             "name": "G-12: Source Graph Quality",
@@ -1369,15 +1396,36 @@
             ],
             "name": "G-14: CT Evidence Freshness",
             "verdict": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "check_id": "g-15__fuzz_campaign_evidence",
+                "severity": "pass",
+                "title": "7 fuzz surfaces (4 blocking, 1 warning, 2 owner-gated); no missing/stale/unconverted-crash"
+              },
+              {
+                "check_id": "g-15__fuzz_campaign_evidence",
+                "severity": "info",
+                "title": "FUZZ-LIBBITCOIN-BRIDGE-DIFF: owner-gated, not current evidence (last_verified 2026-06-02)"
+              },
+              {
+                "check_id": "g-15__fuzz_campaign_evidence",
+                "severity": "info",
+                "title": "FUZZ-GPU-PUBLIC-DATA: owner-gated, not current evidence (last_verified 2026-06-09)"
+              }
+            ],
+            "name": "G-15: Fuzz Campaign Evidence",
+            "verdict": "PASS"
           }
         ],
         "summary": {
-          "advisory": 52,
+          "advisory": 54,
           "blocking": 0,
-          "info": 47,
-          "sections": 28,
+          "info": 49,
+          "sections": 29,
           "skipped_sections": 0,
-          "total_findings": 101,
+          "total_findings": 105,
           "warnings": 5
         },
         "verdict": "PASS with advisory"
@@ -1385,8 +1433,8 @@
       "passing": true,
       "required": true,
       "returncode": 0,
-      "stderr_sha256": "cb87891dbf87eafd61f3857a3e99805f8d294b40d0117e8eb20f6ca9aab94a41",
-      "stdout_sha256": "cf153f44c7fa769b6b7ecf873dd1b60ecf913fab44cd2742e8ec0ec1bce119bb"
+      "stderr_sha256": "8160a1a905782ec421b687d6b0cdbfff43861b8feed77f887d22d6ea37e25606",
+      "stdout_sha256": "9cdfbd343b295edcec07751e9970157de18e26c2ee2c31238cd6173d3c2c875e"
     },
     {
       "name": "audit_gap_report_strict",
@@ -1688,13 +1736,13 @@
         "gates_skipped": 0,
         "gates_total": 8,
         "overall_pass": true,
-        "timestamp": "2026-06-13T13:11:05.033223+00:00"
+        "timestamp": "2026-06-13T13:34:50.231431+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "2fd35436aacac66dd168de35f844d5ce5d0a2ec91d83285bf932d801bf796c36"
+      "stdout_sha256": "cbdda419672a44c3f02f63fa198c95c591970122981d3f916bbc8418148ea45a"
     },
     {
       "name": "supply_chain_gate",
@@ -1740,19 +1788,19 @@
         "checks_total": 5,
         "failing_checks": [],
         "overall_pass": true,
-        "timestamp": "2026-06-13T13:11:05.077518+00:00"
+        "timestamp": "2026-06-13T13:34:50.283334+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "6dc3690ae219adeaa11e996f23aee682a1282f03cb011827fca716812eadf2bb"
+      "stdout_sha256": "0609009d15eea114f412de5d7a99d528ba23a6cb38ed8f57892c89232142fccf"
     }
   ],
-  "generated_at": "2026-06-13T13:11:05.090600+00:00",
+  "generated_at": "2026-06-13T13:34:50.299947+00:00",
   "git": {
     "branch": "dev",
-    "commit": "b02d65a9bf6579ec9d6ed2f949e428a20b1bc33b",
+    "commit": "b44ff904639c856c0d64c58e20d55771d4298e98",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
