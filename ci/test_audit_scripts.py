@@ -1461,6 +1461,8 @@ def _load_ci_module(filename: str, modname: str):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not build module spec for {filename}")
     module = importlib.util.module_from_spec(spec)
+    # Register before exec so dataclasses / self-referential module code resolve.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -1748,6 +1750,57 @@ def check_incident_drills_real_injection() -> None:
         ok(tag, "ci_poisoning + dependency_compromise inject real faults and the gate detects them")
 
 
+def check_research_monitor_actionable_body() -> None:
+    """B6: a high-confidence research finding must render an Affected Surface, the
+    existing-evidence paths, and a Patch plan with a first-verification command —
+    turning a signal into actionable work, not a bare citation. An empty report
+    must render cleanly (no crash)."""
+    tag = "B6:research_monitor_actionable"
+    try:
+        module = _load_ci_module("research_monitor.py", "research_monitor_body_selftest")
+    except Exception as exc:
+        fail(tag, f"import failed: {exc}")
+        return
+    if not hasattr(module, "render_markdown"):
+        fail(tag, "research_monitor.py missing render_markdown")
+        return
+
+    report = {
+        "generated_at": "2026-06-13T00:00:00Z", "query": "secp256k1 nonce",
+        "lookback_days": 14,
+        "counts": {"high_confidence": 1, "needs_review": 0, "discarded": 0, "total_fetched": 1},
+        "sources": [], "source_errors": [],
+        "items": [{
+            "bucket": "high_confidence", "title": "New ECDSA nonce-bias result",
+            "source": "eprint", "score": 12, "status": "gap", "action": "monitor",
+            "published": "2026-06-10", "url": "https://eprint.iacr.org/2026/123",
+            "reason": "matched nonce-bias keyword", "summary": "lattice attack on biased nonces",
+            "matches": [{"id": "SIG-NONCE", "status": "gap",
+                         "repo_evidence": ["audit/test_nonce_bias.cpp"]}],
+        }],
+    }
+    failures = []
+    md = module.render_markdown(report)
+    for token in ("Affected surface", "Patch plan", "First verification",
+                  "audit/test_nonce_bias.cpp"):
+        if token not in md:
+            failures.append(f"rendered finding missing '{token}'")
+
+    empty = dict(report, items=[],
+                 counts={"high_confidence": 0, "needs_review": 0, "discarded": 0, "total_fetched": 0})
+    try:
+        emd = module.render_markdown(empty)
+        if "No high-confidence findings" not in emd:
+            failures.append("empty report missing the no-findings line")
+    except Exception as exc:
+        failures.append(f"empty report crashed: {exc}")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "high-conf findings render affected-surface + evidence + patch-plan; empty report is clean")
+
+
 def check_caas_gate_negative_fixture_coverage() -> None:
     """B5 completeness critic: every high-value CAAS gate must have a registered
     negative fixture in this file. A green gate without a proof that it fails on
@@ -1820,6 +1873,7 @@ def main() -> int:
     check_source_graph_quality_negative_fixtures()
     check_bench_artifact_sanity_fixtures()
     check_incident_drills_real_injection()
+    check_research_monitor_actionable_body()
     check_caas_gate_negative_fixture_coverage()
 
     # Phase 4: Smoke tests

@@ -816,18 +816,43 @@ def render_markdown(report: dict) -> str:
     if not high_conf:
         lines.append('_No high-confidence findings in this window._')
     for item in high_conf:
+        matches = item.get('matches') or []
+        # Bastion B6: turn a signal into actionable work — derive the affected
+        # surface and existing evidence paths from the repo matches.
+        surfaces = sorted({m['status'] for m in matches})
+        evidence_paths = sorted({e for m in matches for e in m.get('repo_evidence', [])})
+        is_gap = any(m['status'] in ('gap', 'candidate') for m in matches) or not matches
+
         lines.append(f"### {item['title']}")
         lines.append(f"- **Source:** {item['source']}  **Score:** {item['score']}  **Status:** {item['status']}")
         lines.append(f"- **Recommended action:** {item['action']}")
+        lines.append(f"- **Affected surface:** "
+                     + (', '.join(surfaces) if surfaces else 'unmapped — triage to a signal class'))
+        if evidence_paths:
+            lines.append("- **Existing evidence:** "
+                         + ', '.join(f"`{p}`" for p in evidence_paths[:6])
+                         + (' …' if len(evidence_paths) > 6 else ''))
         lines.append(f"- **Published:** {item['published']}")
         lines.append(f"- **URL:** {item['url']}")
         lines.append(f"- **Why flagged:** {item['reason']}")
-        if item['matches']:
+        if matches:
             lines.append('- **Repo matches:**')
-            for match in item['matches']:
-                evidence = ', '.join(match['repo_evidence']) or 'none'
+            for match in matches:
+                evidence = ', '.join(match.get('repo_evidence', [])) or 'none'
                 lines.append(f"  - `{match['id']}` [{match['status']}] → {evidence}")
         lines.append(f"- **Summary:** {item['summary']}")
+        # Bastion B6: explicit patch-plan with a first reproduction command, so an
+        # issue is opened with a concrete next step rather than a bare citation.
+        lines.append('- **Patch plan:**')
+        lines.append(f"  - First verification: `python3 ci/research_monitor.py "
+                     f"--lookback-days {report['lookback_days']} --max-results 10`")
+        lines.append(f"  - Inspect the source: `{item['url']}`")
+        if is_gap:
+            lines.append("  - Missing test/doc: add a regression test or threat-model row "
+                         "for the affected surface, then re-run the relevant `audit_gate.py` sub-check.")
+        else:
+            lines.append("  - Confirm existing evidence above exercises this finding; "
+                         "if not, file a permanent regression test.")
         lines.append('')
 
     lines.extend(['## Needs Review (review queue)', ''])

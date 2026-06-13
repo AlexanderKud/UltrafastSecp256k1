@@ -1,5 +1,19 @@
 # Audit Changelog
 
+## 2026-06-13 — research monitor: signal → actionable work (Bastion B6)
+
+- `ci/research_monitor.py` `render_markdown` now renders each high-confidence
+  finding as actionable work, not a bare citation: an **Affected surface** (from
+  the repo signal-class matches), the **Existing evidence** paths, and an explicit
+  **Patch plan** with a first-verification command and a missing-test/doc step for
+  `gap`/`candidate` findings. Derived from existing item data — no signal-matrix
+  schema change required.
+- Added `ci/test_audit_scripts.py::check_research_monitor_actionable_body` proving
+  the enriched body and clean empty-report rendering; also hardened the in-process
+  module loader (`sys.modules` registration) so dataclass-bearing modules load.
+  Self-test 154 pass.
+- Updated `docs/RESEARCH_MONITOR.md`.
+
 ## 2026-06-13 — integration evidence table (Bastion B7)
 
 - Added `docs/INTEGRATION_EVIDENCE_TABLE.md`: a single replayable index of the

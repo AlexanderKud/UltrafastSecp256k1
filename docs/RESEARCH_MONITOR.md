@@ -31,6 +31,20 @@ The monitor runs `ci/research_monitor.py` and:
 5. opens a GitHub issue for escalated findings
 6. optionally sends an SMTP email when escalated findings are found
 
+### Actionable finding body (Bastion B6)
+
+Each high-confidence finding renders not just a citation but a concrete next
+step, so an escalated issue is opened ready to act on:
+
+- **Affected surface** — derived from the repo signal-class matches
+  (`gap` / `candidate` / `covered` / …); `unmapped` when no class matched.
+- **Existing evidence** — the repo evidence paths the matched signal classes point
+  to, so a reviewer sees current coverage at a glance.
+- **Patch plan** — a `First verification` command (`python3 ci/research_monitor.py
+  --lookback-days N …`), a source-inspect command, and a missing-test/doc step for
+  `gap`/`candidate` findings (add a regression test or threat-model row, then re-run
+  the relevant `audit_gate.py` sub-check).
+
 Source status and source errors are recorded per expanded query, for example
 `Crossref [secp256k1]` versus `Crossref [libsecp256k1]`. This keeps failures
 or empty result windows attributable to the exact source/query pair instead of
