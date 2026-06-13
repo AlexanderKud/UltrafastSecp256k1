@@ -1712,6 +1712,58 @@ def check_fuzz_campaign_status(conn):
 
 
 # ---------------------------------------------------------------------------
+# G-16 — GPU / Hardware Evidence Status (Bastion B16)
+# ---------------------------------------------------------------------------
+def check_gpu_hardware_evidence(conn):
+    """G-16: GPU / hardware evidence status.
+
+    Loads docs/GPU_HARDWARE_EVIDENCE_STATUS.json via ci/check_gpu_hardware_evidence.py.
+    Makes the GPU/hardware claim surface explicit: blocking rows fail on missing/stale
+    evidence; owner_gated real-device rows are explicit and never current; documented
+    residuals must resolve to a RESIDUAL_RISK_REGISTER.md id; fallback-correctness rows
+    are tracked separately and are never native-performance evidence. Cheap: no GPU
+    hardware required on push."""
+    findings = []
+    if str(SCRIPT_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from check_gpu_hardware_evidence import load_and_evaluate, MANIFEST_PATH
+    except Exception as exc:
+        findings.append(('FAIL', f'cannot import check_gpu_hardware_evidence: {exc}'))
+        return 'G-16: GPU/Hardware Evidence', findings
+
+    report, _code = load_and_evaluate(MANIFEST_PATH)
+    if report.get('error'):
+        findings.append(('FAIL', f'GPU/hardware evidence manifest: {report["error"]}'))
+        return 'G-16: GPU/Hardware Evidence', findings
+
+    if report['overall_pass']:
+        findings.append(('PASS', f'{report["rows_total"]} GPU/hardware surfaces '
+                                 f'({report["blocking_total"]} blocking, {report["warning_total"]} warning, '
+                                 f'{report["owner_gated_total"]} owner-gated, '
+                                 f'{report["documented_residual_total"]} documented-residual); '
+                                 f'fallback-correctness != native-performance'))
+    else:
+        findings.append(('FAIL', f'GPU/hardware evidence blocking failures: {report["blocking_failures"]}'))
+
+    for r in report['rows']:
+        rid, sev, st = r['id'], r['severity'], r['computed_status']
+        if r['blocking_failure']:
+            findings.append(('FAIL', f'{rid} [{sev}]: {r["detail"]}'))
+        elif st in ('missing', 'stale'):
+            findings.append(('WARN', f'{rid} [{sev}]: {r["detail"]}'))
+        elif r['pre_alert']:
+            findings.append(('WARN', f'{rid}: {r["detail"]}'))
+        elif st == 'owner_gated':
+            extra = ' (STALE)' if r.get('owner_gated_stale') else ''
+            findings.append(('INFO', f'{rid}: owner-gated, not current evidence{extra} '
+                                     f'(last_verified {r["last_verified"]})'))
+        elif st == 'documented_residual':
+            findings.append(('INFO', f'{rid}: {r["detail"]}'))
+    return 'G-16: GPU/Hardware Evidence', findings
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 CHECK_MAP = {
@@ -1745,6 +1797,7 @@ CHECK_MAP = {
     '--integration-evidence': check_integration_evidence,
     '--ct-evidence-status': check_ct_evidence_status,
     '--fuzz-campaign-status': check_fuzz_campaign_status,
+    '--gpu-hardware-evidence': check_gpu_hardware_evidence,
 }
 
 ALL_CHECKS = [
@@ -1777,6 +1830,7 @@ ALL_CHECKS = [
     check_integration_evidence,
     check_ct_evidence_status,
     check_fuzz_campaign_status,
+    check_gpu_hardware_evidence,
 ]
 
 

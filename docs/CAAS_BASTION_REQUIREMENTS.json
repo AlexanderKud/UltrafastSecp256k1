@@ -207,6 +207,20 @@
       "status": "gated",
       "residual_risk": "Evidence-status gate only: long fuzz campaigns run in cflite/cryptofuzz/klee + the audit fuzz suite, not on push. Heavy libbitcoin differential and GPU public-data fuzz surfaces are owner_gated (explicit, never current). An unconverted crash artifact blocks regardless of severity.",
       "last_verified": "2026-06-13"
+    },
+    {
+      "id": "G-16",
+      "claim": "GPU / hardware evidence status made explicit and freshness-gated (real-device vs host-fallback vs owner-gated residual)",
+      "artifact_paths": [
+        "docs/GPU_HARDWARE_EVIDENCE_STATUS.json",
+        "docs/BACKEND_ASSURANCE_MATRIX.md",
+        "ci/check_gpu_hardware_evidence.py"
+      ],
+      "gate": "audit_gate.py --gpu-hardware-evidence",
+      "gate_kind": "audit_gate",
+      "status": "gated",
+      "residual_risk": "Real-device CUDA/OpenCL/Metal/ROCm evidence is owner_gated (no GitHub GPU runners; owner-run, never current on push). Fallback_correctness rows are tracked separately and are never native-performance evidence. ROCm real-device (RR-003), schnorr_snark fallback (RR-005), and hardware power/EM/fault (RR-006) are documented residuals resolving to RESIDUAL_RISK_REGISTER.md.",
+      "last_verified": "2026-06-13"
     }
   ]
 }

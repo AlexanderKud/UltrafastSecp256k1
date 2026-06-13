@@ -4,6 +4,20 @@
 
 > Performance scales across backends. Assurance does not — it must be measured.
 
+> **Evidence-status gated (Bastion B16).** The GPU/hardware claim surface is made
+> explicit and freshness-gated by [`docs/GPU_HARDWARE_EVIDENCE_STATUS.json`](GPU_HARDWARE_EVIDENCE_STATUS.json)
+> and [`ci/check_gpu_hardware_evidence.py`](../ci/check_gpu_hardware_evidence.py)
+> (also `audit_gate.py --gpu-hardware-evidence`, principle **G-16**). Each row
+> declares a `claim_type` (correctness / performance / **fallback_correctness** /
+> hardware_ct / out_of_scope): committed host-side / CPU-fallback correctness
+> evidence (no GPU needed) is tracked separately from native-device performance,
+> real-device CUDA/OpenCL/Metal/ROCm evidence is **owner_gated** (no GitHub GPU
+> runners — owner-run, never current on push), and hardware power/EM/fault and
+> ROCm/HIP real-device are **documented_residual** rows that must resolve to a
+> `docs/RESIDUAL_RISK_REGISTER.md` id (RR-003 / RR-005 / RR-006). A
+> `fallback_correctness` row is never counted as native-performance evidence.
+> Run: `python3 ci/check_gpu_hardware_evidence.py --json`.
+
 ## TL;DR
 
 Not all backends have equal assurance. Each is evaluated independently against

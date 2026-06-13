@@ -80,6 +80,7 @@ AUDIT_SCRIPTS = [
     "check_integration_evidence.py",
     "check_ct_evidence_status.py",
     "check_fuzz_campaign_status.py",
+    "check_gpu_hardware_evidence.py",
     "test_caas_integrity.py",
     "test_audit_scripts.py",
 ]
@@ -2048,6 +2049,95 @@ def check_fuzz_campaign_status_fixtures() -> None:
         ok(tag, "missing/stale/malformed blocking fail; unconverted-crash blocks (incl. warning); owner_gated explicit; real manifest passes")
 
 
+def check_gpu_hardware_evidence_fixtures() -> None:
+    """B16: the GPU/hardware-evidence gate must FAIL a blocking row with missing
+    evidence / stale or malformed last_verified; FAIL a documented_residual whose
+    RR-id does not resolve; FAIL a `performance` row that names a fallback_path
+    (fallback mislabeled as native) and a `fallback_correctness` row without a
+    fallback_path; treat owner_gated as explicit/never-current; and pass a valid +
+    the real manifest. Time-independent via injected today + rr_ids."""
+    from datetime import date
+    tag = "B16:gpu_hardware_evidence"
+    try:
+        module = _load_ci_module("check_gpu_hardware_evidence.py", "gpu_hw_selftest")
+    except Exception as exc:
+        fail(tag, f"import failed: {exc}")
+        return
+
+    today = date(2026, 6, 13)
+    rr_ids = {"RR-005"}  # controlled residual register for crafted rows
+    present = "ci/check_gpu_hardware_evidence.py"
+
+    def row(**kw):
+        base = {"id": "R", "backend": "cuda", "operation": "op", "claim_type": "correctness",
+                "evidence_path": present, "replay_command": "x", "hardware_required": False,
+                "freshness_days": 90, "severity": "blocking", "last_verified": "2026-06-13",
+                "status": "pass", "notes": ""}
+        base.update(kw)
+        return base
+
+    def ev(rows):
+        return module.evaluate({"default_pre_alert_buffer_days": 14, "rows": rows},
+                               today=today, rr_ids=rr_ids)
+
+    failures = []
+
+    if not ev([row()])["overall_pass"]:
+        failures.append("valid blocking row did not pass")
+
+    r = ev([row(evidence_path="docs/__nope_xyz__.md")])
+    if r["overall_pass"] or "R" not in r["missing_rows"]:
+        failures.append("missing evidence did not fail")
+
+    r = ev([row(last_verified="2026-01-01")])
+    if r["overall_pass"] or "R" not in r["stale_rows"]:
+        failures.append("stale blocking row did not fail")
+
+    if ev([row(last_verified="not-a-date")])["overall_pass"]:
+        failures.append("malformed date did not fail")
+
+    # documented_residual with an unresolved RR-id -> fail + listed
+    r = ev([row(severity="documented_residual", residual_risk_id="RR-DOESNOTEXIST")])
+    if r["overall_pass"] or "R" not in r["unresolved_residual_rows"]:
+        failures.append("unresolved documented_residual did not fail")
+
+    # documented_residual with a resolved RR-id -> pass + listed
+    r = ev([row(severity="documented_residual", residual_risk_id="RR-005")])
+    if not r["overall_pass"] or "R" not in r["documented_residual_rows"]:
+        failures.append("resolved documented_residual did not pass/list")
+
+    # owner_gated -> explicit, never current, never blocks
+    r = ev([row(severity="owner_gated", last_verified="2026-01-01", evidence_path="docs/__nope_xyz__.md")])
+    if not r["overall_pass"]:
+        failures.append("owner_gated row blocked")
+    if "R" not in r["owner_gated_rows"]:
+        failures.append("owner_gated not listed")
+    if r["rows"][0]["computed_status"] == "pass":
+        failures.append("owner_gated counted as current (pass)")
+
+    # fallback mislabeled as native performance -> fail
+    if ev([row(claim_type="performance", fallback_path=present)])["overall_pass"]:
+        failures.append("performance row naming a fallback_path did not fail")
+
+    # fallback_correctness without a fallback_path -> fail
+    if ev([row(claim_type="fallback_correctness", fallback_path="")])["overall_pass"]:
+        failures.append("fallback_correctness without fallback_path did not fail")
+
+    # warning staleness -> advisory + listed
+    r = ev([row(severity="warning", last_verified="2026-01-01")])
+    if not r["overall_pass"] or "R" not in r["stale_rows"]:
+        failures.append("warning staleness should be advisory and listed")
+
+    rep, _ = module.load_and_evaluate(module.MANIFEST_PATH, today=today)
+    if not rep.get("overall_pass"):
+        failures.append("the committed GPU_HARDWARE_EVIDENCE_STATUS.json did not pass")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "blocking missing/stale/malformed fail; unresolved residual fails; fallback-vs-performance mislabel fails; owner_gated explicit; real manifest passes")
+
+
 def check_caas_gate_negative_fixture_coverage() -> None:
     """B5 completeness critic: every high-value CAAS gate must have a registered
     negative fixture in this file. A green gate without a proof that it fails on
@@ -2068,6 +2158,7 @@ def check_caas_gate_negative_fixture_coverage() -> None:
         "check_integration_evidence.py": "check_integration_evidence_fixtures",
         "check_ct_evidence_status.py": "check_ct_evidence_status_fixtures",
         "check_fuzz_campaign_status.py": "check_fuzz_campaign_status_fixtures",
+        "check_gpu_hardware_evidence.py": "check_gpu_hardware_evidence_fixtures",
     }
     g = globals()
     missing = [f"{gate} -> {fn}" for gate, fn in required.items()
@@ -2127,6 +2218,7 @@ def main() -> int:
     check_integration_evidence_fixtures()
     check_ct_evidence_status_fixtures()
     check_fuzz_campaign_status_fixtures()
+    check_gpu_hardware_evidence_fixtures()
     check_caas_gate_negative_fixture_coverage()
 
     # Phase 4: Smoke tests

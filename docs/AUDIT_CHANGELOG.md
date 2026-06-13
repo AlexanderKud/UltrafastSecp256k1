@@ -1,5 +1,35 @@
 # Audit Changelog
 
+## 2026-06-13 — GPU / hardware evidence status lane (Bastion B16)
+
+- Added `docs/GPU_HARDWARE_EVIDENCE_STATUS.json`: a machine-readable manifest that
+  makes the GPU/hardware claim surface explicit and honest. Each row declares a
+  `backend` (cuda/opencl/metal/rocm/cpu_fallback), a `claim_type` (correctness /
+  performance / fallback_correctness / hardware_ct / out_of_scope),
+  `hardware_required`, evidence_path, freshness_days, severity, and (for residuals)
+  a `residual_risk_id`. 4 warning (host-side fallback_correctness for
+  CUDA/OpenCL/Metal + GPU context thread-safety), 1 owner_gated (ROCm real-device),
+  2 documented_residual (schnorr_snark fallback RR-005, hardware power/EM RR-006).
+- Added `ci/check_gpu_hardware_evidence.py` (G-16 gate): a blocking row fails on
+  missing/stale evidence; `owner_gated` real-device rows (no GitHub GPU runners)
+  are explicit and never counted as current; `documented_residual` rows must
+  resolve to a RESIDUAL_RISK_REGISTER.md id (unresolved fails); a
+  `fallback_correctness` row must name an existing `fallback_path` and is tracked
+  separately from native performance — a `performance` claim naming a fallback_path
+  is a mislabel and fails. Emits overall_pass, missing_rows, stale_rows,
+  owner_gated_rows, documented_residual_rows, unresolved_residual_rows,
+  min_days_until_block.
+- Wired into `ci/audit_gate.py` as `--gpu-hardware-evidence` (G-16, CHECK_MAP +
+  ALL_CHECKS): cheap on every push (no GPU hardware required).
+- Added `ci/test_audit_scripts.py::check_gpu_hardware_evidence_fixtures` (missing /
+  stale / malformed → fail; unresolved residual → fail; fallback-mislabeled-as-
+  performance → fail; fallback_correctness-without-path → fail; owner_gated explicit;
+  valid + real manifest pass) and registered it in the coverage critic (now 15
+  high-value gates). Self-test 170 pass.
+- Docs: `docs/BACKEND_ASSURANCE_MATRIX.md` evidence-status-gated note; `docs/AUDIT_SLA.json`
+  `gpu_hardware_evidence_freshness` SLO; `docs/CAAS_BASTION_REQUIREMENTS.json` G-16
+  row (P21 enforces the gate); `docs/AUDIT_MANIFEST.md` G-16 row.
+
 ## 2026-06-13 — fuzz campaign evidence freshness + crash→regression lane (Bastion B15)
 
 - Added `docs/FUZZ_CAMPAIGN_STATUS.json`: a machine-readable manifest binding each

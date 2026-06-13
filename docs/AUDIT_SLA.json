@@ -78,6 +78,13 @@
       "severity": "per-surface (blocking | warning | owner_gated)",
       "measurement": "per-surface (now - last_verified) vs freshness_days; corpus_path existence; crash_path artifacts vs regression_path presence"
     },
+    "gpu_hardware_evidence_freshness": {
+      "description": "GPU / hardware evidence status freshness, evaluated per backend/surface (Bastion B16). The per-row backend, claim_type, evidence_path, hardware_required, freshness_days, severity, and last_verified live in docs/GPU_HARDWARE_EVIDENCE_STATUS.json and are enforced by ci/check_gpu_hardware_evidence.py (audit_gate.py --gpu-hardware-evidence, G-16). Cheap on push (no GPU hardware required): a blocking row fails on missing/stale evidence; owner_gated real-device rows are explicit and never current; documented_residual rows must resolve to a RESIDUAL_RISK_REGISTER.md id; a fallback_correctness row must name an existing fallback_path and is never native-performance evidence (a performance claim naming a fallback_path fails).",
+      "threshold": "per-row (see docs/GPU_HARDWARE_EVIDENCE_STATUS.json)",
+      "default_pre_alert_buffer_days": 14,
+      "severity": "per-row (blocking | warning | owner_gated | documented_residual)",
+      "measurement": "per-row (now - last_verified) vs freshness_days; evidence_path existence; claim_type/fallback_path integrity; residual_risk_id resolution"
+    },
     "review_queue_max_open_days": {
       "description": "Maximum age in days that an item may sit in the source-graph review queue without being addressed or explicitly deferred",
       "threshold": 90,
