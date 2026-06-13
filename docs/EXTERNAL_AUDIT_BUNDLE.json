@@ -3,8 +3,8 @@
     {
       "exists": true,
       "path": "docs/AUDIT_MANIFEST.md",
-      "sha256": "dc09397ca930fedf44787917734f914e71eb22744739b783ce3bc7117444dd1c",
-      "size": 28630
+      "sha256": "e57f0dd9933162b0c9e51d59ad5970e9ab3a74907f6fd7e9e405675857e03c2b",
+      "size": 29845
     },
     {
       "exists": true,
@@ -15,8 +15,8 @@
     {
       "exists": true,
       "path": "docs/AUDIT_SLA.json",
-      "sha256": "522131fd6143217bf3a76b5f3fe6523e8d35babf907fd06b304cebcec995a3ff",
-      "size": 8357
+      "sha256": "91840435fc73456c5766b61244387020a0513d77181b043807ca419c2f41b98e",
+      "size": 14691
     },
     {
       "exists": true,
@@ -200,7 +200,7 @@
           {
             "findings": [
               {
-                "message": "20 files modified/deleted since graph build (2026-06-13T10:58:08)",
+                "message": "21 files modified/deleted since graph build (2026-06-13T10:58:08)",
                 "severity": "WARN"
               },
               {
@@ -382,11 +382,11 @@
           {
             "findings": [
               {
-                "message": "Mutation report age: 60.3 days (threshold: 14)",
+                "message": "Mutation report age: 60.4 days (threshold: 14)",
                 "severity": "INFO"
               },
               {
-                "message": "Mutation report is stale (60.3 > 14 days) \u2014 rerun recommended",
+                "message": "Mutation report is stale (60.4 > 14 days) \u2014 rerun recommended",
                 "severity": "WARN"
               }
             ],
@@ -462,7 +462,7 @@
           {
             "findings": [
               {
-                "message": "P21 semantic map: 18 requirements (12 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
+                "message": "P21 semantic map: 19 requirements (13 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
                 "severity": "PASS"
               },
               {
@@ -536,6 +536,10 @@
               {
                 "message": "G-18: gated by --research-signal-matrix (registered)",
                 "severity": "PASS"
+              },
+              {
+                "message": "G-19: gated by --evidence-refresh-coverage (registered)",
+                "severity": "PASS"
               }
             ],
             "name": "P21: External-Audit Replacement Gate",
@@ -608,7 +612,7 @@
                 "severity": "INFO"
               },
               {
-                "message": "Source graph \"files\" has 1628 rows (threshold: 200)",
+                "message": "Source graph \"files\" has 1629 rows (threshold: 200)",
                 "severity": "PASS"
               }
             ],
@@ -704,6 +708,16 @@
             ],
             "name": "G-18: Research Signal Matrix",
             "status": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "message": "7 freshness artifacts all covered (2 auto, 5 residual); incident_drill_log auto-refresh=True",
+                "severity": "PASS"
+              }
+            ],
+            "name": "G-19: Evidence Refresh Coverage",
+            "status": "PASS"
           }
         ],
         "commit": {
@@ -712,11 +726,11 @@
           "value": {
             "dirty": false,
             "ref": "dev",
-            "sha": "ce3c3f6f50e6eb28e38ffb0db89a3c9b7b229386",
-            "short": "ce3c3f6f50"
+            "sha": "669d04355f3d0010961d78e1aa96941dbd7aee10",
+            "short": "669d04355f"
           }
         },
-        "generated_at": "2026-06-13T15:10:47.007315+00:00",
+        "generated_at": "2026-06-13T15:46:22.132989+00:00",
         "platform": "Linux",
         "provenance": {
           "build_flags": {
@@ -733,12 +747,12 @@
             },
             "flags_hash": "f6054a07e934d755"
           },
-          "collected_at": "2026-06-13T15:10:47.007254+00:00",
+          "collected_at": "2026-06-13T15:46:22.132942+00:00",
           "git": {
             "dirty": false,
             "ref": "dev",
-            "sha": "ce3c3f6f50e6eb28e38ffb0db89a3c9b7b229386",
-            "short": "ce3c3f6f50"
+            "sha": "669d04355f3d0010961d78e1aa96941dbd7aee10",
+            "short": "669d04355f"
           },
           "platform": {
             "machine": "x86_64",
@@ -759,7 +773,7 @@
           },
           "version": "4.2.1"
         },
-        "run_id": "audit_gate-ce3c3f6f50-20260613T151047",
+        "run_id": "audit_gate-669d04355f-20260613T154622",
         "runner": "audit_gate",
         "schema_version": "1.0.0",
         "sections": [
@@ -914,7 +928,7 @@
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "advisory:medium",
-                "title": "20 files modified/deleted since graph build (2026-06-13T10:58:08)"
+                "title": "21 files modified/deleted since graph build (2026-06-13T10:58:08)"
               },
               {
                 "check_id": "p6__graph_freshness",
@@ -1134,12 +1148,12 @@
               {
                 "check_id": "p2__mutation_evidence_freshness",
                 "severity": "info",
-                "title": "Mutation report age: 60.3 days (threshold: 14)"
+                "title": "Mutation report age: 60.4 days (threshold: 14)"
               },
               {
                 "check_id": "p2__mutation_evidence_freshness",
                 "severity": "advisory:medium",
-                "title": "Mutation report is stale (60.3 > 14 days) \u2014 rerun recommended"
+                "title": "Mutation report is stale (60.4 > 14 days) \u2014 rerun recommended"
               }
             ],
             "name": "P2: Mutation Evidence Freshness",
@@ -1225,7 +1239,7 @@
               {
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
-                "title": "P21 semantic map: 18 requirements (12 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
+                "title": "P21 semantic map: 19 requirements (13 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
               },
               {
                 "check_id": "p21__external-audit_replacement_gate",
@@ -1316,6 +1330,11 @@
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
                 "title": "G-18: gated by --research-signal-matrix (registered)"
+              },
+              {
+                "check_id": "p21__external-audit_replacement_gate",
+                "severity": "pass",
+                "title": "G-19: gated by --evidence-refresh-coverage (registered)"
               }
             ],
             "name": "P21: External-Audit Replacement Gate",
@@ -1403,7 +1422,7 @@
               {
                 "check_id": "g-12__source_graph_quality",
                 "severity": "pass",
-                "title": "Source graph \"files\" has 1628 rows (threshold: 200)"
+                "title": "Source graph \"files\" has 1629 rows (threshold: 200)"
               }
             ],
             "name": "G-12: Source Graph Quality",
@@ -1513,15 +1532,26 @@
             ],
             "name": "G-18: Research Signal Matrix",
             "verdict": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "check_id": "g-19__evidence_refresh_coverage",
+                "severity": "pass",
+                "title": "7 freshness artifacts all covered (2 auto, 5 residual); incident_drill_log auto-refresh=True"
+              }
+            ],
+            "name": "G-19: Evidence Refresh Coverage",
+            "verdict": "PASS"
           }
         ],
         "summary": {
           "advisory": 57,
           "blocking": 0,
           "info": 52,
-          "sections": 31,
+          "sections": 32,
           "skipped_sections": 0,
-          "total_findings": 113,
+          "total_findings": 115,
           "warnings": 5
         },
         "verdict": "PASS with advisory"
@@ -1529,8 +1559,8 @@
       "passing": true,
       "required": true,
       "returncode": 0,
-      "stderr_sha256": "6b75c59c43804b03ce2201a3940e1db53e7a87a5089b998859184bc5aaaf50a0",
-      "stdout_sha256": "312ab7aea38ea5ef9cd0391dc8ce4b5e3dfc09bcee8b1572ab7a825300683276"
+      "stderr_sha256": "66af22134ca2d3ed6aa147e50d7182b7621655582ace83302c3a70757715e5f6",
+      "stdout_sha256": "cc98b01fb63c4993cbdbf9a9e4c2dd447b3279edf64191f2f0ac44ad08bfc42f"
     },
     {
       "name": "audit_gap_report_strict",
@@ -1832,13 +1862,13 @@
         "gates_skipped": 0,
         "gates_total": 8,
         "overall_pass": true,
-        "timestamp": "2026-06-13T15:10:48.814526+00:00"
+        "timestamp": "2026-06-13T15:46:23.858954+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "7917eecfc25ce3ee20dc605f5a704fcd9502edd59cd8366be27b19716a095e15"
+      "stdout_sha256": "5d7360c408959616f1fea435ae04a37c01f619661b031b59cf348e39020ec17a"
     },
     {
       "name": "supply_chain_gate",
@@ -1884,19 +1914,19 @@
         "checks_total": 5,
         "failing_checks": [],
         "overall_pass": true,
-        "timestamp": "2026-06-13T15:10:48.867829+00:00"
+        "timestamp": "2026-06-13T15:46:23.898038+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "961f9dcff358a49ced753469387491dac8f910b3b6afa5bd46815e1901065db2"
+      "stdout_sha256": "39ffc9f18a25683a3252fcab48f02cac0b8eb921efc2f14248f8427882584d69"
     }
   ],
-  "generated_at": "2026-06-13T15:10:48.883049+00:00",
+  "generated_at": "2026-06-13T15:46:23.912286+00:00",
   "git": {
     "branch": "dev",
-    "commit": "ce3c3f6f50e6eb28e38ffb0db89a3c9b7b229386",
+    "commit": "669d04355f3d0010961d78e1aa96941dbd7aee10",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
