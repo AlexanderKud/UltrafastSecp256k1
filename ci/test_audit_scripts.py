@@ -1674,6 +1674,48 @@ def check_source_graph_quality_negative_fixtures() -> None:
         ok(tag, "empty/broken graph DB fails closed (exit 1)")
 
 
+def check_bench_artifact_sanity_fixtures() -> None:
+    """B8: check_bench_doc_consistency.check_bench_artifact_sanity must reject
+    corrupt benchmark artifacts — zero / negative / non-finite / non-numeric /
+    sub-physical ns and a non-list results array — and accept a clean one. A perf
+    claim sourced from a corrupt artifact is not evidence."""
+    tag = "B8:bench_artifact_sanity"
+    try:
+        module = _load_ci_module("check_bench_doc_consistency.py", "bench_consistency_selftest")
+    except Exception as exc:
+        fail(tag, f"import failed: {exc}")
+        return
+    if not hasattr(module, "check_bench_artifact_sanity") or not hasattr(module, "_coerce_ns"):
+        fail(tag, "check_bench_doc_consistency.py missing artifact-sanity hardening")
+        return
+
+    san = module.check_bench_artifact_sanity
+
+    def flagged(results) -> bool:
+        return bool(san({"results": results}, "fixture.json"))
+
+    failures = []
+    if flagged([{"section": "FIELD", "name": "mul", "ns": 12.3}]):
+        failures.append("clean artifact was flagged")
+    for desc, ns in [("zero", 0), ("negative", -5), ("inf", float("inf")),
+                     ("nan", float("nan")), ("non-numeric", "123ns456"),
+                     ("sub-physical", 0.001), ("boolean", True)]:
+        if not flagged([{"section": "X", "name": "a", "ns": ns}]):
+            failures.append(f"{desc} ns was not flagged")
+    if not san({"results": "not-a-list"}, "f.json"):
+        failures.append("non-list results was not flagged")
+    # _coerce_ns: invalid -> None, valid -> float
+    if module._coerce_ns(0) is not None or module._coerce_ns("123ns456") is not None:
+        failures.append("_coerce_ns did not reject invalid ns")
+    if module._coerce_ns(12.3) != 12.3:
+        failures.append("_coerce_ns rejected a valid ns")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "rejects zero/neg/inf/nan/non-numeric/sub-physical ns + non-list results; accepts clean")
+
+
 def check_caas_gate_negative_fixture_coverage() -> None:
     """B5 completeness critic: every high-value CAAS gate must have a registered
     negative fixture in this file. A green gate without a proof that it fails on
@@ -1688,6 +1730,7 @@ def check_caas_gate_negative_fixture_coverage() -> None:
         "security_autonomy_check.py": "check_security_autonomy_forced_failure",
         "supply_chain_gate.py": "check_supply_chain_negative_fixtures",
         "check_source_graph_quality.py": "check_source_graph_quality_negative_fixtures",
+        "check_bench_doc_consistency.py": "check_bench_artifact_sanity_fixtures",
         "research_monitor.py": "check_research_monitor_resilience",
         # incident_drills.py negative coverage is added by Bastion B9
         # (real fault-injection drills), tracked there.
@@ -1744,6 +1787,7 @@ def main() -> int:
     check_security_autonomy_forced_failure()
     check_supply_chain_negative_fixtures()
     check_source_graph_quality_negative_fixtures()
+    check_bench_artifact_sanity_fixtures()
     check_caas_gate_negative_fixture_coverage()
 
     # Phase 4: Smoke tests

@@ -1,5 +1,28 @@
 # Audit Changelog
 
+## 2026-06-13 — performance claims evidence-gated (Bastion B8)
+
+- `ci/perf_security_cogate.py` now co-gates **benchmark-artifact integrity**: a
+  5th gate runs `check_bench_doc_consistency.py` and blocks the perf co-gate on
+  failure. A performance claim can no longer merge while its benchmark evidence is
+  corrupt or inconsistent (previously the bench check ran independently).
+- `ci/check_bench_doc_consistency.py` hardened to **reject corrupt benchmark
+  artifacts** (`check_bench_artifact_sanity`): zero / negative / non-finite /
+  non-numeric (e.g. concatenated `'123ns456'`) and sub-physical (impossible
+  throughput) `ns` timings, plus a non-list `results` array, now fail the gate.
+  `_find_result`/`_coerce_ns` no longer crash on a bad `ns` (no float() exception
+  or divide-by-zero). Malformed/non-object bench JSON is now a violation, not a
+  silent skip.
+- Added `ci/test_audit_scripts.py::check_bench_artifact_sanity_fixtures` proving
+  the parser rejects every corrupt-timing class and accepts a clean artifact;
+  added it to the negative-fixture coverage critic (now 10 high-value gates).
+  Self-test 152 pass.
+- Residual (tracked, not silently dropped): explicit `target_context` metadata
+  labels on bench JSONs (microbench / batch_verify / bitcoin_core / libbitcoin /
+  gpu_public_data) are not yet enforced — the canonical bench JSONs are owner-
+  regenerated from real `bench_unified` runs, so the label schema is a future
+  bench-format change rather than a gate-only edit.
+
 ## 2026-06-13 — gate negative-fixture suite + coverage critic (Bastion B5)
 
 - Added negative fixtures to `ci/test_audit_scripts.py` for every high-value CAAS

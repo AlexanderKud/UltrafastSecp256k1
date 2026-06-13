@@ -30,10 +30,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from pathlib import Path
 from typing import List
+
+# Physical sanity floor (ns). Even the fastest measured primitive op on x86-64
+# (a single field multiply) is well above this; a timing at/below it is a corrupt
+# artifact — zero timing, truncated/concatenated column, or impossible throughput
+# — not a real measurement. A perf claim sourced from such an artifact is not
+# evidence (Bastion B8).
+_MIN_PLAUSIBLE_NS = 0.1
 
 ROOT = Path(__file__).resolve().parent.parent
 CANONICAL_NUMBERS = ROOT / "docs" / "canonical_numbers.json"
@@ -342,10 +350,29 @@ def check_internal_bench_consistency(bench: dict, bench_name: str) -> list[str]:
     return violations
 
 
+def _coerce_ns(raw: object) -> float | None:
+    """Coerce a bench 'ns' value to a positive finite float, or None if invalid.
+
+    Rejects booleans, non-numeric / concatenated strings ('123ns456'), NaN/inf,
+    and non-positive timings. Corrupt rows are surfaced separately by
+    check_bench_artifact_sanity(); here we simply refuse to derive a ratio from a
+    bad value (which would otherwise crash on float() or divide by zero)."""
+    if isinstance(raw, bool):
+        return None
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(val) or val <= 0:
+        return None
+    return val
+
+
 def _find_result(results: list, section_substr: str, name_substr: str) -> float | None:
     """Return the ns value of the first result whose section contains *section_substr*
-    and whose name contains *name_substr* (case-insensitive).  Returns None if not found.
-    Only rows with an 'ns' key are considered (ratio-only rows are skipped).
+    and whose name contains *name_substr* (case-insensitive).  Returns None if not found
+    or if the matched row carries an invalid ns. Only rows with an 'ns' key are
+    considered (ratio-only rows are skipped).
     """
     sl = section_substr.lower()
     nl = name_substr.lower()
@@ -355,8 +382,52 @@ def _find_result(results: list, section_substr: str, name_substr: str) -> float 
         if "ns" not in row:
             continue
         if sl in row.get("section", "").lower() and nl in row.get("name", "").lower():
-            return float(row["ns"])
+            return _coerce_ns(row["ns"])
     return None
+
+
+def check_bench_artifact_sanity(bench: dict, name: str) -> list[str]:
+    """Reject corrupt benchmark artifacts (Bastion B8).
+
+    Scans the flat ``results`` array and flags any timing that is zero/negative,
+    non-finite, non-numeric (e.g. a concatenated/truncated column like '123ns456'),
+    or below the physical plausibility floor (impossible throughput). A perf claim
+    cannot be evidence if its source artifact contains such values."""
+    violations: list[str] = []
+    results = bench.get("results")
+    if results is None:
+        return violations  # not a results-schema artifact; other checks cover it
+    if not isinstance(results, list):
+        violations.append(f"  CORRUPT BENCH [{name}]: 'results' is not a list")
+        return violations
+
+    bad: list[str] = []
+    for row in results:
+        if not isinstance(row, dict) or "ns" not in row:
+            continue
+        raw = row["ns"]
+        label = f"{row.get('section', '?')}/{row.get('name', '?')}"
+        if isinstance(raw, bool):
+            bad.append(f"{label}: ns={raw!r} is boolean")
+            continue
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            bad.append(f"{label}: ns={raw!r} is not numeric")
+            continue
+        if not math.isfinite(val):
+            bad.append(f"{label}: ns={raw!r} is not finite")
+        elif val <= 0:
+            bad.append(f"{label}: ns={val} <= 0 (zero/negative timing)")
+        elif val < _MIN_PLAUSIBLE_NS:
+            bad.append(f"{label}: ns={val} below physical floor {_MIN_PLAUSIBLE_NS} (impossible throughput)")
+
+    if bad:
+        violations.append(
+            f"  CORRUPT BENCH ARTIFACT [{name}]: {len(bad)} invalid timing(s): "
+            + "; ".join(bad[:5]) + (" …" if len(bad) > 5 else "")
+        )
+    return violations
 
 
 def check_canonical_vs_bench_json(canon: dict, verbose: bool) -> list[str]:
@@ -763,21 +834,33 @@ def main() -> int:
     for bench_path in sorted((ROOT / "docs").glob("bench_unified_*.json")):
         try:
             bench_data = json.loads(bench_path.read_text())
-            stale_keys: list[str] = []
-            for section in bench_data.values():
-                if isinstance(section, dict):
-                    stale_keys.extend(
-                        k for k in section
-                        if "_STALE" in str(k) or "_DERIVED" in str(k)
-                    )
-            if stale_keys:
-                all_violations.append(
-                    f"  STALE ARTIFACT DETECTED [{bench_path.name}]: contains keys "
-                    f"{stale_keys}. "
-                    f"Regenerate with bench_unified --json before citing."
+        except Exception as exc:
+            # Fail closed: a malformed canonical bench artifact must be a
+            # violation, not silently ignored (B8).
+            all_violations.append(
+                f"  CORRUPT BENCH [{bench_path.name}]: not valid JSON ({exc})"
+            )
+            continue
+        if not isinstance(bench_data, dict):
+            all_violations.append(
+                f"  CORRUPT BENCH [{bench_path.name}]: root is not a JSON object"
+            )
+            continue
+        stale_keys: list[str] = []
+        for section in bench_data.values():
+            if isinstance(section, dict):
+                stale_keys.extend(
+                    k for k in section
+                    if "_STALE" in str(k) or "_DERIVED" in str(k)
                 )
-        except Exception:
-            pass
+        if stale_keys:
+            all_violations.append(
+                f"  STALE ARTIFACT DETECTED [{bench_path.name}]: contains keys "
+                f"{stale_keys}. "
+                f"Regenerate with bench_unified --json before citing."
+            )
+        # B8: reject zero/negative/non-finite/impossible timings in the artifact.
+        all_violations.extend(check_bench_artifact_sanity(bench_data, bench_path.name))
 
     # ── Report ────────────────────────────────────────────────────────────────
     if all_violations:
