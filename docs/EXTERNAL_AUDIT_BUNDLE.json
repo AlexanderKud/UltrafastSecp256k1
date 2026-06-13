@@ -3,8 +3,8 @@
     {
       "exists": true,
       "path": "docs/AUDIT_MANIFEST.md",
-      "sha256": "66dfe09ad2ce8f28e4958c41f988850647cc8b04629b05cf7d24c918bbe7bce5",
-      "size": 26028
+      "sha256": "7341aa23065c5e001f81cfde036f9f958ae71595ff64919e773e1c785206ad28",
+      "size": 26801
     },
     {
       "exists": true,
@@ -15,8 +15,8 @@
     {
       "exists": true,
       "path": "docs/AUDIT_SLA.json",
-      "sha256": "82719a7eb0bb4e2f2dcd50b861c3b6c6f03786b7cc1c9acfcf899f1bea0a3f19",
-      "size": 7194
+      "sha256": "522131fd6143217bf3a76b5f3fe6523e8d35babf907fd06b304cebcec995a3ff",
+      "size": 8357
     },
     {
       "exists": true,
@@ -51,8 +51,8 @@
     {
       "exists": true,
       "path": "docs/BACKEND_ASSURANCE_MATRIX.md",
-      "sha256": "9ca257bd384a2412c2934277ed8ebbc846ebf6042879235d8dede73fba9d11c4",
-      "size": 15001
+      "sha256": "ad309eecbe2cfec45fd00a3e81351bf4d4196a129bc034e687e77e9826690145",
+      "size": 16043
     },
     {
       "exists": true,
@@ -200,7 +200,7 @@
           {
             "findings": [
               {
-                "message": "12 files modified/deleted since graph build (2026-06-13T10:58:08)",
+                "message": "13 files modified/deleted since graph build (2026-06-13T10:58:08)",
                 "severity": "WARN"
               },
               {
@@ -220,7 +220,7 @@
                 "severity": "INFO"
               },
               {
-                "message": "MODIFIED: docs/CAAS_BASTION_REQUIREMENTS.json",
+                "message": "MODIFIED: docs/BACKEND_ASSURANCE_MATRIX.md",
                 "severity": "INFO"
               }
             ],
@@ -462,7 +462,7 @@
           {
             "findings": [
               {
-                "message": "P21 semantic map: 15 requirements (9 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
+                "message": "P21 semantic map: 16 requirements (10 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual",
                 "severity": "PASS"
               },
               {
@@ -523,6 +523,10 @@
               },
               {
                 "message": "G-15: gated by --fuzz-campaign-status (registered)",
+                "severity": "PASS"
+              },
+              {
+                "message": "G-16: gated by --gpu-hardware-evidence (registered)",
                 "severity": "PASS"
               }
             ],
@@ -596,7 +600,7 @@
                 "severity": "INFO"
               },
               {
-                "message": "Source graph \"files\" has 1623 rows (threshold: 200)",
+                "message": "Source graph \"files\" has 1625 rows (threshold: 200)",
                 "severity": "PASS"
               }
             ],
@@ -660,6 +664,28 @@
             ],
             "name": "G-15: Fuzz Campaign Evidence",
             "status": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "message": "7 GPU/hardware surfaces (0 blocking, 4 warning, 1 owner-gated, 2 documented-residual); fallback-correctness != native-performance",
+                "severity": "PASS"
+              },
+              {
+                "message": "GPU-SCHNORR-SNARK-FALLBACK: documented residual RR-005 (RESIDUAL_RISK_REGISTER.md)",
+                "severity": "INFO"
+              },
+              {
+                "message": "GPU-ROCM-DEVICE: owner-gated, not current evidence (last_verified 2026-03-25)",
+                "severity": "INFO"
+              },
+              {
+                "message": "HW-POWER-EM-FAULT: documented residual RR-006 (RESIDUAL_RISK_REGISTER.md)",
+                "severity": "INFO"
+              }
+            ],
+            "name": "G-16: GPU/Hardware Evidence",
+            "status": "PASS"
           }
         ],
         "commit": {
@@ -668,11 +694,11 @@
           "value": {
             "dirty": false,
             "ref": "dev",
-            "sha": "b44ff904639c856c0d64c58e20d55771d4298e98",
-            "short": "b44ff90463"
+            "sha": "6d7583003431a4735e3c614bdfa87ac37dddcb91",
+            "short": "6d75830034"
           }
         },
-        "generated_at": "2026-06-13T13:34:48.348385+00:00",
+        "generated_at": "2026-06-13T13:57:22.066963+00:00",
         "platform": "Linux",
         "provenance": {
           "build_flags": {
@@ -689,12 +715,12 @@
             },
             "flags_hash": "f6054a07e934d755"
           },
-          "collected_at": "2026-06-13T13:34:48.348323+00:00",
+          "collected_at": "2026-06-13T13:57:22.066852+00:00",
           "git": {
             "dirty": false,
             "ref": "dev",
-            "sha": "b44ff904639c856c0d64c58e20d55771d4298e98",
-            "short": "b44ff90463"
+            "sha": "6d7583003431a4735e3c614bdfa87ac37dddcb91",
+            "short": "6d75830034"
           },
           "platform": {
             "machine": "x86_64",
@@ -715,7 +741,7 @@
           },
           "version": "4.2.1"
         },
-        "run_id": "audit_gate-b44ff90463-20260613T133448",
+        "run_id": "audit_gate-6d75830034-20260613T135722",
         "runner": "audit_gate",
         "schema_version": "1.0.0",
         "sections": [
@@ -870,7 +896,7 @@
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "advisory:medium",
-                "title": "12 files modified/deleted since graph build (2026-06-13T10:58:08)"
+                "title": "13 files modified/deleted since graph build (2026-06-13T10:58:08)"
               },
               {
                 "check_id": "p6__graph_freshness",
@@ -895,7 +921,7 @@
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "info",
-                "title": "MODIFIED: docs/CAAS_BASTION_REQUIREMENTS.json"
+                "title": "MODIFIED: docs/BACKEND_ASSURANCE_MATRIX.md"
               }
             ],
             "name": "P6: Graph Freshness",
@@ -1181,7 +1207,7 @@
               {
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
-                "title": "P21 semantic map: 15 requirements (9 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
+                "title": "P21 semantic map: 16 requirements (10 gated, 5 presence, 1 documented-residual) \u2014 all bound to a live gate or documented residual"
               },
               {
                 "check_id": "p21__external-audit_replacement_gate",
@@ -1257,6 +1283,11 @@
                 "check_id": "p21__external-audit_replacement_gate",
                 "severity": "pass",
                 "title": "G-15: gated by --fuzz-campaign-status (registered)"
+              },
+              {
+                "check_id": "p21__external-audit_replacement_gate",
+                "severity": "pass",
+                "title": "G-16: gated by --gpu-hardware-evidence (registered)"
               }
             ],
             "name": "P21: External-Audit Replacement Gate",
@@ -1344,7 +1375,7 @@
               {
                 "check_id": "g-12__source_graph_quality",
                 "severity": "pass",
-                "title": "Source graph \"files\" has 1623 rows (threshold: 200)"
+                "title": "Source graph \"files\" has 1625 rows (threshold: 200)"
               }
             ],
             "name": "G-12: Source Graph Quality",
@@ -1417,15 +1448,41 @@
             ],
             "name": "G-15: Fuzz Campaign Evidence",
             "verdict": "PASS"
+          },
+          {
+            "findings": [
+              {
+                "check_id": "g-16__gpu/hardware_evidence",
+                "severity": "pass",
+                "title": "7 GPU/hardware surfaces (0 blocking, 4 warning, 1 owner-gated, 2 documented-residual); fallback-correctness != native-performance"
+              },
+              {
+                "check_id": "g-16__gpu/hardware_evidence",
+                "severity": "info",
+                "title": "GPU-SCHNORR-SNARK-FALLBACK: documented residual RR-005 (RESIDUAL_RISK_REGISTER.md)"
+              },
+              {
+                "check_id": "g-16__gpu/hardware_evidence",
+                "severity": "info",
+                "title": "GPU-ROCM-DEVICE: owner-gated, not current evidence (last_verified 2026-03-25)"
+              },
+              {
+                "check_id": "g-16__gpu/hardware_evidence",
+                "severity": "info",
+                "title": "HW-POWER-EM-FAULT: documented residual RR-006 (RESIDUAL_RISK_REGISTER.md)"
+              }
+            ],
+            "name": "G-16: GPU/Hardware Evidence",
+            "verdict": "PASS"
           }
         ],
         "summary": {
-          "advisory": 54,
+          "advisory": 57,
           "blocking": 0,
-          "info": 49,
-          "sections": 29,
+          "info": 52,
+          "sections": 30,
           "skipped_sections": 0,
-          "total_findings": 105,
+          "total_findings": 110,
           "warnings": 5
         },
         "verdict": "PASS with advisory"
@@ -1433,8 +1490,8 @@
       "passing": true,
       "required": true,
       "returncode": 0,
-      "stderr_sha256": "8160a1a905782ec421b687d6b0cdbfff43861b8feed77f887d22d6ea37e25606",
-      "stdout_sha256": "9cdfbd343b295edcec07751e9970157de18e26c2ee2c31238cd6173d3c2c875e"
+      "stderr_sha256": "24a78898c7d7975551ec312441b269deb00b24e04cfb46ad1c1b2d746622e94e",
+      "stdout_sha256": "e7b8e0fc941d4f69e7f83e7f15f9b772d036293d43d5142dd734cfb19655779e"
     },
     {
       "name": "audit_gap_report_strict",
@@ -1736,13 +1793,13 @@
         "gates_skipped": 0,
         "gates_total": 8,
         "overall_pass": true,
-        "timestamp": "2026-06-13T13:34:50.231431+00:00"
+        "timestamp": "2026-06-13T13:57:23.860828+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "cbdda419672a44c3f02f63fa198c95c591970122981d3f916bbc8418148ea45a"
+      "stdout_sha256": "98e78d9f6377f176a6e9f753a378d718820f17629edfb922caa162dfab09555b"
     },
     {
       "name": "supply_chain_gate",
@@ -1788,19 +1845,19 @@
         "checks_total": 5,
         "failing_checks": [],
         "overall_pass": true,
-        "timestamp": "2026-06-13T13:34:50.283334+00:00"
+        "timestamp": "2026-06-13T13:57:23.904878+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "0609009d15eea114f412de5d7a99d528ba23a6cb38ed8f57892c89232142fccf"
+      "stdout_sha256": "94e9e03863e179ae07c4fe4ac418e1f90b7f0b00e65ccb9747ed86609979627f"
     }
   ],
-  "generated_at": "2026-06-13T13:34:50.299947+00:00",
+  "generated_at": "2026-06-13T13:57:23.925982+00:00",
   "git": {
     "branch": "dev",
-    "commit": "b44ff904639c856c0d64c58e20d55771d4298e98",
+    "commit": "6d7583003431a4735e3c614bdfa87ac37dddcb91",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
