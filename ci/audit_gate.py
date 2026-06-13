@@ -1840,6 +1840,39 @@ def check_evidence_refresh_coverage(conn):
     return 'G-19: Evidence Refresh Coverage', findings
 
 
+def check_package_provenance_binding(conn):
+    """G-20: package / release provenance binding.
+
+    Loads docs/PACKAGE_PROVENANCE_STATUS.json via
+    ci/check_package_provenance_binding.py: every package surface must declare the
+    full binding contract (commit + CAAS bundle sha + audit_gate verdict + artifact
+    hash); a `bound` artifact must match HEAD + the committed bundle digest; an
+    owner_gated release artifact must never be current in the dev tree. Provenance
+    binding only — not release authorization. Cheap: JSON + git HEAD + bundle digest."""
+    findings = []
+    if str(SCRIPT_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from check_package_provenance_binding import load_and_evaluate
+    except Exception as exc:
+        findings.append(('FAIL', f'cannot import check_package_provenance_binding: {exc}'))
+        return 'G-20: Package Provenance Binding', findings
+
+    report, _code = load_and_evaluate()
+    if report.get('error'):
+        findings.append(('FAIL', f'package provenance binding: {report["error"]}'))
+        return 'G-20: Package Provenance Binding', findings
+
+    if report['overall_pass']:
+        findings.append(('PASS', f'{report["surfaces_total"]} package surfaces bound '
+                                 f'({report["template"]} template, {report["bound"]} bound, '
+                                 f'{report["owner_gated"]} owner_gated)'))
+    else:
+        for key, ids in (report.get('problems') or {}).items():
+            findings.append(('FAIL', f'{key}: {ids}'))
+    return 'G-20: Package Provenance Binding', findings
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1877,6 +1910,7 @@ CHECK_MAP = {
     '--gpu-hardware-evidence': check_gpu_hardware_evidence,
     '--research-signal-matrix': check_research_signal_matrix,
     '--evidence-refresh-coverage': check_evidence_refresh_coverage,
+    '--package-provenance-binding': check_package_provenance_binding,
 }
 
 ALL_CHECKS = [
@@ -1912,6 +1946,7 @@ ALL_CHECKS = [
     check_gpu_hardware_evidence,
     check_research_signal_matrix,
     check_evidence_refresh_coverage,
+    check_package_provenance_binding,
 ]
 
 

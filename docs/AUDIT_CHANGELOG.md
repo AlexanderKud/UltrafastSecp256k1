@@ -1,5 +1,38 @@
 # Audit Changelog
 
+## 2026-06-13 — package / release provenance binding gate (Bastion B20)
+
+- Added `docs/PACKAGE_PROVENANCE_STATUS.json`: a per-surface binding ledger. A
+  package/binary is only "audited" when bound to the audited commit, the committed
+  CAAS bundle sha256, the audit_gate verdict, and its own artifact hash. 5 surfaces:
+  NuGet native (`nuget-native.yml`) and Node N-API + React Native (`bindings.yml`)
+  as `template`; Linux packages + C ABI binaries (`packaging.yml`, tag-published to
+  GitHub Releases + APT), wasm (`release.yml`) and the signed release tarball + SLSA
+  + cosign (`slsa-provenance.yml`) as `owner_gated`. (2 template, 3 owner_gated.)
+- Added `ci/check_package_provenance_binding.py` (`audit_gate.py --package-provenance-binding`,
+  G-20): every surface must declare the full binding contract (artifact /
+  producer_workflow / source_commit / source_branch / artifact_sha256 /
+  caas_bundle_sha256 / audit_gate_verdict / workflow_run_id / status / severity);
+  `template` surfaces hold recognized sentinels with null hash+run_id (no fake
+  current values); `bound` surfaces must MATCH HEAD + the committed bundle digest +
+  a real artifact hash + verdict==pass + a run id; `owner_gated` release artifacts
+  are never current in the dev tree (a real hash or run id fails). Reuses the
+  existing SLSA / supply-chain infra (`generate_slsa_provenance.py`,
+  `verify_slsa_provenance.py`, `slsa-provenance.yml`, `supply_chain_gate.py`) rather
+  than duplicating it. PASS: 5 surfaces (2 template, 3 owner_gated).
+- Provenance binding is NOT release authorization: the gate never publishes, tags,
+  merges, or authorizes a release (see docs/PACKAGE_PROVENANCE.md).
+- Surfaces adversarially verified by a 2-panel read-only workflow (fake-current
+  lens + release-mislabel lens): both panels caught the `packaging.yml` surface
+  initially mislabeled `template` — its tag-triggered `publish` job ships .deb/.rpm
+  to the GitHub Release + a public APT repo, so it was corrected to `owner_gated`.
+- Added `ci/test_audit_scripts.py::check_package_provenance_binding_fixtures`
+  (missing binding field / wrong commit / wrong CAAS bundle hash / missing artifact
+  hash / release-marked-current / unknown producer workflow all fail; real dev
+  manifest passes). Coverage critic now 19 gates; self-test 186 pass.
+- Docs: added `docs/PACKAGE_PROVENANCE.md`; `docs/CAAS_BASTION_REQUIREMENTS.json`
+  G-20 row (P21 resolves it); `docs/AUDIT_MANIFEST.md` G-20 row.
+
 ## 2026-06-13 — evidence-refresh coverage gate (Bastion B19, RR-BAS-01 / RR-BAS-02 ready for owner promotion)
 
 - Added `freshness_artifacts` disposition ledger to `docs/AUDIT_SLA.json`: every

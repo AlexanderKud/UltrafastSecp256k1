@@ -84,6 +84,7 @@ AUDIT_SCRIPTS = [
     "check_bench_target_context.py",
     "check_research_signal_matrix.py",
     "check_evidence_refresh_coverage.py",
+    "check_package_provenance_binding.py",
     "test_caas_integrity.py",
     "test_audit_scripts.py",
 ]
@@ -2407,6 +2408,95 @@ def check_evidence_refresh_coverage_fixtures() -> None:
                 "real manifest passes; stale drill blocks under blocking severity, only warns under advisory")
 
 
+def check_package_provenance_binding_fixtures() -> None:
+    """B20: the package provenance binding gate must FAIL a surface missing a binding
+    field, a `bound` artifact whose commit/CAAS-bundle-hash do not match or whose
+    artifact hash is absent, and an `owner_gated` release artifact marked current
+    (real hash/run id) without an owner release; the real dev manifest (templates +
+    owner_gated sentinels) passes. Provenance binding, not release authorization."""
+    tag = "B20:package_provenance_binding"
+    try:
+        mod = _load_ci_module("check_package_provenance_binding.py", "ppb_selftest")
+    except Exception as exc:
+        fail(tag, f"import failed: {exc}")
+        return
+
+    ev = mod.evaluate
+    HEAD = "72e7d4346de328fd70ab9295ad34d0decbe6e887"
+    BUN = "1ad8eac7a924f39dba2b3fbe8c5a8604c3f4350b7114299969471283f3280f08"
+    wfs = {".github/workflows/nuget-native.yml", ".github/workflows/release.yml"}
+
+    def tmpl(**kw):
+        b = {"artifact": "nuget", "producer_workflow": ".github/workflows/nuget-native.yml",
+             "source_commit": "@HEAD", "source_branch": "dev", "artifact_sha256": None,
+             "caas_bundle_sha256": "@committed-bundle", "audit_gate_verdict": "@audit-gate",
+             "workflow_run_id": None, "status": "template", "severity": "blocking"}
+        b.update(kw); return b
+
+    def bound(**kw):
+        b = {"artifact": "nuget", "producer_workflow": ".github/workflows/nuget-native.yml",
+             "source_commit": HEAD, "source_branch": "dev", "artifact_sha256": "a" * 64,
+             "caas_bundle_sha256": BUN, "audit_gate_verdict": "pass",
+             "workflow_run_id": "123", "status": "bound", "severity": "blocking"}
+        b.update(kw); return b
+
+    def owner(**kw):
+        b = {"artifact": "release", "producer_workflow": ".github/workflows/release.yml",
+             "source_commit": "@release", "source_branch": "refs/tags/v*", "artifact_sha256": None,
+             "caas_bundle_sha256": "@release-bundle", "audit_gate_verdict": "@release",
+             "workflow_run_id": None, "status": "owner_gated", "severity": "owner_gated"}
+        b.update(kw); return b
+
+    failures = []
+
+    if not ev([tmpl(), owner()], HEAD, BUN, wfs)["overall_pass"]:
+        failures.append("healthy template+owner_gated did not pass")
+    if not ev([bound()], HEAD, BUN, wfs)["overall_pass"]:
+        failures.append("healthy bound surface did not pass")
+
+    # (1) missing provenance: a surface missing a binding field
+    s = tmpl(); del s["caas_bundle_sha256"]
+    r = ev([s], HEAD, BUN, wfs)
+    if r["overall_pass"] or "missing_binding" not in r["problems"]:
+        failures.append("missing binding field did not fail")
+
+    # (2) wrong commit on a bound artifact
+    r = ev([bound(source_commit="b" * 40)], HEAD, BUN, wfs)
+    if r["overall_pass"] or "commit_mismatch" not in r["problems"]:
+        failures.append("wrong commit did not fail")
+
+    # (3) wrong CAAS bundle hash on a bound artifact
+    r = ev([bound(caas_bundle_sha256="c" * 64)], HEAD, BUN, wfs)
+    if r["overall_pass"] or "bundle_mismatch" not in r["problems"]:
+        failures.append("wrong CAAS bundle hash did not fail")
+
+    # (4) missing artifact hash on a bound artifact
+    r = ev([bound(artifact_sha256=None)], HEAD, BUN, wfs)
+    if r["overall_pass"] or "missing_artifact_hash" not in r["problems"]:
+        failures.append("missing artifact hash did not fail")
+
+    # (5) release artifact marked current without an owner release
+    r = ev([owner(artifact_sha256="d" * 64, workflow_run_id="999")], HEAD, BUN, wfs)
+    if r["overall_pass"] or "release_marked_current" not in r["problems"]:
+        failures.append("release artifact marked current did not fail")
+
+    # (6) producer workflow that does not exist
+    r = ev([tmpl(producer_workflow=".github/workflows/__nope__.yml")], HEAD, BUN, wfs)
+    if r["overall_pass"] or "unknown_workflow" not in r["problems"]:
+        failures.append("unknown producer workflow did not fail")
+
+    # (7) the committed dev manifest passes for real
+    rep, _ = mod.load_and_evaluate()
+    if not rep.get("overall_pass"):
+        failures.append(f"the committed PACKAGE_PROVENANCE_STATUS.json did not pass: {rep.get('problems')}")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "missing field / wrong commit / wrong bundle hash / missing artifact hash / "
+                "release-marked-current / unknown workflow all fail; real dev manifest passes")
+
+
 def check_caas_gate_negative_fixture_coverage() -> None:
     """B5 completeness critic: every high-value CAAS gate must have a registered
     negative fixture in this file. A green gate without a proof that it fails on
@@ -2431,6 +2521,7 @@ def check_caas_gate_negative_fixture_coverage() -> None:
         "check_bench_target_context.py": "check_bench_target_context_fixtures",
         "check_research_signal_matrix.py": "check_research_signal_matrix_fixtures",
         "check_evidence_refresh_coverage.py": "check_evidence_refresh_coverage_fixtures",
+        "check_package_provenance_binding.py": "check_package_provenance_binding_fixtures",
     }
     g = globals()
     missing = [f"{gate} -> {fn}" for gate, fn in required.items()
@@ -2494,6 +2585,7 @@ def main() -> int:
     check_bench_target_context_fixtures()
     check_research_signal_matrix_fixtures()
     check_evidence_refresh_coverage_fixtures()
+    check_package_provenance_binding_fixtures()
     check_caas_gate_negative_fixture_coverage()
 
     # Phase 4: Smoke tests
