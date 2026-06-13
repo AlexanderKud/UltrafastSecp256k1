@@ -221,6 +221,20 @@
       "status": "gated",
       "residual_risk": "Real-device CUDA/OpenCL/Metal/ROCm evidence is owner_gated (no GitHub GPU runners; owner-run, never current on push). Fallback_correctness rows are tracked separately and are never native-performance evidence. ROCm real-device (RR-003), schnorr_snark fallback (RR-005), and hardware power/EM/fault (RR-006) are documented residuals resolving to RESIDUAL_RISK_REGISTER.md.",
       "last_verified": "2026-06-13"
+    },
+    {
+      "id": "G-17",
+      "claim": "Benchmark target-context taxonomy + claim scope (a microbenchmark cannot be mistaken for node throughput; a GPU/fallback benchmark cannot be a native-engine speed claim)",
+      "artifact_paths": [
+        "docs/BENCH_TARGET_CONTEXT_SCHEMA.json",
+        "ci/check_bench_target_context.py",
+        "docs/bench_unified_2026-05-30_gcc14_x86-64.json"
+      ],
+      "gate": "ci/check_bench_target_context.py",
+      "gate_kind": "script",
+      "status": "gated",
+      "residual_risk": "Folded into ci/check_bench_doc_consistency.py (--json) and co-gated by ci/perf_security_cogate.py, so a benchmark perf claim is invalid when its target_context is missing/invalid/mis-scoped or when CT/determinism gates are red. Closes residual RR-BAS-03.",
+      "last_verified": "2026-06-13"
     }
   ]
 }

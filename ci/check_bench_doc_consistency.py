@@ -781,6 +781,8 @@ def build_reviewer_docs_list() -> List[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verbose", "-v", action="store_true", help="Show match context")
+    parser.add_argument("--json", action="store_true", help="JSON output")
+    parser.add_argument("-o", dest="out_file", help="Write JSON report to file")
     args = parser.parse_args()
 
     canon = load_canonical_numbers()
@@ -862,7 +864,48 @@ def main() -> int:
         # B8: reject zero/negative/non-finite/impossible timings in the artifact.
         all_violations.extend(check_bench_artifact_sanity(bench_data, bench_path.name))
 
+    # ── B17: benchmark target-context taxonomy + claim scope ──────────────────
+    # Every canonical benchmark artifact must declare a valid target_context and
+    # claim_scope so a microbenchmark is not mistaken for node throughput and a
+    # GPU public-data / fallback benchmark is not a native-hardware perf claim.
+    context_report = None
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from check_bench_target_context import load_and_evaluate as _ctx_eval
+        context_report, _ctx_code = _ctx_eval()
+        if context_report.get("error"):
+            all_violations.append(f"  BENCH CONTEXT [schema]: {context_report['error']}")
+        else:
+            for rid in context_report["missing_context_rows"]:
+                all_violations.append(f"  BENCH CONTEXT [{rid}]: missing target_context (B17)")
+            for rid in context_report["invalid_context_rows"]:
+                all_violations.append(f"  BENCH CONTEXT [{rid}]: target_context not in schema enum (B17)")
+            for r in context_report["rows"]:
+                for p in r.get("problems", []):
+                    if p.startswith("scope_mismatch"):
+                        all_violations.append(f"  BENCH CONTEXT [{r['id']}]: {p} (B17)")
+    except Exception as exc:
+        all_violations.append(f"  BENCH CONTEXT: cannot run target-context gate: {exc}")
+
     # ── Report ────────────────────────────────────────────────────────────────
+    ok = not all_violations
+    if args.json or args.out_file:
+        report = {
+            "check": "check_bench_doc_consistency",
+            "overall_pass": ok,
+            "violations": all_violations,
+            "docs_scanned": len(effective_docs),
+            "banned_patterns": len(BANNED),
+            "required_refs": len(REQUIRED_REFS),
+            "bench_target_context": context_report,
+        }
+        rendered = json.dumps(report, indent=2)
+        if args.out_file:
+            Path(args.out_file).write_text(rendered, encoding="utf-8")
+        if args.json:
+            print(rendered)
+        return 0 if ok else 1
+
     if all_violations:
         print(f"check_bench_doc_consistency: {len(all_violations)} violation(s) found\n")
         for v in all_violations:

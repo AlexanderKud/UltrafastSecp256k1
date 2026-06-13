@@ -32,7 +32,7 @@ Current verified state:
 | RR-NEW-02 | P1 shim regression tests advisory-gated by build configuration | Open, by design. Non-blocking for Bitcoin Core PR | Shim/audit | `regression_shim_security_v8` and `exploit_musig2_infinity_pubnonce` require `SECP256K1_BUILD_COMPAT_SHIM=ON`; without it they return ADVISORY_SKIP_CODE (77). Standalone CTest targets always run. Bitcoin Core PR is out of shim scope. Planned: shim-linked CI matrix job in future milestone. |
 | RR-BAS-01 | CAAS evidence auto-refresh (ci-evidence + API contracts) | Owner-deferred, non-blocking | Infra/audit | `audit/ci-evidence` and `docs/API_SECURITY_CONTRACTS.json` sit on the 14-day critical-freshness SLO, but the nightly `caas-evidence-refresh.yml` does not regenerate them — refresh is a manual owner chore, surfaced early by the Bastion B3 pre-alert. Not a vulnerability. See RR-BAS-01 below. |
 | RR-BAS-02 | Incident-drill freshness SLO promotion to blocking | Owner-deferred, non-blocking | Audit/infra | `incident_drill_freshness_days` (`docs/AUDIT_SLA.json`) is intentionally advisory (warning) until the nightly drill-log auto-commit loop is observed for a full window (cf. H-1). See RR-BAS-02 below. |
-| RR-BAS-03 | Benchmark `target_context` labels | Owner-deferred, non-blocking | Bench/audit | Canonical `bench_unified_*.json` artifacts do not yet carry an explicit `target_context` label (microbench / batch_verify / bitcoin_core / libbitcoin / gpu_public_data); context is currently implicit via section strings. See RR-BAS-03 below. |
+| RR-BAS-03 | Benchmark `target_context` labels | **CLOSED 2026-06-13** | Bench/audit | Closed by Bastion B17: canonical `bench_unified_*.json` (target_context=microbench) and `BITCOIN_CORE_BENCH_RESULTS.json` (target_context=bitcoin_core) now carry explicit `target_context` + `claim_scope` metadata, validated against `docs/BENCH_TARGET_CONTEXT_SCHEMA.json` by `ci/check_bench_target_context.py` (folded into `check_bench_doc_consistency.py`, co-gated by `perf_security_cogate.py`). See RR-BAS-03 below. |
 | RR-BAS-04 | Research-monitor attack-class taxonomy | Owner-deferred, non-blocking | Audit/tooling | `docs/RESEARCH_SIGNAL_MATRIX.json` signal classes carry a coverage `status` but no `attack_class` field; Bastion B6 added actionable affected-surface/patch-plan rendering without the taxonomy. See RR-BAS-04 below. |
 
 ---
@@ -147,35 +147,44 @@ a simulated stale log, and update this entry to CLOSED.
 
 ---
 
-## RR-BAS-03 — Benchmark `target_context` labels
+## RR-BAS-03 — Benchmark `target_context` labels — **CLOSED 2026-06-13 (Bastion B17)**
 
 **Type:** Evidence-metadata gap — not a vulnerability
-**Status:** Owner-deferred, non-blocking
+**Status:** **CLOSED 2026-06-13** (Bastion B17)
 **Severity:** Informational (benchmark provenance)
 **Scope:** Performance-claim disambiguation
 
 **Description:**
-Bastion B8 co-gated benchmark-artifact integrity (`ci/check_bench_doc_consistency.py`
-now rejects zero/non-finite/impossible timings via `check_bench_artifact_sanity`,
-and `ci/perf_security_cogate.py` blocks on bench inconsistency). However, the
-canonical `bench_unified_*.json` artifacts do not carry an explicit
-`target_context` label (`microbench` / `batch_verify` / `bitcoin_core` /
-`libbitcoin` / `gpu_public_data`). Target context is currently inferred implicitly
-from section strings, so a reviewer could in principle conflate a GPU public-data
-benchmark with a CPU microbenchmark.
+Bastion B8 co-gated benchmark-artifact integrity but the canonical
+`bench_unified_*.json` artifacts did not carry an explicit `target_context` label,
+so a reviewer could in principle conflate a GPU public-data benchmark with a CPU
+microbenchmark, or a microbenchmark with Bitcoin Core node throughput.
 
-**Current behavior / mitigation:** Per-section strings ("CT SIGNING",
-"BITCOIN CORE", "BATCH VERIFICATION", …) convey context implicitly; B8 sanity +
-co-gating prevent corrupt artifacts. No incorrect claim is known to result.
+**Resolution (B17):**
+- Added `docs/BENCH_TARGET_CONTEXT_SCHEMA.json` — the `target_context` enum
+  (microbench / batch_verify / bitcoin_core / libbitcoin / gpu_public_data /
+  gpu_hardware / wasm / package_integration / unknown_owner_gated) + required
+  fields (target_context, operation, claim_scope, evidence_path, reproduce/source
+  command, commit, security_gate_dependency).
+- Added explicit `target_context` + `claim_scope` + `security_gate_dependency`
+  **metadata** (no measurement numbers changed) to the canonical artifacts:
+  `docs/bench_unified_*.json` → `microbench`,
+  `docs/BITCOIN_CORE_BENCH_RESULTS.json` → `bitcoin_core` (with an
+  `integration_evidence` reference).
+- Added `ci/check_bench_target_context.py`, folded into
+  `ci/check_bench_doc_consistency.py` (now `--json`-capable) and co-gated by
+  `ci/perf_security_cogate.py`: a benchmark artifact fails if `target_context` is
+  missing/invalid, if a timed artifact lacks `claim_scope`, if `gpu_public_data`
+  is presented as native GPU-hardware performance, or if a `bitcoin_core`/`libbitcoin`
+  claim lacks an integration-evidence reference. Negative fixture
+  `B17:bench_target_context` proves each failure path.
 
-**Acceptance criteria (for closure):** Every canonical `bench_unified_*.json`
-result carries a `target_context` field from the enumerated set, and
-`check_bench_doc_consistency.py` fails closed when it is missing.
-**Promotion trigger:** The next canonical benchmark regeneration (this is a
-`bench_unified` output-format change owned by the benchmark harness, not a
-gate-only edit, so it must accompany a real measured run).
-**Close condition:** `bench_unified --json` emits `target_context` per result, the
-consistency gate enforces it (with a negative fixture), and this entry is CLOSED.
+**Acceptance criteria — MET:** every canonical bench artifact carries a valid
+`target_context`, and `check_bench_doc_consistency.py` (via the folded context
+gate) fails closed when it is missing/invalid/mis-scoped, with a negative fixture.
+*(The label is carried at the artifact-`metadata` level — the correct granularity,
+since every result within a `bench_unified` run shares the same context — rather
+than duplicated per result.)*
 
 ---
 

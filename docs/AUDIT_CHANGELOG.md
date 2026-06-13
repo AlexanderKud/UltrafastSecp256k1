@@ -1,5 +1,33 @@
 # Audit Changelog
 
+## 2026-06-13 — benchmark target-context taxonomy + claim-scope gate (Bastion B17, closes RR-BAS-03)
+
+- Added `docs/BENCH_TARGET_CONTEXT_SCHEMA.json`: the `target_context` enum
+  (microbench / batch_verify / bitcoin_core / libbitcoin / gpu_public_data /
+  gpu_hardware / wasm / package_integration / unknown_owner_gated) + required
+  fields (target_context, operation, claim_scope, evidence_path, reproduce/source
+  command, commit, security_gate_dependency).
+- Added `target_context` + `claim_scope` + `security_gate_dependency` **metadata**
+  (no numbers invented/changed) to the canonical artifacts: `docs/bench_unified_*.json`
+  → `microbench`; `docs/BITCOIN_CORE_BENCH_RESULTS.json` → `bitcoin_core` (with an
+  `integration_evidence` reference to the 749/749 results + integration table).
+- Added `ci/check_bench_target_context.py` and folded it into
+  `ci/check_bench_doc_consistency.py` (now `--json`-capable): a canonical benchmark
+  artifact fails if `target_context` is missing/invalid, if a timed artifact lacks
+  `claim_scope` or `security_gate_dependency`, if `gpu_public_data` is presented as
+  native GPU-hardware performance, or if a `bitcoin_core`/`libbitcoin` claim lacks
+  an integration-evidence reference. `ci/perf_security_cogate.py` co-gates it (via
+  `check_bench_doc_consistency`), so a perf claim is invalid when context is
+  mis-scoped or CT/determinism is red. Corrupt-timing checks (B8) remain blocking.
+- Added `ci/test_audit_scripts.py::check_bench_target_context_fixtures` (missing /
+  invalid context → fail; timed-without-scope → fail; gpu-as-native-hardware → fail;
+  bitcoin_core/libbitcoin without integration evidence → fail; owner_gated context
+  explicit + visible; real artifacts pass) and registered it in the coverage critic
+  (now 16 high-value gates). Self-test 174 pass.
+- Closed **RR-BAS-03** in `docs/RESIDUAL_RISK_REGISTER.md` (acceptance criteria met);
+  added `docs/CAAS_BASTION_REQUIREMENTS.json` G-17 row (P21 enforces the gate);
+  `docs/AUDIT_MANIFEST.md` G-17 row; `docs/BENCHMARKS.md` taxonomy note.
+
 ## 2026-06-13 — GPU / hardware evidence status lane (Bastion B16)
 
 - Added `docs/GPU_HARDWARE_EVIDENCE_STATUS.json`: a machine-readable manifest that

@@ -81,6 +81,7 @@ AUDIT_SCRIPTS = [
     "check_ct_evidence_status.py",
     "check_fuzz_campaign_status.py",
     "check_gpu_hardware_evidence.py",
+    "check_bench_target_context.py",
     "test_caas_integrity.py",
     "test_audit_scripts.py",
 ]
@@ -2138,6 +2139,82 @@ def check_gpu_hardware_evidence_fixtures() -> None:
         ok(tag, "blocking missing/stale/malformed fail; unresolved residual fails; fallback-vs-performance mislabel fails; owner_gated explicit; real manifest passes")
 
 
+def check_bench_target_context_fixtures() -> None:
+    """B17: the benchmark target-context gate must FAIL a missing/invalid
+    target_context, a timed artifact without a claim_scope, a missing
+    security_gate_dependency, a gpu_public_data benchmark claiming native hardware
+    performance, a bitcoin_core/libbitcoin claim lacking integration_evidence, and
+    an unknown_owner_gated context without an explicit owner_gated note; an
+    owner_gated context with a note is visible (not current proof) and passes; the
+    real canonical artifacts pass."""
+    tag = "B17:bench_target_context"
+    try:
+        module = _load_ci_module("check_bench_target_context.py", "bench_context_selftest")
+    except Exception as exc:
+        fail(tag, f"import failed: {exc}")
+        return
+
+    enum = ["microbench", "batch_verify", "bitcoin_core", "libbitcoin", "gpu_public_data",
+            "gpu_hardware", "wasm", "package_integration", "unknown_owner_gated"]
+
+    def row(**kw):
+        base = {"id": "R", "target_context": "microbench", "operation": "op", "claim_scope": "scope",
+                "evidence_path": "docs/x.json", "security_gate_dependency": "CT green",
+                "integration_evidence": None, "native_hardware_claim": False, "notes": "",
+                "has_timings": True}
+        base.update(kw)
+        return base
+
+    def ev(rows):
+        return module.evaluate(rows, enum=enum)
+
+    failures = []
+
+    if not ev([row()])["overall_pass"]:
+        failures.append("valid microbench row did not pass")
+
+    r = ev([row(target_context=None)])
+    if r["overall_pass"] or "R" not in r["missing_context_rows"]:
+        failures.append("missing target_context did not fail")
+
+    r = ev([row(target_context="bogus_ctx")])
+    if r["overall_pass"] or "R" not in r["invalid_context_rows"]:
+        failures.append("invalid target_context did not fail")
+
+    r = ev([row(claim_scope=None)])
+    if r["overall_pass"] or "R" not in r["scope_mismatch_rows"]:
+        failures.append("timed artifact without claim_scope did not fail")
+
+    if ev([row(security_gate_dependency=None)])["overall_pass"]:
+        failures.append("missing security_gate_dependency did not fail")
+
+    r = ev([row(target_context="gpu_public_data", native_hardware_claim=True)])
+    if r["overall_pass"] or "R" not in r["scope_mismatch_rows"]:
+        failures.append("gpu_public_data claiming native hardware perf did not fail")
+
+    if ev([row(target_context="bitcoin_core", integration_evidence=None)])["overall_pass"]:
+        failures.append("bitcoin_core without integration_evidence did not fail")
+    if ev([row(target_context="libbitcoin", integration_evidence=None)])["overall_pass"]:
+        failures.append("libbitcoin without integration_evidence did not fail")
+
+    if ev([row(target_context="unknown_owner_gated", notes="")])["overall_pass"]:
+        failures.append("unknown_owner_gated without owner_gated note did not fail")
+
+    r = ev([row(target_context="unknown_owner_gated", claim_scope="owner device run",
+                notes="owner_gated: device-only, not current proof")])
+    if not r["overall_pass"] or "R" not in r["owner_gated_rows"]:
+        failures.append("owner_gated context with note should pass + be listed")
+
+    rep, _ = module.load_and_evaluate()
+    if not rep.get("overall_pass"):
+        failures.append("the canonical bench artifacts did not pass the context gate")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "missing/invalid context + scope/gpu-native/integration mismatches fail; owner_gated explicit; real artifacts pass")
+
+
 def check_caas_gate_negative_fixture_coverage() -> None:
     """B5 completeness critic: every high-value CAAS gate must have a registered
     negative fixture in this file. A green gate without a proof that it fails on
@@ -2159,6 +2236,7 @@ def check_caas_gate_negative_fixture_coverage() -> None:
         "check_ct_evidence_status.py": "check_ct_evidence_status_fixtures",
         "check_fuzz_campaign_status.py": "check_fuzz_campaign_status_fixtures",
         "check_gpu_hardware_evidence.py": "check_gpu_hardware_evidence_fixtures",
+        "check_bench_target_context.py": "check_bench_target_context_fixtures",
     }
     g = globals()
     missing = [f"{gate} -> {fn}" for gate, fn in required.items()
@@ -2219,6 +2297,7 @@ def main() -> int:
     check_ct_evidence_status_fixtures()
     check_fuzz_campaign_status_fixtures()
     check_gpu_hardware_evidence_fixtures()
+    check_bench_target_context_fixtures()
     check_caas_gate_negative_fixture_coverage()
 
     # Phase 4: Smoke tests
