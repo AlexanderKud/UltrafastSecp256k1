@@ -333,6 +333,21 @@ def _format_ct_independence(workflow_path: Path) -> str:
                  'the deterministic CT authority is ct-verif / valgrind-ct (blocking).')
     lines.append('**Live verdicts:** `ct-verdict-*.json` are produced by `ct-independence.yml` and '
                  'retained as CI artifacts (30-day retention); they are not committed to the tree.')
+
+    # Bastion B14: CT evidence freshness manifest summary.
+    status_path = REPO_ROOT / 'docs' / 'CT_EVIDENCE_STATUS.json'
+    manifest = _load_json(status_path)
+    if manifest and isinstance(manifest.get('rows'), list):
+        rows = manifest['rows']
+        by_sev = {'blocking': 0, 'warning': 0, 'owner_gated': 0}
+        for r in rows:
+            by_sev[r.get('severity', '')] = by_sev.get(r.get('severity', ''), 0) + 1
+        owner = [r['id'] for r in rows if r.get('severity') == 'owner_gated']
+        lines.append(f'**CT evidence surfaces (G-14):** {len(rows)} tracked — '
+                     f"{by_sev.get('blocking', 0)} blocking, {by_sev.get('warning', 0)} warning, "
+                     f"{by_sev.get('owner_gated', 0)} owner-gated "
+                     f'(`docs/CT_EVIDENCE_STATUS.json`, gated by `ci/check_ct_evidence_status.py`).'
+                     + (f' Owner-gated (not current evidence): {", ".join(owner)}.' if owner else ''))
     return '\n'.join(lines)
 
 

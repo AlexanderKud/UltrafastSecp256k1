@@ -1615,6 +1615,56 @@ def check_integration_evidence(conn):
 
 
 # ---------------------------------------------------------------------------
+# G-14 — Constant-Time Evidence Freshness (Bastion B14)
+# ---------------------------------------------------------------------------
+def check_ct_evidence_status(conn):
+    """G-14: constant-time evidence freshness + verdict binding.
+
+    Loads docs/CT_EVIDENCE_STATUS.json via ci/check_ct_evidence_status.py. On push
+    (no verdict directory) it checks the committed-evidence + freshness dimension
+    only (cheap): a blocking CT surface fails if a committed evidence path is
+    missing or last_verified is stale. The heavy tool-verdict dimension (ct-verif /
+    valgrind-ct PASS+SKIP -> inconclusive) is evaluated by the CT CI workflows via
+    --verdict-dir. owner_gated rows (host-only --gpu CT-uniformity) are explicit and
+    never counted as current evidence."""
+    findings = []
+    if str(SCRIPT_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from check_ct_evidence_status import load_and_evaluate, MANIFEST_PATH
+    except Exception as exc:
+        findings.append(('FAIL', f'cannot import check_ct_evidence_status: {exc}'))
+        return 'G-14: CT Evidence Freshness', findings
+
+    report, _code = load_and_evaluate(MANIFEST_PATH)  # no verdict-dir => cheap push path
+    if report.get('error'):
+        findings.append(('FAIL', f'CT evidence manifest: {report["error"]}'))
+        return 'G-14: CT Evidence Freshness', findings
+
+    if report['overall_pass']:
+        findings.append(('PASS', f'{report["rows_total"]} CT surfaces '
+                                 f'({report["blocking_total"]} blocking, {report["warning_total"]} warning, '
+                                 f'{report["owner_gated_total"]} owner-gated); committed evidence current '
+                                 f'(verdicts_evaluated={report["verdicts_evaluated"]})'))
+    else:
+        findings.append(('FAIL', f'CT evidence blocking failures: {report["blocking_failures"]}'))
+
+    for r in report['rows']:
+        rid, sev, st = r['id'], r['severity'], r['computed_status']
+        if r['blocking_failure']:
+            findings.append(('FAIL', f'{rid} [{sev}]: {r["detail"]}'))
+        elif st in ('missing', 'stale', 'inconclusive'):
+            findings.append(('WARN', f'{rid} [{sev}]: {r["detail"]}'))
+        elif r['pre_alert']:
+            findings.append(('WARN', f'{rid}: {r["detail"]}'))
+        elif st == 'owner_gated':
+            extra = ' (STALE)' if r.get('owner_gated_stale') else ''
+            findings.append(('INFO', f'{rid}: owner-gated, not current evidence{extra} '
+                                     f'(last_verified {r["last_verified"]})'))
+    return 'G-14: CT Evidence Freshness', findings
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 CHECK_MAP = {
@@ -1646,6 +1696,7 @@ CHECK_MAP = {
     '--exploit-traceability': check_exploit_traceability,
     '--source-graph-quality': check_source_graph_quality,
     '--integration-evidence': check_integration_evidence,
+    '--ct-evidence-status': check_ct_evidence_status,
 }
 
 ALL_CHECKS = [
@@ -1676,6 +1727,7 @@ ALL_CHECKS = [
     check_exploit_traceability,
     check_source_graph_quality,
     check_integration_evidence,
+    check_ct_evidence_status,
 ]
 
 

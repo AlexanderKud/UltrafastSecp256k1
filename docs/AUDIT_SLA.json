@@ -64,6 +64,13 @@
       "severity": "per-surface (blocking | warning | owner_gated)",
       "measurement": "per-surface (now - last_verified) vs freshness_days; evidence_path existence for blocking rows"
     },
+    "ct_evidence_status_freshness": {
+      "description": "Constant-time evidence freshness + tool-verdict binding, evaluated per CT-sensitive surface (Bastion B14). The per-surface evidence_paths, required_tools, freshness_days, severity, and last_verified live in docs/CT_EVIDENCE_STATUS.json and are enforced by ci/check_ct_evidence_status.py (audit_gate.py --ct-evidence-status, G-14). On push the committed-evidence + freshness dimension gates (a blocking CT surface fails if a committed path is missing or last_verified is stale). Tool verdicts (ct-verif / valgrind-ct / dudect) are evaluated only when a --verdict-dir is supplied (CI workflows): a required-tool FAIL or PASS+SKIP is inconclusive (never pass) and fails a blocking row. Distinct from the audit/ci-evidence 'ct_evidence' critical-evidence snapshot SLO.",
+      "threshold": "per-surface (see docs/CT_EVIDENCE_STATUS.json)",
+      "default_pre_alert_buffer_days": 14,
+      "severity": "per-surface (blocking | warning | owner_gated)",
+      "measurement": "per-surface (now - last_verified) vs freshness_days; evidence_paths existence; required_tools PASS verdicts when --verdict-dir present"
+    },
     "review_queue_max_open_days": {
       "description": "Maximum age in days that an item may sit in the source-graph review queue without being addressed or explicitly deferred",
       "threshold": 90,

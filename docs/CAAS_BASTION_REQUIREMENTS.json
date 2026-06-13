@@ -179,6 +179,20 @@
       "status": "gated",
       "residual_risk": "Heavy full-chain libbitcoin / Bitcoin Core surfaces are owner_gated within the manifest (explicit, never counted as current evidence); they are re-verified by an owner-imported artifact, not on every push.",
       "last_verified": "2026-06-13"
+    },
+    {
+      "id": "G-14",
+      "claim": "Constant-time evidence freshness + tool-verdict binding (CT-sensitive surfaces machine-tracked and gated)",
+      "artifact_paths": [
+        "docs/CT_EVIDENCE_STATUS.json",
+        "docs/CT_VERIFICATION.md",
+        "ci/check_ct_evidence_status.py"
+      ],
+      "gate": "audit_gate.py --ct-evidence-status",
+      "gate_kind": "audit_gate",
+      "status": "gated",
+      "residual_risk": "Tool verdicts (ct-verif / valgrind-ct / dudect) are CI-produced and evaluated via --verdict-dir, not on every push; the committed-evidence + freshness dimension gates on push. GPU CT-uniformity is owner_gated (host-only --gpu). CT-SCALAR-INVERSE is a documented portability residual (RR-NEW-01).",
+      "last_verified": "2026-06-13"
     }
   ]
 }

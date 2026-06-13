@@ -78,6 +78,7 @@ AUDIT_SCRIPTS = [
     "check_doc_module_counts.py",
     "check_source_graph_quality.py",
     "check_integration_evidence.py",
+    "check_ct_evidence_status.py",
     "test_caas_integrity.py",
     "test_audit_scripts.py",
 ]
@@ -1875,6 +1876,94 @@ def check_integration_evidence_fixtures() -> None:
         ok(tag, "blocking missing/stale/malformed fail; warning advisory; owner_gated explicit (never pass); real manifest passes")
 
 
+def check_ct_evidence_status_fixtures() -> None:
+    """B14: the CT-evidence gate must FAIL a blocking row with missing evidence /
+    stale or malformed last_verified; when tool verdicts ARE evaluated, a required
+    tool FAIL or a single PASS + SKIP is INCONCLUSIVE (never pass) and blocks; an
+    owner_gated row is explicit and never counted as current; and a valid manifest
+    (push path, no verdicts) passes. Time-independent via injected `today`."""
+    from datetime import date
+    tag = "B14:ct_evidence_status"
+    try:
+        module = _load_ci_module("check_ct_evidence_status.py", "ct_evidence_selftest")
+    except Exception as exc:
+        fail(tag, f"import failed: {exc}")
+        return
+
+    today = date(2026, 6, 13)
+
+    def row(**kw):
+        base = {"id": "R", "surface": "s", "ct_claim": "c",
+                "evidence_paths": ["ci/check_ct_evidence_status.py"],
+                "required_tools": ["valgrind-ct", "ct-verif"], "optional_tools": [],
+                "freshness_days": 90, "severity": "blocking",
+                "last_verified": "2026-06-13", "status": "pass", "notes": ""}
+        base.update(kw)
+        return base
+
+    def ev(rows, verdicts=None):
+        return module.evaluate({"default_pre_alert_buffer_days": 14, "rows": rows},
+                               today=today, verdicts=verdicts)
+
+    failures = []
+
+    # valid blocking row, push path (no verdicts) -> pass
+    if not ev([row()])["overall_pass"]:
+        failures.append("valid blocking row (no verdicts) did not pass")
+
+    # missing evidence -> fail + listed
+    r = ev([row(evidence_paths=["docs/__nope_xyz__.md"])])
+    if r["overall_pass"] or "R" not in r["missing_rows"]:
+        failures.append("missing evidence did not fail")
+
+    # stale -> fail + listed
+    r = ev([row(last_verified="2026-01-01")])
+    if r["overall_pass"] or "R" not in r["stale_rows"]:
+        failures.append("stale blocking row did not fail")
+
+    # malformed date -> fail
+    if ev([row(last_verified="not-a-date")])["overall_pass"]:
+        failures.append("malformed date did not fail")
+
+    # required tool SKIP (verdicts evaluated) -> INCONCLUSIVE (never pass) + blocking fail
+    r = ev([row()], verdicts={"valgrind-ct": "PASS", "ct-verif": "SKIP"})
+    if r["overall_pass"] or "R" not in r["inconclusive_rows"]:
+        failures.append("PASS+SKIP was not inconclusive/blocking")
+
+    # required tool FAIL -> blocking fail
+    if ev([row()], verdicts={"valgrind-ct": "FAIL", "ct-verif": "PASS"})["overall_pass"]:
+        failures.append("required tool FAIL did not block")
+
+    # all required PASS -> pass
+    if not ev([row()], verdicts={"valgrind-ct": "PASS", "ct-verif": "PASS"})["overall_pass"]:
+        failures.append("all required tools PASS did not pass")
+
+    # warning staleness -> advisory + listed
+    r = ev([row(severity="warning", last_verified="2026-01-01")])
+    if not r["overall_pass"] or "R" not in r["stale_rows"]:
+        failures.append("warning staleness should be advisory and listed")
+
+    # owner_gated -> explicit, never current, never blocks
+    r = ev([row(severity="owner_gated", last_verified="2026-01-01",
+                evidence_paths=["docs/__nope_xyz__.md"])])
+    if not r["overall_pass"]:
+        failures.append("owner_gated row blocked the gate")
+    if "R" not in r["owner_gated_rows"]:
+        failures.append("owner_gated row not listed explicitly")
+    if r["rows"][0]["computed_status"] == "pass":
+        failures.append("owner_gated row was silently counted as current (pass)")
+
+    # the real committed manifest must pass (push path)
+    rep, _ = module.load_and_evaluate(module.MANIFEST_PATH, today=today)
+    if not rep.get("overall_pass"):
+        failures.append("the committed CT_EVIDENCE_STATUS.json did not pass")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "missing/stale/malformed blocking fail; PASS+SKIP inconclusive+block; FAIL blocks; owner_gated explicit; real manifest passes")
+
+
 def check_caas_gate_negative_fixture_coverage() -> None:
     """B5 completeness critic: every high-value CAAS gate must have a registered
     negative fixture in this file. A green gate without a proof that it fails on
@@ -1893,6 +1982,7 @@ def check_caas_gate_negative_fixture_coverage() -> None:
         "incident_drills.py": "check_incident_drills_real_injection",
         "research_monitor.py": "check_research_monitor_resilience",
         "check_integration_evidence.py": "check_integration_evidence_fixtures",
+        "check_ct_evidence_status.py": "check_ct_evidence_status_fixtures",
     }
     g = globals()
     missing = [f"{gate} -> {fn}" for gate, fn in required.items()
@@ -1950,6 +2040,7 @@ def main() -> int:
     check_incident_drills_real_injection()
     check_research_monitor_actionable_body()
     check_integration_evidence_fixtures()
+    check_ct_evidence_status_fixtures()
     check_caas_gate_negative_fixture_coverage()
 
     # Phase 4: Smoke tests

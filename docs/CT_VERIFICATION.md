@@ -1,5 +1,18 @@
 # Constant-Time Verification
 
+> **Freshness-gated (Bastion B14).** The CT claims in this document are bound to
+> machine-readable evidence in [`docs/CT_EVIDENCE_STATUS.json`](CT_EVIDENCE_STATUS.json)
+> and gated by [`ci/check_ct_evidence_status.py`](../ci/check_ct_evidence_status.py)
+> (also `audit_gate.py --ct-evidence-status`, principle **G-14**). Each CT surface
+> (ECDSA / Schnorr / recoverable signing, keypair/secret-key, scalar inverse,
+> RFC 6979 nonce, GPU public-data boundary) binds to committed evidence (CT
+> primitive headers + audit regression tests) plus the verdict tools that
+> establish the claim. On every push the committed-evidence + freshness dimension
+> is checked (cheap); the heavy tool verdicts (ct-verif / valgrind-ct / dudect)
+> are evaluated when supplied via `--verdict-dir` (CI workflows), where a
+> required-tool FAIL or a single PASS + SKIP is **inconclusive, never a pass**.
+> Run: `python3 ci/check_ct_evidence_status.py --json`.
+
 ### 2026-06-01 ct_sign.cpp — variable-length Schnorr CT sign overload (SHIM-001 restore)
 
 - **`src/cpu/src/ct_sign.cpp`**: added a variable-length overload

@@ -1,5 +1,34 @@
 # Audit Changelog
 
+## 2026-06-13 — CT evidence artifact binding + freshness lane (Bastion B14)
+
+- Added `docs/CT_EVIDENCE_STATUS.json`: a machine-readable manifest binding each
+  CT-sensitive surface (ECDSA / Schnorr / recoverable signing, keypair/secret-key,
+  scalar inverse, RFC 6979 nonce, GPU public-data boundary) to committed evidence
+  (CT primitive headers + audit regression tests), required/optional verdict tools,
+  arch/compiler, freshness_days, severity, and last_verified.
+- Added `ci/check_ct_evidence_status.py` (G-14 gate). Two dimensions: the
+  committed-evidence + freshness dimension is checked on EVERY push (cheap) — a
+  blocking CT surface fails on a missing evidence path or stale/malformed
+  last_verified; the tool-verdict dimension (ct-verif / valgrind-ct / dudect) is
+  evaluated only when a `--verdict-dir` is supplied (CI workflows), where a
+  required-tool FAIL or a single PASS + SKIP is **inconclusive, never a pass**, and
+  a blocking row fails if its required_tools do not all PASS. owner_gated rows
+  (host-only `--gpu` CT-uniformity) are explicit and never counted as current.
+  Emits overall_pass, missing_rows, stale_rows, inconclusive_rows, owner_gated_rows,
+  pre_alerts, min_days_until_block, verdicts_evaluated.
+- Wired into `ci/audit_gate.py` as `--ct-evidence-status` (G-14, in CHECK_MAP +
+  ALL_CHECKS): runs cheaply on every push (committed-evidence path), visible in the
+  audit-gate JSON. Initial manifest: 5 blocking / 1 warning / 1 owner_gated — PASS.
+- Added `ci/test_audit_scripts.py::check_ct_evidence_status_fixtures` (missing /
+  stale / malformed-date blocking → fail; PASS+SKIP → inconclusive + block; FAIL
+  blocks; owner_gated explicit + never pass; valid + real manifest pass) and
+  registered it in the coverage critic (now 13 high-value gates). Self-test 162 pass.
+- Docs: `docs/CT_VERIFICATION.md` + `docs/CT_INDEPENDENCE.md` freshness-gated notes;
+  `docs/AUDIT_SLA.json` `ct_evidence_status_freshness` SLO; `docs/CAAS_BASTION_REQUIREMENTS.json`
+  G-14 requirement row (P21 enforces the gate); `render_audit_dashboard.py` CT
+  evidence surface summary.
+
 ## 2026-06-13 — external integration evidence freshness lane (Bastion B13)
 
 - Added `docs/INTEGRATION_EVIDENCE_STATUS.json`: a machine-readable manifest that
