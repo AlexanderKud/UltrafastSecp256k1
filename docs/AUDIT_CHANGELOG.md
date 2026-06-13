@@ -1,5 +1,22 @@
 # Audit Changelog
 
+## 2026-06-13 — libbitcoin ECDSA batch bridge opaque-signature regression fix
+
+- Fixed the libbitcoin batch bridge ECDSA ABI boundary: `libbitcoin::ec_signature`
+  is a copied `secp256k1_ecdsa_signature` object in libsecp-compatible opaque
+  scalar storage, not public compact `r||s`. The bridge now marshals that opaque
+  64-byte field into compact big-endian `r||s` scratch before CPU/GPU batch,
+  columnar, collect, and per-row fallback verification.
+- Preserved consensus behavior for high-S ECDSA signatures by applying low-S
+  normalization after opaque→compact marshalling and before calling the engine's
+  low-S batch verifier; caller-owned rows/columns are not mutated.
+- Added regression coverage for the exact libbitcoin unit-test shapes:
+  `ecdsa::batch` 3-row all-valid, `ecdsa::batch` one-invalid row 2, and
+  `multisig::batch` 3-row all-valid with the 6-byte `pair|group|id` tail.
+- Updated libbitcoin bridge tests so ECDSA fixtures store the same opaque
+  libsecp-compatible signature layout that libbitcoin passes at runtime, instead
+  of engine-native compact signatures.
+
 ## 2026-06-13 — package / release provenance binding gate (Bastion B20)
 
 - Added `docs/PACKAGE_PROVENANCE_STATUS.json`: a per-surface binding ledger. A

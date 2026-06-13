@@ -46,10 +46,13 @@
  *       * column API:  msg_hashes[], pubkeys[], sigs[] plus optional key column,
  *                      for callers that already maintain vertical mmap columns and
  *                      want to avoid bridge-side row de-interleave.
- *   - ECDSA consensus-valid high-S signatures are accepted. The bridge
- *     normalizes them into scratch before calling the engine's low-S batch
- *     verifier, preserving libsecp256k1/fallback verification semantics without
- *     rewriting caller-owned rows or columns.
+ *   - ECDSA rows mirror libbitcoin's ec_signature storage, which is a copied
+ *     secp256k1_ecdsa_signature object (opaque libsecp-compatible scalar
+ *     layout), not public compact r||s. The bridge marshals that opaque 64-byte
+ *     field into compact r||s scratch before calling the engine. Consensus-valid
+ *     high-S signatures are accepted and normalized in scratch, preserving
+ *     libsecp256k1/fallback verification semantics without rewriting caller-owned
+ *     rows or columns.
  *
  * Consensus note:
  *   For block validation the GPU path is used as a consensus-bearing
@@ -76,7 +79,7 @@ extern "C" {
 /* Uniform field order across both kinds — hash/msg first, then pubkey, then
  * signature (matches the libbitcoin ecdsa::triple / schnorr::triple structs,
  * so a packed struct array forwards into the row API directly). */
-/* ECDSA row:   32-byte msghash      | 33-byte compressed pubkey | 64-byte sig. */
+/* ECDSA row:   32-byte msghash      | 33-byte compressed pubkey | 64-byte opaque secp256k1_ecdsa_signature. */
 #define UFSECP_LBTC_ECDSA_RECORD   129u
 /* Schnorr row: 32-byte msg/sighash  | 32-byte x-only pubkey     | 64-byte sig. */
 #define UFSECP_LBTC_SCHNORR_RECORD 128u
@@ -144,8 +147,11 @@ const char*       ufsecp_lbtc_ctrl_device_name(const ufsecp_lbtc_ctrl* ctrl);
  *   results   OUT, n bytes. results[i] == 1 if row i's signature is valid,
  *             0 if invalid (structurally malformed rows — off-curve pubkey,
  *             s >= n, R.x >= p — verify to 0, never abort the batch). ECDSA
- *             high-S signatures with s < n are consensus-valid and verify to 1;
- *             they are normalized internally without mutating the row. The
+ *             signature bytes are libsecp-compatible opaque scalar storage, as
+ *             used by libbitcoin::ec_signature when libsecp256k1 is the backing
+ *             ABI; the bridge converts them to compact r||s internally. High-S
+ *             signatures with s < n are consensus-valid and verify to 1; they
+ *             are normalized internally without mutating the row. The
  *             caller maps a failing row back to its block/tx via the opaque
  *             tag at rows[i] (or its own table) — no second side table needed.
  *
@@ -173,12 +179,12 @@ void ufsecp_lbtc_verify_schnorr(ufsecp_lbtc_ctrl* ctrl,
  *     ECDSA:   msg_hashes32[n][32], pubkeys33[n][33], sigs64[n][64]
  *     Schnorr: msg_hashes32[n][32], pubkeys_x32[n][32], sigs64[n][64]
  *
- * The per-row verdict is byte-identical to the packed-row API. On GPU builds the
- * bridge forwards these columns directly to the existing GPU C ABI, avoiding the
- * row->column de-interleave scratch used by the packed-row path. ECDSA high-S
- * signatures are normalized in scratch before CPU or GPU verification; the
- * caller-owned signature column is not mutated. Degenerate calls are no-ops;
- * callers should zero-initialize results for fail-closed behavior.
+ * The per-row verdict is byte-identical to the packed-row API. ECDSA signature
+ * column entries use the same libsecp-compatible opaque layout as the packed-row
+ * API and are marshalled into compact scratch before CPU or GPU verification.
+ * High-S signatures are normalized in scratch; the caller-owned signature column
+ * is not mutated. Degenerate calls are no-ops; callers should zero-initialize
+ * results for fail-closed behavior.
  */
 void ufsecp_lbtc_verify_ecdsa_columns(ufsecp_lbtc_ctrl* ctrl,
                                       const uint8_t* msg_hashes32,
@@ -484,7 +490,7 @@ namespace lbtc {
 struct EcdsaRecord {     // == UFSECP_LBTC_ECDSA_RECORD (129) bytes
     uint8_t hash[32];    // message hash (sighash)
     uint8_t point[33];   // compressed public key
-    uint8_t sig[64];     // compact signature: r || s
+    uint8_t sig[64];     // opaque libsecp-compatible secp256k1_ecdsa_signature
 };
 struct SchnorrRecord {   // == UFSECP_LBTC_SCHNORR_RECORD (128) bytes
     uint8_t hash[32];    // message / sighash  (FIRST — uniform with ECDSA)

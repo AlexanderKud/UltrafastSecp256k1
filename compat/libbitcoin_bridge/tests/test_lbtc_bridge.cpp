@@ -79,10 +79,44 @@ bool ecdsa_s_is_high(const uint8_t* sig64) {
            cmp32_be(sig64 + 32, kScalarHalfOrder) > 0;
 }
 
+void scalar_be_to_internal(uint8_t out[32], const uint8_t in[32]) {
+    for (size_t i = 0; i < 32; ++i) out[i] = in[31 - i];
+}
+
+void scalar_internal_to_be(uint8_t out[32], const uint8_t in[32]) {
+    for (size_t i = 0; i < 32; ++i) out[i] = in[31 - i];
+}
+
+void compact_to_lbtc_opaque(uint8_t* sig64) {
+    uint8_t tmp[64];
+    scalar_be_to_internal(tmp, sig64);
+    scalar_be_to_internal(tmp + 32, sig64 + 32);
+    std::memcpy(sig64, tmp, 64);
+}
+
+void lbtc_opaque_to_compact(const uint8_t* sig64, uint8_t out[64]) {
+    scalar_internal_to_be(out, sig64);
+    scalar_internal_to_be(out + 32, sig64 + 32);
+}
+
+bool lbtc_ecdsa_s_is_high(const uint8_t* sig64) {
+    uint8_t compact[64];
+    lbtc_opaque_to_compact(sig64, compact);
+    return ecdsa_s_is_high(compact);
+}
+
 void make_high_s(uint8_t* sig64) {
     uint8_t high_s[32];
     scalar_order_minus(high_s, sig64 + 32);
     std::memcpy(sig64 + 32, high_s, 32);
+}
+
+void make_lbtc_high_s(uint8_t* sig64) {
+    uint8_t compact[64];
+    lbtc_opaque_to_compact(sig64, compact);
+    make_high_s(compact);
+    compact_to_lbtc_opaque(compact);
+    std::memcpy(sig64, compact, 64);
 }
 
 /* Build a packed ECDSA table: n rows of (129 + key_size) bytes. */
@@ -98,6 +132,7 @@ std::vector<uint8_t> build_ecdsa(ufsecp_ctx* ctx, size_t n, size_t key_size) {
         std::memcpy(r, msg, 32);          /* 32 msg    */
         std::memcpy(r + 32, pub, 33);     /* 33 pubkey */
         if (ufsecp_ecdsa_sign(ctx, msg, sk, r + 65) != UFSECP_OK) ++g_fail; /* 64 sig */
+        compact_to_lbtc_opaque(r + 65);   /* libbitcoin ec_signature opaque layout */
         if (key_size) for (size_t k = 0; k < key_size; ++k) /* opaque tag = row id */
             r[UFSECP_LBTC_ECDSA_RECORD + k] = (uint8_t)(i >> (8 * k));
     }
@@ -177,14 +212,14 @@ int main() {
         const size_t N = 64;
         auto rows = build_ecdsa(sctx, N, 0);
         uint8_t* high_sig = rows.data() + 11 * UFSECP_LBTC_ECDSA_RECORD + 65;
-        make_high_s(high_sig);
-        CHECK(ecdsa_s_is_high(high_sig), "ecdsa: fixture contains high-S signature");
+        make_lbtc_high_s(high_sig);
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "ecdsa: fixture contains high-S signature");
         std::vector<uint8_t> res(N, 0xAA);
         ufsecp_lbtc_verify_ecdsa(ctrl, rows.data(), N, 0, res.data());
         CHECK(invalids(res).count == 0, "ecdsa: whole batch verifies, including high-S");
         bool all1 = true; for (auto v : res) if (v != 1) all1 = false;
         CHECK(all1, "ecdsa: every result == 1");
-        CHECK(ecdsa_s_is_high(high_sig), "ecdsa: source high-S row is not rewritten");
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "ecdsa: source high-S row is not rewritten");
     }
 
     /* --- ECDSA, corrupt one --- */
@@ -206,15 +241,15 @@ int main() {
         auto rows = build_ecdsa(sctx, N, KS);
         const size_t stride = UFSECP_LBTC_ECDSA_RECORD + KS;
         uint8_t* high_sig = rows.data() + 9 * stride + 65;
-        make_high_s(high_sig);
-        CHECK(ecdsa_s_is_high(high_sig), "ecdsa+key: fixture contains high-S signature");
+        make_lbtc_high_s(high_sig);
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "ecdsa+key: fixture contains high-S signature");
         rows[10 * stride + 65] ^= 0x02;
         std::vector<uint8_t> res(N, 0xAA);
         ufsecp_lbtc_verify_ecdsa(ctrl, rows.data(), N, KS, res.data());
         auto iv = invalids(res);
         CHECK(iv.count == 1 && iv.first == 10, "ecdsa+key: invalid row == 10 (stride ok)");
         CHECK(res[9] == 1, "ecdsa+key: high-S row remains valid beside corruption");
-        CHECK(ecdsa_s_is_high(high_sig), "ecdsa+key: source high-S row is not rewritten");
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "ecdsa+key: source high-S row is not rewritten");
         /* opaque tag at the failing row is the caller's to read back */
         const uint8_t* tag = rows.data() + 10 * stride + UFSECP_LBTC_ECDSA_RECORD;
         CHECK(tag[0] == 10, "ecdsa+key: opaque tag preserved (= row id)");
@@ -225,14 +260,14 @@ int main() {
         const size_t N = 24;
         auto cols = build_ecdsa_columns(sctx, N);
         uint8_t* high_sig = cols.sig.data() + 8 * 64;
-        make_high_s(high_sig);
-        CHECK(ecdsa_s_is_high(high_sig), "ecdsa columns: fixture contains high-S signature");
+        make_lbtc_high_s(high_sig);
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "ecdsa columns: fixture contains high-S signature");
         std::vector<uint8_t> res(N, 0xAA);
         ufsecp_lbtc_verify_ecdsa_columns(ctrl, cols.msg.data(), cols.pub.data(),
                                          cols.sig.data(), N, res.data());
         CHECK(invalids(res).count == 0, "ecdsa columns: whole batch verifies, including high-S");
         CHECK(res[8] == 1, "ecdsa columns: high-S row remains valid");
-        CHECK(ecdsa_s_is_high(high_sig), "ecdsa columns: source high-S sig is not rewritten");
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "ecdsa columns: source high-S sig is not rewritten");
 
         cols.sig[13 * 64 + 7] ^= 0x01;
         ufsecp_lbtc_verify_ecdsa_columns(ctrl, cols.msg.data(), cols.pub.data(),
@@ -247,8 +282,8 @@ int main() {
         const size_t N = 20, KS = 3;
         auto cols = build_ecdsa_columns(sctx, N);
         uint8_t* high_sig = cols.sig.data() + 4 * 64;
-        make_high_s(high_sig);
-        CHECK(ecdsa_s_is_high(high_sig), "ecdsa columns collect: fixture contains high-S signature");
+        make_lbtc_high_s(high_sig);
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "ecdsa columns collect: fixture contains high-S signature");
         cols.sig[12 * 64 + 9] ^= 0x02;
         std::vector<uint8_t> keys(N * KS, 0);
         for (size_t i = 0; i < N; ++i)
@@ -313,12 +348,12 @@ int main() {
         ufsecp::lbtc::Controller wrap;
         std::vector<uint8_t> res(N, 0xAA);
         uint8_t* high_sig = raw.data() + 6 * sizeof(Triple) + 65;
-        make_high_s(high_sig);
-        CHECK(ecdsa_s_is_high(high_sig), "span<Triple>: fixture contains high-S signature");
+        make_lbtc_high_s(high_sig);
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "span<Triple>: fixture contains high-S signature");
         /* key_size (3) is derived from sizeof(Triple)-RECORD; count from span.size() */
         wrap.verify_ecdsa(std::span<const Triple>(batch, N), res.data());
         CHECK(invalids(res).count == 0, "span<Triple>: count+key_size from type, all valid with high-S");
-        CHECK(ecdsa_s_is_high(high_sig), "span<Triple>: source high-S row is not rewritten");
+        CHECK(lbtc_ecdsa_s_is_high(high_sig), "span<Triple>: source high-S row is not rewritten");
         raw[5 * sizeof(Triple) + 65] ^= 0x08; /* flip a sig byte in row 5 */
         wrap.verify_ecdsa(std::span<const Triple>(batch, N), res.data());
         CHECK(invalids(res).count == 1 && res[5] == 0, "span<Triple>: 3-byte stride correct, row 5 marked");
