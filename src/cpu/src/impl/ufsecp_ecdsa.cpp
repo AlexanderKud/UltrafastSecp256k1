@@ -395,14 +395,16 @@ ufsecp_error_t ufsecp_ecdsa_verify_opaque_rows(
 
     try {
         std::vector<secp256k1::ECDSABatchEntry> batch(count);
-        bool parsed = true;
-        for (size_t i = 0; i < count; ++i) {
+        size_t parsed_count = 0;
+        for (; parsed_count < count; ++parsed_count) {
+            const size_t i = parsed_count;
             const uint8_t* row = rows + i * stride;
-            parsed = ecdsa_entry_from_opaque(row, row + 32, row + 65, batch[i]);
-            if (!parsed) break;
+            if (!ecdsa_entry_from_opaque(row, row + 32, row + 65, batch[i])) {
+                break;
+            }
         }
 
-        if (parsed && secp256k1::ecdsa_batch_verify(batch.data(), count)) {
+        if (parsed_count == count && secp256k1::ecdsa_batch_verify(batch.data(), count)) {
             std::memset(out_results, 1, count);
             return UFSECP_OK;
         }

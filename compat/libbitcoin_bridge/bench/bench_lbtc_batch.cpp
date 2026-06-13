@@ -5,7 +5,9 @@
  * Measures verifications/second for a large homogeneous batch on whichever
  * backends are available (GPU if built + present, and the CPU reference). This
  * mirrors the IBD use case: a big array of (sig, key, sighash) triples verified
- * in one call. Correctness is asserted (all-valid batch + single-corruption
+ * in one call. ECDSA records use copied libsecp256k1_ecdsa_signature storage,
+ * not compact R||S, so the timed row path matches libbitcoin's ec_signature
+ * table shape. Correctness is asserted (all-valid batch + single-corruption
  * detection) before any timing, so reported numbers are for a verified-correct
  * path.
  *
@@ -56,7 +58,12 @@ int main(int argc, char** argv) {
         if (ufsecp_pubkey_create(sctx, sk, pub) != UFSECP_OK) { std::printf("keygen fail\n"); return 1; }
         uint8_t* er = e_pool.data() + i * UFSECP_LBTC_ECDSA_RECORD;
         std::memcpy(er, msg, 32); std::memcpy(er + 32, pub, 33);
-        if (ufsecp_ecdsa_sign(sctx, msg, sk, er + 65) != UFSECP_OK) { std::printf("ecdsa sign fail\n"); return 1; }
+        uint8_t compact_sig[64];
+        if (ufsecp_ecdsa_sign(sctx, msg, sk, compact_sig) != UFSECP_OK) { std::printf("ecdsa sign fail\n"); return 1; }
+        if (ufsecp_ecdsa_sig_compact_to_opaque(sctx, compact_sig, er + 65) != UFSECP_OK) {
+            std::printf("ecdsa opaque conversion fail\n");
+            return 1;
+        }
         uint8_t* sr = s_pool.data() + i * UFSECP_LBTC_SCHNORR_RECORD;
         std::memcpy(sr, msg, 32); std::memcpy(sr + 32, pub + 1, 32); /* msg | xonly */
         if (ufsecp_schnorr_sign(sctx, msg, sk, aux, sr + 64) != UFSECP_OK) { std::printf("schnorr sign fail\n"); return 1; }

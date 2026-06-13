@@ -1110,6 +1110,56 @@ def check_secret_path_changes_fail_closed() -> None:
         fail(tag, str(exc))
 
 
+def check_secret_path_before_sha_fallback() -> None:
+    """Regression: force-push events can provide a `before` SHA that is not present
+    in the checkout even with fetch-depth:0. The gate must not pass empty, but it
+    may conservatively fall back to the base ref when that diff is available."""
+    tag = "CAAS-06:secret_path_before_sha_fallback"
+    path = SCRIPT_DIR / "check_secret_path_changes.py"
+    try:
+        spec = importlib.util.spec_from_file_location("secret_path_fallback_selftest", str(path))
+        if spec is None or spec.loader is None:
+            fail(tag, "could not load check_secret_path_changes.py module spec")
+            return
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        original_run = module.subprocess.run
+        bad_before = "a" * 40
+
+        def force_push_git(argv, capture_output=False, text=False, cwd=None, check=False):
+            command = " ".join(argv)
+            if argv[:3] == ["git", "diff", "--name-only"] and f"{bad_before}..HEAD" in command:
+                return subprocess.CompletedProcess(
+                    argv, 128, stdout="", stderr="fatal: Invalid revision range"
+                )
+            if argv[:4] == ["git", "fetch", "--no-tags", "--depth=1"] and bad_before in command:
+                return subprocess.CompletedProcess(
+                    argv, 128, stdout="", stderr="fatal: couldn't find remote ref"
+                )
+            if argv[:3] == ["git", "diff", "--name-only"] and "origin/main..HEAD" in command:
+                return subprocess.CompletedProcess(
+                    argv,
+                    0,
+                    stdout="src/cpu/src/ecdsa.cpp\ndocs/CT_VERIFICATION.md\n",
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="unexpected command")
+
+        module.subprocess.run = force_push_git
+        try:
+            files = module.get_changed_files(base="origin/main", before_sha=bad_before)
+        finally:
+            module.subprocess.run = original_run
+
+        if files == ["docs/CT_VERIFICATION.md", "src/cpu/src/ecdsa.cpp"]:
+            ok(tag, "unreachable before-sha falls back to base diff without empty-pass")
+        else:
+            fail(tag, f"unexpected fallback changed files: {files!r}")
+    except Exception as exc:
+        fail(tag, str(exc))
+
+
 def check_rule16_json_smoke() -> None:
     """Smoke-test (CAAS-CI-002): check_advisory_json_rule16.py must pass a clean
     report and FAIL a GPU advisory module that returned 0 instead of 77 (silent
@@ -2587,6 +2637,7 @@ def main() -> int:
     check_evidence_refresh_coverage_fixtures()
     check_package_provenance_binding_fixtures()
     check_caas_gate_negative_fixture_coverage()
+    check_secret_path_before_sha_fallback()
 
     # Phase 4: Smoke tests
     print(f"\n{BOLD}[4/4] Smoke Tests{RESET}")

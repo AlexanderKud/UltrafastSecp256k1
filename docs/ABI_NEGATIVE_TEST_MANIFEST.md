@@ -1,6 +1,6 @@
 # ABI Negative-Test Manifest
 
-Generated: 2026-06-13T19:31:37.205246+00:00
+Generated: 2026-06-13T20:44:06.721551+00:00
 
 Machine-generated hostile-caller coverage manifest for the public `ufsecp_*` ABI.
 

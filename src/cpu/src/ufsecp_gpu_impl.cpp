@@ -323,6 +323,12 @@ ufsecp_error_t ufsecp_gpu_ecdsa_verify_lbtc_rows(
     size_t count,
     uint8_t* out_results)
 {
+    if (SECP256K1_UNLIKELY(!ctx)) return UFSECP_ERR_NULL_ARG;
+    if (count == 0) return UFSECP_OK;
+    if (count > kMaxGpuBatchN || stride < 129u) return UFSECP_ERR_BAD_INPUT;
+    if (SECP256K1_UNLIKELY(!rows || !out_results)) {
+        return UFSECP_ERR_NULL_ARG;
+    }
     return ufsecp_gpu_ecdsa_verify_opaque_rows(
         ctx, rows, stride, count, out_results);
 }

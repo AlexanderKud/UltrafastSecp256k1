@@ -668,6 +668,11 @@ cmake -DSECP256K1_USE_LTO=OFF ...
    cmake -DCMAKE_CUDA_ARCHITECTURES=89 ...
    ```
 
+3. **`gpu_audit_runner` OpenMP link errors**: CUDA audit builds link the CPU
+   differential library into the GPU audit runner. When the CPU library is built
+   with OpenMP, the audit runner must also link `OpenMP::OpenMP_CXX`; the CMake
+   target does this automatically in current builds.
+
 ### Assembly Errors on RISC-V
 
 If you see "symbol already defined" errors:
@@ -735,6 +740,10 @@ cmake --build out/lbtc-bridge
 ECDSA batch rows in the bridge use the public opaque-row verification ABI, so
 libbitcoin-style `msg32 || pubkey33 || copied secp256k1_ecdsa_signature64`
 records can be passed without bridge-side compact table staging.
+
+The bridge CMake also exposes the engine's public C++ include root for
+non-ECDSA helper code such as Taproot commitment batching. Installed layouts can
+override that path with `-DUFSECP_CPU_INCLUDE_DIR=/path/to/src/cpu/include`.
 
 ---
 

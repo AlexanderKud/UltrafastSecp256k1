@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-13T19:31:37.205246+00:00",
+  "generated_at": "2026-06-13T20:44:06.721551+00:00",
   "header_count": 193,
   "blocking_function_count": 0,
   "coverage_counts": {
@@ -700,16 +700,16 @@
           "test-call:src/cpu/tests/test_ffi_coverage.cpp:test_bip324_session",
           "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
         ],
+        "zero_edge": [
+          "test-call:audit/test_adversarial_protocol.cpp:test_hostile_bip324_lengths",
+          "test-call:audit/test_exploit_bip324_aead_forgery.cpp:test_exploit_bip324_aead_forgery_run"
+        ],
         "invalid_content": [
           "test-call:audit/test_adversarial_protocol.cpp:test_hostile_bip324_lengths",
           "test-call:audit/test_adversarial_protocol.cpp:test_k1_bip324_multi_packet",
           "test-call:audit/test_adversarial_protocol.cpp:test_k2_bip324_cross_session_isolation",
           "test-call:audit/test_exploit_bip324_aead_forgery.cpp:test_exploit_bip324_aead_forgery_run",
           "docs/FFI_HOSTILE_CALLER.md:Section K: Deep Session Security (v3.4+)"
-        ],
-        "zero_edge": [
-          "test-call:audit/test_adversarial_protocol.cpp:test_hostile_bip324_lengths",
-          "test-call:audit/test_exploit_bip324_aead_forgery.cpp:test_exploit_bip324_aead_forgery_run"
         ],
         "null_rejection": [
           "test-call:audit/test_libfuzzer_unified.cpp:run_fuzz_bip324_frame",
@@ -744,15 +744,15 @@
           "test-call:audit/test_exploit_bip324_aead_forgery.cpp:test_exploit_bip324_aead_forgery_run",
           "test-call:src/cpu/tests/test_ffi_coverage.cpp:test_bip324_session"
         ],
+        "zero_edge": [
+          "test-call:audit/test_adversarial_protocol.cpp:test_hostile_bip324_lengths",
+          "test-call:audit/test_exploit_bip324_aead_forgery.cpp:test_exploit_bip324_aead_forgery_run"
+        ],
         "invalid_content": [
           "test-call:audit/test_adversarial_protocol.cpp:test_hostile_bip324_lengths",
           "test-call:audit/test_adversarial_protocol.cpp:test_k1_bip324_multi_packet",
           "test-call:audit/test_adversarial_protocol.cpp:test_k2_bip324_cross_session_isolation",
           "test-call:audit/test_adversarial_protocol.cpp:test_k3_bip324_double_handshake_rejection",
-          "test-call:audit/test_exploit_bip324_aead_forgery.cpp:test_exploit_bip324_aead_forgery_run"
-        ],
-        "zero_edge": [
-          "test-call:audit/test_adversarial_protocol.cpp:test_hostile_bip324_lengths",
           "test-call:audit/test_exploit_bip324_aead_forgery.cpp:test_exploit_bip324_aead_forgery_run"
         ],
         "null_rejection": [
@@ -4102,15 +4102,15 @@
           "test-call:audit/test_regression_adaptor_degenerate_v7.cpp:test_adaptor_roundtrip",
           "test-call:audit/test_regression_adaptor_degenerate_v7.cpp:test_adaptor_null_args"
         ],
+        "zero_edge": [
+          "test-call:audit/test_adversarial_protocol.cpp:test_ecdsa_adaptor_invalid_point",
+          "test-call:audit/test_regression_adaptor_ct_secret_extract.cpp:test_ace4_zero_sig_rejected",
+          "test-call:audit/test_regression_adaptor_degenerate_v7.cpp:test_adaptor_null_args"
+        ],
         "invalid_content": [
           "test-call:audit/test_adversarial_protocol.cpp:test_ecdsa_adaptor_invalid_point",
           "test-call:audit/test_adversarial_protocol.cpp:test_ecdsa_adaptor_wrong_point",
           "test-call:audit/test_adversarial_protocol.cpp:test_ecdsa_adaptor_hostile_args",
-          "test-call:audit/test_regression_adaptor_ct_secret_extract.cpp:test_ace4_zero_sig_rejected",
-          "test-call:audit/test_regression_adaptor_degenerate_v7.cpp:test_adaptor_null_args"
-        ],
-        "zero_edge": [
-          "test-call:audit/test_adversarial_protocol.cpp:test_ecdsa_adaptor_invalid_point",
           "test-call:audit/test_regression_adaptor_ct_secret_extract.cpp:test_ace4_zero_sig_rejected",
           "test-call:audit/test_regression_adaptor_degenerate_v7.cpp:test_adaptor_null_args"
         ],
@@ -4390,19 +4390,27 @@
         "invalid_content"
       ],
       "covered_checks": {
-        "invalid_content": [
+        "success_smoke": [
+          "graph:function_test_map:adversarial_protocol",
+          "graph:function_test_map:c_abi_negative",
+          "graph:function_test_map:comprehensive",
+          "graph:function_test_map:fault_injection",
+          "graph:function_test_map:ffi_round_trip",
+          "graph:function_test_map:gpu_abi_gate",
+          "graph:function_test_map:rfc6979_vectors",
+          "graph:function_test_map:wycheproof_ecdsa",
           "test-call:audit/test_c_abi_negative.cpp:419",
-          "test-call:audit/test_c_abi_negative.cpp:422"
+          "test-call:audit/test_c_abi_negative.cpp:422",
+          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip",
+          "test-call:audit/test_gpu_abi_gate.cpp:test_gpu_ops_if_available"
         ],
         "zero_edge": [
           "test-call:audit/test_c_abi_negative.cpp:419",
           "test-call:audit/test_c_abi_negative.cpp:422"
         ],
-        "success_smoke": [
+        "invalid_content": [
           "test-call:audit/test_c_abi_negative.cpp:419",
-          "test-call:audit/test_c_abi_negative.cpp:422",
-          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip",
-          "test-call:audit/test_gpu_abi_gate.cpp:test_gpu_ops_if_available"
+          "test-call:audit/test_c_abi_negative.cpp:422"
         ],
         "null_rejection": [
           "test-call:audit/test_c_abi_negative.cpp:422",
@@ -4502,16 +4510,23 @@
         "null_rejection"
       ],
       "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:adversarial_protocol",
+          "graph:function_test_map:c_abi_negative",
+          "graph:function_test_map:comprehensive",
+          "graph:function_test_map:fault_injection",
+          "graph:function_test_map:ffi_round_trip",
+          "graph:function_test_map:rfc6979_vectors",
+          "graph:function_test_map:wycheproof_ecdsa",
+          "test-call:audit/test_c_abi_negative.cpp:431",
+          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
+        ],
         "null_rejection": [
           "test-call:audit/test_c_abi_negative.cpp:431",
           "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
         ],
         "zero_edge": [
           "test-call:audit/test_c_abi_negative.cpp:431"
-        ],
-        "success_smoke": [
-          "test-call:audit/test_c_abi_negative.cpp:431",
-          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
         ],
         "invalid_content": [
           "test-call:audit/test_c_abi_negative.cpp:431"
@@ -4531,6 +4546,18 @@
         "invalid_content"
       ],
       "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:adversarial_protocol",
+          "graph:function_test_map:c_abi_negative",
+          "graph:function_test_map:comprehensive",
+          "graph:function_test_map:fault_injection",
+          "graph:function_test_map:ffi_round_trip",
+          "graph:function_test_map:rfc6979_vectors",
+          "graph:function_test_map:wycheproof_ecdsa",
+          "test-call:audit/test_c_abi_negative.cpp:425",
+          "test-call:audit/test_c_abi_negative.cpp:428",
+          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
+        ],
         "null_rejection": [
           "test-call:audit/test_c_abi_negative.cpp:425",
           "test-call:audit/test_c_abi_negative.cpp:428",
@@ -4539,11 +4566,6 @@
         "zero_edge": [
           "test-call:audit/test_c_abi_negative.cpp:425",
           "test-call:audit/test_c_abi_negative.cpp:428"
-        ],
-        "success_smoke": [
-          "test-call:audit/test_c_abi_negative.cpp:425",
-          "test-call:audit/test_c_abi_negative.cpp:428",
-          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
         ],
         "invalid_content": [
           "test-call:audit/test_c_abi_negative.cpp:425",
@@ -5307,6 +5329,18 @@
         "invalid_content"
       ],
       "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:adversarial_protocol",
+          "graph:function_test_map:c_abi_negative",
+          "graph:function_test_map:comprehensive",
+          "graph:function_test_map:fault_injection",
+          "graph:function_test_map:ffi_round_trip",
+          "graph:function_test_map:rfc6979_vectors",
+          "graph:function_test_map:wycheproof_ecdsa",
+          "test-call:audit/test_c_abi_negative.cpp:434",
+          "test-call:audit/test_c_abi_negative.cpp:437",
+          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
+        ],
         "null_rejection": [
           "test-call:audit/test_c_abi_negative.cpp:434",
           "test-call:audit/test_c_abi_negative.cpp:437",
@@ -5315,11 +5349,6 @@
         "zero_edge": [
           "test-call:audit/test_c_abi_negative.cpp:434",
           "test-call:audit/test_c_abi_negative.cpp:437"
-        ],
-        "success_smoke": [
-          "test-call:audit/test_c_abi_negative.cpp:434",
-          "test-call:audit/test_c_abi_negative.cpp:437",
-          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
         ],
         "invalid_content": [
           "test-call:audit/test_c_abi_negative.cpp:434",
@@ -5341,16 +5370,23 @@
         "invalid_content"
       ],
       "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:adversarial_protocol",
+          "graph:function_test_map:c_abi_negative",
+          "graph:function_test_map:comprehensive",
+          "graph:function_test_map:fault_injection",
+          "graph:function_test_map:ffi_round_trip",
+          "graph:function_test_map:rfc6979_vectors",
+          "graph:function_test_map:wycheproof_ecdsa",
+          "test-call:audit/test_c_abi_negative.cpp:441",
+          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
+        ],
         "null_rejection": [
           "test-call:audit/test_c_abi_negative.cpp:441",
           "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
         ],
         "zero_edge": [
           "test-call:audit/test_c_abi_negative.cpp:441"
-        ],
-        "success_smoke": [
-          "test-call:audit/test_c_abi_negative.cpp:441",
-          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
         ],
         "invalid_content": [
           "test-call:audit/test_c_abi_negative.cpp:441"
@@ -5371,18 +5407,25 @@
         "invalid_content"
       ],
       "covered_checks": {
-        "invalid_content": [
+        "success_smoke": [
+          "graph:function_test_map:adversarial_protocol",
+          "graph:function_test_map:c_abi_negative",
+          "graph:function_test_map:comprehensive",
+          "graph:function_test_map:fault_injection",
+          "graph:function_test_map:ffi_round_trip",
+          "graph:function_test_map:rfc6979_vectors",
+          "graph:function_test_map:wycheproof_ecdsa",
           "test-call:audit/test_c_abi_negative.cpp:448",
-          "test-call:audit/test_c_abi_negative.cpp:451"
+          "test-call:audit/test_c_abi_negative.cpp:451",
+          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
         ],
         "zero_edge": [
           "test-call:audit/test_c_abi_negative.cpp:448",
           "test-call:audit/test_c_abi_negative.cpp:451"
         ],
-        "success_smoke": [
+        "invalid_content": [
           "test-call:audit/test_c_abi_negative.cpp:448",
-          "test-call:audit/test_c_abi_negative.cpp:451",
-          "test-call:audit/test_ffi_round_trip.cpp:test_ecdsa_round_trip"
+          "test-call:audit/test_c_abi_negative.cpp:451"
         ],
         "null_rejection": [
           "test-call:audit/test_c_abi_negative.cpp:451",
@@ -5771,16 +5814,6 @@
           "test-call:audit/test_fuzz_musig2_frost.cpp:test_null_length_nonce_commits",
           "test-call:src/cpu/tests/test_ffi_coverage.cpp:test_frost_aggregate_zero_partial_sig"
         ],
-        "invalid_content": [
-          "test-call:audit/test_adversarial_protocol.cpp:test_frost_malformed_commitment",
-          "test-call:audit/test_adversarial_protocol.cpp:test_frost_hostile_args",
-          "test-call:audit/test_adversarial_protocol.cpp:test_frost_duplicate_nonce",
-          "test-call:audit/test_adversarial_protocol.cpp:test_frost_aggregate_rejects_malformed_signer_sets",
-          "test-call:audit/test_adversarial_protocol.cpp:test_frost_participant_identity_mismatch",
-          "test-call:audit/test_adversarial_protocol.cpp:test_frost_stale_commitment_replay",
-          "test-call:audit/test_exploit_frost_adaptive_corruption.cpp:test_exploit_frost_adaptive_corruption_run",
-          "test-call:src/cpu/tests/test_ffi_coverage.cpp:test_frost_aggregate_zero_partial_sig"
-        ],
         "zero_edge": [
           "test-call:audit/test_adversarial_protocol.cpp:test_frost_malformed_commitment",
           "test-call:audit/test_adversarial_protocol.cpp:test_frost_hostile_args",
@@ -5790,6 +5823,16 @@
           "test-call:audit/test_adversarial_protocol.cpp:test_frost_stale_commitment_replay",
           "test-call:audit/test_exploit_frost_participant_set_malleability.cpp:test_exploit_frost_participant_set_malleability_run",
           "test-call:audit/test_fuzz_musig2_frost.cpp:test_null_length_nonce_commits",
+          "test-call:src/cpu/tests/test_ffi_coverage.cpp:test_frost_aggregate_zero_partial_sig"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_adversarial_protocol.cpp:test_frost_malformed_commitment",
+          "test-call:audit/test_adversarial_protocol.cpp:test_frost_hostile_args",
+          "test-call:audit/test_adversarial_protocol.cpp:test_frost_duplicate_nonce",
+          "test-call:audit/test_adversarial_protocol.cpp:test_frost_aggregate_rejects_malformed_signer_sets",
+          "test-call:audit/test_adversarial_protocol.cpp:test_frost_participant_identity_mismatch",
+          "test-call:audit/test_adversarial_protocol.cpp:test_frost_stale_commitment_replay",
+          "test-call:audit/test_exploit_frost_adaptive_corruption.cpp:test_exploit_frost_adaptive_corruption_run",
           "test-call:src/cpu/tests/test_ffi_coverage.cpp:test_frost_aggregate_zero_partial_sig"
         ],
         "null_rejection": [
@@ -6786,15 +6829,19 @@
         "invalid_content"
       ],
       "covered_checks": {
-        "null_rejection": [
-          "test-call:audit/test_gpu_abi_gate.cpp:test_null_buffer_ops",
-          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)",
-          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
-        ],
         "success_smoke": [
+          "graph:function_test_map:gpu_abi_gate",
+          "graph:function_test_map:gpu_api_negative",
+          "graph:function_test_map:gpu_bip352_scan",
           "test-call:audit/test_gpu_abi_gate.cpp:test_null_buffer_ops",
           "test-call:audit/test_gpu_abi_gate.cpp:test_gpu_ops_if_available",
           "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
+        "null_rejection": [
+          "test-call:audit/test_gpu_abi_gate.cpp:test_null_buffer_ops",
+          "test-call:audit/test_gpu_abi_gate.cpp:test_gpu_ops_if_available",
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)",
+          "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
         ],
         "zero_edge": [
           "test-call:audit/test_gpu_abi_gate.cpp:test_gpu_ops_if_available",
@@ -6820,15 +6867,18 @@
         "invalid_content"
       ],
       "covered_checks": {
+        "success_smoke": [
+          "graph:function_test_map:gpu_abi_gate",
+          "graph:function_test_map:gpu_api_negative",
+          "graph:function_test_map:gpu_bip352_scan",
+          "test-call:audit/test_gpu_abi_gate.cpp:test_null_buffer_ops",
+          "test-call:audit/test_gpu_abi_gate.cpp:test_gpu_ops_if_available",
+          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
+        ],
         "null_rejection": [
           "test-call:audit/test_gpu_abi_gate.cpp:test_null_buffer_ops",
           "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)",
           "docs/FFI_HOSTILE_CALLER.md:Section J GPU NULL guards"
-        ],
-        "success_smoke": [
-          "test-call:audit/test_gpu_abi_gate.cpp:test_null_buffer_ops",
-          "test-call:audit/test_gpu_abi_gate.cpp:test_gpu_ops_if_available",
-          "docs/FFI_HOSTILE_CALLER.md:Section J: GPU C ABI (v3.24+)"
         ],
         "zero_edge": [
           "test-call:audit/test_gpu_abi_gate.cpp:test_gpu_ops_if_available",
@@ -9706,12 +9756,12 @@
           "test-call:audit/test_exploit_adaptor_extraction_soundness.cpp:test_exploit_adaptor_extraction_soundness_run",
           "test-call:audit/test_ffi_round_trip.cpp:test_adaptor_signatures"
         ],
+        "zero_edge": [
+          "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_secret"
+        ],
         "invalid_content": [
           "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_secret",
           "test-call:audit/test_exploit_adaptor_extraction_soundness.cpp:test_exploit_adaptor_extraction_soundness_run"
-        ],
-        "zero_edge": [
-          "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_secret"
         ],
         "null_rejection": [
           "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
@@ -9790,15 +9840,15 @@
           "test-call:audit/test_ffi_round_trip.cpp:test_adaptor_signatures",
           "test-call:audit/test_fuzz_musig2_frost.cpp:test_schnorr_adaptor_random"
         ],
+        "zero_edge": [
+          "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_invalid_point",
+          "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_point",
+          "test-call:audit/test_exploit_adaptor_extraction_soundness.cpp:test_exploit_adaptor_extraction_soundness_run"
+        ],
         "invalid_content": [
           "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_invalid_point",
           "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_point",
           "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_secret",
-          "test-call:audit/test_exploit_adaptor_extraction_soundness.cpp:test_exploit_adaptor_extraction_soundness_run"
-        ],
-        "zero_edge": [
-          "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_invalid_point",
-          "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_point",
           "test-call:audit/test_exploit_adaptor_extraction_soundness.cpp:test_exploit_adaptor_extraction_soundness_run"
         ],
         "null_rejection": [
@@ -9834,12 +9884,12 @@
           "test-call:audit/test_ffi_round_trip.cpp:test_adaptor_signatures",
           "test-call:audit/test_fuzz_musig2_frost.cpp:test_schnorr_adaptor_random"
         ],
+        "zero_edge": [
+          "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_point"
+        ],
         "invalid_content": [
           "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_point",
           "test-call:audit/test_exploit_adaptor_extraction_soundness.cpp:test_exploit_adaptor_extraction_soundness_run"
-        ],
-        "zero_edge": [
-          "test-call:audit/test_adversarial_protocol.cpp:test_schnorr_adaptor_wrong_point"
         ],
         "null_rejection": [
           "docs/FFI_HOSTILE_CALLER.md:G.1 all CPU ABI functions"
@@ -11152,16 +11202,16 @@
           "test-call:audit/test_ffi_round_trip.cpp:test_silent_payments",
           "test-call:audit/test_regression_exception_erase.cpp:test_epe12_silent_payment_address"
         ],
-        "invalid_content": [
-          "test-call:audit/test_adversarial_protocol.cpp:test_sp_bad_keys",
-          "test-call:audit/test_adversarial_protocol.cpp:test_sp_hostile_args"
-        ],
         "zero_edge": [
           "test-call:audit/test_adversarial_protocol.cpp:test_sp_bad_keys",
           "test-call:audit/test_adversarial_protocol.cpp:test_sp_duplicate_sender_keys",
           "test-call:audit/test_exploit_bip352_address_collision.cpp:83",
           "test-call:audit/test_exploit_silent_payment_confusion.cpp:test_address_generation",
           "test-call:audit/test_exploit_silent_payment_confusion.cpp:test_zero_key"
+        ],
+        "invalid_content": [
+          "test-call:audit/test_adversarial_protocol.cpp:test_sp_bad_keys",
+          "test-call:audit/test_adversarial_protocol.cpp:test_sp_hostile_args"
         ],
         "null_rejection": [
           "test-call:audit/test_adversarial_protocol.cpp:test_sp_hostile_args",

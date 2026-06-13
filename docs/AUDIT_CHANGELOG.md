@@ -33,6 +33,35 @@
   (`hash|compressed-pubkey|opaque-signature|tail`). The device parses the opaque
   scalar limbs and low-S normalizes before verify, avoiding bridge-side
   msg/pub/sig column staging for the packed-row API.
+- Corrected the libbitcoin batch benchmark to generate copied libsecp opaque
+  ECDSA signatures for ECDSA row/column timing, so benchmark numbers measure the
+  actual libbitcoin integration format. Also fixed `gpu_audit_runner` CUDA audit
+  linkage against OpenMP when the CPU differential library is built with OpenMP.
+- Fixed standalone libbitcoin bridge CMake include coverage for public C++ engine
+  headers used by non-ECDSA helper paths, while keeping ECDSA verification on the
+  public opaque C ABI.
+- Tightened the `ufsecp_gpu_ecdsa_verify_lbtc_rows` compatibility alias with
+  explicit fail-closed argument validation before forwarding to the generic
+  opaque-row GPU ABI, and cleaned the CPU opaque-row parse loop so scanner
+  evidence stays aligned with the implementation. Extended `test_gpu_abi_gate`
+  with alias-specific NULL row/output regressions so the compatibility wrapper
+  remains covered independently of the generic opaque-row entry point.
+- Added the new opaque ECDSA CPU/GPU ABI functions to
+  `FEATURE_ASSURANCE_LEDGER.md`, including libbitcoin opaque-row parity and
+  GPU alias negative-test evidence, so fast assurance validation remains
+  complete after the public ABI expansion.
+- Synchronized stable C ABI counts in `docs/ABI_VERSIONING.md` and the native
+  NuGet nuspec after adding the six opaque ECDSA CPU ABI entry points
+  (`153 -> 159` CPU C ABI functions).
+- Aligned the misuse-resistance gate's ABI inventory with the hostile-caller
+  manifest generator: both now treat `UFSECP_API` declarations in the public C
+  headers as the source of truth. The source graph remains evidence fallback,
+  but graph-only helper symbols are no longer promoted into the blocking public
+  ABI surface.
+- Hardened the secret-path change gate for force-push CI events: an unreachable
+  push `before` SHA is fetched explicitly and, if still unavailable, the gate
+  falls back to the base ref diff instead of failing on a missing Git object or
+  silently treating the change set as empty.
 
 ## 2026-06-13 — package / release provenance binding gate (Bastion B20)
 

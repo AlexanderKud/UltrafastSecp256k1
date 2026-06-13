@@ -279,6 +279,12 @@ static void test_gpu_ops_if_available() {
         err = ufsecp_gpu_ecdsa_verify_lbtc_rows(ctx, row, 128, 1, out);
         CHECK(err == UFSECP_ERR_BAD_INPUT,
               "ecdsa_verify_lbtc_rows(stride<129) rejected as invalid");
+        err = ufsecp_gpu_ecdsa_verify_lbtc_rows(ctx, nullptr, 129, 1, out);
+        CHECK(err == UFSECP_ERR_NULL_ARG,
+              "ecdsa_verify_lbtc_rows(NULL rows) rejected before forwarding");
+        err = ufsecp_gpu_ecdsa_verify_lbtc_rows(ctx, row, 129, 1, nullptr);
+        CHECK(err == UFSECP_ERR_NULL_ARG,
+              "ecdsa_verify_lbtc_rows(NULL out) rejected before forwarding");
 
         ufsecp_ctx* sc = nullptr;
         if (ufsecp_ctx_create(&sc) == UFSECP_OK) {

@@ -28,12 +28,18 @@ target_include_directories(ufsecp_lbtc_bridge PUBLIC
 if(NOT UFSECP_INCLUDE_DIR)
     set(UFSECP_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../include/ufsecp)
 endif()
+# Public C++ engine headers used by non-ECDSA bridge helpers such as Taproot
+# commitment batching. Override for installed layouts that ship these elsewhere.
+if(NOT UFSECP_CPU_INCLUDE_DIR)
+    set(UFSECP_CPU_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/cpu/include)
+endif()
 # Also expose the parent of the ufsecp/ dir so ufsecp-prefixed includes resolve
 # from a single include/ root in packaged consumers.
 get_filename_component(UFSECP_INCLUDE_PARENT ${UFSECP_INCLUDE_DIR} DIRECTORY)
 target_include_directories(ufsecp_lbtc_bridge PUBLIC
     ${UFSECP_INCLUDE_DIR}
-    ${UFSECP_INCLUDE_PARENT})
+    ${UFSECP_INCLUDE_PARENT}
+    ${UFSECP_CPU_INCLUDE_DIR})
 
 if(UFSECP_LBTC_WITH_GPU)
     target_compile_definitions(ufsecp_lbtc_bridge PUBLIC UFSECP_LBTC_WITH_GPU)
@@ -138,7 +144,8 @@ if(UFSECP_LBTC_BUILD_TESTS)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${UFSECP_INCLUDE_DIR}
-            ${UFSECP_INCLUDE_PARENT})
+            ${UFSECP_INCLUDE_PARENT}
+            ${UFSECP_CPU_INCLUDE_DIR})
     ufsecp_lbtc_link_engine(test_lbtc_collect_smallchunk PRIVATE)
     add_test(NAME lbtc_collect_smallchunk COMMAND test_lbtc_collect_smallchunk)
 endif()

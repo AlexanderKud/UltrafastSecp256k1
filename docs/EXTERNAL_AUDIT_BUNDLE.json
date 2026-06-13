@@ -27,8 +27,8 @@
     {
       "exists": true,
       "path": "docs/FEATURE_ASSURANCE_LEDGER.md",
-      "sha256": "e7e109250da2b06995a5c577668117cd07dcfed15e473d92634e1de99d4bfd2b",
-      "size": 43129
+      "sha256": "8634b74f9b91f35375112c1ed07f70100a89faa5924cd4ba6383d805095673c0",
+      "size": 44708
     },
     {
       "exists": true,
@@ -45,14 +45,14 @@
     {
       "exists": true,
       "path": "docs/FFI_HOSTILE_CALLER.md",
-      "sha256": "147e5ebb0aa41c40b92613e9d95c7c4c23b701e950df3a27419e40c4a87244c7",
-      "size": 24606
+      "sha256": "f25905a09053c00c2ea3dba7951c6d8b6a3376464a0b59373d05901e1add978f",
+      "size": 26895
     },
     {
       "exists": true,
       "path": "docs/BACKEND_ASSURANCE_MATRIX.md",
-      "sha256": "ad309eecbe2cfec45fd00a3e81351bf4d4196a129bc034e687e77e9826690145",
-      "size": 16043
+      "sha256": "d7dac013853c4951261cb29b395ebb6dcba28e0fa785a81e5763577c5ac2f005",
+      "size": 16921
     },
     {
       "exists": true,
@@ -84,7 +84,7 @@
           {
             "findings": [
               {
-                "message": "ABI negative-test manifest counts: exports=185, blocking=0, null=185, zero=179, invalid=180, smoke=185",
+                "message": "ABI negative-test manifest counts: exports=193, blocking=0, null=193, zero=187, invalid=188, smoke=193",
                 "severity": "INFO"
               },
               {
@@ -126,7 +126,7 @@
           {
             "findings": [
               {
-                "message": "No uncommitted changes to evaluate",
+                "message": "No changed secret-bearing paths detected",
                 "severity": "PASS"
               }
             ],
@@ -200,27 +200,27 @@
           {
             "findings": [
               {
-                "message": "21 files modified/deleted since graph build (2026-06-13T10:58:08)",
+                "message": "5 files modified/deleted since graph build (2026-06-13T20:27:32)",
                 "severity": "WARN"
+              },
+              {
+                "message": "MODIFIED: docs/ABI_NEGATIVE_TEST_MANIFEST.json",
+                "severity": "INFO"
+              },
+              {
+                "message": "MODIFIED: docs/ABI_NEGATIVE_TEST_MANIFEST.md",
+                "severity": "INFO"
               },
               {
                 "message": "MODIFIED: docs/AUDIT_CHANGELOG.md",
                 "severity": "INFO"
               },
               {
-                "message": "MODIFIED: docs/AUDIT_DASHBOARD.md",
+                "message": "MODIFIED: docs/INCIDENT_DRILL_LOG.json",
                 "severity": "INFO"
               },
               {
-                "message": "MODIFIED: docs/AUDIT_MANIFEST.md",
-                "severity": "INFO"
-              },
-              {
-                "message": "MODIFIED: docs/AUDIT_SLA.json",
-                "severity": "INFO"
-              },
-              {
-                "message": "MODIFIED: docs/BACKEND_ASSURANCE_MATRIX.md",
+                "message": "MODIFIED: docs/SECURITY_AUTONOMY_KPI.json",
                 "severity": "INFO"
               }
             ],
@@ -230,7 +230,7 @@
           {
             "findings": [
               {
-                "message": "GPU parity OK (35 GPU ABI functions)",
+                "message": "GPU parity OK (37 GPU ABI functions)",
                 "severity": "PASS"
               }
             ],
@@ -372,7 +372,7 @@
           {
             "findings": [
               {
-                "message": "No uncommitted changes",
+                "message": "6 changed files have matching docs",
                 "severity": "PASS"
               }
             ],
@@ -382,11 +382,11 @@
           {
             "findings": [
               {
-                "message": "Mutation report age: 60.4 days (threshold: 14)",
+                "message": "Mutation report age: 60.6 days (threshold: 14)",
                 "severity": "INFO"
               },
               {
-                "message": "Mutation report is stale (60.4 > 14 days) \u2014 rerun recommended",
+                "message": "Mutation report is stale (60.6 > 14 days) \u2014 rerun recommended",
                 "severity": "WARN"
               }
             ],
@@ -738,13 +738,13 @@
           "reason": null,
           "status": "available",
           "value": {
-            "dirty": false,
+            "dirty": true,
             "ref": "dev",
-            "sha": "3394cd6ce44c56d57fe467834db457d7780de5a9",
-            "short": "3394cd6ce4"
+            "sha": "8cc6044bab18e5f1ef6e3616840bf48a8ba6a535",
+            "short": "8cc6044bab"
           }
         },
-        "generated_at": "2026-06-13T16:25:06.312398+00:00",
+        "generated_at": "2026-06-13T20:47:28.817933+00:00",
         "platform": "Linux",
         "provenance": {
           "build_flags": {
@@ -761,12 +761,12 @@
             },
             "flags_hash": "f6054a07e934d755"
           },
-          "collected_at": "2026-06-13T16:25:06.312357+00:00",
+          "collected_at": "2026-06-13T20:47:28.817866+00:00",
           "git": {
-            "dirty": false,
+            "dirty": true,
             "ref": "dev",
-            "sha": "3394cd6ce44c56d57fe467834db457d7780de5a9",
-            "short": "3394cd6ce4"
+            "sha": "8cc6044bab18e5f1ef6e3616840bf48a8ba6a535",
+            "short": "8cc6044bab"
           },
           "platform": {
             "machine": "x86_64",
@@ -787,7 +787,7 @@
           },
           "version": "4.2.1"
         },
-        "run_id": "audit_gate-3394cd6ce4-20260613T162506",
+        "run_id": "audit_gate-8cc6044bab-20260613T204728",
         "runner": "audit_gate",
         "schema_version": "1.0.0",
         "sections": [
@@ -812,7 +812,7 @@
               {
                 "check_id": "p0__abi_hostile-caller_manifest",
                 "severity": "info",
-                "title": "ABI negative-test manifest counts: exports=185, blocking=0, null=185, zero=179, invalid=180, smoke=185"
+                "title": "ABI negative-test manifest counts: exports=193, blocking=0, null=193, zero=187, invalid=188, smoke=193"
               },
               {
                 "check_id": "p0__abi_hostile-caller_manifest",
@@ -860,7 +860,7 @@
               {
                 "check_id": "p0__secret-path_change_gate",
                 "severity": "pass",
-                "title": "No uncommitted changes to evaluate"
+                "title": "No changed secret-bearing paths detected"
               }
             ],
             "name": "P0: Secret-Path Change Gate",
@@ -942,7 +942,17 @@
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "advisory:medium",
-                "title": "21 files modified/deleted since graph build (2026-06-13T10:58:08)"
+                "title": "5 files modified/deleted since graph build (2026-06-13T20:27:32)"
+              },
+              {
+                "check_id": "p6__graph_freshness",
+                "severity": "info",
+                "title": "MODIFIED: docs/ABI_NEGATIVE_TEST_MANIFEST.json"
+              },
+              {
+                "check_id": "p6__graph_freshness",
+                "severity": "info",
+                "title": "MODIFIED: docs/ABI_NEGATIVE_TEST_MANIFEST.md"
               },
               {
                 "check_id": "p6__graph_freshness",
@@ -952,22 +962,12 @@
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "info",
-                "title": "MODIFIED: docs/AUDIT_DASHBOARD.md"
+                "title": "MODIFIED: docs/INCIDENT_DRILL_LOG.json"
               },
               {
                 "check_id": "p6__graph_freshness",
                 "severity": "info",
-                "title": "MODIFIED: docs/AUDIT_MANIFEST.md"
-              },
-              {
-                "check_id": "p6__graph_freshness",
-                "severity": "info",
-                "title": "MODIFIED: docs/AUDIT_SLA.json"
-              },
-              {
-                "check_id": "p6__graph_freshness",
-                "severity": "info",
-                "title": "MODIFIED: docs/BACKEND_ASSURANCE_MATRIX.md"
+                "title": "MODIFIED: docs/SECURITY_AUTONOMY_KPI.json"
               }
             ],
             "name": "P6: Graph Freshness",
@@ -978,7 +978,7 @@
               {
                 "check_id": "p7__gpu_parity",
                 "severity": "pass",
-                "title": "GPU parity OK (35 GPU ABI functions)"
+                "title": "GPU parity OK (37 GPU ABI functions)"
               }
             ],
             "name": "P7: GPU Parity",
@@ -1151,7 +1151,7 @@
               {
                 "check_id": "p10__doc-code_pairing",
                 "severity": "pass",
-                "title": "No uncommitted changes"
+                "title": "6 changed files have matching docs"
               }
             ],
             "name": "P10: Doc-Code Pairing",
@@ -1162,12 +1162,12 @@
               {
                 "check_id": "p2__mutation_evidence_freshness",
                 "severity": "info",
-                "title": "Mutation report age: 60.4 days (threshold: 14)"
+                "title": "Mutation report age: 60.6 days (threshold: 14)"
               },
               {
                 "check_id": "p2__mutation_evidence_freshness",
                 "severity": "advisory:medium",
-                "title": "Mutation report is stale (60.4 > 14 days) \u2014 rerun recommended"
+                "title": "Mutation report is stale (60.6 > 14 days) \u2014 rerun recommended"
               }
             ],
             "name": "P2: Mutation Evidence Freshness",
@@ -1589,8 +1589,8 @@
       "passing": true,
       "required": true,
       "returncode": 0,
-      "stderr_sha256": "62706229276e6017415fbbe7ea9be0f8fe265e29458ebcaca54df4c4a645b075",
-      "stdout_sha256": "3083cd70617190ee3616348c3480f2e310efd8b17174da81a4e2be956bbf64eb"
+      "stderr_sha256": "bb3ba366b23498384bd87c6d034dfedae463eb8631ecb921becb77fec502b004",
+      "stdout_sha256": "e4a999327ec30437cd40e4f8d7fc97b0e587b90fa40aa313db10fb4d6fa37e51"
     },
     {
       "name": "audit_gap_report_strict",
@@ -1892,13 +1892,13 @@
         "gates_skipped": 0,
         "gates_total": 8,
         "overall_pass": true,
-        "timestamp": "2026-06-13T16:25:08.007788+00:00"
+        "timestamp": "2026-06-13T20:47:30.901682+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "1512b0226b73d3ea48d5078b0aaa3c0af985b6e6494f1ce3221aa82dcb97505a"
+      "stdout_sha256": "be43a7a9b86b5bcc78452d0c639546532b5d1928cb703643fed64db6c80b43a5"
     },
     {
       "name": "supply_chain_gate",
@@ -1944,19 +1944,19 @@
         "checks_total": 5,
         "failing_checks": [],
         "overall_pass": true,
-        "timestamp": "2026-06-13T16:25:08.045666+00:00"
+        "timestamp": "2026-06-13T20:47:30.954754+00:00"
       },
       "passing": true,
       "required": true,
       "returncode": 0,
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "051324aba46125e127a3a4f02c2780e7b1f00dbb4b6d2b0cf757f470c764e3d1"
+      "stdout_sha256": "4839191bcbf5d62f8e6ceb6a8122ecf588c0e006cc9c0f49ed900de8c5eed986"
     }
   ],
-  "generated_at": "2026-06-13T16:25:08.061032+00:00",
+  "generated_at": "2026-06-13T20:47:30.973138+00:00",
   "git": {
     "branch": "dev",
-    "commit": "3394cd6ce44c56d57fe467834db457d7780de5a9",
+    "commit": "8cc6044bab18e5f1ef6e3616840bf48a8ba6a535",
     "dirty": true
   },
   "repo_root": "/home/shrek/Secp256k1/Secp256K1fast/libs/UltrafastSecp256k1",
