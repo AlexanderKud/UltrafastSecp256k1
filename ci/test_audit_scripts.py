@@ -1296,6 +1296,64 @@ def check_p21_semantic_requirement_map() -> None:
         ok(tag, "P21 fails closed on 6 bad-map cases and passes the real + well-formed maps")
 
 
+def check_audit_sla_pre_alert_and_block() -> None:
+    """B3: audit_sla_check.py must (a) BLOCK when critical evidence exceeds its
+    threshold, (b) emit a non-blocking PRE-ALERT inside the buffer window, (c) be
+    OK when fresh, and (d) report days_until_block for every artifact. Proves the
+    freshness SLA fails closed at the deadline AND warns before it — no silent
+    green->blocked jump (the failure class that dropped autonomy 100->90)."""
+    tag = "B3:audit_sla_pre_alert"
+    path = SCRIPT_DIR / "audit_sla_check.py"
+    try:
+        spec = importlib.util.spec_from_file_location("audit_sla_selftest", str(path))
+        if spec is None or spec.loader is None:
+            fail(tag, "could not build module spec for audit_sla_check.py")
+            return
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        fail(tag, f"import failed: {exc}")
+        return
+
+    sla = {"slos": {"critical_evidence_freshness_days":
+                    {"threshold": 14, "pre_alert_buffer_days": 4, "severity": "blocking"}}}
+
+    def with_age(age):
+        module._file_age_days = lambda p: age
+        module._dir_newest_age_days = lambda p: age
+        return module.check_critical_freshness(sla)
+
+    failures = []
+
+    # (a) stale (age 20 > 14) -> a blocking 'stale' finding + negative days_until_block
+    f, s = with_age(20.0)
+    if not any(x.get("severity") == "blocking" and x.get("status") == "stale" for x in f):
+        failures.append("age 20 (>14) did not produce a blocking stale finding")
+    if not any(st.get("days_until_block") is not None and st["days_until_block"] < 0 for st in s):
+        failures.append("stale artifact missing negative days_until_block")
+
+    # (b) pre-alert (10 < age 12 <= 14) -> warning, NOT blocking
+    f, s = with_age(12.0)
+    if any(x.get("severity") == "blocking" for x in f):
+        failures.append("age 12 (pre-alert window) incorrectly blocked")
+    if not any(x.get("status") == "pre_alert" and x.get("severity") == "warning" for x in f):
+        failures.append("age 12 did not emit a non-blocking pre_alert warning")
+
+    # (c) fresh (age 2) -> no findings, all statuses 'ok' with days_until_block set
+    f, s = with_age(2.0)
+    if f:
+        failures.append(f"age 2 (fresh) produced findings: {[x.get('status') for x in f]}")
+    if not all(st["state"] == "ok" for st in s):
+        failures.append("fresh artifacts not classified ok")
+    if not all(st.get("days_until_block") is not None for st in s):
+        failures.append("fresh statuses missing days_until_block")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "SLA blocks at deadline, pre-alerts in buffer window, reports days_until_block")
+
+
 def main() -> int:
     quick = "--quick" in sys.argv
 
@@ -1332,6 +1390,7 @@ def main() -> int:
     check_caas_integrity_json_purity()
     check_research_monitor_resilience()
     check_p21_semantic_requirement_map()
+    check_audit_sla_pre_alert_and_block()
 
     # Phase 4: Smoke tests
     print(f"\n{BOLD}[4/4] Smoke Tests{RESET}")

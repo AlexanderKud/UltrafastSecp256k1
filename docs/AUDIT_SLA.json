@@ -1,11 +1,14 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "Audit infrastructure SLA/SLO definitions for UltrafastSecp256k1",
   "created": "2026-04-14",
+  "updated": "2026-06-13",
+  "pre_alert": "pre_alert_buffer_days (Bastion B3): audit_sla_check.py emits a non-blocking PRE-ALERT warning while an artifact is within this many days of its blocking threshold, and reports days_until_block per artifact so the SLA never silently jumps from green to blocked.",
   "slos": {
     "max_stale_evidence_days": {
       "description": "Maximum age in days for any critical evidence artifact before it is considered stale",
       "threshold": 30,
+      "pre_alert_buffer_days": 5,
       "severity": "blocking",
       "measurement": "max(now - evidence_timestamp) across all critical evidence files"
     },
@@ -24,6 +27,7 @@
     "critical_evidence_freshness_days": {
       "description": "Maximum age in days for critical-path evidence (CT, determinism, fuzz, ABI negative)",
       "threshold": 14,
+      "pre_alert_buffer_days": 4,
       "severity": "blocking",
       "measurement": "max(now - timestamp) for evidence tagged critical"
     },
@@ -42,6 +46,7 @@
     "determinism_golden_staleness_days": {
       "description": "Maximum age of determinism golden reference before re-verification required",
       "threshold": 30,
+      "pre_alert_buffer_days": 5,
       "severity": "blocking",
       "measurement": "now - last_verified_timestamp for DETERMINISM_GOLDEN.json"
     },

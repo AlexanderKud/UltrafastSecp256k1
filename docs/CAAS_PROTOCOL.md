@@ -170,9 +170,40 @@ It does not require a build — it reads already-generated artifacts.
 |---------|-------|-----|
 | Stage 1 findings > 0 | Vacuous test, polarity bug, ignored return | Fix the audit/test_*.cpp |
 | Stage 2 P6 freshness WARN | Source modified after graph build | `python3 ci/build_project_graph.py --rebuild` |
-| Stage 3 score = 90 | `audit_sla` sub-gate failed | `python3 ci/export_assurance.py -o ../../assurance_report.json` |
+| Stage 3 score = 90 | `audit_sla` sub-gate failed (stale/missing evidence) | `python3 ci/audit_sla_check.py` to see which artifact + `days_until_block`; refresh per the Evidence Freshness & Refresh Contract (e.g. `ci/export_assurance.py -o ../../assurance_report.json`, or re-snapshot `audit/ci-evidence`) |
 | Stage 3 incident_drills WARN | Drill cadence exceeded | `python3 ci/incident_drills.py --record-all` |
 | Stage 5 bundle digest mismatch | Manual edit of bundle file | Re-run Stage 4 |
+
+## Evidence Freshness & Refresh Contract
+
+CAAS evidence is fail-closed on age: `ci/audit_sla_check.py` blocks the release
+gate when a critical artifact crosses its SLO threshold (`docs/AUDIT_SLA.json`).
+To prevent a silent green→blocked jump, the checker (Bastion B3) reports
+`days_until_block` for every tracked artifact and emits a non-blocking
+**PRE-ALERT** warning while an artifact is within its `pre_alert_buffer_days`
+window. Inspect runway any time with:
+
+```bash
+python3 ci/audit_sla_check.py          # human table with days_until_block
+python3 ci/audit_sla_check.py --json    # min_days_until_block + evidence_status[]
+```
+
+| Critical evidence | SLO (block / pre-alert) | Refreshed by |
+|-------------------|--------------------------|--------------|
+| `assurance_report.json` (suite) | 30d / 25d | `caas-evidence-refresh.yml` (nightly 04:30 UTC) |
+| `docs/EXTERNAL_AUDIT_BUNDLE.*` | n/a (baseline) | `caas-evidence-refresh.yml` (nightly) |
+| `docs/SECURITY_AUTONOMY_KPI.json` | — | `caas-evidence-refresh.yml` (nightly) |
+| `docs/AUDIT_DASHBOARD.md` | — | `caas-evidence-refresh.yml` (nightly, H-9) |
+| `docs/DETERMINISM_GOLDEN.json` | 30d / 25d | determinism gate (`ci/check_determinism_gate.py`) when stale |
+| `audit/ci-evidence/*` (CT/adversarial/fuzz) | 14d / 10d | **owner/manual chore**: build + run the standalone audit binaries (`adversarial_protocol`, `ecies_regression`, `fuzz_parsers`, `fuzz_address_bip32_ffi`) and commit dated snapshots. *Automation candidate — not yet scheduled.* |
+| `docs/API_SECURITY_CONTRACTS.json` | 14d / 10d | re-validated by `ci/check_api_contracts.py`; refreshed when the API changes. *Automation candidate — not yet scheduled.* |
+
+**Refresh discipline.** When `audit_sla_check.py` reports a PRE-ALERT (or a small
+`min_days_until_block`), refresh the named artifact **before** it blocks. The two
+14-day critical artifacts (`audit/ci-evidence`, `API_SECURITY_CONTRACTS.json`) are
+not yet covered by a scheduled workflow; until they are, the pre-alert is the
+early-warning signal that the owner/manual refresh is due. Refreshed evidence
+must be captured from a real run — never hand-edited to move a timestamp.
 
 ## Product Profiles
 

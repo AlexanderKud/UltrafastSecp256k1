@@ -1,5 +1,25 @@
 # Audit Changelog
 
+## 2026-06-13 — evidence freshness pre-alert + days-until-block (Bastion B3)
+
+- `ci/audit_sla_check.py` now reports `days_until_block` for every tracked
+  critical artifact and emits a non-blocking **PRE-ALERT** warning while an
+  artifact is within `pre_alert_buffer_days` of its blocking threshold. The
+  report gained `evidence_status[]`, `min_days_until_block`, and `pre_alerts` so
+  the freshness SLA can no longer silently jump from green to blocked (the
+  failure class that dropped autonomy 100→90 on 2026-06-13).
+- `docs/AUDIT_SLA.json` (v2): added `pre_alert_buffer_days` to the three
+  freshness SLOs — 30-day SLOs warn at 25d, the 14-day critical SLO warns at 10d.
+- Added `ci/test_audit_scripts.py::check_audit_sla_pre_alert_and_block`
+  (always-on Structural phase): simulates stale / pre-alert / fresh ages and
+  proves the gate blocks at the deadline, pre-alerts inside the buffer window,
+  and reports `days_until_block`. Self-test now 144 pass.
+- Documented the **Evidence Freshness & Refresh Contract** in
+  `docs/CAAS_PROTOCOL.md`: which workflow/process refreshes which critical
+  artifact, and that `audit/ci-evidence` + `API_SECURITY_CONTRACTS.json` (both
+  14-day SLO) are not yet covered by a scheduled refresh — the pre-alert is the
+  early-warning signal until that automation lands.
+
 ## 2026-06-13 — source-graph CAAS focus-routing goldens (Bastion B2)
 
 - Added three focus-routing goldens to `ci/check_source_graph_quality.py` so a
