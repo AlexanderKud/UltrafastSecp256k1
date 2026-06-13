@@ -281,6 +281,30 @@ def _format_evidence_bundle(
             gen_at = bundle.get('generated_at', bundle.get('timestamp', ''))
             if gen_at:
                 lines.append(f'**Generated at:** {gen_at}')
+            # Bastion B4: state plainly whether the committed bundle reflects the
+            # current commit. The committed bundle is a historical baseline; the
+            # strict current-run evidence is regenerated in CI. Reviewers must be
+            # able to tell at a glance whether the on-disk bundle matches HEAD.
+            bundle_commit = str((bundle.get('git') or {}).get('commit', ''))
+            head = ''
+            try:
+                res = subprocess.run(['git', 'rev-parse', 'HEAD'],
+                                     cwd=str(REPO_ROOT), capture_output=True,
+                                     text=True, timeout=15, check=False)
+                if res.returncode == 0:
+                    head = res.stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                head = ''
+            if bundle_commit and head:
+                if bundle_commit == head:
+                    status = f'CURRENT (matches HEAD `{head[:12]}`)'
+                else:
+                    status = (f'HISTORICAL BASELINE — bundle commit `{bundle_commit[:12]}` '
+                              f'≠ HEAD `{head[:12]}`; regenerate for strict current-run evidence '
+                              f'(`ci/external_audit_bundle.py`)')
+                lines.append(f'**Commit vs HEAD:** {status}')
+            elif bundle_commit:
+                lines.append(f'**Bundle commit:** `{bundle_commit[:12]}` (HEAD unavailable)')
         else:
             lines.append('**Bundle JSON:** _(parse error)_')
 

@@ -1,5 +1,22 @@
 # Audit Changelog
 
+## 2026-06-13 — external audit bundle: strict current-run evidence (Bastion B4)
+
+- `ci/verify_external_audit_bundle.py` now fails **closed** on a malformed or
+  non-object bundle (previously `json.loads` could raise an uncaught exception —
+  "did not run" was indistinguishable from "passed" on a required gate). A
+  malformed bundle now yields a `bundle_parse`/`bundle_schema` FAIL, not a crash.
+- `ci/render_audit_dashboard.py` adds a **Commit vs HEAD** status to the Evidence
+  Bundle section: the committed bundle is labelled `CURRENT` when it matches HEAD,
+  or `HISTORICAL BASELINE` (with both short commits) when it has drifted, so
+  reviewers can tell at a glance whether the on-disk bundle reflects the tested
+  commit. The strict current-run bundle is regenerated in CI.
+- Added `ci/test_audit_scripts.py::check_external_audit_bundle_negative_fixtures`
+  (always-on phase): proves `verify()` fails closed on tampered digest, missing
+  evidence, evidence hash mismatch, stale commit (and passes with
+  `--allow-commit-mismatch`), and malformed/non-object bundles, and passes a
+  well-formed current-commit bundle. Self-test now 145 pass.
+
 ## 2026-06-13 — evidence freshness pre-alert + days-until-block (Bastion B3)
 
 - `ci/audit_sla_check.py` now reports `days_until_block` for every tracked

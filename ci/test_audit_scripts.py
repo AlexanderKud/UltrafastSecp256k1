@@ -1354,6 +1354,104 @@ def check_audit_sla_pre_alert_and_block() -> None:
         ok(tag, "SLA blocks at deadline, pre-alerts in buffer window, reports days_until_block")
 
 
+def check_external_audit_bundle_negative_fixtures() -> None:
+    """B4/B5: verify_external_audit_bundle.py must fail closed on a tampered
+    digest, a missing evidence file, an evidence hash mismatch, a stale commit
+    (unless --allow-commit-mismatch), and a malformed/non-object bundle — and
+    pass a well-formed current-commit bundle. Proves the independent-review gold
+    path cannot be satisfied by a stale or tampered snapshot."""
+    tag = "B4:bundle_negative_fixtures"
+    path = SCRIPT_DIR / "verify_external_audit_bundle.py"
+    try:
+        spec = importlib.util.spec_from_file_location("verify_bundle_selftest", str(path))
+        if spec is None or spec.loader is None:
+            fail(tag, "could not build module spec for verify_external_audit_bundle.py")
+            return
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        fail(tag, f"import failed: {exc}")
+        return
+
+    real_evidence = "docs/THREAD_SAFETY.md"
+    if not (module.LIB_ROOT / real_evidence).exists():
+        skip(tag, f"{real_evidence} absent — cannot build a valid evidence row")
+        return
+    good_hash = module._sha256_file(module.LIB_ROOT / real_evidence)
+    head = module._git_head()
+    if not head:
+        skip(tag, "git HEAD unavailable")
+        return
+
+    def build(tmp, *, commit, evidence, tamper_digest=False, raw=None):
+        bundle_path = Path(tmp) / "EXTERNAL_AUDIT_BUNDLE.json"
+        if raw is not None:
+            bundle_path.write_text(raw, encoding="utf-8")
+        else:
+            obj = {"git": {"commit": commit}, "evidence": evidence, "gate_results": []}
+            bundle_path.write_text(json.dumps(obj), encoding="utf-8")
+        digest = "0" * 64 if tamper_digest else module._sha256_bytes(bundle_path.read_bytes())
+        digest_path = Path(tmp) / "EXTERNAL_AUDIT_BUNDLE.sha256"
+        digest_path.write_text(f"{digest}  EXTERNAL_AUDIT_BUNDLE.json\n", encoding="utf-8")
+        return bundle_path, digest_path
+
+    def rc(bundle_path, digest_path, allow=False):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return module.verify(bundle_path, digest_path, False, allow, False)
+
+    good_ev = [{"path": real_evidence, "sha256": good_hash}]
+    failures = []
+
+    with tempfile.TemporaryDirectory() as d:
+        # (0) well-formed current-commit bundle -> PASS
+        bp, dp = build(d, commit=head, evidence=good_ev)
+        if rc(bp, dp) != 0:
+            failures.append("well-formed current-commit bundle did not PASS")
+
+        # (1) tampered digest -> FAIL
+        bp, dp = build(d, commit=head, evidence=good_ev, tamper_digest=True)
+        if rc(bp, dp) == 0:
+            failures.append("tampered digest did not FAIL")
+
+        # (2) missing evidence file -> FAIL
+        bp, dp = build(d, commit=head, evidence=[{"path": "docs/__nope_xyz__.md", "sha256": "0" * 64}])
+        if rc(bp, dp) == 0:
+            failures.append("missing evidence file did not FAIL")
+
+        # (3) evidence hash mismatch -> FAIL
+        bp, dp = build(d, commit=head, evidence=[{"path": real_evidence, "sha256": "0" * 64}])
+        if rc(bp, dp) == 0:
+            failures.append("evidence hash mismatch did not FAIL")
+
+        # (4) stale commit -> FAIL without flag, PASS with --allow-commit-mismatch
+        bp, dp = build(d, commit="0" * 40, evidence=good_ev)
+        if rc(bp, dp, allow=False) == 0:
+            failures.append("stale commit did not FAIL")
+        if rc(bp, dp, allow=True) != 0:
+            failures.append("stale commit + allow_commit_mismatch did not PASS")
+
+        # (5) malformed JSON -> FAIL gracefully (no exception)
+        bp, dp = build(d, commit=head, evidence=good_ev, raw="{ this is : not json ")
+        try:
+            if rc(bp, dp) == 0:
+                failures.append("malformed JSON bundle did not FAIL")
+        except Exception as exc:
+            failures.append(f"malformed JSON crashed instead of failing closed: {exc}")
+
+        # (6) non-object JSON root -> FAIL gracefully
+        bp, dp = build(d, commit=head, evidence=good_ev, raw="[1, 2, 3]")
+        try:
+            if rc(bp, dp) == 0:
+                failures.append("non-object bundle root did not FAIL")
+        except Exception as exc:
+            failures.append(f"non-object bundle crashed instead of failing closed: {exc}")
+
+    if failures:
+        fail(tag, "; ".join(failures))
+    else:
+        ok(tag, "bundle verify fails closed on digest/evidence/commit/malformed; passes a valid current bundle")
+
+
 def main() -> int:
     quick = "--quick" in sys.argv
 
@@ -1391,6 +1489,7 @@ def main() -> int:
     check_research_monitor_resilience()
     check_p21_semantic_requirement_map()
     check_audit_sla_pre_alert_and_block()
+    check_external_audit_bundle_negative_fixtures()
 
     # Phase 4: Smoke tests
     print(f"\n{BOLD}[4/4] Smoke Tests{RESET}")
