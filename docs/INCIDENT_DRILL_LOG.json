@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-06-13T20:52:10.536480+00:00",
-  "commit": "12b26e1da073e43334457d97ce73668b561b2ff8",
+  "timestamp": "2026-06-14T00:00:36.354882+00:00",
+  "commit": "58c30910dd05c39d3e68e4283bae5118c882c7ac",
   "overall_pass": true,
   "drills_total": 3,
   "drills_passed": 3,
-  "drill_response_time_seconds": 0.36,
+  "drill_response_time_seconds": 0.53,
   "injections": [
     {
       "drill": "key_compromise",
@@ -36,7 +36,7 @@
       "injected_fault": "known-weak / out-of-range private keys (zero, n, n+1, all-ones)",
       "detection_gate": "ufsecp pubkey() ABI boundary (strict scalar parse)",
       "detected": true,
-      "elapsed_seconds": 0.33,
+      "elapsed_seconds": 0.49,
       "weak_keys_tested": 4,
       "results": [
         {
@@ -64,7 +64,7 @@
       "injected_fault": "tampered build artifact (provider-B hash mismatch)",
       "detection_gate": "multi_ci_repro_check.py",
       "detected": true,
-      "elapsed_seconds": 0.02,
+      "elapsed_seconds": 0.03,
       "legit_hash": "9591c3413eb94501503e251559da8bd592c91afe2bb6349b24a6be745336e612",
       "tampered_hash": "6d578ac8241868a9d71ab6459806d6c52c2160e0b8361a334bee37bea120022c",
       "issues": []

@@ -2,6 +2,14 @@
 
 ## 2026-06-13 — libbitcoin ECDSA batch bridge opaque-signature regression fix
 
+- Added an MSVC x64 fast path for `u128_compat`: the no-`__int128` FE52
+  accumulator now uses `_umul128` and `_addcarry_u64` instead of the generic
+  32-bit schoolbook fallback. This targets Windows/MSVC field arithmetic
+  overhead without changing GCC/Clang native-`__int128` behavior.
+- Strengthened `test_u128_compat_parity` so no-`__int128` targets no longer skip:
+  Windows/MSVC now compares the intrinsic-backed struct against an independent
+  32-bit reference over deterministic multiplication, addition, shift, compose,
+  and mask vectors.
 - Fixed the libbitcoin batch bridge ECDSA ABI boundary: `libbitcoin::ec_signature`
   is a copied `secp256k1_ecdsa_signature` object in libsecp-compatible opaque
   scalar storage, not public compact `r||s`. The bridge now treats that opaque
