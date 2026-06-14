@@ -2443,6 +2443,10 @@ def check_evidence_refresh_coverage_fixtures() -> None:
         failures.append("checkout does not use CAAS_BOT_TOKEN || github.token fallback")
     if "GH_TOKEN: ${{ secrets.CAAS_BOT_TOKEN || github.token }}" not in workflow:
         failures.append("commit/push does not use CAAS_BOT_TOKEN || github.token fallback")
+    if "HAS_CAAS_BOT_TOKEN: ${{ secrets.CAAS_BOT_TOKEN != '' }}" not in workflow:
+        failures.append("commit/push does not expose a CAAS_BOT_TOKEN presence guard")
+    if "CAAS_BOT_TOKEN is required to commit refreshed evidence to protected dev" not in workflow:
+        failures.append("commit/push does not fail closed with a clear protected-dev token message")
 
     # (6) RR-BAS-02 promotion safety: a stale drill log BLOCKS under blocking
     #     severity, but only WARNS under the live advisory severity (no false pass).

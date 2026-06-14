@@ -65,12 +65,12 @@ jobs:
       - name: Report evidence refresh token mode
         # CAAS_BOT_TOKEN is preferred when the dev branch requires bypass
         # permissions. If it is absent, continue with GITHUB_TOKEN so the lane can
-        # still regenerate diagnostics and upload artifacts; the final git push
-        # remains the authoritative hard-fail if branch protection rejects it.
+        # still regenerate diagnostics and upload artifacts; the final commit step
+        # remains fail-closed if refreshed evidence cannot be written to dev.
         run: |
           if [ -z "${{ secrets.CAAS_BOT_TOKEN }}" ]; then
             echo "::warning::CAAS_BOT_TOKEN secret is not configured; falling back to GITHUB_TOKEN."
-            echo "::warning::If dev branch protection rejects the commit, the push step will fail after diagnostic artifacts are uploaded."
+            echo "::warning::If dev branch protection rejects the commit, the commit step will fail after diagnostic artifacts are uploaded."
           else
             echo "::notice::Using CAAS_BOT_TOKEN for evidence refresh checkout and push."
           fi
@@ -247,6 +247,7 @@ jobs:
           # git push remains the authoritative hard-fail if branch protection
           # rejects the fallback token.
           GH_TOKEN: ${{ secrets.CAAS_BOT_TOKEN || github.token }}
+          HAS_CAAS_BOT_TOKEN: ${{ secrets.CAAS_BOT_TOKEN != '' }}
           FORCE_COMMIT: ${{ github.event.inputs.force_commit }}
           CAAS_HMAC_KEY: ${{ secrets.CAAS_HMAC_KEY }}
         run: |
@@ -319,6 +320,11 @@ jobs:
           if [ "$CHANGED" -eq 0 ] && [ "${FORCE_COMMIT}" != "true" ]; then
             echo "::notice::No evidence changed; nothing to commit"
             exit 0
+          fi
+
+          if [ "${HAS_CAAS_BOT_TOKEN}" != "true" ]; then
+            echo "::error::CAAS_BOT_TOKEN is required to commit refreshed evidence to protected dev. Regenerated artifacts were uploaded for diagnosis, but freshness is not updated until a bypass-capable token is provisioned."
+            exit 1
           fi
 
           git commit -m "[bot] CAAS evidence refresh ($(date -u +%Y-%m-%d))" \

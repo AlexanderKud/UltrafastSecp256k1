@@ -15,6 +15,10 @@
   are reported explicitly, while new CI records can be signed with
   `CAAS_HMAC_KEY`. This prevents enabling the secret from falsely marking the
   existing chain as tampered.
+- Added an explicit protected-branch push preflight to the evidence refresh
+  lane. If refreshed evidence changed but `CAAS_BOT_TOKEN` is absent, the lane
+  now fails with a direct bypass-token diagnostic after uploading artifacts,
+  instead of falling through to a generic remote `GH013` rejection.
 
 ## 2026-06-13 — libbitcoin ECDSA batch bridge opaque-signature regression fix
 
