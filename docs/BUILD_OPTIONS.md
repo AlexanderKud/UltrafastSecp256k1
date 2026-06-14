@@ -4,7 +4,7 @@
 >
 > Defaults below are the **CMake declaration defaults**. Named build profiles (see [CMakePresets.json](../CMakePresets.json) and [BUILDING.md](BUILDING.md)) override many of them for a minimal footprint per coin / use case. A `cmake_dependent_option` is only honoured when its guard condition holds (otherwise it is forced off).
 
-**76 options** across 8 scope(s). Set any flag at configure time with `-D<FLAG>=ON|OFF`.
+**77 options** across 8 scope(s). Set any flag at configure time with `-D<FLAG>=ON|OFF`.
 
 ```bash
 # Example: CPU build with the shim + MuSig2, no ZK/FROST
@@ -108,6 +108,7 @@ cmake -S . -B out/mybuild -G Ninja -DCMAKE_BUILD_TYPE=Release \
 |------|---------|-------------|
 | `SECP256K1_SHIM_BUILD_SHARED` | `OFF` | Also build a self-contained shared ultrafast_secp256k1 (DLL/.so) exporting the libsecp256k1 ABI |
 | `SECP256K1_SHIM_BUILD_TESTS` | `OFF` | Build shim compatibility test |
+| `SECP256K1_SHIM_INSTALL` | `ON` | Install the shim shared lib + libsecp256k1 headers + libsecp256k1.pc (Core/Knots backend swap) |
 | `SECP256K1_SHIM_RFC6979_COMPAT` | `OFF` | Match upstream libsecp256k1 nonce bytes exactly (includes ECDSA algo16 tag). Disables fault-attack resistance of hedged nonce. |
 
 ## libbitcoin bridge (script-sig batch verify + scan)
