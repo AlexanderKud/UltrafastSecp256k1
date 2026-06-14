@@ -333,12 +333,51 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-Wno-elaborated-enum-base>)
     endif()
 elseif(MSVC)
+    # ------------------------------------------------------------------
+    # MSVC optimization (Windows). Closes the gap vs Clang -march=native.
+    #
+    # By default MSVC x64 targets the SSE2 baseline and emits no AVX2/BMI2/
+    # FMA, so all non-assembly C++ (point/scalar arithmetic, the inline
+    # field kernels, batch/FROST glue) runs far behind the Clang build,
+    # which gets AVX2/BMI2/ADX from -march=native. SECP256K1_MSVC_ARCH
+    # raises the MSVC /arch: level to match. AVX2 is the safe shippable
+    # default (universal on modern x64); bump to AVX512 on capable hardware
+    # or drop to SSE2 for maximum portability.
+    # Independently-toggleable MSVC perf knobs (defaults chosen empirically by
+    # the MSVC-vs-Clang Windows benchmark sweep — see docs/BENCHMARKS / commit).
+    set(SECP256K1_MSVC_ARCH "SSE2" CACHE STRING
+        "MSVC /arch: ISA level (SSE2|AVX|AVX2|AVX512). AVX2 auto-vectorization
+         regresses the non-vectorizable 64-bit bigint kernels on MSVC, so the
+         default keeps the SSE2 baseline.")
+    set_property(CACHE SECP256K1_MSVC_ARCH PROPERTY STRINGS SSE2 AVX AVX2 AVX512)
+    # /Ob3 (most-aggressive inlining) is a consistent ~8-15% win on the Windows
+    # MSVC-vs-Clang sweep (field_mul 20->17ns, field_sqr 15->13ns = Clang parity,
+    # scalar_mul 100->92us, field add 6.3->2.2ns) with no measurable regression,
+    # so it is ON by default. WPO (/GL+/LTCG+/OPT) also nets positive; turning it
+    # off regressed field_inv/point_add. /arch:AVX2 was neutral-to-negative for the
+    # non-vectorizable bigint kernels, hence ARCH stays SSE2 above.
+    option(SECP256K1_MSVC_OB3 "MSVC: /Ob3 most-aggressive inlining" ON)
+    option(SECP256K1_MSVC_WPO "MSVC: /GL whole-program + /LTCG + /OPT:REF,ICF" ON)
     add_compile_options(
         $<$<COMPILE_LANGUAGE:C,CXX>:/W4>
         $<$<COMPILE_LANGUAGE:C,CXX>:/permissive->
         $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/O2>
-        $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/GL>
+        $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Oi>   # intrinsics
+        $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Gy>   # COMDAT funcs -> /OPT:REF,ICF
+        $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Gw>   # COMDAT globals
     )
+    if(SECP256K1_MSVC_WPO)
+        add_compile_options($<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/GL>)
+        add_link_options($<$<CONFIG:Release>:/LTCG> $<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
+    endif()
+    if(SECP256K1_MSVC_OB3)
+        add_compile_options($<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Ob3>)
+    endif()
+    if(NOT SECP256K1_MSVC_ARCH STREQUAL "SSE2")
+        add_compile_options(
+            $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/arch:${SECP256K1_MSVC_ARCH}>)
+    endif()
+    message(STATUS "secp256k1-fast: MSVC opt: /O2 /Oi /Gy /Gw arch=${SECP256K1_MSVC_ARCH} Ob3=${SECP256K1_MSVC_OB3} WPO=${SECP256K1_MSVC_WPO}")
     if(SECP256K1_WERROR)
         add_compile_options(/WX)
     endif()
