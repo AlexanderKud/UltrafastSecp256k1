@@ -2,6 +2,10 @@
 
 ## 2026-06-14 — Windows ARM64 clang-cl portability
 
+- Pinned the Windows CI job to `windows-2022` because the job explicitly uses
+  CMake's `Visual Studio 17 2022` generator. This avoids the moving
+  `windows-latest` alias landing on an image where CMake cannot discover a VS
+  2022 instance.
 - Generalized Windows clang-cl compiler-rt linking so the build selects the
   target architecture's runtime archive (`clang_rt.builtins-x86_64.lib` or
   `clang_rt.builtins-aarch64.lib`) instead of hardcoding x86_64.
