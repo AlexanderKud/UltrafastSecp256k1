@@ -7,9 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`windows-clang-cl` CMake preset — the recommended fast build on Windows.** Building
+  with `clang-cl` (a drop-in, MSVC-ABI-compatible Clang driver: `link.exe`, MSVC CRT,
+  `.pdb`, Visual Studio "LLVM (clang-cl)" toolset) gets Clang's inline MULX/ADCX/ADOX
+  field kernels — which MSVC `cl` fundamentally cannot emit (no x64 inline asm, no
+  `__int128`). Measured **3.3–3.6× faster** `scalar_mul`/`batch_verify`/`frost` than
+  `cl`, i.e. near-clang++ parity, while staying in the MSVC toolchain.
+  `run_selftest ci` = 31/31. CMake now auto-locates and links the clang `compiler-rt`
+  builtins on Clang/Windows (the native-`__int128` field code emits `__modti3`/
+  `__umodti3` that the MSVC CRT lacks), so `clang-cl`/`clang++` builds link out of the
+  box. **Note:** mixing `clang-cl` objects with `cl`-compiled **C++** is not ABI-safe
+  (by-value field-type returns crash); build a whole target with one compiler, or cross
+  the boundary via the `ufsecp` C ABI. See
+  `benchmarks/comparison/windows_msvc_vs_clang_20260614.md` §6.
+
 ### Changed
 
-- **Windows/MSVC build tuning (closes part of the MSVC-vs-Clang gap).** MSVC Release
+- **Windows/MSVC (`cl`) build tuning (for builds that must use cl).** MSVC Release
   builds now add `/Ob3` (most-aggressive inlining), `/Oi /Gy /Gw`, and pair `/GL`
   with `/LTCG /OPT:REF,ICF`. On the Windows MSVC-vs-Clang benchmark sweep this is a
   consistent **~8–15%** speedup across the field/scalar/point kernels (field squaring

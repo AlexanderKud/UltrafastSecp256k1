@@ -383,6 +383,42 @@ elseif(MSVC)
     endif()
 endif()
 
+# ---------------------------------------------------------------------------
+# Clang on Windows (clang++ or clang-cl, x86_64-pc-windows-msvc).
+#
+# RECOMMENDED FAST PATH ON WINDOWS: build with clang-cl. It is a drop-in,
+# MSVC-ABI-compatible Clang driver (link.exe / MSVC CRT / .pdb / Visual Studio
+# toolset) whose codegen runs the inline MULX/ADCX/ADOX field kernels that MSVC
+# cl cannot (no inline asm, no __int128). Measured ~3.3-3.6x faster scalar_mul /
+# batch_verify / FROST than cl, i.e. near clang++ parity, while staying in the
+# MSVC toolchain. See benchmarks/comparison/windows_msvc_vs_clang_20260614.md.
+#   cmake --preset windows-clang-cl     (or -DCMAKE_CXX_COMPILER=clang-cl)
+#
+# The native __int128 field code emits 128-bit runtime calls (__modti3 /
+# __umodti3 / __multi3) that the MSVC CRT does not provide, so auto-locate and
+# link the matching compiler-rt builtins archive — otherwise the link fails with
+# LNK2019 unresolved __umodti3. (Harmless no-op on the cl build.)
+# ---------------------------------------------------------------------------
+if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    execute_process(
+        COMMAND "${CMAKE_CXX_COMPILER}" -print-resource-dir
+        OUTPUT_VARIABLE _ufsecp_clang_res
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _ufsecp_res_rc)
+    if(_ufsecp_res_rc EQUAL 0 AND _ufsecp_clang_res)
+        file(TO_CMAKE_PATH "${_ufsecp_clang_res}" _ufsecp_clang_res)
+        set(_ufsecp_builtins "${_ufsecp_clang_res}/lib/windows/clang_rt.builtins-x86_64.lib")
+        if(EXISTS "${_ufsecp_builtins}")
+            add_link_options("${_ufsecp_builtins}")
+            message(STATUS "secp256k1-fast: Clang/Windows — linking compiler-rt builtins: ${_ufsecp_builtins}")
+        else()
+            message(WARNING "secp256k1-fast: Clang/Windows — clang_rt.builtins not found at "
+                            "${_ufsecp_builtins}; 128-bit runtime calls (__umodti3) may be unresolved.")
+        endif()
+    endif()
+endif()
+
 # Subdirectories
 if(SECP256K1_BUILD_CPU)
     # Enable testing so src/cpu/CMakeLists.txt BUILD_TESTING guard works

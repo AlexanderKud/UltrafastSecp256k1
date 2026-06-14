@@ -86,11 +86,55 @@ want to test it on their hardware.
 **Summary:** `/Ob3` + WPO buys a consistent **~8–15%** across the field/scalar/point
 kernels (field squaring and p2wpkh reach Clang parity, field add overtakes it) at zero
 correctness or portability cost. The **residual 1.4–5× gap on the compound paths**
-(scalar_mul, batch_verify, frost) is **structural**: it comes from MSVC having no native
-`__int128`/`MULX` inline field multiply, and flags cannot close it. Eliminating it would
-require a code-level change (inline intrinsic field-mul/`ADX` chains on the MSVC path) —
-tracked as future work, deliberately out of scope here to avoid touching the
-constant-time signing paths.
+(scalar_mul, batch_verify, frost) is **structural** and flags cannot close it (see §6).
+
+## 6. The real answer on Windows: build with **clang-cl** 🏆
+
+The structural gap is fundamental to the MSVC compiler, not a tuning miss — proven:
+
+- The fast field kernel (`field_4x64_inline.hpp`, inline MULX/ADCX/ADOX, dual carry
+  chains) is **Clang/GCC-only**: gated on `__ADX__ && __BMI2__` (macros MSVC never
+  defines) *and* written in GCC `__asm__` inline asm (MSVC x64 has none). MSVC falls back
+  to an external **MASM** `call` (no inlining, memory round-trips between field ops).
+- A hand-written, **validated-correct** MSVC `_mulx_u64`/`_addcarry_u64` field multiply
+  is **1.31× slower per-op than even the asm `call`** (94 vs 72 cycles) — MSVC intrinsics
+  can't express the adcx/adox dual carry chains (`_addcarry_u64`→serial `adc`; no `adox`
+  intrinsic).
+
+So MSVC `cl` cannot reach Clang for this workload. **But `clang-cl` can** — it is a
+drop-in, MSVC-ABI-compatible Clang driver (`link.exe`, MSVC CRT, `.pdb`, Visual Studio
+"LLVM (clang-cl)" toolset) whose codegen **does** use the inline MULX field kernels:
+
+| metric | MSVC cl (tuned) | **clang-cl** | clang++ | clang-cl vs cl | clang-cl vs clang++ |
+|---|--:|--:|--:|--:|--:|
+| field_mul (ns) | 17 | 16 | 12 | 1.06× | 0.75× |
+| point_dbl (µs) | 0.19 | 0.10 | 0.08 | **1.97×** | 0.78× |
+| scalar_mul k·P (µs) | 92.4 | **28.3** | 25.7 | **3.27×** | 0.91× |
+| batch_verify (ms) | 7.22 | **2.08** | 1.77 | **3.48×** | 0.85× |
+| frost_finalize (ms) | 2.37 | **0.66** | 0.48 | **3.58×** | 0.73× |
+
+clang-cl is **3.3–3.6× faster than MSVC cl** on the compound paths and within
+**~10–27%** of clang++ — i.e. it closes nearly the entire gap while staying in the MSVC
+toolchain. Correctness verified: `run_selftest ci` = **31/31 modules, ALL TESTS PASSED**.
+
+**Build it:**
+```bat
+cmake --preset windows-clang-cl          :: from a VS Developer Command Prompt
+cmake --build out/windows-clang-cl
+```
+The preset sets `CMAKE_CXX_COMPILER=clang-cl` + `SECP256K1_USE_LTO=OFF`; the compiler-rt
+builtins (`__modti3`/`__umodti3`) are **auto-located and linked** by CMake. In Visual
+Studio, set the Platform Toolset to **LLVM (clang-cl)** for the same effect.
+
+### Mixing clang(-cl) objects with `cl` objects
+A `cl`-compiled **C++** caller of clang-built C++ (by-value `Point`/`Scalar` returns,
+`alignas`'d field types) **crashes** (`0xC0000409`) — the C++ ABI is not interop-safe
+across the two compilers. Two safe options:
+1. **Build the whole target (lib + app) with clang-cl** — one compiler, no boundary. ✅
+2. **Cross the boundary via the C ABI** (`ufsecp.h`, `extern "C"`, POD only) — a `cl` app
+   linking a clang(-cl)-built `ufsecp` lib works and runs correctly. ✅
+
+The flag tuning in §3 (`/Ob3`+WPO) remains the best option for builds that must use `cl`.
 
 ## 5. Reproduce
 
