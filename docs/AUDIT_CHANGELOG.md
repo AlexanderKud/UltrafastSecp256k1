@@ -1,5 +1,16 @@
 # Audit Changelog
 
+## 2026-06-14 — CAAS evidence refresh token fallback fix
+
+- Fixed the scheduled `CAAS Evidence Refresh` lane so a missing
+  `CAAS_BOT_TOKEN` no longer fails the workflow before checkout, evidence
+  regeneration, and diagnostic artifact upload. The lane now falls back to
+  `github.token` consistently for checkout and push; branch-protection rejection
+  remains a hard failure at the final push step.
+- Added a Python audit self-test that rejects reintroducing the stale
+  `CAAS_BOT_TOKEN` fail-fast check and verifies both checkout and commit/push
+  use the same token fallback expression.
+
 ## 2026-06-13 — libbitcoin ECDSA batch bridge opaque-signature regression fix
 
 - Added an MSVC x64 fast path for `u128_compat`: the no-`__int128` FE52

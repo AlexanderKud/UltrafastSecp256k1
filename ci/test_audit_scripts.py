@@ -2431,6 +2431,19 @@ def check_evidence_refresh_coverage_fixtures() -> None:
     if not rep.get("incident_drill_autorefresh"):
         failures.append("real manifest: incident_drill_log not reported as auto-refreshed")
 
+    # (5b) CAAS-009 regression: a missing CAAS_BOT_TOKEN must not kill the
+    # scheduled lane before diagnostics can be regenerated and uploaded. The
+    # workflow may still hard-fail at the final push if branch protection rejects
+    # the fallback token, but it must not exit in the token-mode reporting step.
+    workflow = (LIB_ROOT / ".github" / "workflows" / "caas-evidence-refresh.yml").read_text(
+        encoding="utf-8", errors="replace")
+    if "::error::CAAS_BOT_TOKEN secret is not configured" in workflow:
+        failures.append("evidence refresh workflow still hard-fails on missing CAAS_BOT_TOKEN")
+    if "token: ${{ secrets.CAAS_BOT_TOKEN || github.token }}" not in workflow:
+        failures.append("checkout does not use CAAS_BOT_TOKEN || github.token fallback")
+    if "GH_TOKEN: ${{ secrets.CAAS_BOT_TOKEN || github.token }}" not in workflow:
+        failures.append("commit/push does not use CAAS_BOT_TOKEN || github.token fallback")
+
     # (6) RR-BAS-02 promotion safety: a stale drill log BLOCKS under blocking
     #     severity, but only WARNS under the live advisory severity (no false pass).
     try:
