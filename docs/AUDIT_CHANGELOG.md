@@ -1,5 +1,17 @@
 # Audit Changelog
 
+## 2026-06-14 — Windows ARM64 clang-cl portability
+
+- Generalized Windows clang-cl compiler-rt linking so the build selects the
+  target architecture's runtime archive (`clang_rt.builtins-x86_64.lib` or
+  `clang_rt.builtins-aarch64.lib`) instead of hardcoding x86_64.
+- Added a `windows-arm64-clang-cl` preset for the MSVC ABI + clang-cl Windows
+  ARM64 target. AArch64 uses the NEON architectural baseline; the x86
+  MULX/ADCX/ADOX benchmark claims remain scoped to Windows x86_64 until ARM64
+  benchmark evidence is recorded.
+- Tightened the MSVC `/arch` knob so x86-only values cannot be accidentally
+  applied to Windows ARM64 builds.
+
 ## 2026-06-14 — CAAS evidence refresh token fallback fix
 
 - Fixed the scheduled `CAAS Evidence Refresh` lane so a missing

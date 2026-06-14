@@ -19,6 +19,11 @@ RDTSCP timer, core-pinned, 11 passes, IQR outlier removal + median.
 > **our library compiled by MSVC** and **the same library compiled by Clang** — it is
 > not a library-vs-library comparison.
 
+**Scope note:** these measurements are Windows x86_64. Windows ARM64 is supported
+as a build target, but it uses the AArch64 NEON architectural baseline rather than
+the x86 MULX/ADCX/ADOX path measured here. Treat ARM64 performance as a separate
+benchmark surface until real Windows ARM64 numbers are recorded.
+
 ---
 
 ## 1. Why MSVC starts behind
@@ -121,10 +126,14 @@ toolchain. Correctness verified: `run_selftest ci` = **31/31 modules, ALL TESTS 
 ```bat
 cmake --preset windows-clang-cl          :: from a VS Developer Command Prompt
 cmake --build out/windows-clang-cl
+
+cmake --preset windows-arm64-clang-cl    :: Windows ARM64 target, NEON baseline
+cmake --build out/windows-arm64-clang-cl
 ```
 The preset sets `CMAKE_CXX_COMPILER=clang-cl` + `SECP256K1_USE_LTO=OFF`; the compiler-rt
-builtins (`__modti3`/`__umodti3`) are **auto-located and linked** by CMake. In Visual
-Studio, set the Platform Toolset to **LLVM (clang-cl)** for the same effect.
+builtins (`__modti3`/`__umodti3`) are **auto-located and linked** by CMake for the
+target architecture (`x86_64` or `aarch64`). In Visual Studio, set the Platform
+Toolset to **LLVM (clang-cl)** for the same effect.
 
 ### Mixing clang(-cl) objects with `cl` objects
 A `cl`-compiled **C++** caller of clang-built C++ (by-value `Point`/`Scalar` returns,

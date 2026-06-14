@@ -334,22 +334,24 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     endif()
 elseif(MSVC)
     # ------------------------------------------------------------------
-    # MSVC optimization (Windows). Closes the gap vs Clang -march=native.
+    # MSVC optimization (Windows).
     #
-    # By default MSVC x64 targets the SSE2 baseline and emits no AVX2/BMI2/
-    # FMA, so all non-assembly C++ (point/scalar arithmetic, the inline
-    # field kernels, batch/FROST glue) runs far behind the Clang build,
-    # which gets AVX2/BMI2/ADX from -march=native. SECP256K1_MSVC_ARCH
-    # raises the MSVC /arch: level to match. AVX2 is the safe shippable
-    # default (universal on modern x64); bump to AVX512 on capable hardware
-    # or drop to SSE2 for maximum portability.
+    # On Windows x64, MSVC defaults to the SSE2 ABI baseline. Production
+    # libbitcoin targets can rely on Intel/AMD SSE4-class machines, but the
+    # benchmark sweep showed that forcing /arch:AVX2 or /arch:AVX512 regresses
+    # important bigint kernels on cl, so the portable default keeps SSE2 and
+    # lets tuned intrinsics/asm handle hot arithmetic. On Windows ARM64, NEON is
+    # architectural baseline and there is no x64 /arch switch to apply.
     # Independently-toggleable MSVC perf knobs (defaults chosen empirically by
     # the MSVC-vs-Clang Windows benchmark sweep — see docs/BENCHMARKS / commit).
     set(SECP256K1_MSVC_ARCH "SSE2" CACHE STRING
-        "MSVC /arch: ISA level (SSE2|AVX|AVX2|AVX512). AVX2 auto-vectorization
-         regresses the non-vectorizable 64-bit bigint kernels on MSVC, so the
-         default keeps the SSE2 baseline.")
+        "MSVC x64 /arch: ISA level (SSE2|AVX|AVX2|AVX512). ARM64 uses the NEON architectural baseline and ignores this unless misconfigured.")
     set_property(CACHE SECP256K1_MSVC_ARCH PROPERTY STRINGS SSE2 AVX AVX2 AVX512)
+    if(NOT SECP256K1_PLATFORM STREQUAL "x86_64" AND NOT SECP256K1_MSVC_ARCH STREQUAL "SSE2")
+        message(FATAL_ERROR
+            "SECP256K1_MSVC_ARCH=${SECP256K1_MSVC_ARCH} is x86/x64-only; "
+            "${SECP256K1_PLATFORM} Windows builds use the platform baseline (ARM64 NEON).")
+    endif()
     # /Ob3 (most-aggressive inlining) is a consistent ~8-15% win on the Windows
     # MSVC-vs-Clang sweep (field_mul 20->17ns, field_sqr 15->13ns = Clang parity,
     # scalar_mul 100->92us, field add 6.3->2.2ns) with no measurable regression,
@@ -373,7 +375,7 @@ elseif(MSVC)
     if(SECP256K1_MSVC_OB3)
         add_compile_options($<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Ob3>)
     endif()
-    if(NOT SECP256K1_MSVC_ARCH STREQUAL "SSE2")
+    if(SECP256K1_PLATFORM STREQUAL "x86_64" AND NOT SECP256K1_MSVC_ARCH STREQUAL "SSE2")
         add_compile_options(
             $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/arch:${SECP256K1_MSVC_ARCH}>)
     endif()
@@ -384,15 +386,18 @@ elseif(MSVC)
 endif()
 
 # ---------------------------------------------------------------------------
-# Clang on Windows (clang++ or clang-cl, x86_64-pc-windows-msvc).
+# Clang on Windows (clang++ or clang-cl, MSVC ABI).
 #
-# RECOMMENDED FAST PATH ON WINDOWS: build with clang-cl. It is a drop-in,
+# RECOMMENDED FAST PATH ON WINDOWS x86_64: build with clang-cl. It is a drop-in,
 # MSVC-ABI-compatible Clang driver (link.exe / MSVC CRT / .pdb / Visual Studio
 # toolset) whose codegen runs the inline MULX/ADCX/ADOX field kernels that MSVC
 # cl cannot (no inline asm, no __int128). Measured ~3.3-3.6x faster scalar_mul /
 # batch_verify / FROST than cl, i.e. near clang++ parity, while staying in the
 # MSVC toolchain. See benchmarks/comparison/windows_msvc_vs_clang_20260614.md.
 #   cmake --preset windows-clang-cl     (or -DCMAKE_CXX_COMPILER=clang-cl)
+#
+# Windows ARM64 is supported by the same clang-cl path: AArch64 has mandatory
+# NEON, and compiler-rt must be selected as clang_rt.builtins-aarch64.lib.
 #
 # The native __int128 field code emits 128-bit runtime calls (__modti3 /
 # __umodti3 / __multi3) that the MSVC CRT does not provide, so auto-locate and
@@ -408,13 +413,25 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         RESULT_VARIABLE _ufsecp_res_rc)
     if(_ufsecp_res_rc EQUAL 0 AND _ufsecp_clang_res)
         file(TO_CMAKE_PATH "${_ufsecp_clang_res}" _ufsecp_clang_res)
-        set(_ufsecp_builtins "${_ufsecp_clang_res}/lib/windows/clang_rt.builtins-x86_64.lib")
-        if(EXISTS "${_ufsecp_builtins}")
-            add_link_options("${_ufsecp_builtins}")
-            message(STATUS "secp256k1-fast: Clang/Windows — linking compiler-rt builtins: ${_ufsecp_builtins}")
+        if(SECP256K1_PLATFORM STREQUAL "x86_64")
+            set(_ufsecp_clang_rt_arch "x86_64")
+        elseif(SECP256K1_PLATFORM STREQUAL "aarch64")
+            set(_ufsecp_clang_rt_arch "aarch64")
         else()
-            message(WARNING "secp256k1-fast: Clang/Windows — clang_rt.builtins not found at "
-                            "${_ufsecp_builtins}; 128-bit runtime calls (__umodti3) may be unresolved.")
+            set(_ufsecp_clang_rt_arch "")
+        endif()
+        if(_ufsecp_clang_rt_arch)
+            set(_ufsecp_builtins "${_ufsecp_clang_res}/lib/windows/clang_rt.builtins-${_ufsecp_clang_rt_arch}.lib")
+            if(EXISTS "${_ufsecp_builtins}")
+                add_link_options("${_ufsecp_builtins}")
+                message(STATUS "secp256k1-fast: Clang/Windows ${SECP256K1_PLATFORM} — linking compiler-rt builtins: ${_ufsecp_builtins}")
+            else()
+                message(WARNING "secp256k1-fast: Clang/Windows ${SECP256K1_PLATFORM} — clang_rt.builtins not found at "
+                                "${_ufsecp_builtins}; 128-bit runtime calls (__umodti3) may be unresolved.")
+            endif()
+        else()
+            message(WARNING "secp256k1-fast: Clang/Windows — no compiler-rt builtins mapping for platform "
+                            "${SECP256K1_PLATFORM}; 128-bit runtime calls (__umodti3) may be unresolved.")
         endif()
     endif()
 endif()

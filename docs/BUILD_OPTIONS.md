@@ -4,7 +4,7 @@
 >
 > Defaults below are the **CMake declaration defaults**. Named build profiles (see [CMakePresets.json](../CMakePresets.json) and [BUILDING.md](BUILDING.md)) override many of them for a minimal footprint per coin / use case. A `cmake_dependent_option` is only honoured when its guard condition holds (otherwise it is forced off).
 
-**74 options** across 8 scope(s). Set any flag at configure time with `-D<FLAG>=ON|OFF`.
+**76 options** across 8 scope(s). Set any flag at configure time with `-D<FLAG>=ON|OFF`.
 
 ```bash
 # Example: CPU build with the shim + MuSig2, no ZK/FROST
@@ -43,6 +43,8 @@ cmake -S . -B out/mybuild -G Ninja -DCMAKE_BUILD_TYPE=Release \
 | `SECP256K1_GPU_BUILD_ZK` | `ON` | GPU ZK ops (knowledge / DLEQ / bulletproof / SNARK witness) |
 | `SECP256K1_INSTALL` | `ON` | Generate install target |
 | `SECP256K1_INSTALL_PKGCONFIG` | `ON` | Install pkg-config file |
+| `SECP256K1_MSVC_OB3` | `ON` | MSVC: /Ob3 most-aggressive inlining |
+| `SECP256K1_MSVC_WPO` | `ON` | MSVC: /GL whole-program + /LTCG + /OPT:REF,ICF |
 | `SECP256K1_REQUIRE_CT` | `OFF` | Deprecate non-CT sign functions (compile warnings on fast:: signing) |
 | `SECP256K1_SPEED_FIRST` | `OFF` | Reserved: SECP256K1_FAST_NO_SECURITY_CHECKS compile definition (currently has no effect — CT guards are always on) |
 | `SECP256K1_USE_ULTRAFAST` | `OFF` | [Bitcoin Core] Use UltrafastSecp256k1 as the secp256k1 backend (enables shim + CT + strict ABI) |
