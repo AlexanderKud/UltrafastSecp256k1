@@ -222,6 +222,57 @@ int main() {
         CHECK(lbtc_ecdsa_s_is_high(high_sig), "ecdsa: source high-S row is not rewritten");
     }
 
+    /* --- ECDSA sig packing: opaque ec_signature -> GPU-native compact (normalized),
+     *     pre-built table verifies identically via the compact columns API.
+     *     This is the "conversion algorithm" a caller uses to pass normalized
+     *     signatures directly (no per-call conversion at verify time). --- */
+    {
+        const size_t N = 48;
+        auto cols = build_ecdsa_columns(sctx, N);   /* opaque (ec_signature) sigs */
+        make_lbtc_high_s(cols.sig.data() + 7 * 64); /* row 7 is consensus-valid high-S */
+        CHECK(lbtc_ecdsa_s_is_high(cols.sig.data() + 7 * 64),
+              "pack: fixture row 7 is high-S (opaque)");
+
+        /* Reference: verify the opaque column directly (engine normalizes internally). */
+        std::vector<uint8_t> res_opaque(N, 0xAA);
+        ufsecp_lbtc_verify_ecdsa_columns(ctrl, cols.msg.data(), cols.pub.data(),
+                                         cols.sig.data(), N, res_opaque.data());
+
+        /* Pack the whole opaque column once -> public big-endian compact, low-S. */
+        std::vector<uint8_t> packed(N * 64);
+        ufsecp_lbtc_ecdsa_sigs_pack(cols.sig.data(), N, /*input_is_opaque=*/1,
+                                    packed.data());
+
+        bool any_high = false, fmt_ok = true;
+        for (size_t i = 0; i < N; ++i) {
+            if (ecdsa_s_is_high(packed.data() + i * 64)) any_high = true; /* compact is_high */
+            /* packed must equal opaque->compact then low-S normalize. */
+            uint8_t expect[64];
+            lbtc_opaque_to_compact(cols.sig.data() + i * 64, expect);
+            if (ecdsa_s_is_high(expect)) make_high_s(expect); /* n-s == low-S of the pair */
+            if (std::memcmp(expect, packed.data() + i * 64, 64) != 0) fmt_ok = false;
+        }
+        CHECK(!any_high, "pack: every packed sig is low-S normalized");
+        CHECK(fmt_ok, "pack: packed == byte-reversed opaque, low-S normalized");
+
+        /* single-sig pack matches the batch pack (incl. in-place aliasing). */
+        uint8_t one[64];
+        std::memcpy(one, cols.sig.data() + 7 * 64, 64);
+        ufsecp_lbtc_ecdsa_sig_pack(one, /*input_is_opaque=*/1, one); /* alias in==out */
+        CHECK(std::memcmp(one, packed.data() + 7 * 64, 64) == 0,
+              "pack: single (in-place) == batch pack for the high-S row");
+
+        /* Verify the PRE-PACKED compact column: identical verdict, same backend. */
+        std::vector<uint8_t> res_compact(N, 0xAA);
+        ufsecp_lbtc_verify_ecdsa_columns_compact(ctrl, cols.msg.data(),
+                                                 cols.pub.data(), packed.data(), N,
+                                                 res_compact.data());
+        CHECK(invalids(res_compact).count == 0,
+              "pack: pre-packed compact column verifies (incl. the high-S row)");
+        CHECK(res_opaque == res_compact,
+              "pack: compact-column verdict == opaque-column verdict (parity)");
+    }
+
     /* --- ECDSA, corrupt one --- */
     {
         const size_t N = 50;

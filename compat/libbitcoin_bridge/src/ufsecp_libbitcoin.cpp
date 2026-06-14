@@ -335,8 +335,12 @@ void cpu_columns_chunk(ufsecp_ctx* ctx, Kind k,
                        const uint8_t* sigs64, std::size_t base,
                        std::size_t cnt, EcdsaSigFormat format, Sink& sink) {
     const std::size_t pub = pubkey_size(k);
-    if (k == Kind::Ecdsa) {
-        (void)format;
+    /* Fast batch path for OPAQUE ECDSA columns (libbitcoin's native ec_signature
+     * layout): the engine's opaque-batch C ABI parses + low-S normalizes directly.
+     * A COMPACT column (public big-endian r||s, e.g. ufsecp_lbtc_ecdsa_sigs_pack
+     * output) must NOT take this path — it would be mis-read as opaque — so it
+     * falls through to the per-row loop, which honours `format`. */
+    if (k == Kind::Ecdsa && format == EcdsaSigFormat::Opaque) {
         std::vector<uint8_t> verdicts(cnt, 0);
         const auto rc = ufsecp_ecdsa_verify_opaque_batch(
             ctx,
@@ -818,6 +822,71 @@ void ufsecp_lbtc_verify_schnorr_columns_collect(ufsecp_lbtc_ctrl* ctrl,
     verify_columns_collect_impl(ctrl, Kind::Schnorr, msg_hashes32, pubkeys_x32,
                                 sigs64, n, key_cells, key_size,
                                 EcdsaSigFormat::Compact);
+}
+
+/* ---------------------------------------------------------------------------
+ * ECDSA signature table packing (build a GPU-native sig column once).
+ *
+ * For libbitcoin's existing tables NO packing is required: the ECDSA verify
+ * entry points (ufsecp_lbtc_verify_ecdsa / _columns) consume the OPAQUE
+ * secp256k1_ecdsa_signature bytes (== ec_signature, internal little-endian scalar
+ * layout produced by ecdsa_signature_parse_der_lax / _parse_compact) DIRECTLY and
+ * low-S normalize internally on both the CPU and the on-device GPU path.
+ *
+ * These helpers are for callers that want to build the signature column ONCE in
+ * the engine's native compact form — big-endian r||s, low-S normalized — so the
+ * verify call needs no per-row reformat, and for non-libbitcoin integrators that
+ * already store public compact r||s rather than the opaque object. Pair the
+ * packed column with ufsecp_lbtc_verify_ecdsa_columns_compact below.
+ * ------------------------------------------------------------------------- */
+void ufsecp_lbtc_ecdsa_sig_pack(const uint8_t* in, int input_is_opaque,
+                                uint8_t out64[64]) {
+    if (!in || !out64) return;
+    /* Stage through a temp so `out64` may alias `in` (the Opaque path byte-reverses
+     * in place, which would corrupt a self-aliased buffer). */
+    uint8_t tmp[64];
+    copy_ecdsa_signature_normalized(
+        in, tmp,
+        input_is_opaque ? EcdsaSigFormat::Opaque : EcdsaSigFormat::Compact);
+    std::memcpy(out64, tmp, 64);
+}
+
+void ufsecp_lbtc_ecdsa_sigs_pack(const uint8_t* in, size_t n,
+                                 int input_is_opaque, uint8_t* out) {
+    if (!in || !out || n == 0) return;
+    const EcdsaSigFormat fmt = input_is_opaque ? EcdsaSigFormat::Opaque
+                                               : EcdsaSigFormat::Compact;
+    for (size_t i = 0; i < n; ++i) {
+        uint8_t tmp[64];
+        copy_ecdsa_signature_normalized(in + i * 64, tmp, fmt);
+        std::memcpy(out + i * 64, tmp, 64);
+    }
+}
+
+/* Verify a column of PUBLIC big-endian compact r||s ECDSA signatures (e.g. the
+ * output of ufsecp_lbtc_ecdsa_sigs_pack, or any caller that already stores compact
+ * sigs). Same verdict + same CPU/GPU parity as ufsecp_lbtc_verify_ecdsa_columns;
+ * the only difference is the input sig format (compact instead of opaque). High-S
+ * is still low-S normalized, so a not-yet-normalized compact column is also safe. */
+void ufsecp_lbtc_verify_ecdsa_columns_compact(ufsecp_lbtc_ctrl* ctrl,
+                                              const uint8_t* msg_hashes32,
+                                              const uint8_t* pubkeys33,
+                                              const uint8_t* sigs64,
+                                              size_t n,
+                                              uint8_t* results) {
+    verify_columns_results_impl(ctrl, Kind::Ecdsa, msg_hashes32, pubkeys33, sigs64,
+                                n, EcdsaSigFormat::Compact, results);
+}
+
+void ufsecp_lbtc_verify_ecdsa_columns_compact_collect(ufsecp_lbtc_ctrl* ctrl,
+                                                      const uint8_t* msg_hashes32,
+                                                      const uint8_t* pubkeys33,
+                                                      const uint8_t* sigs64,
+                                                      size_t n,
+                                                      uint8_t* key_cells,
+                                                      size_t key_size) {
+    verify_columns_collect_impl(ctrl, Kind::Ecdsa, msg_hashes32, pubkeys33, sigs64,
+                                n, key_cells, key_size, EcdsaSigFormat::Compact);
 }
 
 /* ---------------------------------------------------------------------------

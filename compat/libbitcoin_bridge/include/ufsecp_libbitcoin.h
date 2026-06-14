@@ -208,6 +208,58 @@ void ufsecp_lbtc_verify_schnorr_columns(ufsecp_lbtc_ctrl* ctrl,
                                         uint8_t* results);
 
 /* ------------------------------------------------------------------------- */
+/* 1a'. ECDSA signature packing — build a GPU-native sig table/column once.    */
+/* ------------------------------------------------------------------------- */
+/*
+ * IMPORTANT — for libbitcoin you do NOT need these. The ECDSA verify entry points
+ * (ufsecp_lbtc_verify_ecdsa / _columns) consume the OPAQUE secp256k1_ecdsa_signature
+ * bytes — i.e. your ec_signature, the output of ecdsa_signature_parse_der_lax /
+ * secp256k1_ecdsa_signature_parse_compact — DIRECTLY, and low-S normalize internally
+ * on both the CPU and the on-device GPU path. Pass your existing rows/columns
+ * unchanged.
+ *
+ * Use these helpers only if you want to PRE-BUILD the signature table once in the
+ * engine's native compact form (public big-endian r||s, low-S normalized) so the
+ * verify call does zero per-row reformatting, OR if you are a non-libbitcoin
+ * integrator that already stores public compact r||s instead of the opaque object.
+ *
+ * ufsecp_lbtc_ecdsa_sig_pack:
+ *   in              64 bytes. input_is_opaque != 0 -> `in` is an opaque
+ *                   secp256k1_ecdsa_signature (== ec_signature, internal little-endian
+ *                   scalar layout). input_is_opaque == 0 -> `in` is public big-endian
+ *                   compact r||s.
+ *   out64           64-byte normalized big-endian compact r||s (low-S). MAY alias `in`.
+ *   No validation of scalar range (verify rejects out-of-range/zero). Never fails.
+ *
+ * ufsecp_lbtc_ecdsa_sigs_pack: the same, applied to n signatures (stride 64). `out`
+ *   may alias `in` for an in-place pack.
+ *
+ * Verify a packed/compact column with ufsecp_lbtc_verify_ecdsa_columns_compact
+ * (results) or ..._compact_collect (in-place key-cell verdict): identical verdict
+ * and CPU/GPU parity to the opaque columns API — only the input sig format differs.
+ */
+void ufsecp_lbtc_ecdsa_sig_pack(const uint8_t* in, int input_is_opaque,
+                                uint8_t out64[64]);
+
+void ufsecp_lbtc_ecdsa_sigs_pack(const uint8_t* in, size_t n,
+                                 int input_is_opaque, uint8_t* out);
+
+void ufsecp_lbtc_verify_ecdsa_columns_compact(ufsecp_lbtc_ctrl* ctrl,
+                                              const uint8_t* msg_hashes32,
+                                              const uint8_t* pubkeys33,
+                                              const uint8_t* sigs64,
+                                              size_t n,
+                                              uint8_t* results);
+
+void ufsecp_lbtc_verify_ecdsa_columns_compact_collect(ufsecp_lbtc_ctrl* ctrl,
+                                                      const uint8_t* msg_hashes32,
+                                                      const uint8_t* pubkeys33,
+                                                      const uint8_t* sigs64,
+                                                      size_t n,
+                                                      uint8_t* key_cells,
+                                                      size_t key_size);
+
+/* ------------------------------------------------------------------------- */
 /* 1b. In-place "collect" verify — verdict collapsed into the row's key cell.  */
 /* ------------------------------------------------------------------------- */
 
