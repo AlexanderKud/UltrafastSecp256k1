@@ -169,17 +169,14 @@ static void ecdsa_sig_to_data(const secp256k1::ECDSASignature& sig, unsigned cha
 
 static secp256k1::ECDSASignature ecdsa_sig_from_data(const unsigned char data[64]) {
     // T-07: strict parse — rejects r,s >= n by zeroing (downstream verify then fails).
-    // PERF-OPT: when data was written by secp256k1_ecdsa_signature_parse_der or
-    // secp256k1_ecdsa_signature_parse_compact, the valid_scalar check already ran.
-    // For API correctness we still use parse_bytes_strict (not unchecked) because
-    // callers can write arbitrary bytes into secp256k1_ecdsa_signature.data directly.
-    // The strict parse is ~5-8 ns; removing it risks silent mod-n reduction (T-07).
+    // The opaque data IS the engine's native little-endian limb form, so parse it
+    // DIRECTLY via parse_bytes_strict_le — no LE->BE byte-reversal round-trip (the
+    // old scalar_internal_to_be + parse_bytes_strict reversed the bytes only for
+    // parse_bytes_strict to reverse them back). Same strict <n contract (T-07);
+    // arbitrary-byte callers still fail-close to zero.
     Scalar r_scalar, s_scalar;
-    unsigned char r_be[32]{}, s_be[32]{};
-    scalar_internal_to_be(r_be, data);
-    scalar_internal_to_be(s_be, data + 32);
-    if (!Scalar::parse_bytes_strict(r_be, r_scalar)) r_scalar = Scalar::zero();
-    if (!Scalar::parse_bytes_strict(s_be, s_scalar)) s_scalar = Scalar::zero();
+    if (!Scalar::parse_bytes_strict_le(data,      r_scalar)) r_scalar = Scalar::zero();
+    if (!Scalar::parse_bytes_strict_le(data + 32, s_scalar)) s_scalar = Scalar::zero();
     return { r_scalar, s_scalar };
 }
 

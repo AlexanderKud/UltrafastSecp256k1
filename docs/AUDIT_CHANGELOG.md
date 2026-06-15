@@ -1,5 +1,31 @@
 # Audit Changelog
 
+## 2026-06-15 — Verify-path waste removal + Knots minimal build profile
+
+- **Curve-check trust contract restored (PERF-002 regression fix).** `d0b1435e`
+  ("Harden …") had re-added the per-call `y^2=x^3+7` curve check to the verify-path
+  `pubkey_data_to_point` that PERF-002 (`c67edc1c`) deliberately removed. Removed
+  again — curve membership is validated once at `ec_pubkey_parse`/`_create`
+  (libsecp trust contract). Validated cross-compiler: off-curve single + batch
+  verify produce identical verdicts under gcc and clang (no CA-001-class
+  divergence — off-curve now stays an off-curve point, never the infinity operand
+  the check used to create); `test_regression_ecdsa_batch_curve_check` BCK-1..6
+  still 6/6 on both compilers.
+- **Opaque signature parse: removed a double byte-reverse.** `ecdsa_sig_from_data`
+  parsed opaque (little-endian) `r`/`s` by reversing LE->BE then calling
+  `parse_bytes_strict` (which reverses BE->LE again). Added
+  `Scalar::parse_bytes_strict_le` (direct LE-limb load, same `>= n` reject) and use
+  it. New test **LE-1** in `test_regression_ecdsa_batch_curve_check` pins
+  `parse_bytes_strict_le` equivalence to the byte-reverse path over 8k patterns.
+- **GLV table build: 16 -> minimal `normalize_weak`** (rescaled entries are already
+  weak-normal from the multiply -- matches libsecp `ge_table_set_globalz`).
+- All three are byte-identical to baseline + libsecp (200k differential,
+  `7926f98cfe0b2677`); measured ~120-170 ns faster cold ECDSA verify (confirmed,
+  non-overlapping ranges).
+- **`SECP256K1_BUILD_KNOTS`** minimal build profile added: Knots-only modules,
+  module/static build, 1.83 MB -> 1.27 MB drop-in (stock-libsecp parity), no speed
+  change.
+
 ## 2026-06-14 — Windows ARM64 clang-cl portability
 
 - Pinned the Windows CI job to `windows-2022` because the job explicitly uses
