@@ -403,8 +403,12 @@ jobs:
         #     high CI noise, so it is safe to run on shared runners.
         run: ctest --test-dir build --output-on-failure -j4 -E "^ct_sidechannel|^regression_schnorr_r_zero_ct|^exploit_hertzbleed_dvfs_timing|^exploit_blind_spa_cmov_leak|^exploit_eucleak_inversion_timing|^exploit_pippenger_batch_regression|^exploit_bip352_scan_dos|^exploit_ct_recov"
 
-      # -- Install into staging dir --
+      # -- Install into staging dir (full-build legs only). A subset leg like
+      #    win-arm64 builds a single target (build_target), so `cmake --install`
+      #    (the full install manifest) would fail on the unbuilt targets. Its lib is
+      #    collected directly from build/ by the Collect step's `find build staging`. --
       - name: Install
+        if: ${{ ! matrix.build_target }}
         run: cmake --install build --prefix staging
 
       # -- Collect artifacts: BOTH static and shared (DLL) builds of BOTH the
