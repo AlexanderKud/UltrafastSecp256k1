@@ -127,8 +127,11 @@
   #endif
 #endif // SECP256K1_PROFILE_DECOMP
 
-// GCC/Clang intrinsics wrappers (not needed for MSVC/ClangCL)
-#ifndef _MSC_VER
+// GCC/Clang intrinsics wrappers. clang-cl defines _MSC_VER but provides __int128 +
+// __builtin_*; the MSVC <intrin.h> _umul128/_BitScanReverse64 in the #else are x86-only,
+// so route clang-cl through these portable wrappers too (lets it build for Windows ARM64).
+// Only real MSVC `cl` (_MSC_VER && !__clang__) uses <intrin.h>.
+#if !defined(_MSC_VER) || defined(__clang__)
 
 #if defined(SECP256K1_NO_INT128) || defined(SECP256K1_PLATFORM_ESP32)
 // Portable 64x64->128 multiplication for 32-bit platforms

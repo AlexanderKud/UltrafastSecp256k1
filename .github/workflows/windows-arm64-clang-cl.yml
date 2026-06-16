@@ -1,0 +1,105 @@
+# Windows ARM64 (clang-cl) cross-compile validation.
+#
+# MSVC `cl` cannot build the engine for ARM64 (no native __int128; the field/
+# precompute kernels need it), so the ARM64 path uses **clang-cl** targeting
+# aarch64-pc-windows-msvc (clang has __int128 + __builtin_*). This job cross-builds
+# on an x64 windows runner and LINK-TESTS only (an arm64 exe can't run on x64).
+#
+# Validation-only: NOT wired into the release. It proves the engine + libsecp256k1
+# shim compile + link for Windows ARM64 before the arm64 artifact is added to a
+# release. Triggered on dev pushes that touch the engine/build so the port is
+# checked every iteration.
+name: windows-arm64-clang-cl
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/cpu/**'
+      - 'compat/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'cmake/**'
+      - '.github/workflows/windows-arm64-clang-cl.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: win-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-arm64:
+    name: windows-arm64 clang-cl cross compile + link-test
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      # ARM64 cross toolchain env (Windows ARM64 SDK libs/headers, host x64).
+      - name: Setup MSVC ARM64 cross env
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: amd64_arm64
+
+      - name: Put clang-cl (LLVM) on PATH
+        shell: bash
+        run: echo "C:/Program Files/LLVM/bin" >> "$GITHUB_PATH"
+
+      - name: Toolchain versions
+        shell: bash
+        run: |
+          clang-cl --version
+          cmake --version
+
+      - name: Install Ninja
+        shell: bash
+        run: choco install ninja --version=1.12.1 --checksum=f550fec705b6d6ff58f2db3c374c2277a37691678d6aba463adcbb129108467a --checksum-type=sha256 --requirechecksum -y --no-progress
+
+      # Cross-configure for aarch64-pc-windows-msvc via clang-cl. ASM=OFF (no x64
+      # MASM/inline asm on ARM64) and LTO=OFF (matches windows-arm64-clang-cl preset).
+      - name: Configure (clang-cl, aarch64-pc-windows-msvc)
+        shell: bash
+        run: |
+          cmake -S . -B build-arm64 -G Ninja \
+            -DCMAKE_C_COMPILER=clang-cl \
+            -DCMAKE_CXX_COMPILER=clang-cl \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
+            -DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc \
+            -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSECP256K1_BUILD_SHIM=ON \
+            -DSECP256K1_USE_ASM=OFF \
+            -DSECP256K1_USE_LTO=OFF \
+            -DSECP256K1_BUILD_TESTS=OFF \
+            -DSECP256K1_BUILD_BENCH=OFF
+
+      - name: Build engine + shim (cross-compile)
+        shell: bash
+        run: cmake --build build-arm64 --target fastsecp256k1 secp256k1_shim -j
+
+      # Link a real libsecp256k1-ABI consumer against the cross-built lib to prove
+      # the symbols resolve for ARM64. Link-only: the arm64 exe is not executed.
+      - name: Link-test (arm64, link-only)
+        shell: bash
+        run: |
+          cat > linktest.cpp <<'EOF'
+          #include <secp256k1.h>
+          int main() {
+            secp256k1_context* c = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+            unsigned char sk[32]; for (int i = 0; i < 32; ++i) sk[i] = 1;
+            secp256k1_pubkey pk;
+            int ok = secp256k1_ec_pubkey_create(c, &pk, sk);
+            secp256k1_context_destroy(c);
+            return ok ? 0 : 1;
+          }
+          EOF
+          LIB=$(find build-arm64 -name 'fastsecp256k1.lib' -print -quit)
+          [ -n "$LIB" ] || { echo "::error::fastsecp256k1.lib not found"; exit 1; }
+          clang-cl --target=aarch64-pc-windows-msvc /std:c++17 \
+            -I compat/libsecp256k1_shim/include -I src/cpu/include -I build-arm64/include \
+            -D SECP256K1_STATIC /MT linktest.cpp "$LIB" /Fe:linktest-arm64.exe
+          echo "arm64 cross-build + link OK (exe not executed on x64 host)"

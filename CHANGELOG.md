@@ -7,8 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-06-16
+
+> **libsecp256k1-ABI backend under our own `ultrafast_secp256k1` name for Bitcoin
+> Knots/Core, libbitcoin integration, and Clang-speed crypto on Windows.** A minor,
+> **ABI-compatible** release (`UFSECP_ABI_VERSION` stays 4 — additive only; every
+> 4.2.x API and build flag is unchanged). Adds the `SECP256K1_BUILD_KNOTS` minimal
+> profile and an opt-in self-contained `ultrafast_secp256k1` shared lib (exports the
+> libsecp256k1 ABI, never installs a colliding `libsecp256k1` file), the libbitcoin
+> opaque-ECDSA row ABI + GPU batch bridge, the
+> `windows-clang-cl` preset, a cold-verify speedup, and a large CAAS "bastion"
+> hardening pass (threat-gate coverage matrix reaches 0 gaps) plus several
+> use-after-free and secret-erasure fixes.
+
 ### Added
 
+- **`SECP256K1_BUILD_KNOTS` — minimal drop-in build profile for Bitcoin Knots.**
+  A single flag compiles only the modules Knots needs (ecdsa core + recovery +
+  schnorrsig + extrakeys + ellswift) and strips everything else (MuSig2, FROST, ZK,
+  ECIES, BIP-352, adaptor, HD wallet, Ethereum, BCH, GPU, tests, benchmarks,
+  bindings). The drop-in `.so` shrinks **1.83 MB → ~1.27 MB** (stock libsecp256k1
+  0.6.0 is 1.26 MB) with identical verify/sign speed; CT-mandatory signing and
+  strict BIP-340 stay on. When not building the shared `.so` the engine compiles as
+  an OBJECT library that links straight into the consumer (no separate library).
+  See `docs/BITCOIN_KNOTS_INTEGRATION.md`.
+- **Self-contained `ultrafast_secp256k1` shared lib exporting the libsecp256k1 C
+  ABI — explicit, opt-in Bitcoin Knots/Core backend (never a `libsecp256k1`
+  collision).** `SECP256K1_SHIM_BUILD_SHARED=ON` builds and installs a
+  self-contained `libultrafast_secp256k1.so` (`.dll`/`.lib`) plus the `secp256k1*.h`
+  ABI headers and an `ultrafast_secp256k1.pc` — all under OUR name, so they never
+  overwrite or shadow a system `libsecp256k1.so`/`libsecp256k1.pc`; the `secp256k1_*`
+  ABI itself is unchanged. To use it as a node backend the integrator aliases
+  `secp256k1` explicitly (CMake `add_library(secp256k1 ALIAS secp256k1_shim)` in a
+  bundled tree, or their own libsecp256k1 alias/symlink over the installed
+  `ultrafast_secp256k1`, at their own risk). Verified against Bitcoin Knots
+  `v29.3.knots20260508`.
+- **libbitcoin integration — opaque ECDSA row ABI + GPU batch bridge.** New
+  opaque/compact ECDSA row entry points matching libbitcoin's row-verify shape,
+  with signatures packed to the engine's GPU-native form for compact-column batch
+  verify. Ships as a libbitcoin drop-in shim plus an opt-in batch bridge. See
+  `docs/LIBBITCOIN_INTEGRATION.md` and `docs/SIGNATURE_FORMS.md`.
 - **`windows-clang-cl` CMake preset — the recommended fast build on Windows.** Building
   with `clang-cl` (a drop-in, MSVC-ABI-compatible Clang driver: `link.exe`, MSVC CRT,
   `.pdb`, Visual Studio "LLVM (clang-cl)" toolset) gets Clang's inline MULX/ADCX/ADOX
@@ -46,6 +84,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compound paths (scalar_mul, batch_verify, frost) is structural (MSVC has no native
   `__int128`/`MULX` inline field multiply) and is left as future work. Full data:
   `benchmarks/comparison/windows_msvc_vs_clang_20260614.md`.
+- **win-arm64 (MSVC ARM64) clang-cl portability** groundwork; the Windows MSVC CI
+  runner is pinned to VS2022 for reproducible packaging.
+
+### Fixed
+
+- **MuSig2 key-aggregation cache use-after-free.** The keyagg-cache handle could
+  outlive its backing storage; the shim now enforces handle lifetime and rejects
+  stale handles.
+- **`g_context` use-after-free under concurrent context teardown.** A `shared_ptr`
+  snapshot plus atomic comb-teeth make the global signing context thread-safe.
+- **Secret-material erasure gaps closed.** `frost_sign` and `schnorr_keypair_create`
+  now erase secret-derived scalar residues, and MuSig2 erases its `neg_k`/`neg_d`
+  residues.
+- **libsecp256k1 shim parity.** The opaque ECDSA signature layout now matches
+  upstream libsecp256k1 byte-for-byte, and the ECDSA verify cache is keyed by the
+  full public key.
+- **libbitcoin bridge.** Accepts and normalizes high-S ECDSA batches.
+- **BIP-39.** Fail-closed single-source CSPRNG with an entropy gate.
+
+### Security
+
+- **CAAS "bastion" hardening — the threat-gate coverage matrix reaches 0 gaps.**
+  A large pass of new audit/evidence gates: soundness-coverage and
+  metamorphic-relation gates, a cross-backend CPU↔GPU value-differential gate, a
+  dudect binary constant-time probe, fuzz-harness liveness/smoke gates, a
+  fault-injection countermeasure gate, secret-parse and secret-erase ABI gates, a
+  canonical-encoding / malleability gate, evidence-freshness pre-alerts, and
+  incident drills run as real fault injection. External-anchor KAT (NIST + BIP-341)
+  defeats common-mode self-anchoring and valid/invalid coverage exercises the live
+  ABI reject branches. No engine API or behaviour change — this hardens the
+  assurance surface, not the cryptography.
+
+### Performance
+
+- **Cold ECDSA/Schnorr verify.** Removed per-call waste on the verify path (a
+  redundant public-key curve-check, an opaque-signature double byte-reverse, and
+  over-normalization in the GLV table build): ~120–170 ns faster cold verify,
+  byte-identical results, warm verify unchanged.
+- **Windows/MSVC.** `/Ob3` + whole-program optimization and faster u128 compat
+  arithmetic.
 
 ## [4.2.1] - 2026-06-10
 

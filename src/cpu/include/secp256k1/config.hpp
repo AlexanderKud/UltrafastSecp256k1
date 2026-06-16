@@ -131,8 +131,9 @@
 
 // Prefetch macros for cache optimization (Phase 4)
 // Hints to CPU to load data into cache before it's needed
-#if defined(_MSC_VER)
-    #include <xmmintrin.h>  // For _mm_prefetch
+#if defined(_MSC_VER) && !defined(__clang__)
+    #include <xmmintrin.h>  // For _mm_prefetch (x86-only; real MSVC cl. clang-cl falls
+                            // through to __builtin_prefetch below so it builds on ARM64.)
     // _MM_HINT_T0: Prefetch to all cache levels (L1, L2, L3)
     // _MM_HINT_T1: Prefetch to L2 and L3 cache (not L1)
     // _MM_HINT_T2: Prefetch to L3 cache only

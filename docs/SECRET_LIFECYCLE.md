@@ -1,6 +1,6 @@
 # Secret Lifecycle Review
 
-**Last updated**: 2026-06-11 | **Version**: 4.2.1
+**Last updated**: 2026-06-11 | **Version**: 4.3.0
 
 ### 2026-06-11 - MuSig2 partial-sign secret-derived stack residue erasure
 

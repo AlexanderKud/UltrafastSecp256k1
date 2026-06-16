@@ -1,5 +1,26 @@
 # Audit Changelog
 
+## 2026-06-16 — Windows-ARM64 (clang-cl) portability + de-masquerade install
+
+- **New regression module `regression_mul128_portability`** (math_invariants,
+  non-advisory). Pins that the 64x64->128 multiply agrees across the portable
+  32-bit schoolbook path, the `unsigned __int128` path, and `detail::mulhi64`
+  over edge + 20k random inputs (40200 checks). Guards the Windows-ARM64 port
+  that routes `precompute.cpp::_umul128` and `detail/arith64.hpp::mulhi64` OFF
+  the x86-only MSVC `<intrin.h>` intrinsic (clang-cl now takes the `__int128`
+  wrapper, so it builds for `aarch64-pc-windows-msvc`). `config.hpp` prefetch
+  also routes clang-cl to `__builtin_prefetch` (off the x86 `<xmmintrin.h>`).
+  Both changes are provably no-ops on x86-64/Linux (preprocessor takes the same
+  branch when `_MSC_VER` is undefined). New `windows-arm64-clang-cl.yml` CI leg
+  cross-compiles + link-tests the engine + shim for ARM64.
+- **Shim install de-masquerade.** The self-contained shared lib + pkg-config now
+  install under our own name only — `libultrafast_secp256k1.so` +
+  `ultrafast_secp256k1.pc` + `secp256k1*.h` ABI headers under an
+  `ultrafast_secp256k1/` subdir. The `libsecp256k1.pc` masquerade was removed so
+  the install can never overwrite or shadow a system `libsecp256k1`. The
+  `secp256k1_*` ABI is unchanged; node backend swap is an explicit integrator
+  alias. No audit-module change.
+
 ## 2026-06-15 — Verify-path waste removal + Knots minimal build profile
 
 - **Curve-check trust contract restored (PERF-002 regression fix).** `d0b1435e`
