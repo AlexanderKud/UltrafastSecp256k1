@@ -109,7 +109,7 @@ cmake -S . -B out/mybuild -G Ninja -DCMAKE_BUILD_TYPE=Release \
 |------|---------|-------------|
 | `SECP256K1_SHIM_BUILD_SHARED` | `OFF` | Also build a self-contained shared ultrafast_secp256k1 (DLL/.so) exporting the libsecp256k1 ABI |
 | `SECP256K1_SHIM_BUILD_TESTS` | `OFF` | Build shim compatibility test |
-| `SECP256K1_SHIM_INSTALL` | `ON` | Install the shim shared lib + libsecp256k1 headers + libsecp256k1.pc (Core/Knots backend swap) |
+| `SECP256K1_SHIM_INSTALL` | `ON` | Install the shim shared lib + secp256k1*.h ABI headers + ultrafast_secp256k1.pc (our-name pkg-config; integrator aliases secp256k1 explicitly) |
 | `SECP256K1_SHIM_RFC6979_COMPAT` | `OFF` | Match upstream libsecp256k1 nonce bytes exactly (includes ECDSA algo16 tag). Disables fault-attack resistance of hedged nonce. |
 
 ## libbitcoin bridge (script-sig batch verify + scan)

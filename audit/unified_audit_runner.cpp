@@ -626,6 +626,7 @@ int test_regression_schnorr_abi_edge_cases_run();        // TQ-005: Schnorr r==0
 int test_regression_ct_mixed_add_magnitude_run();        // CA-mixed-add: point_add_mixed_complete magnitude contract
 int test_regression_ct_sanitizer_detection_run();        // 2026-05-14: Clang TSan/MSan/ASan macro detection in ct_field.cpp
 int test_regression_field_reduce_carry_run();            // 2026-05-14: FE64 reduce() carry propagation result[2..4]
+int test_regression_mul128_portability_run();            // 2026-06-16: 64x64->128 multiply path equivalence (Windows-ARM64 clang-cl port)
 int test_regression_shim_static_ctx_run();              // ecf47967: g_static_ctx PERF-005 field alignment fix
 int test_regression_ellswift_ct_path_run();              // CT-001: ellswift_create CT path + XDH round-trip
 int test_regression_musig2_nonce_strict_run();           // CT-006: MuSig2 k1/k2 strict nonce parsing
@@ -1325,6 +1326,7 @@ static const AuditModule ALL_MODULES[] = {
     // in TSan/ASan builds; this Release-build test cannot detect the guarded regression.
     { "regression_ct_sanitizer_detection", "2026-05-14: Clang sanitizer macro detection — ct field_add/sub/mul/sqr vs fast parity; advisory (only catches guard regression in sanitizer builds, not Release)", "ct_analysis", test_regression_ct_sanitizer_detection_run, true },
     { "regression_field_reduce_carry", "2026-05-14: FE64 reduce() carry propagation — (2^255-1)^2 mod p matches Python truth, (p-1)^2 == 1; guards result[2]→[3]→[4] cascade chain", "math_invariants", test_regression_field_reduce_carry_run, false },
+    { "regression_mul128_portability", "2026-06-16: 64x64->128 multiply path equivalence — portable schoolbook == __int128 == detail::mulhi64 over edge+random; guards the Windows-ARM64 (clang-cl) _umul128/mulhi64 port off the x86-only MSVC <intrin.h> intrinsic", "math_invariants", test_regression_mul128_portability_run, false },
     { "regression_shim_static_ctx", "ecf47967: g_static_ctx field alignment after PERF-005 cached_r_G addition", "math_invariants", test_regression_shim_static_ctx_run, true },
     // === 2026-05-11 Security audit regression guards (CT-001, CT-006, RT-011, SHIM-001, SHIM-010, SHIM-012) ===
     // advisory=true: these modules depend on the libsecp256k1 shim being linked.

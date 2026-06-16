@@ -126,36 +126,43 @@ if(SECP256K1_SHIM_BUILD_SHARED)
     message(STATUS "  ultrafast_secp256k1 shared (libsecp256k1 ABI, our file name): ON")
 
     # ---------------------------------------------------------------------
-    # Install as a drop-in `libsecp256k1` pkg-config package.
+    # Install under OUR OWN name (ultrafast_secp256k1) — NEVER as libsecp256k1.
     #
-    # Bitcoin Core / Bitcoin Knots can then swap the backend with NO source
-    # change — Knots' `WITH_SYSTEM_LIBSECP256K1=ON` does
-    # `pkg_check_modules(libsecp256k1 REQUIRED IMPORTED_TARGET libsecp256k1)` and
-    # aliases `secp256k1` to it, so installing this shim's `libsecp256k1.pc`
-    # (Libs: -lultrafast_secp256k1) and pointing PKG_CONFIG_PATH here is all that
-    # is needed. See docs/BITCOIN_KNOTS_INTEGRATION.md.
+    # The shared lib exports the libsecp256k1 C ABI (secp256k1_* symbols +
+    # secp256k1*.h headers), but every installed FILE carries our name:
+    # libultrafast_secp256k1.so + ultrafast_secp256k1.pc + the secp256k1*.h ABI
+    # headers under an ultrafast_secp256k1/ subdir. We deliberately do NOT ship a
+    # `libsecp256k1.pc`, nor drop `secp256k1*.h` at the bare include root, because
+    # that collides with / overwrites a system libsecp256k1 and leaves pkg-config +
+    # the loader unable to tell which is the real one. To use this as a Bitcoin
+    # Core/Knots backend, the integrator aliases `secp256k1` EXPLICITLY —
+    # bundled-tree `add_library(secp256k1 ALIAS secp256k1_shim)`, or their own
+    # libsecp256k1 alias/symlink over the installed ultrafast_secp256k1, at their
+    # own risk. See docs/BITCOIN_KNOTS_INTEGRATION.md.
     # ---------------------------------------------------------------------
     option(SECP256K1_SHIM_INSTALL
-        "Install the shim shared lib + libsecp256k1 headers + libsecp256k1.pc (Core/Knots backend swap)"
+        "Install the shim shared lib + secp256k1*.h ABI headers + ultrafast_secp256k1.pc (our-name pkg-config; integrator aliases secp256k1 explicitly)"
         ON)
     if(SECP256K1_SHIM_INSTALL)
         include(GNUInstallDirs)
-        # libsecp256k1 version the shim's ABI tracks (Knots/Core subtree is 0.6.x).
+        # libsecp256k1-ABI-compat level advertised by ultrafast_secp256k1.pc; matches
+        # the Knots/Core libsecp256k1 0.6.x subtree so an integrator's own `secp256k1`
+        # alias resolves against the same ABI. This is NOT a libsecp256k1 package.
         set(UFSECP_SHIM_PC_VERSION "0.6.0")
         install(TARGETS ultrafast_secp256k1_shared
                 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
         install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ultrafast_secp256k1
                 FILES_MATCHING PATTERN "secp256k1*.h")
         configure_file(
-            ${CMAKE_CURRENT_SOURCE_DIR}/libsecp256k1.pc.in
-            ${CMAKE_CURRENT_BINARY_DIR}/libsecp256k1.pc @ONLY)
-        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libsecp256k1.pc
+            ${CMAKE_CURRENT_SOURCE_DIR}/ultrafast_secp256k1.pc.in
+            ${CMAKE_CURRENT_BINARY_DIR}/ultrafast_secp256k1.pc @ONLY)
+        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ultrafast_secp256k1.pc
                 DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-        message(STATUS "  shim install (libsecp256k1.pc + headers + .so): ON "
-                       "-> -DWITH_SYSTEM_LIBSECP256K1=ON in Core/Knots")
+        message(STATUS "  shim install (ultrafast_secp256k1.pc + secp256k1*.h ABI headers + libultrafast_secp256k1.so): ON "
+                       "-> integrator aliases secp256k1 explicitly (add_library(secp256k1 ALIAS secp256k1_shim))")
     endif()
 endif()
 

@@ -4038,6 +4038,9 @@ add_executable(unified_audit_runner
     # Regression: FE64 reduce() carry propagation in field.cpp (2026-05-14)
     # Guards the result[2]→[3]→[4] cascade for (2^255-1)^2 mod p.
     test_regression_field_reduce_carry.cpp
+    # Regression: 64x64->128 multiply path equivalence (Windows-ARM64 clang-cl port, 2026-06-16)
+    # Guards precompute.cpp _umul128 + detail::mulhi64 routed off the x86-only MSVC intrinsic.
+    test_regression_mul128_portability.cpp
     # Regression: CT nonce path uses generator_mul_blinded (2026-05-12)
     # Guards that ct::ecdsa_sign / ct::schnorr_sign activate DPA blinding.
     test_regression_ct_blinding_nonce_path.cpp
@@ -4836,6 +4839,17 @@ add_test(NAME regression_field_reduce_carry
     COMMAND test_regression_field_reduce_carry_standalone)
 set_tests_properties(regression_field_reduce_carry PROPERTIES TIMEOUT 30
     LABELS "audit;math;regression;field")
+
+# Regression: 64x64->128 multiply path equivalence — guards the Windows-ARM64
+# (clang-cl) _umul128/mulhi64 port off the x86-only MSVC <intrin.h> intrinsic.
+add_executable(test_regression_mul128_portability_standalone
+    test_regression_mul128_portability.cpp)
+audit_target_defaults(test_regression_mul128_portability_standalone)
+target_compile_definitions(test_regression_mul128_portability_standalone PRIVATE STANDALONE_TEST)
+add_test(NAME regression_mul128_portability
+    COMMAND test_regression_mul128_portability_standalone)
+set_tests_properties(regression_mul128_portability PROPERTIES TIMEOUT 30
+    LABELS "audit;math;regression;portability;arm64")
 
 option(SECP256K1_BUILD_LIBFUZZER
        "Build LibFuzzer harnesses (requires clang -fsanitize=fuzzer,address)" OFF)
