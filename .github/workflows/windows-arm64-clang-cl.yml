@@ -79,9 +79,14 @@ jobs:
             -DSECP256K1_BUILD_BENCH=OFF \
             -DSECP256K1_BUILD_EXAMPLES=OFF
 
-      - name: Build all (cross-compile) — same target set as release.yml
+      # Build only the static libsecp256k1-ABI archive (the ARM64 release artifact).
+      # A static archive does not link, so the __int128 compiler-rt builtins
+      # (__umodti3/__modti3 that the MSVC CRT lacks) stay unresolved for the consumer
+      # to provide — same as the x64 static lib. The shared ufsecp.dll is NOT built on
+      # ARM64 (its link needs those builtins; ARM64 ships static-only, like the x64 DLL).
+      - name: Build static lib (cross-compile) — the release.yml arm64 artifact target
         shell: bash
-        run: cmake --build build-arm64 -j
+        run: cmake --build build-arm64 --target fastsecp256k1 -j
 
       # Compile a real libsecp256k1-ABI consumer against the cross-built ARM64 headers
       # to prove the public ABI is usable on aarch64. Compile-only (-> .obj): the

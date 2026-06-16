@@ -277,13 +277,31 @@ jobs:
             # deferred; NuGet already ships the Windows static lib for consumers.
             extra_cmake: -DSECP256K1_SHIM_BUILD_SHARED=OFF
 
-          # NOTE: Windows ARM64 (MSVC) is DEFERRED. The engine is not yet
-          # MSVC-ARM64-portable: detail/arith64.hpp uses x64-only intrinsics
-          # (_addcarry_u64 / _subborrow_u64 / _umul128) and config.hpp (plus
-          # several SSE accel paths) include x86 intrinsic headers (xmmintrin.h
-          # etc.) unconditionally — all of which fail on MSVC ARM64. Re-add this
-          # matrix entry only after the engine has a validated MSVC-ARM64 port
-          # (tracked as a follow-up). win-arm64 was never shipped in v4.0.0.
+          # Windows ARM64 via clang-cl. MSVC `cl` cannot build the engine for ARM64
+          # (no native __int128), so the ARM64 leg uses clang-cl targeting
+          # aarch64-pc-windows-msvc (the x86-only intrinsics now route to __int128/
+          # __builtin paths under clang-cl). STATIC LIB ONLY: a static archive does
+          # not link, so the __int128 compiler-rt builtins (__umodti3/__modti3 the
+          # MSVC CRT lacks) stay unresolved for the consumer — same as the x64 static
+          # lib; the shared libs are not built on ARM64. no_test: the cross-built exe
+          # cannot run on the x64 host. Build validated by windows-arm64-clang-cl.yml.
+          - os: windows-latest
+            name: win-arm64
+            ext: zip
+            generator: Ninja
+            msvc_arch: amd64_arm64
+            cc: clang-cl
+            cxx: clang-cl
+            no_test: true
+            build_target: fastsecp256k1
+            extra_cmake: >-
+              -DSECP256K1_SHIM_BUILD_SHARED=OFF
+              -DSECP256K1_USE_ASM=OFF
+              -DSECP256K1_USE_LTO=OFF
+              -DCMAKE_SYSTEM_NAME=Windows
+              -DCMAKE_SYSTEM_PROCESSOR=ARM64
+              -DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc
+              -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -309,6 +327,13 @@ jobs:
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: ${{ matrix.msvc_arch }}
+
+      # -- Windows ARM64: clang-cl is the compiler (cl can't build the engine for
+      #    ARM64). LLVM is preinstalled on the windows image; put it on PATH. --
+      - name: Put clang-cl (LLVM) on PATH
+        if: ${{ matrix.cc == 'clang-cl' }}
+        shell: bash
+        run: echo "C:/Program Files/LLVM/bin" >> "$GITHUB_PATH"
 
       # -- macOS: install Ninja --
       - name: Install Ninja (macOS)
@@ -348,9 +373,10 @@ jobs:
             ${{ matrix.cc && format('-DCMAKE_C_COMPILER={0} -DCMAKE_CXX_COMPILER={1}', matrix.cc, matrix.cxx) || '' }}
         shell: bash
 
-      # -- Build --
+      # -- Build (matrix.build_target restricts the target set, e.g. win-arm64 builds
+      #    only the static libsecp256k1-ABI archive; other legs build all). --
       - name: Build
-        run: cmake --build build -j
+        run: cmake --build build -j ${{ matrix.build_target && format('--target {0}', matrix.build_target) || '' }}
 
       # -- Test (skipped for cross-built arm64: cannot run on the x64 host) --
       - name: Test
