@@ -97,6 +97,8 @@ jobs:
           EOF
           LIB=$(find build-arm64 -name 'fastsecp256k1.lib' -print -quit)
           [ -n "$LIB" ] || { echo "::error::fastsecp256k1.lib not found"; exit 1; }
+          # Git-bash mangles bare /-flags (e.g. /MT -> C:\...\MT.obj); disable arg path conv.
+          export MSYS2_ARG_CONV_EXCL='*'
           clang-cl --target=aarch64-pc-windows-msvc /std:c++17 \
             -I compat/libsecp256k1_shim/include -I src/cpu/include -I build-arm64/include \
             -D SECP256K1_STATIC /MT linktest.cpp "$LIB" /Fe:linktest-arm64.exe
