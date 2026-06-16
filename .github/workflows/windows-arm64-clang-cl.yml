@@ -61,6 +61,8 @@ jobs:
       - name: Configure (clang-cl, aarch64-pc-windows-msvc)
         shell: bash
         run: |
+          # Mirror the release.yml arm64 leg's config exactly so this gate proves the
+          # release build (shim static, no DLL/ASM/LTO/tests/bench/examples on ARM64).
           cmake -S . -B build-arm64 -G Ninja \
             -DCMAKE_C_COMPILER=clang-cl \
             -DCMAKE_CXX_COMPILER=clang-cl \
@@ -70,14 +72,16 @@ jobs:
             -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc \
             -DCMAKE_BUILD_TYPE=Release \
             -DSECP256K1_BUILD_SHIM=ON \
+            -DSECP256K1_SHIM_BUILD_SHARED=OFF \
             -DSECP256K1_USE_ASM=OFF \
             -DSECP256K1_USE_LTO=OFF \
             -DSECP256K1_BUILD_TESTS=OFF \
-            -DSECP256K1_BUILD_BENCH=OFF
+            -DSECP256K1_BUILD_BENCH=OFF \
+            -DSECP256K1_BUILD_EXAMPLES=OFF
 
-      - name: Build engine + shim (cross-compile)
+      - name: Build all (cross-compile) — same target set as release.yml
         shell: bash
-        run: cmake --build build-arm64 --target fastsecp256k1 secp256k1_shim -j
+        run: cmake --build build-arm64 -j
 
       # Compile a real libsecp256k1-ABI consumer against the cross-built ARM64 headers
       # to prove the public ABI is usable on aarch64. Compile-only (-> .obj): the
